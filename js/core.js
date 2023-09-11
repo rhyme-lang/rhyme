@@ -635,21 +635,30 @@ function inspect(...args) {
         delete tmpAfterLoop[t2][l]
     }
     //
+    // compute loopInsideLoop
+    //
+    for (let t in tmpInsideLoop) {
+      for (let l1 in tmpInsideLoop[t]) {
+        for (let l2 in tmpInsideLoop[t]) {
+          if (l1 != l2 && l1 > l2) {    // TODO: order matters? (i.e., l1 inside l2 or l2 inside l1)
+            loopInsideLoop[l1] ??= {}
+            loopInsideLoop[l1][l2] = true
+          }
+        }
+      }
+    }
+    //
     // compute loopAfterLoop
     //
     for (let t in tmpAfterLoop) {
       for (let l2 in tmpInsideLoop[t]) {
         loopAfterLoop[l2] ??= {}
         for (let l1 in tmpAfterLoop[t]) {
-          // loops may be nested or sequenced
-          loopInsideLoop[l1] ??= {}
-          let nested = false
-          for (let tx in tmpInsideLoop)
-            if (tmpInsideLoop[tx][l1] && tmpInsideLoop[tx][l2]) { nested = true; break }
-          if (nested)
-            loopInsideLoop[l1][l2] = true
-          else
-            loopAfterLoop[l2][l1] = true
+          // skip if we already know this is a nested loop
+          if ((loopInsideLoop[l1] && loopInsideLoop[l1][l2]) || (loopAfterLoop[l2] && loopAfterLoop[l2][l1])) {
+            continue
+          }
+          loopAfterLoop[l2][l1] = true
         }
       }
       // TODO: do we need loopAfterTmp? seed loopAfterTmp/Loop from generator.deps?
@@ -665,6 +674,7 @@ function inspect(...args) {
     let availableSyms = {} // currently available in scope (for loops)
     let emittedLoopSyms = {}   // loops that have been fully emitted
     let emittedSymsRank = {}   // number of writes emitted for each sym
+    let currOuterLoopSyms = [] // currently active generators (for nested loops)
     function isAvailable(s) {
       if (s == "inp")
         return true
@@ -679,6 +689,11 @@ function inspect(...args) {
     }
     function extraDepsAvailable(depMap) {
       return (Object.keys(depMap)).every(s => emittedLoopSyms[s])
+    }
+    function outerLoopsAvailable(s) {
+      // ready to schedule if all outer loops are emitted, and we are inside the correct scope
+      if (!loopInsideLoop[s]) return true
+      return Object.keys(loopInsideLoop[s]).every(outer => currOuterLoopSyms.indexOf(outer) >= 0)
     }
     function loopsFinished(e) {
       return extraDepsAvailable(tmpAfterLoop[e.writeSym])
@@ -770,7 +785,7 @@ function inspect(...args) {
       }
       function symGensAvailable(s) {
         return gensBySym[s].every(depsAvailable) &&
-          extraDepsAvailable(extraLoopDeps[s])
+          extraDepsAvailable(extraLoopDeps[s]) && outerLoopsAvailable(s)
       }
       // compute generators left for inner scope
       generatorStms = []
@@ -784,6 +799,7 @@ function inspect(...args) {
         let [e, ...es] = gensBySym[s] // just pick first -- could be more clever!
         // remove gensBySym[s] from generatorStms (we're emitting it now)
         generatorStms = generatorStms.filter(e => e.sym != s)
+        currOuterLoopSyms.push(s)
         // loop header
         emit("for (let " + quoteVar(e.sym) + " in " + e.rhs + ") {")
         // filters
@@ -798,6 +814,7 @@ function inspect(...args) {
         // XX done
         delete availableSyms[s]
         emit("}")
+        currOuterLoopSyms.pop()
         emittedLoopSyms[s] = true
       }
     }
