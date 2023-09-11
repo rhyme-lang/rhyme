@@ -153,6 +153,16 @@ function inspect(...args) {
   let tmpVarCount = 0
   let extraLoopDeps = {} // for each loop sym, a list of extra dependencies
   let tmpVarWriteRank = {} // for each writable var sym, the number of consecutive write stms
+
+  function resetState() {
+    generatorStms = []
+    assignmentStms = []
+    allsyms = {}
+    currentGroupPath = []
+    tmpVarCount = 0
+    extraLoopDeps = {}
+    tmpVarWriteRank = {}
+  }
   //
   //
   function assign(lhs, op, rhs) {
@@ -543,7 +553,16 @@ function inspect(...args) {
     let f = api["query"](query)
     return f(data)
   }
+  api["getIR"] = (query) => {
+    resetState()
+    transStatefulTopLevel(query)
+    return {
+      assignments: assignmentStms,
+      generators: generatorStms
+    }
+  }
   api["query"] = api["compile"] = (query) => {
+    resetState()
     //
     // process query root
     //
@@ -576,7 +595,6 @@ function inspect(...args) {
     }
     explain.ir = {}
     explain.ir.assignments = [...assignmentStms]
-    explain.ir.generators = [...generatorStms]
     explain.ir.generators = [...generatorStms]
     //
     // Fix explicit loop ordering (added 11/28):
