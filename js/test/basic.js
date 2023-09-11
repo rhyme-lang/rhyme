@@ -1,12 +1,5 @@
 import { api } from '../core.js';
-import { expect } from './infra.js';
-
-let debug = false
-
-function display(...args) {
-    if (debug)
-        console.log(...args)
-}
+import { expect, display } from './infra.js';
 
 let data = [
     { key: "A", value: 10 },

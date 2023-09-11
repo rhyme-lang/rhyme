@@ -782,6 +782,8 @@ function inspect(...args) {
       for (let s in gensBySym) {
         if (!symGensAvailable(s)) continue
         let [e, ...es] = gensBySym[s] // just pick first -- could be more clever!
+        // remove gensBySym[s] from generatorStms (we're emitting it now)
+        generatorStms = generatorStms.filter(e => e.sym != s)
         // loop header
         emit("for (let " + quoteVar(e.sym) + " in " + e.rhs + ") {")
         // filters

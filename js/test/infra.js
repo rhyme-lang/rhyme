@@ -4,3 +4,10 @@ export function expect(a, b, testName = "") {
     else
         console.log(testName + ": 🔴 ERROR: \nexpected:\n" + JSON.stringify(b) + "\ngot:\n" + JSON.stringify(a))
 }
+
+let debug = false
+
+export function display(...args) {
+    if (debug)
+        console.log(...args)
+}
