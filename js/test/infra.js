@@ -1,5 +1,4 @@
 export function expect(a, b, testName = "") {
-    // if (JSON.stringify(a) == JSON.stringify(b))
     if (jsonIsEqual(a, b))
         console.log(testName + ": 🟢 OK")
     else
@@ -30,7 +29,7 @@ function jsonIsEqual(obj1, obj2) {
         const val2 = obj2[key];
 
         if (typeof val1 === 'object' && typeof val2 === 'object') {
-            if (!areJsonObjectsEqual(val1, val2)) {
+            if (!jsonIsEqual(val1, val2)) {
                 return false;
             }
         } else if (val1 !== val2) {

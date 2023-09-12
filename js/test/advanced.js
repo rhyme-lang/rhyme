@@ -156,6 +156,17 @@ function testNestedIterators3_explicitlyHoisted() {
     check(query, expected, "testNestedIterators3")
 }
 
+// how to specify a filter
+// select r.key, sum(r.value) from data r where r.key = "A"
+function simpleFilterTest() {
+    // TODO: this works, but no "predicate push-down" yet
+    let aggr = { "data.*.key": api.sum("data.*.value") }
+    let query = {
+        "A": api.get(aggr, "A")
+    }
+    let expected = { "A": 40 }
+    check(query, expected, "simpleFilterTest")
+}
 
 testDecorrelation1()
 testDecorrelation2()

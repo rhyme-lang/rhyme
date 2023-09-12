@@ -18,8 +18,12 @@ function reevaluate(dataItemT, currData, exec) {
 export function testQueryIncremental(query, data, testName) {
     let exec = api.compile(query)
     let [initCode, insertCode, deleteCode] = generateTriggers(exec.explain.ir)
-    let tmp = {} // globals
+    testQueryIncrementalWithCode(query, data, testName, initCode, insertCode, deleteCode)
+}
 
+export function testQueryIncrementalWithCode(query, data, testName, initCode, insertCode, deleteCode) {
+    let exec = api.compile(query)
+    let tmp = {} // globals
     let inp = {}  // represents "delta" for each t
     let currData = [] // for re-evaluation
 

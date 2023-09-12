@@ -8,6 +8,8 @@
     how to specify the output? simple way is to produce the next output. But in a setting where
     we e.g., updating a UI, a diff might be more useful/efficient
 */
+import { api } from "../../core.js"
+import { testQueryIncrementalWithCode } from "../test/common.js";
 
 let data =
 [
@@ -59,6 +61,52 @@ function query1Test() {
     driver();
 }
 
+
+
+// nested loops:
+function manualNestedLoops() {
+    let aggr = {
+        "data.*.key": api.sum("data.*.value")
+    }
+    let query = {
+        "data.*A.key": {
+            "data.*B.key": api.fdiv(api.get(aggr, "data.*A.key"), api.get(aggr, "data.*B.key"))
+        }
+    }
+
+    let initCode = `
+        tmp[0] = {}
+        tmp[1] = {}
+    `
+
+    let insertCode = `
+        let delta = inp['data'][0]
+        tmp[1][delta.key] ??= 0
+        tmp[1][delta.key] += delta.value
+        tmp[0][delta.key] ??= {}
+        for (let key in tmp[1]) {
+            tmp[0][delta.key][key] = tmp[1][delta.key] / tmp[1][key]
+            tmp[0][key][delta.key] =  tmp[1][key] / tmp[1][delta.key]
+        }
+    `
+
+    let deleteCode = `
+        let delta = inp['data'][0]
+        tmp[1][delta.key] -= delta.value
+        if (tmp[1][delta.key] === 0) {
+            delete tmp[1][delta.key]
+        }
+        for (let key in tmp[1]) {
+            tmp[0][delta.key][key] = tmp[1][delta.key] / tmp[1][key]
+            tmp[0][key][delta.key] = tmp[1][key] / tmp[1][delta.key]
+        }
+    `
+
+    testQueryIncrementalWithCode(query, data, "manualNestedLoops", initCode, insertCode, deleteCode)
+}
+
+manualNestedLoops()
+
 function pivotTableTest() {
 
     let data = [
@@ -75,42 +123,6 @@ function pivotTableTest() {
         {insert: false, warehouse: "San Jose", product: "iPhone", model: "6s", quantity: 50},
         {insert: false, warehouse: "San Francisco", product: "iPhone", model: "X", quantity: 200},
     ]
-    
-    /*
-
-    // how to have a separate aggregate sum?
-    let query: warehouse -> 
-
-    
-
-    query = {
-        total: api.sum("data.*.quantity"),
-        "data.*.warehouse": {
-            total: api.sum("data.*.quantity"),
-            percentage: api.fdiv(api.sum("data.*.quantity"), api.sum("data.*B.quantity")),
-            "data.*.product": {
-                total: api.sum("data.*.quantity"),
-                percentage: api.fdiv(api.sum("data.*.quantity"), api.sum("data.*B.quantity")),  // TODO: how to do a relative sum over immediate parent? 
-                "data.*.model": {                                                               //      (in this case, a way to compute/refer total in the parent)
-                    total: api.sum("data.*.quantity"),                                          //      the form of code we generate is trivial, but how to express it?
-                    percentage: api.fdiv(api.sum("data.*.quantity"), api.sum("data.*B.quantity"))
-                }
-            }
-        }
-    }
-
-    query = {
-        total: api.sum("data.*.quantity"),
-        "data.*.warehouse": {
-            total: api.sum("data.*.quantity"),
-            percentage: api.fdiv(api.sum("data.*.quantity"), api.sum("data.*B.quantity")),
-            "data.*.product": {
-                total: api.sum("data.*.quantity"),
-                percentage: api.fdiv(api.sum("data.*.quantity"), api.sum("data.*B.quantity[warehouse]")),  // TODO: how to do a relative sum over immediate parent? 
-                "data.*.model": {                                                               //      (in this case, a way to compute/refer total in the parent)
-                    total: api.sum("data.*.quantity"),                                          //      the form of code we generate is trivial, but how to express it?
-                    .....
-    */
 
     let result = {
         total: 0,
@@ -185,5 +197,6 @@ function pivotTableTest() {
 
     driver();
 }
+
 
 // TODO: joins, multiple tables, nested loops, etc.
