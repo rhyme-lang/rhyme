@@ -154,6 +154,8 @@ function inspect(...args) {
   let extraLoopDeps = {} // for each loop sym, a list of extra dependencies
   let tmpVarWriteRank = {} // for each writable var sym, the number of consecutive write stms
 
+  let subQueryCache = {}
+
   function resetState() {
     generatorStms = []
     assignmentStms = []
@@ -162,6 +164,7 @@ function inspect(...args) {
     tmpVarCount = 0
     extraLoopDeps = {}
     tmpVarWriteRank = {}
+    subQueryCache = {}
   }
   //
   //
@@ -230,7 +233,12 @@ function inspect(...args) {
           let [e1, e2] = p.xxparam
           // TODO: e1 should never be treated as id!
           // TODO: vararg?
-          return (e2 !== undefined) ? selectUser(path1(e1), path1(e2)) : path1(e1)
+          let subQueryPath = subQueryCache[e1] // cache lookup and update
+          if (!subQueryPath) {
+            subQueryPath = path1(e1)
+            subQueryCache[e1] = subQueryPath
+          }
+          return (e2 !== undefined) ? selectUser(subQueryPath, path1(e2)) : subQueryPath
         } else if (p.xxpath == "apply") {
           let [e1, e2] = p.xxparam
           // TODO: e1 should never be treated as id!
@@ -243,7 +251,7 @@ function inspect(...args) {
           return binop("-", path1(e1), path1(e2))
         } else if (p.xxpath == "times") {
           let [e1, e2] = p.xxparam
-          return binop("**", path1(e1), path1(e2))
+          return binop("*", path1(e1), path1(e2))
         } else if (p.xxpath == "fdiv") {
           let [e1, e2] = p.xxparam
           return binop("/", path1(e1), path1(e2))
