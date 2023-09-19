@@ -9,10 +9,10 @@
 \usepackage{cleveref}
 \usepackage{xcolor}
 \usepackage{listings}
+\usepackage{subcaption}
+\usepackage{multicol}
 
 \input{macros.tex}
-
-\newcommand{\todo}[1]{\textcolor{red}{TODO: #1}}
 
 \linenumbers 
 
@@ -75,8 +75,8 @@ Modern web applications are commonly structured in a tiered architecture, where 
 tiers are implemented using various techniques.
 First tier, the front-end, manages the visual aspects of the application.
 It is typically developed using a combination of technologies, including HTML,
-CSS, and JavaScript.
-Specifically, JavaScript frameworks such as React and Angular are frequently employed to
+CSS, and JavaScript (JS).
+Specifically, JS frameworks such as React and Angular are frequently employed to
 facilitate this process.
 The front-end component interacts with an intermediate layer, commonly referred to as
 the application tier. 
@@ -149,27 +149,115 @@ in \Cref{sec:conclusions}.
 
 
 \section{The Query Language}~\label{sec:query_language}
+
+In this section, we will introduce the syntax of the \lang{}, illustrating how it facilitates
+the expression of common data manipulation operations like selections, aggregates,
+group-bys, and so on.
+To enhance comprehension, we will employ a running illustrative example dataset, as
+depicted below.
+Specifically, we have a dataset of containing population of several major cities,
+along with the respective country.
+Our chosen dataset is deliberately kept relatively straightforward, devoid of
+intricate nested structures.
+However, it is worth noting that \lang{} has the capacity to seamlessly query
+deeply nested JSON data without any problem in the same way.
+
+
 \begin{lstlisting}[style=JavaScript]
 let data = [
-    {country: "Japan",  city: "Tokyo",   population: 30},
-    {country: "China",  city: "Beijing", population: 20},
-    {country: "France", city: "Paris",   population: 10},
-    {country: "UK",     city: "London",  population: 10},
+    {country: "Japan", city: "Tokyo",     population: 14},
+    {country: "China", city: "Beijing",   population: 22},
+    {country: "France",city: "Paris",     population: 3},
+    {country: "UK",    city: "London",    population: 9},
+    {country: "Japan", city: "Osaka",     population: 3},
+    {country: "UK",    city: "Birmingham",population: 2}
 ]
 \end{lstlisting}
 
-\begin{lstlisting}[style=JavaScript]
-sum("data.*.population")
-max("data.*.population")
-avg("data.*.population")
+% \begin{lstlisting}[style=JavaScript]
+% let data = [
+%     {key: "A", val: 20},
+%     {key: "B", val: 30},
+%     {key: "A", val: 10}
+% ]
+% \end{lstlisting}
 
-\end{lstlisting}
 \subsection{Basics}
-aggregation, etc.
+First we will look at how to perform several basic query operations on the
+aforementioned dataset.
+For instance, if we want to select a particular key of the dataset at a given
+index, we can use the following syntax.
+
+\begin{lstlisting}[style=JavaScript]
+data.0.country              // result: Japan
+{first : data.0.country}    // result: {first: Japan}
+\end{lstlisting}
+
+Several key attributes of \lang{} can be observed from the aforementioned examples.
+In the given illustration, the reference \inline{data} refers to
+the dataset object, enabling simple indexing into the array of data through integer
+indices.
+Furthermore, the selection of specific keys is facilitated by specifying the desired
+key names (e.g., \inline{.country}).
+Notably, \lang{} offers the convenience of the familiar JS-like syntax for constructing
+structured output from extracted values, as exemplified in the second instance.
+
+While this form of explicit indexing into the array can be useful for several
+use cases, generally, queries involve some form of iterating over the dataset.
+\lang{} offers this capability through the \inline{*} operator,
+serving as an implicit iteration operator.
+Later in our discussion, we will delve into how this operator empowers fine-grained
+iterations, utilizing multiple iterators
+(e.g., \inline{*A}, \inline{*B}, etc.).
+For now, our focus centers on relatively simple queries.
+Below, we present several example queries that leverage iteration and compute
+aggregates over the iterated values.
+
+\begin{lstlisting}[style=JavaScript, columns=flexible]
+[data.*.city]             // result: [Tokyo, Beijing, ..., Birmingham]
+sum(data.*.population)    // result: 53
+max(data.*.population)    // result: 22
+\end{lstlisting}
+
+The queries presented above are self-explanatory in nature.
+In the first example, we illustrate a scenario where an array can be constructed
+from the values obtained through iteration, employing the \inline{[...]} syntax.
+Alternatively, users can compute aggregates over the iterated values using the
+relevant aggregate functions, such as \inline{sum}, \inline{max}, and so forth.
+As discussed previously, this queries can be used as parts of object
+construction logic and combined flexibly as shown below.
+
+\begin{minipage}{0.5\textwidth}
+\begin{lstlisting}[style=JavaScript, columns=flexible, numbers=none]
+{
+    total: sum(data.*.population),
+    max: max(data.*.population)
+}
+\end{lstlisting}
+\end{minipage}
+
+\begin{minipage}{0.5\textwidth}
+\begin{lstlisting}[style=JSComment, columns=flexible, numbers=none]
+result: 
+{
+    total: 53,
+    max: 22
+}
+\end{lstlisting}
+\end{minipage}
+
 
 \subsection{Group By}
 \subsection{Filters}
 \subsection{Join}
+\begin{lstlisting}[style=JavaScript]
+let other = [
+    {country: "Japan", region: "Asia"},
+    {country: "China", region: "Asia"},
+    {country: "France",region: "Europe"},
+    {country: "UK",    city: "Europe"},
+]
+\end{lstlisting}
 \subsection{Used-defined Functions}
 \subsection{Arrays}
 \subsection{Fluent API}
@@ -198,7 +286,7 @@ How to use group bys, partial aggregates, display, svg, etc.
 
 \section{Conclusions and Future Work}\label{sec:conclusions}
 Incrementality, Datalog-style recursive queries?, partial re-evaluation as
-query changes (with minimal recomputation)
+query changes (with minimal recomputation and index sharing)
 %
 % ---- Bibliography ----
 %
