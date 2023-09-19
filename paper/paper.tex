@@ -6,9 +6,17 @@
 
 \pagestyle{plain}
 \usepackage{lineno}
+\usepackage{cleveref}
+\usepackage{xcolor}
+\usepackage{listings}
+
+\input{macros.tex}
+
+\newcommand{\todo}[1]{\textcolor{red}{TODO: #1}}
+
 \linenumbers 
 
-\newcommand{\lang}{QL-TBD}
+\newcommand{\lang}{\textcolor{blue}{QL-TBD}}
 
 \usepackage[T1]{fontenc}
 % T1 fonts will be used to generate the final print and online PDFs,
@@ -63,135 +71,99 @@ intermediate representation (IR).
 %
 \section{Introduction}
 
-Modern applications are typically implemented in a tiered manner, with each tier implemented
-using different kind of techniques.
-For example, the front-end handles the visual aspects of the application and is typically
-written using a mix of HTML, CSS, and JavaScript (specifically, frameworks like
-React, Angular, etc.). 
-Front-end communicates with a middle-tier, often referred to as the
-application tier via techniques like REST end points or more general query languages like
-GraphQL to query the data that needs to be presented to the end user.
-The application layer then issues queries to a third, database tier that runs the issued
-queries on the stored data to produce the desired output.
-
-Most of these tiers manipulate data in semi-structured formats like JSON
-and there are a variety of query languages that is tailored to query data in these kinds of
-formats.
-Examples include, JSONiq, AQL, SQL++, UNQL, JAQL, etc.
-While all these query languages provide expressive languages to query these
-types of data, these languages tend to be targeted towards large-scale
-analytics engines (e.g., Spark-like workloads) and not much emphasis is put
-on the front-end logic.
-In contrast, languages like GraphQL has gained popularity since it provides
-a simple and intuitive interface to query data from backends.
-But the actual logic for evaluating these queries (called resolvers) should be
-written manually in most cases and involves invoking queries to a database.
+Modern web applications are commonly structured in a tiered architecture, where distinct
+tiers are implemented using various techniques.
+First tier, the front-end, manages the visual aspects of the application.
+It is typically developed using a combination of technologies, including HTML,
+CSS, and JavaScript.
+Specifically, JavaScript frameworks such as React and Angular are frequently employed to
+facilitate this process.
+The front-end component interacts with an intermediate layer, commonly referred to as
+the application tier. 
+This interaction occurs through mechanisms like REST endpoints or more expressive query
+languages such as GraphQL, which are employed to retrieve the necessary data for
+presentation to the end user.
+Subsequently, the application tier issues queries to a third tier known as the database tier.
+This tier executes the received queries on stored data, generating the desired output
+as a result.
 
 
-In this work, we present a new query language called \lang, an expressive language
-targeted towards high-level data manipulation.
-\lang is used to query nested structures (like JSON), produce nested structures as 
-result with a query syntax that resembles existing object notation.
-\lang is designed to be compositional and, in a way that it permits query
-optimization and code generation.
+The majority of these tiers operate on data structured in semi-structured
+formats, such as JSON.
+As a result, a range of query languages has emerged, each designed to efficiently
+query data in such formats.
+Prominent examples include JSONiq, AQL, SQL++~\cite{sqlpp}, UNQL, JAQL, among others.
+These query languages offer expressive means to interact with semi-structured data.
+However, it is worth noting that their primary focus tends to be on catering to
+large-scale analytics engines, akin to workloads encountered in big data environments,
+with less emphasis placed on front-end logic.
+In contrast, GraphQL has garnered widespread popularity as a front-end query language
+for its ability to provide a straightforward and intuitive interface for querying data.
+Nonetheless, results from these GraphQL queries are manipulated by front-end JavaScript,
+and logic related to other aspects of the front-end needs to be separately
+(i.e., outside of the query) implemented.
 
+% The actual logic for evaluating these queries, referred to as resolvers, typically
+% requires manual implementation in the backend.
+% These resolver implementations are responsible for invoking queries to a database
+% and handling the corresponding data retrieval and transformation tasks.
 
+In this work, we present a novel \emph{unified} query language named \lang{}, an expressive
+language capable of high-level data manipulation of nested structures like JSON while 
+also having the capability to express other aspects of front-end logic like visual components
+within the same query.
+\lang{} has a simple and intuitive syntax that resembles existing object notation.
+We design \lang{} to be compositional, having the capability to perform query optimizations
+and code generation via the construction of an intermediate representation (IR).
+In essence, our overarching goal with \lang{} is to allow developers to build interactive dashboards and 
+CRUD applications directly from a single query, that essentially becomes the `program'.
+\lang{} takes inspiration from existing approaches like Graph QL, JQ, XQuery, etc., einstein
+notation (Einsum, Einops) in tensor frameworks, and logic programming (Datalog).
 
-- our direction: 
+% TODO: maybe highlight the fact that this compositionality, mixing of visual aspects, etc.
+%       is enabled by the fact that our query language resembles JSON so that we can directly
+%       process that in JS
 
--- since 
-
-
-Generally, building the front end is centered around the 
-
-
-Consider a dashboard that displays stocks of a warehouse: ....
-
-
-- various ways of data processing exists
-
-- data tends to be semi-structured in many settings (web applications: json)
-
-- querying this data is really important (say building a dashboard)
-
-- there are existing languages that targets these types of workloads
-
-- on one end there are full DB-style commercial offerings like CouchBase, MongoDB
-
--- they are focused on scale and multi-node large scale data processing, transactions, etc. 
-    and not generally used in frontend querying
-
-- then there are languages like GraphQL that enables querying data from the frontend. 
-   These are arguably more user-friendly  
-
-- we target this scenarios like this
-
-- Many GraphQL implementations rely on writing resolvers to handle the queries. These
-  resolvers usually call backend databases to retrieve data and do different kinds of processing
-  (e.g., filtering, aggregates, etc.) manually to compute the final result.
-
-
-- lightweight and intuitive language, but sufficiently expressive to cover a wide range 
-   of practical JSON queries
-
-- language not only contains JSON analytics, but also GUI components
-
-- with idea, your program becomes a query
-
-
-Relational data processing is most widely used. But only on structured data.
-But these days there is a tendency to store semi-structured data.
-This give emergnce to systems that can handle semi-structured
- - commercial: data lakes, no-sql like crunchbase (SQL++), MongoDB, etc.
-Some systems use query languages that mirrors SQL syntax to make it appealing/easier
-to adapt for developers who know SQL.
-Other query languages also exists like JSONiq (inspired by XQuery), JQ, ...
-
-In this work, we propose a new query language, specifically targeting semi-structured
-data, but is flexible to perform other types of operations as well.
-We take inspiration from ....
-
-
-
-Various query languages exists ranging from SQL, GraphQL, 
-
-TODO: need a query that shows the expressiveness or power of the query language, comparing it with the same query 
-written in other query languages
-
-What should be the story/pitch here?
-
-- semi-structured data is prevalent in many places, including modern web applications.
-
-- languages like graphql, JQ, JSONiq, SQL++, etc. exists to handle such data.
-
-- however, they are less expressive, doesn't permit (easy) code gen, cannot operate inside the browser, etc.
-
-- in this work, we present a new query language, that is targeted to query nested structures and produce
-nested structures as results, resembles existing object notation (like GraphQL), permit query optimization (e.g., de-correlation)
-and efficient code generation, and compositional and easy to meta-program
-
-
-RPAI~\cite{rpai} (need at least one cite for bibtex :-P)
-
-The query language provides a unified language that handles multiple aspects:
+Our specific contributions are as follows.
 
 \begin{enumerate}
-    \item High-performance nested, hetrogenius querying language (like JSONiq or JQ, XQuery)
-    that is compiled for maximal performance
-
-    \item permit query optimization and code generation, utilizing an existing compiler
-    infrastructure
-
-    \item can run in the browser (everything in JS), essentially making every 
-
-    \item an expressive language that provides a unified representation of functions,
-     records, and tables the provides an easier way to specify front-end (dashboard-style) logic
-    (think GraphQL, but more powerful with having GUI elements, etc. part of the query?)
-    \item more capabilities like recursive queries (with semi-naive evaluation),
-    incrementality, etc.
+    \item We present the syntax of our query language and demonstrate how to express common
+          data manipulation operators like, selections, group-bys, joins, user-defined functions (UDFs),
+          and so on.
+          Moreover, we show how to express visual components, and how to compose them to build
+          large queries (\Cref{sec:query_language}).
+    \item We show how the queries are lowered into an IR that contains loop-free and branch-free code
+          with dependencies implicitly representing the program structure.
+          Then, we demonstrate how this IR can be used to generate code for a given query by constructing
+          the program structure from dependencies.
+          Moreover, we show how traditional compiler optimizations like lambda lifting translates to query
+          optimizations like sub-query de-correlation (\Cref{sec:ir_codegen}).
+    \item We demonstrate the capabilities of our overall query language by taking a relatively simple example
+          program that uses most of the features we have presented in previous sections (\Cref{sec:case_study}).
+    \item We compare the performance of \lang{} on several practical JSON analytics workloads to demonstrate the
+          effectiveness of our code generation approach (\Cref{sec:experiments}).
 \end{enumerate}
 
-\section{The Query Language}
+We discuss related work in \Cref{sec:related_work}, followed by conclusions and potential future research directions
+in \Cref{sec:conclusions}.
+
+
+\section{The Query Language}~\label{sec:query_language}
+\begin{lstlisting}[style=JavaScript]
+let data = [
+    {country: "Japan",  city: "Tokyo",   population: 30},
+    {country: "China",  city: "Beijing", population: 20},
+    {country: "France", city: "Paris",   population: 10},
+    {country: "UK",     city: "London",  population: 10},
+]
+\end{lstlisting}
+
+\begin{lstlisting}[style=JavaScript]
+sum("data.*.population")
+max("data.*.population")
+avg("data.*.population")
+
+\end{lstlisting}
 \subsection{Basics}
 aggregation, etc.
 
@@ -205,24 +177,26 @@ aggregation, etc.
 \subsection{GUI Components}
 Basic building blocks -- table definition, and generic display, svg, etc. 
 
-\subsection{Example: Pivot Table}
-How to use group bys, partial aggregates, display, svg, etc.
-
-\section{The IR}
+\section{IR and Code Generation}~\label{sec:ir_codegen}
 \subsection{IR Structure}
 Loop-free and branch-free code, program structure implicit in dependencies
 
-\section{Code Generation}
+\subsection{Code Generation}
 Scheduling based on dependencies, lambda lifting to de-correlate queries
 
-\section{Implementation}
+\subsection{Implementation}
 We implement this in JavaScript so that it can run in the browser.
 
-\section{Experiments}
 
-\section{Related Work}
+\section{Example: Pivot Table}\label{sec:case_study}
+How to use group bys, partial aggregates, display, svg, etc.
 
-\section{Future Work}
+\section{Experiments}\label{sec:experiments}
+
+
+\section{Related Work}\label{sec:related_work}
+
+\section{Conclusions and Future Work}\label{sec:conclusions}
 Incrementality, Datalog-style recursive queries?, partial re-evaluation as
 query changes (with minimal recomputation)
 %
