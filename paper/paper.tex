@@ -8,6 +8,8 @@
 \usepackage{lineno}
 \linenumbers 
 
+\newcommand{\lang}{QL-TBD}
+
 \usepackage[T1]{fontenc}
 % T1 fonts will be used to generate the final print and online PDFs,
 % so please use T1 fonts in your manuscript whenever possible.
@@ -24,32 +26,35 @@
 %
 \begin{document}
 %
-\title{Building a Query Language?\thanks{Supported by organization x.}}
+\title{Building a Query Language?}
+
 %
 %\titlerunning{Abbreviated paper title}
 % If the paper title is too long for the running head, you can set
 % an abbreviated paper title here
 %
-\author{First Author\inst{1}\orcidID{0000-1111-2222-3333} \and
-Second Author\inst{2,3}\orcidID{1111-2222-3333-4444} \and
-Third Author\inst{3}\orcidID{2222--3333-4444-5555}}
-%
-\authorrunning{F. Author et al.}
-% First names are abbreviated in the running head.
-% If there are more than two authors, 'et al.' is used.
-%
-\institute{Princeton University, Princeton NJ 08544, USA \and
-Springer Heidelberg, Tiergartenstr. 17, 69121 Heidelberg, Germany
-\email{lncs@springer.com}\\
-\url{http://www.springer.com/gp/computer-science/lncs} \and
-ABC Institute, Rupert-Karls-University Heidelberg, Heidelberg, Germany\\
-\email{\{abc,lncs\}@uni-heidelberg.de}}
+% \author{Supun Abeysinghe\inst{1}\orcidID{0000-1111-2222-3333} \and
+% Tiark Rompf\inst{2,3}\orcidID{1111-2222-3333-4444}}
+% \author{Supun Abeysinghe \and Tiark Rompf}
+% %
+% \authorrunning{F. Author et al.}
+% % First names are abbreviated in the running head.
+% % If there are more than two authors, 'et al.' is used.
+% %
+% \institute{Purdue University, West Lafayette IN 47906, USA\\
+% \email{\{tabeysin,tiark\}@purdue.com}
+% }
 %
 \maketitle              % typeset the header of the contribution
 %
 \begin{abstract}
-The abstract should briefly summarize the contents of the paper in
-150--250 words.
+We propose an expressive language for high-level data manipulation that
+mainly targets querying nested structures (e.g., JSON) and produce nested
+structures as results.
+Our query language resembles existing object notation, compositional, and
+permits query optimization and code generation via construction of an
+intermediate representation (IR).
+
 
 \keywords{First keyword  \and Second keyword \and Another keyword.}
 \end{abstract}
@@ -57,6 +62,98 @@ The abstract should briefly summarize the contents of the paper in
 %
 %
 \section{Introduction}
+
+Modern applications are typically implemented in a tiered manner, with each tier implemented
+using different kind of techniques.
+For example, the front-end handles the visual aspects of the application and is typically
+written using a mix of HTML, CSS, and JavaScript (specifically, frameworks like
+React, Angular, etc.). 
+Front-end communicates with a middle-tier, often referred to as the
+application tier via techniques like REST end points or more general query languages like
+GraphQL to query the data that needs to be presented to the end user.
+The application layer then issues queries to a third, database tier that runs the issued
+queries on the stored data to produce the desired output.
+
+Most of these tiers manipulate data in semi-structured formats like JSON
+and there are a variety of query languages that is tailored to query data in these kinds of
+formats.
+Examples include, JSONiq, AQL, SQL++, UNQL, JAQL, etc.
+While all these query languages provide expressive languages to query these
+types of data, these languages tend to be targeted towards large-scale
+analytics engines (e.g., Spark-like workloads) and not much emphasis is put
+on the front-end logic.
+In contrast, languages like GraphQL has gained popularity since it provides
+a simple and intuitive interface to query data from backends.
+But the actual logic for evaluating these queries (called resolvers) should be
+written manually in most cases and involves invoking queries to a database.
+
+
+In this work, we present a new query language called \lang, an expressive language
+targeted towards high-level data manipulation.
+\lang is used to query nested structures (like JSON), produce nested structures as 
+result with a query syntax that resembles existing object notation.
+\lang is designed to be compositional and, in a way that it permits query
+optimization and code generation.
+
+
+
+- our direction: 
+
+-- since 
+
+
+Generally, building the front end is centered around the 
+
+
+Consider a dashboard that displays stocks of a warehouse: ....
+
+
+- various ways of data processing exists
+
+- data tends to be semi-structured in many settings (web applications: json)
+
+- querying this data is really important (say building a dashboard)
+
+- there are existing languages that targets these types of workloads
+
+- on one end there are full DB-style commercial offerings like CouchBase, MongoDB
+
+-- they are focused on scale and multi-node large scale data processing, transactions, etc. 
+    and not generally used in frontend querying
+
+- then there are languages like GraphQL that enables querying data from the frontend. 
+   These are arguably more user-friendly  
+
+- we target this scenarios like this
+
+- Many GraphQL implementations rely on writing resolvers to handle the queries. These
+  resolvers usually call backend databases to retrieve data and do different kinds of processing
+  (e.g., filtering, aggregates, etc.) manually to compute the final result.
+
+
+- lightweight and intuitive language, but sufficiently expressive to cover a wide range 
+   of practical JSON queries
+
+- language not only contains JSON analytics, but also GUI components
+
+- with idea, your program becomes a query
+
+
+Relational data processing is most widely used. But only on structured data.
+But these days there is a tendency to store semi-structured data.
+This give emergnce to systems that can handle semi-structured
+ - commercial: data lakes, no-sql like crunchbase (SQL++), MongoDB, etc.
+Some systems use query languages that mirrors SQL syntax to make it appealing/easier
+to adapt for developers who know SQL.
+Other query languages also exists like JSONiq (inspired by XQuery), JQ, ...
+
+In this work, we propose a new query language, specifically targeting semi-structured
+data, but is flexible to perform other types of operations as well.
+We take inspiration from ....
+
+
+
+Various query languages exists ranging from SQL, GraphQL, 
 
 TODO: need a query that shows the expressiveness or power of the query language, comparing it with the same query 
 written in other query languages
@@ -94,15 +191,40 @@ The query language provides a unified language that handles multiple aspects:
     incrementality, etc.
 \end{enumerate}
 
-\section{Background/Motivation}
+\section{The Query Language}
+\subsection{Basics}
+aggregation, etc.
 
-\section{Design}
+\subsection{Group By}
+\subsection{Filters}
+\subsection{Join}
+\subsection{Used-defined Functions}
+\subsection{Arrays}
+\subsection{Fluent API}
+
+\subsection{GUI Components}
+Basic building blocks -- table definition, and generic display, svg, etc. 
+
+\subsection{Example: Pivot Table}
+How to use group bys, partial aggregates, display, svg, etc.
+
+\section{The IR}
+\subsection{IR Structure}
+Loop-free and branch-free code, program structure implicit in dependencies
+
+\section{Code Generation}
+Scheduling based on dependencies, lambda lifting to de-correlate queries
+
+\section{Implementation}
+We implement this in JavaScript so that it can run in the browser.
 
 \section{Experiments}
 
 \section{Related Work}
 
 \section{Future Work}
+Incrementality, Datalog-style recursive queries?, partial re-evaluation as
+query changes (with minimal recomputation)
 %
 % ---- Bibliography ----
 %
