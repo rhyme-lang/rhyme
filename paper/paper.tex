@@ -11,6 +11,7 @@
 \usepackage{listings}
 \usepackage{subcaption}
 \usepackage{multicol}
+\usepackage{cite}
 
 \input{macros.tex}
 
@@ -34,7 +35,7 @@
 %
 \begin{document}
 %
-\title{Building a Query Language?}
+\title{[TBD] Building a Query Language?}
 
 %
 %\titlerunning{Abbreviated paper title}
@@ -71,54 +72,150 @@ intermediate representation (IR).
 %
 \section{Introduction}
 
-Modern web applications are commonly structured in a tiered architecture, where distinct
-tiers are implemented using various techniques.
-First tier, the front-end, manages the visual aspects of the application.
-It is typically developed using a combination of technologies, including HTML,
-CSS, and JavaScript (JS).
-Specifically, JS frameworks such as React and Angular are frequently employed to
-facilitate this process.
-The front-end component interacts with an intermediate layer, commonly referred to as
-the application tier. 
-This interaction occurs through mechanisms like REST endpoints or more expressive query
-languages such as GraphQL, which are employed to retrieve the necessary data for
-presentation to the end user.
-Subsequently, the application tier issues queries to a third tier known as the database tier.
-This tier executes the received queries on stored data, generating the desired output
-as a result.
+% Meeting notes:
+% present it as a new declarative language that takes inspiration from existing ones
+% like Datalog, Einstein notation, GraphQL, JQ, etc.
+% Deals with tree-shaped data
+% and easily generate code + do optimizations using classical compiler optimizations
+% easier to meta program and composable.
+
+Declarative programming represents a paradigm in which users articulate \emph{what}
+computation needs to be performed, without the explicit specification of the
+procedural steps required for its execution.
+Declarative programming languages find application across a diverse array of
+domains.
+Notable examples include SQL, employed for data querying and manipulation,
+Datalog, used for data querying as well as in domains like declarative program
+analysis and binary decompilation, Einstein notation (or similar domain
+specific languages~\cite{tensor_comprehensions}) for expressing tensor computations
+mathematically, and GraphQL for data querying within the context of web application
+front-ends.
+
+In this work, we draw inspiration from a wide array of such existing languages,
+including GraphQL, JQ, XQuery, Einstein notation, Datalog, etc. and 
+we introduce a novel declarative programming language named \lang{}.
+\lang{} is designed to serve as an expressive language for high-level data
+manipulation, enabling the querying of nested data structures (e.g., JSON)
+and producing nested structures as output.
+There are several key defining characteristics of \lang{}.
+First, \lang{} adopts a query syntax that closely mirrors existing object notation,
+meaning that queries are essentially expressed as JSON objects.
+Second, \lang{} is designed in a way that permits query optimization and
+code generation via the construction of an intermediate representation (IR).
+This IR contains loop-free and branch-free code with dependencies that implicitly
+captures the desired program structure.
+Third, \lang{} is compositional and easier to meta-program.
+
+\begin{figure}
+\begin{subfigure}{\textwidth}
+\begin{minipage}{0.3\textwidth}
+\begin{lstlisting}[style=JavaScript,columns=flexible]
+let data = [
+    {key: "A", val: 10},
+    {key: "B", val: 15},
+    {key: "A", val: 25}
+]
+\end{lstlisting}
+\end{minipage}
+\begin{minipage}{0.7\textwidth}
+\begin{lstlisting}[style=JavaScript,columns=flexible]
+// compute key-specific relative aggregate proportions
+// (syntax properly introduced in Section 2)
+{  
+    data.*.key: div(sum(data.*.val),sum(data.*A.val)) 
+}
+// result: {A: 0.7, B: 0.3}
+\end{lstlisting}
+\end{minipage}
+
+\subcaption{\todo{caption}}~\label{fig:intro_query}
+\end{subfigure}
+
+\begin{subfigure}{\textwidth}
+\begin{minipage}{0.38\textwidth}
+\centering
+\includegraphics{images/intro_ir.pdf}
+\end{minipage}
+\begin{minipage}{0.62\textwidth}
+\begin{lstlisting}[style=JavaScript,columns=flexible]
+let tmp = {}
+tmp[1] ??= {}                   // ??= means set if key not 
+tmp[2] ??= 0                    //      already set
+// sub-query de-correlated (loop hoisted)
+for (let b in data) {
+  tmp[2] += data[b]["val"]      // computes full aggregate
+}
+tmp[0] ??= {}
+for (let a in data) {
+  tmp[1][data[a]["key"]] ??= 0
+  tmp[1][data[a]["key"]] +=
+            data[a]["key"]      // computes partial aggregate
+  tmp[0][data[a]["key"]] = 
+            tmp[1][data[a]["key"]] / tmp[2] // proportion
+
+}
+\end{lstlisting}
+\end{minipage}
+\caption{Shown on left is the generated IR for query in (a). Right shows the corresponding 
+JavaScript code.\todo{caption}}~\label{fig:ir_code}
+\end{subfigure}
+
+\caption{}\label{fig:intro}
+\vspace{-5mm}
+\end{figure}
 
 
-The majority of these tiers operate on data structured in semi-structured
-formats, such as JSON.
-As a result, a range of query languages has emerged, each designed to efficiently
-query data in such formats.
-Prominent examples include JSONiq, AQL, SQL++~\cite{sqlpp}, UNQL, JAQL, among others.
-These query languages offer expressive means to interact with semi-structured data.
-However, it is worth noting that their primary focus tends to be on catering to
-large-scale analytics engines, akin to workloads encountered in big data environments,
-with less emphasis placed on front-end logic.
-In contrast, GraphQL has garnered widespread popularity as a front-end query language
-for its ability to provide a straightforward and intuitive interface for querying data.
-Nonetheless, results from these GraphQL queries are manipulated by front-end JavaScript,
-and logic related to other aspects of the front-end needs to be separately
-(i.e., outside of the query) implemented.
+In \Cref{fig:intro}, we show a glimpse of how our query language works end-to-end.
+Note that our implementation is done in JavaScript (JS) and we generate JS code for given input queries.
+As shown in \Cref{fig:intro_query}, the dataset for this example consists of a collection
+of objects, each featuring a \inline{key} and a \inline{val}.
+The provided query computes the proportion of the sum of values corresponding to
+each unique key with respect to the total sum of values.
+We will formally introduce the syntax of the query language in \Cref{sec:query_language},
+but, the general idea here is that \inline{*} and \inline{*A} are iterators, and 
+\inline{sum(data.*.val)} nested inside \inline{data.*.key} signifies the grouping of objects by the
+\inline{key} and the subsequent computation of partial aggregates within these groups.
+Conversely, since \inline{sum(data.*A.val)} is not nested within another \inline{*A}, it indicates
+a complete aggregate computation (i.e., total sum of values).
 
-% The actual logic for evaluating these queries, referred to as resolvers, typically
-% requires manual implementation in the backend.
-% These resolver implementations are responsible for invoking queries to a database
-% and handling the corresponding data retrieval and transformation tasks.
+\Cref{fig:ir_code} shows how the IR for the  for the aforementioned query is
+constructed, along with a depiction of the final JS code generated from this IR.
+The IR primarily comprises two fundamental components.
+First, it contains generators, which represent the iterators essential for iterating
+through a list of objects.
+Second, it features assignments, which embody the computations necessary for executing
+the query.
+\inline{tmp0}, \inline{tmp1} and \inline{tmp2} corresponds to intermediate values
+that are computed during the evaluation of the query.
+Notably, the IR operates without explicit control flow constructs; instead, the
+program's structure is implicit, established via dependencies.
+These dependencies enables our compiler to perform optimizations like lambda lifting,
+that would translate to sub-query hoisting (that typically happens at logical plan level).
+For instance, the expression \inline{sum(data.*A.val)} represents a nested sub-query,
+which our compiler efficiently hoists as a separate loop in the generated code.
+We will delve deep into each of these aspects of \lang{} in later sections of the paper.
 
-In this work, we present a novel \emph{unified} query language named \lang{}, an expressive
-language capable of high-level data manipulation of nested structures like JSON while 
-also having the capability to express other aspects of front-end logic like visual components
-within the same query.
-\lang{} has a simple and intuitive syntax that resembles existing object notation.
-We design \lang{} to be compositional, having the capability to perform query optimizations
-and code generation via the construction of an intermediate representation (IR).
-In essence, our overarching goal with \lang{} is to allow developers to build interactive dashboards and 
-CRUD applications directly from a single query, that essentially becomes the `program'.
-\lang{} takes inspiration from existing approaches like Graph QL, JQ, XQuery, etc., einstein
-notation (Einsum, Einops) in tensor frameworks, and logic programming (Datalog).
+The previous example exemplified \lang{}'s capability to express analytical queries on JSON
+objects.
+Nevertheless, the versatility of \lang{} extends far beyond this, encompassing an even broader
+spectrum of use cases. 
+For example, this includes its ability to articulate the visual aspects of web application
+front-ends and its capacity to express tensor computations in a fashion reminiscent of
+Einstein notation, among others.
+\todo{point to the section of the paper}
+
+% Throughout the paper we demonstrate \lang{}'s expressivity in a wide variety of
+% use cases including, data querying (computing aggregates, joins, etc.), expressing
+% visual aspects of web application front-ends, and also expressing tensor computations
+% in a style similar to Einstein notation.
+
+
+
+\todo{
+    discuss about expressing filters. Duality with lambdas with if conditions.
+}
+
+
 
 % TODO: maybe highlight the fact that this compositionality, mixing of visual aspects, etc.
 %       is enabled by the fact that our query language resembles JSON so that we can directly
@@ -126,7 +223,7 @@ notation (Einsum, Einops) in tensor frameworks, and logic programming (Datalog).
 
 Our specific contributions are as follows.
 
-\begin{enumerate}
+\begin{itemize}
     \item We present the syntax of our query language and demonstrate how to express common
           data manipulation operators like, selections, group-bys, joins, user-defined functions (UDFs),
           and so on.
@@ -142,10 +239,16 @@ Our specific contributions are as follows.
           program that uses most of the features we have presented in previous sections (\Cref{sec:case_study}).
     \item We compare the performance of \lang{} on several practical JSON analytics workloads to demonstrate the
           effectiveness of our code generation approach (\Cref{sec:experiments}).
-\end{enumerate}
+\end{itemize}
 
 We discuss related work in \Cref{sec:related_work}, followed by conclusions and potential future research directions
 in \Cref{sec:conclusions}.
+
+\todo{perhaps show an example of end-to-end workflow first so that the readers know what is coming in
+the next few sections}
+
+\todo{Two figures in the intro. 1. showing a data query, visualization query, a tensor computation (transpose?)
+2. show end to end workflow for the data query}
 
 
 \section{The Query Language}~\label{sec:query_language}
@@ -231,7 +334,7 @@ construction logic and combined flexibly as shown below.
 \begin{lstlisting}[style=JavaScript, columns=flexible, numbers=none]
 {
     total: sum(data.*.population),
-    max: max(data.*.population)
+    maximum: max(data.*.population)
 }
 \end{lstlisting}
 \end{minipage}
@@ -248,16 +351,61 @@ result:
 
 
 \subsection{Group By}
+So far we have looked at indexing, iterating and computing aggregates.
+Another fundamental query operator that is highly relevant to JSON-style
+objects are group-by queries.
+\lang{} provides a concise and intuitive way of expressing group-bys.
+Consider the following example query.
+
+\begin{lstlisting}[style=JavaScript, columns=flexible, numbers=none]
+{ data.*.country: sum(data.*.population) }
+// result: {Japan: 17, China: 22, France: 3, UK: 11}
+\end{lstlisting}
+
+\begin{lstlisting}[style=JavaScript, columns=flexible, numbers=none]
+{ 
+    total: sum(data.*.population),
+    data.*.country:
+    {   total: sum(data.*.population)
+        data.*.city: sum(data.*.population) }
+}
+// result: {Japan: {}}
+\end{lstlisting}
+
+
 \subsection{Filters}
 \subsection{Join}
+Joins are another fundamental operator in data querying.
+
+Consider the following new dataset called \inline{other}.
+This contains the \inline{region} that each country belongs to.
+Now if want to compute aggregate population values over regions, we
+have to join our original \inline{data} object with this new object
+to obtain the corresponding region for each country.
+
 \begin{lstlisting}[style=JavaScript]
 let other = [
     {country: "Japan", region: "Asia"},
     {country: "China", region: "Asia"},
     {country: "France",region: "Europe"},
-    {country: "UK",    city: "Europe"},
+    {country: "UK",    region: "Europe"},
 ]
 \end{lstlisting}
+
+Shown below is how to express such a query in \lang{}.
+
+\begin{lstlisting}[style=JavaScript, columns=flexible]
+let countryToReg = {
+    other.*O.country: other.*O.region
+}
+let query = {
+    "-": merge(get(countryToReg, data.*.country), {
+        data.*.city: sum("data.*.population")
+    }),
+}
+\end{lstlisting}
+
+
 \subsection{Used-defined Functions}
 \subsection{Arrays}
 \subsection{Fluent API}
