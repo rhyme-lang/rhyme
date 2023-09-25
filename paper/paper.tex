@@ -130,12 +130,6 @@ let data = [
 \end{minipage}
 
 \subcaption{
-% A \lang{} query that computes the proportional 
-% aggregate for each key.
-% \inline{data.*.key} groups elements by key and \inline{sum(data.*.val)} computes
-% the aggregate per group. \inline{sum(data.*A.val)} is `independent' of the grouping
-% (because \inline{*A}) and computes the total aggregate.
-% The syntax is formally introduced and explained in \Cref{sec:query_language}.
 A \lang{} query example: \inline{data.*A.key} groups by key,
 \inline{sum(data.*A.val)} computes the aggregate per group (notice the same \inline{*A}),
 and \inline{sum(data.*B.val)} computes the total aggregate.
@@ -151,13 +145,13 @@ The syntax is formally introduced and explained in \Cref{sec:query_language}.
 \begin{minipage}{0.62\textwidth}
 \begin{lstlisting}[style=JavaScript,columns=flexible]
 let tmp = {}
-tmp[1] ??= {}                   // ??= means set if key not 
-tmp[2] ??= 0                    //      already set
+tmp[0] ??= {}
+tmp[1] ??= {}                   
+tmp[2] ??= 0                        
 // sub-query de-correlated (loop hoisted)
 (*@\highlight[highlightred]{for (let b in data)}@*) {
   tmp[2] += data[b]["val"]      // computes full aggregate
 }
-tmp[0] ??= {}
 (*@\highlight[highlightblue]{for (let a in data)}@*) {
   tmp[1][data[a]["key"]] ??= 0
   tmp[1][data[a]["key"]] +=
@@ -212,7 +206,7 @@ that are computed during the evaluation of the query.
 Notably, the IR operates without explicit control flow constructs; instead, the
 program's structure is implicit, established via dependencies.
 These dependencies enables our compiler to perform optimizations like lambda lifting,
-that would translate to sub-query hoisting (that typically happens at logical plan level).
+that would translate to sub-query hoisting that typically happens at logical plan level.
 For instance, the expression \inline{sum(data.*B.val)} represents a nested sub-query,
 which our compiler efficiently hoists as a separate loop in the generated code.
 We will delve deep into each of these aspects of \lang{} in later sections of the paper.
@@ -340,47 +334,75 @@ relevant aggregate functions, such as \inline{sum}, \inline{max}, and so forth.
 As discussed previously, this queries can be used as parts of object
 construction logic and combined flexibly as shown below.
 
-\begin{minipage}{0.5\textwidth}
 \begin{lstlisting}[style=JavaScript, columns=flexible, numbers=none]
-{
-    total: sum(data.*.population),
-    maximum: max(data.*.population)
-}
-\end{lstlisting}
-\end{minipage}
+    { total: sum(data.*.population), maximum: max(data.*.population) }
+    // result: {total: 53, max: 22}
+    \end{lstlisting}
 
-\begin{minipage}{0.5\textwidth}
-\begin{lstlisting}[style=JSComment, columns=flexible, numbers=none]
-result: 
-{
-    total: 53,
-    max: 22
-}
-\end{lstlisting}
-\end{minipage}
+% \begin{minipage}{0.5\textwidth}
+% \begin{lstlisting}[style=JavaScript, columns=flexible, numbers=none]
+% { 
+%     total: sum(data.*.population),
+%     maximum: max(data.*.population) 
+% }
+% \end{lstlisting}
+% \end{minipage}
+
+% \begin{minipage}{0.5\textwidth}
+% \begin{lstlisting}[style=JSComment, columns=flexible, numbers=none]
+% result: 
+% {
+%     total: 53,
+%     max: 22
+% }
+% \end{lstlisting}
+% \end{minipage}
 
 
 \subsection{Group By}
-So far we have looked at indexing, iterating and computing aggregates.
-Another fundamental query operator that is highly relevant to JSON-style
-objects are group-by queries.
-\lang{} provides a concise and intuitive way of expressing group-bys.
-Consider the following example query.
+Up to this point, we have explored fundamental query operations, including indexing,
+iteration, and aggregate computation.
+Another vital query operator, especially relevant to JSON-style objects,
+is the group-by query.
+\lang{} offers an intuitive means of implicitly expressing group-bys.
+The following query exemplifies this, grouping records based on the
+\inline{country} attribute and subsequently calculating the total population
+for each group:
 
 \begin{lstlisting}[style=JavaScript, columns=flexible, numbers=none]
 { data.*.country: sum(data.*.population) }
 // result: {Japan: 17, China: 22, France: 3, UK: 11}
 \end{lstlisting}
 
+In the above syntax, specifying \inline{data.*.country} as the key implies
+that any iteration carried out within this key utilizing the same
+iterator (\inline{*}) is performed for records with each unique value of \inline{country}
+separately.
+
+The next example shown below demonstrates the versatility of \lang{} group-by queries, showcasing
+aggregations at different levels.
+Moreover, it underscores the composability of \lang{} queries.
+This query computes the total population of all records, breaks it down by country,
+and subsequently computes the population proportion of each city with respect to its
+corresponding country:
+
 \begin{lstlisting}[style=JavaScript, columns=flexible, numbers=none]
-{ 
-    total: sum(data.*.population),
+let countryPop = {data.*A.country: sum(data.*A.population)} // country -> total population
+let query = { 
+    total: sum(data.*.population),                                // total population
     data.*.country:
-    {   total: sum(data.*.population)
-        data.*.city: sum(data.*.population) }
+    {   total: get(countryPop, data.*.country)                    // total population per country
+        data.*.city: div(sum(data.*.population),                  // population proportion
+                            get(countryPop, data.*.country))} // (per each city)
 }
-// result: {Japan: {}}
+// result: {total: 53. Japan: {total: 17, Tokyo: 0.82, Osaka: 0.18}, ...}
 \end{lstlisting}
+
+Specifically, the \inline{countryPop} is a separate query that determines the total
+population for each country.
+This query is subsequently utilized within the main \inline{query} to access the
+total population for each country where required.
+
 
 
 \subsection{Filters}
@@ -427,12 +449,17 @@ let query = {
 \subsection{GUI Components}
 Basic building blocks -- table definition, and generic display, svg, etc. 
 
+\subsection{Tensor Expressions}
+Matrix transpose, matrix multiplication and some other complex reduction?
+
 \section{IR and Code Generation}~\label{sec:ir_codegen}
 \subsection{IR Structure}
 Loop-free and branch-free code, program structure implicit in dependencies
 
 \subsection{Code Generation}
 Scheduling based on dependencies, lambda lifting to de-correlate queries
+
+\subsection{Incremental Execution}
 
 \subsection{Implementation}
 We implement this in JavaScript so that it can run in the browser.
@@ -442,9 +469,15 @@ We implement this in JavaScript so that it can run in the browser.
 How to use group bys, partial aggregates, display, svg, etc.
 
 \section{Experiments}\label{sec:experiments}
+We will have to variants: non-incremental and incremental.
+For incremental we can show the execution time per each `batch' of
+records (batch on x-axis).
 
 
 \section{Related Work}\label{sec:related_work}
+query languages, incremental triggers, FORWARD-style works that has the promise
+of program = query.
+
 
 \section{Conclusions and Future Work}\label{sec:conclusions}
 Incrementality, Datalog-style recursive queries?, partial re-evaluation as
