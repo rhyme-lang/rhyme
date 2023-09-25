@@ -1,6 +1,11 @@
 \newcommand{\todo}[1]{\textcolor{red}{TODO: #1}}
 \newcommand{\inline}[1]{\lstinline[style=JavaScript,basicstyle=\ttfamily\small]{#1}}
 
+% colors for highlighting
+\definecolor{highlightred}{HTML}{F19C99}
+\definecolor{highlightblue}{HTML}{A9C4EB}
+
+
 % TODO: this kinda works for now, but need to fine tune
 \lstdefinestyle{JavaScript}{
     language=java,
@@ -13,7 +18,8 @@
     breakatwhitespace=true,
     tabsize=1,
     morekeywords={let, const, var, function, if, else, 
-    while, for, return, typeof, switch, case, merge, get, sum, min, max, div}
+    while, for, return, typeof, switch, case, merge, get, sum, min, max, div},
+    escapeinside={(*@}{@*)}
 }
 
 \lstdefinestyle{JSComment}{
@@ -25,3 +31,5 @@
     breakatwhitespace=true,
     tabsize=1,
 }
+
+\newcommand{\highlight}[2][yellow]{\setlength{\fboxsep}{1pt}\colorbox{#1}{#2}}

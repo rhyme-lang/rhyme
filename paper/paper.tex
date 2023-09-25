@@ -110,6 +110,7 @@ Third, \lang{} is compositional and easier to meta-program.
 \begin{subfigure}{\textwidth}
 \begin{minipage}{0.3\textwidth}
 \begin{lstlisting}[style=JavaScript,columns=flexible]
+// input dataset
 let data = [
     {key: "A", val: 10},
     {key: "B", val: 15},
@@ -122,13 +123,24 @@ let data = [
 // compute key-specific relative aggregate proportions
 // (syntax properly introduced in Section 2)
 {  
-    data.*.key: div(sum(data.*.val),sum(data.*A.val)) 
+    data.*A.key: div(sum(data.*A.val),sum(data.*B.val)) 
 }
 // result: {A: 0.7, B: 0.3}
 \end{lstlisting}
 \end{minipage}
 
-\subcaption{\todo{caption}}~\label{fig:intro_query}
+\subcaption{
+% A \lang{} query that computes the proportional 
+% aggregate for each key.
+% \inline{data.*.key} groups elements by key and \inline{sum(data.*.val)} computes
+% the aggregate per group. \inline{sum(data.*A.val)} is `independent' of the grouping
+% (because \inline{*A}) and computes the total aggregate.
+% The syntax is formally introduced and explained in \Cref{sec:query_language}.
+A \lang{} query example: \inline{data.*A.key} groups by key,
+\inline{sum(data.*A.val)} computes the aggregate per group (notice the same \inline{*A}),
+and \inline{sum(data.*B.val)} computes the total aggregate.
+The syntax is formally introduced and explained in \Cref{sec:query_language}.
+}~\label{fig:intro_query}
 \end{subfigure}
 
 \begin{subfigure}{\textwidth}
@@ -142,11 +154,11 @@ let tmp = {}
 tmp[1] ??= {}                   // ??= means set if key not 
 tmp[2] ??= 0                    //      already set
 // sub-query de-correlated (loop hoisted)
-for (let b in data) {
+(*@\highlight[highlightred]{for (let b in data)}@*) {
   tmp[2] += data[b]["val"]      // computes full aggregate
 }
 tmp[0] ??= {}
-for (let a in data) {
+(*@\highlight[highlightblue]{for (let a in data)}@*) {
   tmp[1][data[a]["key"]] ??= 0
   tmp[1][data[a]["key"]] +=
             data[a]["key"]      // computes partial aggregate
@@ -156,26 +168,36 @@ for (let a in data) {
 }
 \end{lstlisting}
 \end{minipage}
-\caption{Shown on left is the generated IR for query in (a). Right shows the corresponding 
-JavaScript code.\todo{caption}}~\label{fig:ir_code}
+\caption{
+On the left is the generated IR for the query in (a), comprising generators
+(diamonds) representing iterators and assignments (rectangles) corresponding
+to computations.
+On the right is the JS code generated from this IR.
+Notably, the `inner query' is hoisted in the final
+generated code.
+}\label{fig:ir_code}
 \end{subfigure}
 
-\caption{}\label{fig:intro}
+\caption{
+The end-to-end workflow of \lang{}, starting with the query (a),
+followed by the construction of the IR on the left side of (b), and the
+final generated code on the right side of (b).
+}\label{fig:intro}
 \vspace{-5mm}
 \end{figure}
 
 
 In \Cref{fig:intro}, we show a glimpse of how our query language works end-to-end.
-Note that our implementation is done in JavaScript (JS) and we generate JS code for given input queries.
+Note that our current implementation is done in JavaScript (JS) and we generate JS code for given input queries.
 As shown in \Cref{fig:intro_query}, the dataset for this example consists of a collection
 of objects, each featuring a \inline{key} and a \inline{val}.
 The provided query computes the proportion of the sum of values corresponding to
 each unique key with respect to the total sum of values.
 We will formally introduce the syntax of the query language in \Cref{sec:query_language},
-but, the general idea here is that \inline{*} and \inline{*A} are iterators, and 
-\inline{sum(data.*.val)} nested inside \inline{data.*.key} signifies the grouping of objects by the
+but, the general idea here is that \inline{*A} and \inline{*B} are iterators, and 
+\inline{sum(data.*A.val)} nested inside \inline{data.*A.key} signifies the grouping of objects by the
 \inline{key} and the subsequent computation of partial aggregates within these groups.
-Conversely, since \inline{sum(data.*A.val)} is not nested within another \inline{*A}, it indicates
+Conversely, since \inline{sum(data.*B.val)} is not nested within another \inline{*B}, it indicates
 a complete aggregate computation (i.e., total sum of values).
 
 \Cref{fig:ir_code} shows how the IR for the  for the aforementioned query is
@@ -185,13 +207,13 @@ First, it contains generators, which represent the iterators essential for itera
 through a list of objects.
 Second, it features assignments, which embody the computations necessary for executing
 the query.
-\inline{tmp0}, \inline{tmp1} and \inline{tmp2} corresponds to intermediate values
+\inline{tmp[0]}, \inline{tmp[1]} and \inline{tmp[2]} corresponds to intermediate values
 that are computed during the evaluation of the query.
 Notably, the IR operates without explicit control flow constructs; instead, the
 program's structure is implicit, established via dependencies.
 These dependencies enables our compiler to perform optimizations like lambda lifting,
 that would translate to sub-query hoisting (that typically happens at logical plan level).
-For instance, the expression \inline{sum(data.*A.val)} represents a nested sub-query,
+For instance, the expression \inline{sum(data.*B.val)} represents a nested sub-query,
 which our compiler efficiently hoists as a separate loop in the generated code.
 We will delve deep into each of these aspects of \lang{} in later sections of the paper.
 
@@ -208,13 +230,6 @@ Einstein notation, among others.
 % use cases including, data querying (computing aggregates, joins, etc.), expressing
 % visual aspects of web application front-ends, and also expressing tensor computations
 % in a style similar to Einstein notation.
-
-
-
-\todo{
-    discuss about expressing filters. Duality with lambdas with if conditions.
-}
-
 
 
 % TODO: maybe highlight the fact that this compositionality, mixing of visual aspects, etc.
@@ -244,16 +259,11 @@ Our specific contributions are as follows.
 We discuss related work in \Cref{sec:related_work}, followed by conclusions and potential future research directions
 in \Cref{sec:conclusions}.
 
-\todo{perhaps show an example of end-to-end workflow first so that the readers know what is coming in
-the next few sections}
-
-\todo{Two figures in the intro. 1. showing a data query, visualization query, a tensor computation (transpose?)
-2. show end to end workflow for the data query}
-
 
 \section{The Query Language}~\label{sec:query_language}
 
-In this section, we will introduce the syntax of the \lang{}, illustrating how it facilitates
+In the previous section, we saw \lang{} in action for a simple query.
+In this section, we will formally introduce the syntax of the \lang{}, illustrating how it facilitates
 the expression of common data manipulation operations like selections, aggregates,
 group-bys, and so on.
 To enhance comprehension, we will employ a running illustrative example dataset, as
@@ -313,7 +323,7 @@ Later in our discussion, we will delve into how this operator empowers fine-grai
 iterations, utilizing multiple iterators
 (e.g., \inline{*A}, \inline{*B}, etc.).
 For now, our focus centers on relatively simple queries.
-Below, we present several example queries that leverage iteration and compute
+Below, we present three example queries that leverage iterators and compute
 aggregates over the iterated values.
 
 \begin{lstlisting}[style=JavaScript, columns=flexible]
@@ -374,6 +384,10 @@ Consider the following example query.
 
 
 \subsection{Filters}
+\todo{
+    discuss about expressing filters. Duality with lambdas with if conditions.
+}
+
 \subsection{Join}
 Joins are another fundamental operator in data querying.
 
