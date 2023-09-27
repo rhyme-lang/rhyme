@@ -604,6 +604,7 @@ function inspect(...args) {
     explain.ir = {}
     explain.ir.assignments = [...assignmentStms]
     explain.ir.generators = [...generatorStms]
+    let generatorStmsCopy = [...generatorStms] // TODO(supun): temporary fix
     //
     // Fix explicit loop ordering (added 11/28):
     //
@@ -630,7 +631,8 @@ function inspect(...args) {
     let tmpAfterLoop = {}
     let tmpAfterTmp = {}
     let loopAfterLoop = {}
-    let loopInsideLoop = {} // todo: "not currently used"
+    let loopInsideLoop = {} // todo: "not currently used" -- essentially, anything that's not loopAfterLoop
+
     //
     // compute tmpInsideLoop and tmpAfterTmp
     //
@@ -661,30 +663,21 @@ function inspect(...args) {
         delete tmpAfterLoop[t2][l]
     }
     //
-    // compute loopInsideLoop
-    //
-    for (let t in tmpInsideLoop) {
-      for (let l1 in tmpInsideLoop[t]) {
-        for (let l2 in tmpInsideLoop[t]) {
-          if (l1 != l2 && l1 > l2) {    // TODO: order matters? (i.e., l1 inside l2 or l2 inside l1)
-            loopInsideLoop[l1] ??= {}
-            loopInsideLoop[l1][l2] = true
-          }
-        }
-      }
-    }
-    //
     // compute loopAfterLoop
     //
     for (let t in tmpAfterLoop) {
       for (let l2 in tmpInsideLoop[t]) {
         loopAfterLoop[l2] ??= {}
         for (let l1 in tmpAfterLoop[t]) {
-          // skip if we already know this is a nested loop
-          if ((loopInsideLoop[l1] && loopInsideLoop[l1][l2]) || (loopAfterLoop[l2] && loopAfterLoop[l2][l1])) {
-            continue
-          }
-          loopAfterLoop[l2][l1] = true
+          // loops may be nested or sequenced
+          loopInsideLoop[l1] ??= {}
+          let nested = false
+          for (let tx in tmpInsideLoop)
+            if (tmpInsideLoop[tx][l1] && tmpInsideLoop[tx][l2]) { nested = true; break }
+          if (nested)
+            loopInsideLoop[l1][l2] = true
+          else
+            loopAfterLoop[l2][l1] = true
         }
       }
       // TODO: do we need loopAfterTmp? seed loopAfterTmp/Loop from generator.deps?
@@ -700,7 +693,6 @@ function inspect(...args) {
     let availableSyms = {} // currently available in scope (for loops)
     let emittedLoopSyms = {}   // loops that have been fully emitted
     let emittedSymsRank = {}   // number of writes emitted for each sym
-    let currOuterLoopSyms = [] // currently active generators (for nested loops)
     function isAvailable(s) {
       if (s == "inp")
         return true
@@ -715,11 +707,6 @@ function inspect(...args) {
     }
     function extraDepsAvailable(depMap) {
       return (Object.keys(depMap)).every(s => emittedLoopSyms[s])
-    }
-    function outerLoopsAvailable(s) {
-      // ready to schedule if all outer loops are emitted, and we are inside the correct scope
-      if (!loopInsideLoop[s]) return true
-      return Object.keys(loopInsideLoop[s]).every(outer => currOuterLoopSyms.indexOf(outer) >= 0)
     }
     function loopsFinished(e) {
       return extraDepsAvailable(tmpAfterLoop[e.writeSym])
@@ -811,21 +798,23 @@ function inspect(...args) {
       }
       function symGensAvailable(s) {
         return gensBySym[s].every(depsAvailable) &&
-          extraDepsAvailable(extraLoopDeps[s]) && outerLoopsAvailable(s)
+          extraDepsAvailable(extraLoopDeps[s])
       }
       // compute generators left for inner scope
       generatorStms = []
+      let availableGenSyms = {} // to prevent nesting unwanted generators
       for (let s in gensBySym) {
         if (!symGensAvailable(s))
           generatorStms.push(...gensBySym[s])
+        else
+          availableGenSyms[s] = true
       }
-      // emit generators
-      for (let s in gensBySym) {
+      // emit generators (only available ones)
+      for (let s in availableGenSyms) {
         if (!symGensAvailable(s)) continue
         let [e, ...es] = gensBySym[s] // just pick first -- could be more clever!
         // remove gensBySym[s] from generatorStms (we're emitting it now)
         generatorStms = generatorStms.filter(e => e.sym != s)
-        currOuterLoopSyms.push(s)
         // loop header
         emit("for (let " + quoteVar(e.sym) + " in " + e.rhs + ") {")
         // filters
@@ -840,8 +829,8 @@ function inspect(...args) {
         // XX done
         delete availableSyms[s]
         emit("}")
-        currOuterLoopSyms.pop()
         emittedLoopSyms[s] = true
+        emitAssignments() // any assignments that became available (temp after loop)
       }
     }
     function emitConvergence() {
@@ -858,6 +847,36 @@ function inspect(...args) {
     }
     // XXX
     emitConvergence()
+
+    // TODO(supun): hack!! for generators that need to be emitted multiple times
+    //              look at test/advanced.js: this is needed when accessing "reified intermediates"
+    if (assignmentStms.length > 0) {
+      print("WARN - re-emitting generators because assignments remaining")
+      emit("// --- repeated generators ---")
+      // if assignments remaining, re-generate the generators required and emit the symbols
+      let gensBySym = {}
+      for (let e of generatorStmsCopy) {
+        if (!gensBySym[e.sym]) gensBySym[e.sym] = []
+        gensBySym[e.sym].push(e)
+      }
+
+      // right not emitting generators required per assignment (very naive!)
+      // (i.e., not sharing generators even if possible)
+      for (let e of assignmentStms) {
+        // emit the corresponding generators
+        let neededGens = {}
+        e.deps.filter(s => s.startsWith("*")).forEach(s => neededGens[s] = true)
+        for (let s in neededGens) {
+          emit("for (let " + quoteVar(s) + " in " + gensBySym[s][0].rhs + ") {")
+        }
+        emit(e.txt)
+        for (let s in neededGens) {
+          emit("}")
+        }
+      }
+      assignmentStms = [] // we have emitted all remaining assignments
+    }
+
     if (assignmentStms.length) {
       print("ERROR - couldn't emit the following assignments (most likely due to circular dependencies:")
       for (let e of assignmentStms) {
