@@ -70,7 +70,7 @@ intermediate representation (IR).
 %
 %
 %
-\section{Introduction}
+\section{Introduction}\label{sec:intro}
 
 % Meeting notes:
 % present it as a new declarative language that takes inspiration from existing ones
@@ -91,6 +91,7 @@ specific languages~\cite{tensor_comprehensions}) for expressing tensor computati
 mathematically, and GraphQL for data querying within the context of web application
 front-ends.
 
+\todo{connection to verse, functional logic programming}
 In this work, we draw inspiration from a wide array of such existing languages,
 including GraphQL, JQ, XQuery, Einstein notation, Datalog, etc. and 
 we introduce a novel declarative programming language named \lang{}.
@@ -106,7 +107,7 @@ This IR contains loop-free and branch-free code with dependencies that implicitl
 captures the desired program structure.
 Third, \lang{} is compositional and easier to meta-program.
 
-\begin{figure}
+\begin{figure}[t]
 \begin{subfigure}{\textwidth}
 \begin{minipage}{0.3\textwidth}
 \begin{lstlisting}[style=JavaScript,columns=flexible]
@@ -121,7 +122,8 @@ let data = [
 \begin{minipage}{0.7\textwidth}
 \begin{lstlisting}[style=JavaScript,columns=flexible]
 // compute key-specific relative aggregate proportions
-// (syntax properly introduced in Section 2)
+// (syntax introduced in Section 2)
+// SQL: SELECT key, sum(val) / (SELECT sum(d.val) FROM data d) FROM data GROUP BY key
 {  
     data.*A.key: div(sum(data.*A.val),sum(data.*B.val)) 
 }
@@ -158,7 +160,6 @@ tmp[2] ??= 0
             data[a]["key"]      // computes partial aggregate
   tmp[0][data[a]["key"]] = 
             tmp[1][data[a]["key"]] / tmp[2] // proportion
-
 }
 \end{lstlisting}
 \end{minipage}
@@ -176,10 +177,10 @@ generated code.
 The end-to-end workflow of \lang{}, starting with the query (a),
 followed by the construction of the IR on the left side of (b), and the
 final generated code on the right side of (b).
+\todo{have a simpler example here.}
+\todo{src | IR | generated code}
 }\label{fig:intro}
-\vspace{-5mm}
 \end{figure}
-
 
 In \Cref{fig:intro}, we show a glimpse of how our query language works end-to-end.
 Note that our current implementation is done in JavaScript (JS) and we generate JS code for given input queries.
@@ -290,6 +291,7 @@ let data = [
 % \end{lstlisting}
 
 \subsection{Basics}
+\todo{defined a grammar?}
 First we will look at how to perform several basic query operations on the
 aforementioned dataset.
 For instance, if we want to select a particular key of the dataset at a given
@@ -359,7 +361,7 @@ construction logic and combined flexibly as shown below.
 % \end{minipage}
 
 
-\subsection{Group By}
+\subsection{Group By}\label{subsec:groupby}
 Up to this point, we have explored fundamental query operations, including indexing,
 iteration, and aggregate computation.
 Another vital query operator, especially relevant to JSON-style objects,
@@ -372,6 +374,7 @@ for each group:
 \begin{lstlisting}[style=JavaScript, columns=flexible, numbers=none]
 { data.*.country: sum(data.*.population) }
 // result: {Japan: 17, China: 22, France: 3, UK: 11}
+// SQL: SELECT country, SUM(population) FROM data GROUP BY country;
 \end{lstlisting}
 
 In the above syntax, specifying \inline{data.*.country} as the key implies
@@ -381,7 +384,7 @@ separately.
 
 The next example shown below demonstrates the versatility of \lang{} group-by queries, showcasing
 aggregations at different levels.
-Moreover, it underscores the composability of \lang{} queries.
+Moreover, it shows the composability of \lang{} queries.
 This query computes the total population of all records, breaks it down by country,
 and subsequently computes the population proportion of each city with respect to its
 corresponding country:
@@ -402,24 +405,39 @@ Specifically, the \inline{countryPop} is a separate query that determines the to
 population for each country.
 This query is subsequently utilized within the main \inline{query} to access the
 total population for each country where required.
+\todo{point to IR section and say that the use of *A will make sure that
+this inner query is hoisted out, etc.}
 
 
 
 \subsection{Filters}
 \todo{
-    discuss about expressing filters. Duality with lambdas with if conditions.
+    discuss about expressing filters. Duality with lambdas + if.
 }
+
+\begin{lstlisting}[style=JavaScript, columns=flexible]
+data2Map = {"data2.*.key": sum("data2.*.value")}
+query = {"data.*.key": get(data2Map, "data2.*.value")}
+
+// RPAI-style maps
+// select sum(r.A*r.B) from R r where 
+// 0.5*(select sum(r1.B) from R r1) == (select sum(r2.B) from R r2 where r2.A = r.A)
+lhsSum = sum(r.*p.B)
+rhsSum = { "r.*q.A": sum("r.*q.B")} // A --> rhsSum
+
+// TODO: how to express this declaratively?
+ansMap = { ???: sum(times("r.*q.A", "r.*q.B")) } // rhsSum --> sum(A*B)
+// need a way to encode shift of aggregates! 
+query = get(ansMap, lhsSum)
+\end{lstlisting}
 
 \subsection{Join}
 Joins are another fundamental operator in data querying.
+To illustrate how joins work in \lang{}, consider the following
+new dataset named \inline{other}, which includes information about the
+\inline{region} to which each country belongs:
 
-Consider the following new dataset called \inline{other}.
-This contains the \inline{region} that each country belongs to.
-Now if want to compute aggregate population values over regions, we
-have to join our original \inline{data} object with this new object
-to obtain the corresponding region for each country.
-
-\begin{lstlisting}[style=JavaScript]
+\begin{lstlisting}[style=JavaScript, columns=flexible]
 let other = [
     {country: "Japan", region: "Asia"},
     {country: "China", region: "Asia"},
@@ -428,41 +446,202 @@ let other = [
 ]
 \end{lstlisting}
 
-Shown below is how to express such a query in \lang{}.
+Now, let's consider a scenario where we aim to compute aggregate population
+values based on regions.
+To achieve this, we must perform a join operation between our original
+\inline{data} object and this new \inline{other} object to acquire the
+corresponding region for each country.
+The following \lang{} query demonstrates how such an operation can be
+expressed:
 
 \begin{lstlisting}[style=JavaScript, columns=flexible]
-let countryToReg = {
+let countryToRegion = {
     other.*O.country: other.*O.region
 }
 let query = {
-    "-": merge(get(countryToReg, data.*.country), {
-        data.*.city: sum("data.*.population")
+    "-": keyval(get(countryToRegion, data.*.country), {
+        total: sum(data.*.population)
+        data.*.country : sum(data.*.population)
     }),
 }
+// result: {Asia: {total: 39, Japan: 17, China: 22}, Europe: {total: 14, France: 3, UK: 11}}
 \end{lstlisting}
 
+As with the example in \Cref{subsec:groupby}, we employ a distinct query
+(\inline{countryToRegion}) to map countries to regions.
+The \inline{keyval(<key>, <value>)} construct is utilized to specify the mapped region
+as the key.
+This query conducts a group-by based on the \inline{region} attribute initially,
+followed by another group-by based on \inline{country}, ultimately calculating the
+desired aggregates.
 
-\subsection{Used-defined Functions}
+\subsection{User-defined Functions}
+\lang{} allows using user-defined functions (UDFs) written in JS seamlessly with the
+queries.
+Consider a simple query where we want to obtain the percentage population per each
+country from our dataset.
+
+\begin{lstlisting}[style=JavaScript, columns=flexible]
+let udf = {
+    formatPercent: v => (v*100).toFixed(2) + "%" // computes the percentage 
+}
+let query = {
+    data.*.country:
+        apply(udf.formatPercent, div(sum(data.*.population), sum(data.*A.population)))
+}
+// result: {Japan: 32.05%, China: 41.50%, France: 5.66%, UK: 20.75%}
+\end{lstlisting}
+
+We have defined the \inline{formatPercent} that given a proportion value (float),
+computes the percentage and adds a \% sign at the end.
+We can then use \inline{apply} in the query to call this UDF to convert the
+proportions to percentages.
+
+
 \subsection{Arrays}
+
 \subsection{Fluent API}
 
 \subsection{GUI Components}
 Basic building blocks -- table definition, and generic display, svg, etc. 
 
+\begin{figure}[t]
+\begin{minipage}{0.5\textwidth}
+\begin{lstlisting}[style=JavaScript, columns=flexible, numbers=left]
+// some simple input tensors
+let A = [[1, 2], [3, 4]]
+let B = [[1, 2, 3], [4, 5, 6]]
+
+// tensor transpose (ij->ji)
+{"*j": {"*i": "B.*i.*j"}}
+// result: {0: {0: 1, 1: 4}, 1: {0: 2, 1: 5},
+//           2: {0: 3, 1: 6}}
+
+// sum of all elements (ij->)
+sum("B.*i.*j")
+// result: 21
+
+// column sum (ij->j)
+{"*j": sum("B.*i.*j")}
+// result: {0: 5, 1: 7, 2: 9}
+
+// row sum (ij->i)
+{"*i": sum("B.*i.*j")}
+// result: {0: 6, 1: 15}
+
+// matrix multiplication (ik,kj->ij)(*@\label{code:matmulquery}@*)
+{"*i": {"*j": sum(
+    times("A.*i.*k", "B.*k.*j")) }}
+// result: {0: {0: 9, 1: 12, 2: 15},
+//           1: {0: 19, 1: 26, 2: 33}}
+\end{lstlisting}
+\end{minipage}
+\begin{minipage}{0.5\textwidth}
+\begin{lstlisting}[style=JavaScript, columns=flexible, numbers=left, firstnumber=last]
+// diagonal (ii -> i)
+{"*i": "A.*i.*i"}
+// result: {0: 1, 1: 4}
+
+// Hadamard product (ij,ij->ij)
+{"*i": {"*j": times("A.*i.*j", "B.*i.*j") }}
+// result: {0: {0: 1, 1: 4}, 1: {0: 9, 1: 16}}
+
+// dot product (vector-vector) (i,i->)
+sum(times("vecA.*i", "vecB.*i"))
+
+// batched matmul (bik,bkj->bij)
+// T1 and T2 are tensors
+// T1: BxIxK, T2:BxKxJ (B is batch-dim)
+{"*b": {"*i": {"*j": sum(
+    times("T1.*b.*i.*k", "T2.*b.*k.*j")) }}}
+
+// general tensor contraction
+// e.g., pqrs,tuqvr->pstuv
+{"*p":{"*s":{"*t":{"*u":{"*v":sum(
+    times("T1.*p.*q.*r.*s", "T2.*t.*u.*q.*v.*r")) }}}}}
+
+// bi-linear transformation (ik,jkl,il->ij)
+{"*i": {"j": sum(times(
+    "T1.*i.*k", "T2.*j.*k.*l", "T3.*i.*l"))} }
+\end{lstlisting}
+\end{minipage}
+\caption{
+Shows how \lang{} is used to express tensor computations declaratively:
+from basic tensor operations (e.g., summation, row, and column sums) to relatively complex expressions
+(e.g., general tensor contractions, three-tensor bilinear transformations), similar
+to Einsum notation.
+We can observe that \lang{} queries
+mirror the corresponding Einsum equations (shown in parenthesis).
+Examples are taken from~\cite{einsumblog}.
+}\label{fig:tensors}
+\end{figure}
+
+
 \subsection{Tensor Expressions}
-Matrix transpose, matrix multiplication and some other complex reduction?
+In the preceding subsections, we have explored how \lang{} enables expressive
+manipulation of JSON-like data, demonstrating its utility in various contexts.
+However, \lang{}'s versatility extends beyond typical data workloads.
+Notably, \lang{} provides an elegant framework for expressing tensor computations,
+drawing inspiration from the Einstein summation (Einsum) notation frequently
+employed in tensor frameworks.
+
+The Einsum notation offers a concise means of articulating tensor computations.
+For instance, the expression $ik,kj \rightarrow ij$ specifies a tensor operation
+that takes two two-dimensional tensors (say $A$ and $B$), and yields a third
+tensor (say $C$), as the result, computed as $C_{ij} = \sum_k A_{ik} \times B_{kj}$.
+Likewise, complex tensor computations involving multiple n-dimensional tensors can
+be specified using such declarative expressions.
+
+\lang{} provides the means to express tensor computations in a declarative fashion,
+as illustrated in \Cref{fig:tensors}.
+The structure of a \lang{} query closely mirrors the corresponding Einsum equation.
+Notably, the keys (indices) following the `$\rightarrow$' symbol transition into keys
+within the query, while the equation's body simply becomes the corresponding tensors
+with their respective indices (i.e., \inline{*i}, \inline{*j}, and so on).
+For instance, consider matrix multiplication expressed in Einsum notation as
+$ik,kj \rightarrow ij$.
+This equation simply translates into a \lang{} query (\Cref{fig:tensors}, Line~\ref{code:matmulquery}) featuring \inline{*i} and
+\inline{*j} as query keys. The body of the query comprises the two matrices, accessed as
+\inline{A.*i.*k} corresponding to $ik$ and \inline{B.*k.*j} corresponding to $kj$.
+To mirror Einsum-style reductions, we employ \inline{sum(times(...))}.
+However, it is important to note that users have the freedom to choose
+any type of reductions beyond just $\sum$ and $\times$, allowing more flexibility.
+
+These queries also go through the same compilation steps as we saw in \Cref{fig:intro}.
+Specifically, these queries get translated into a loop-free, branch-free IR that contains the
+operators corresponding to the tensor expressions that then get translated into
+optimized JS code.
 
 \section{IR and Code Generation}~\label{sec:ir_codegen}
+
+Up to this point, we have provided an introduction to the syntax of
+\lang{} and explored its versatility across various domains.
+In \Cref{sec:intro} (\Cref{fig:intro}), we gained a preliminary understanding
+of how \lang{} queries are transformed into an IR, which subsequently serves
+as the basis for generating optimized code.
+In this section, we will delve into a detailed discussion of the IR structure
+and the code generation process.
+
 \subsection{IR Structure}
-Loop-free and branch-free code, program structure implicit in dependencies
+% Loop-free and branch-free code, program structure implicit in dependencies
+
+\lang{}'s IR consists of two main types of instructions: generators and assignments.
+Generators corresponds to iterators that enumerate input (or intermediate) JSONs.
+Assignments corresponds to any form of computation that updates or initialize an
+intermediate or output state.
+
+\subsection{Constructing the IR}
+How the \lang{} queries are transformed to the IR
 
 \subsection{Code Generation}
 Scheduling based on dependencies, lambda lifting to de-correlate queries
 
-\subsection{Incremental Execution}
-
 \subsection{Implementation}
 We implement this in JavaScript so that it can run in the browser.
+
+\section{Incremental}
+Incremental queries for JSONs, incremental tensor computations!
+
 
 
 \section{Example: Pivot Table}\label{sec:case_study}
