@@ -12,6 +12,7 @@
 \usepackage{subcaption}
 \usepackage{multicol}
 \usepackage{cite}
+\usepackage{textcomp} % for having straight quotes ' in lstlisting
 
 \input{macros.tex}
 
@@ -89,14 +90,15 @@ Datalog, used for data querying as well as in domains like declarative program
 analysis and binary decompilation, Einstein notation (or similar domain
 specific languages~\cite{tensor_comprehensions}) for expressing tensor computations
 mathematically, and GraphQL for data querying within the context of web application
-front-ends.
+front-ends, and so on.
 
 \todo{connection to verse, functional logic programming}
 In this work, we draw inspiration from a wide array of such existing languages,
 including GraphQL, JQ, XQuery, Einstein notation, Datalog, etc. and 
-we introduce a novel declarative programming language named \lang{}.
+we introduce a novel declarative language named \lang{}.
 \lang{} is designed to serve as an expressive language for high-level data
-manipulation, enabling the querying of nested data structures (e.g., JSON)
+manipulation, enabling the querying of nested data structures
+(e.g., JSON, multi-dimensional tensors)
 and producing nested structures as output.
 There are several key defining characteristics of \lang{}.
 First, \lang{} adopts a query syntax that closely mirrors existing object notation,
@@ -107,79 +109,190 @@ This IR contains loop-free and branch-free code with dependencies that implicitl
 captures the desired program structure.
 Third, \lang{} is compositional and easier to meta-program.
 
+% \begin{figure}[t]
+% \begin{subfigure}{\textwidth}
+% \begin{minipage}{0.3\textwidth}
+% \begin{lstlisting}[style=JavaScript,columns=flexible]
+% // input dataset
+% let data = [
+%     {key: "A", val: 10},
+%     {key: "B", val: 15},
+%     {key: "A", val: 25}
+% ]
+% \end{lstlisting}
+% \end{minipage}
+% \begin{minipage}{0.7\textwidth}
+% \begin{lstlisting}[style=JavaScript,columns=flexible]
+% // compute key-specific relative aggregate proportions
+% // (syntax introduced in Section 2)
+% // SQL: SELECT key, sum(val) / (SELECT sum(d.val) FROM data d) FROM data GROUP BY key
+% {  
+%     data.*A.key: div(sum(data.*A.val),sum(data.*B.val)) 
+% }
+% // result: {A: 0.7, B: 0.3}
+% \end{lstlisting}
+% \end{minipage}
+
+% \subcaption{
+% A \lang{} query example: \inline{data.*A.key} groups by key,
+% \inline{sum(data.*A.val)} computes the aggregate per group (notice the same \inline{*A}),
+% and \inline{sum(data.*B.val)} computes the total aggregate.
+% The syntax is formally introduced and explained in \Cref{sec:query_language}.
+% }~\label{fig:intro_query}
+% \end{subfigure}
+
+% \begin{subfigure}{\textwidth}
+% \begin{minipage}{0.38\textwidth}
+% \centering
+% \includegraphics{images/intro_ir.pdf}
+% \end{minipage}
+% \begin{minipage}{0.62\textwidth}
+% \begin{lstlisting}[style=JavaScript,columns=flexible]
+% let tmp = {}
+% tmp[0] ??= {}
+% tmp[1] ??= {}                   
+% tmp[2] ??= 0                        
+% // sub-query de-correlated (loop hoisted)
+% (*@\highlight[highlightblue]{for (let b in data)}@*) {
+%   tmp[2] += data[b]["val"]      // computes full aggregate
+% }
+% (*@\highlight[highlightred]{for (let a in data)}@*) {
+%   tmp[1][data[a]["key"]] ??= 0
+%   tmp[1][data[a]["key"]] +=
+%             data[a]["key"]      // computes partial aggregate
+%   tmp[0][data[a]["key"]] = 
+%             tmp[1][data[a]["key"]] / tmp[2] // proportion
+% }
+% \end{lstlisting}
+% \end{minipage}
+% \caption{
+% On the left is the generated IR for the query in (a), comprising generators
+% (diamonds) representing iterators and assignments (rectangles) corresponding
+% to computations.
+% On the right is the JS code generated from this IR.
+% Notably, the `inner query' is hoisted in the final
+% generated code.
+% }\label{fig:ir_code}
+% \end{subfigure}
+
+% \caption{
+% The end-to-end workflow of \lang{}, starting with the query (a),
+% followed by the construction of the IR on the left side of (b), and the
+% final generated code on the right side of (b).
+% \todo{have a simpler example here.}
+% \todo{src | IR | generated code}
+% }\label{fig:intro}
+% \end{figure}
+
+
+% \begin{lstlisting}
+% what are some simpler examples?
+% sum(data.*.value)
+% {data.*.key: sum(data.*.value) }
+% \end{lstlisting}
+
 \begin{figure}[t]
 \begin{subfigure}{\textwidth}
-\begin{minipage}{0.3\textwidth}
-\begin{lstlisting}[style=JavaScript,columns=flexible]
+\begin{minipage}{0.25\textwidth}
+\begin{lstlisting}[style=JavaScript, columns=flexible]
 // input dataset
 let data = [
-    {key: "A", val: 10},
-    {key: "B", val: 15},
-    {key: "A", val: 25}
+  {key: "A", val: 10},
+  {key: "B", val: 15},
+  {key: "A", val: 25}
 ]
+// query (result: 50)
+sum(data.*.val)
 \end{lstlisting}
 \end{minipage}
-\begin{minipage}{0.7\textwidth}
-\begin{lstlisting}[style=JavaScript,columns=flexible]
-// compute key-specific relative aggregate proportions
-// (syntax introduced in Section 2)
-// SQL: SELECT key, sum(val) / (SELECT sum(d.val) FROM data d) FROM data GROUP BY key
-{  
-    data.*A.key: div(sum(data.*A.val),sum(data.*B.val)) 
+\begin{minipage}{0.21\textwidth}
+\centering
+\includegraphics[width=0.9\textwidth]{images/intro_q1_ir.pdf}
+\end{minipage}
+\begin{minipage}{0.54\textwidth}
+\begin{lstlisting}[style=JavaScript, columns=flexible]
+let tmp = {}
+tmp[0] ??= 0
+(*@\highlight[highlightblue]{for (let star in data) }@*) {
+    tmp[0] += data[star]['val']
 }
-// result: {A: 0.7, B: 0.3}
+return tmp[0]
 \end{lstlisting}
 \end{minipage}
-
-\subcaption{
-A \lang{} query example: \inline{data.*A.key} groups by key,
-\inline{sum(data.*A.val)} computes the aggregate per group (notice the same \inline{*A}),
-and \inline{sum(data.*B.val)} computes the total aggregate.
-The syntax is formally introduced and explained in \Cref{sec:query_language}.
-}~\label{fig:intro_query}
+\caption{}
 \end{subfigure}
 
 \begin{subfigure}{\textwidth}
-\begin{minipage}{0.38\textwidth}
-\centering
-\includegraphics{images/intro_ir.pdf}
-\end{minipage}
-\begin{minipage}{0.62\textwidth}
-\begin{lstlisting}[style=JavaScript,columns=flexible]
-let tmp = {}
-tmp[0] ??= {}
-tmp[1] ??= {}                   
-tmp[2] ??= 0                        
-// sub-query de-correlated (loop hoisted)
-(*@\highlight[highlightred]{for (let b in data)}@*) {
-  tmp[2] += data[b]["val"]      // computes full aggregate
+\begin{minipage}{0.25\textwidth}
+\begin{lstlisting}[style=JavaScript, columns=flexible]
+// query
+{
+ total: sum(data.*.val),
+ data.*.key: sum(data.*.val)
 }
-(*@\highlight[highlightblue]{for (let a in data)}@*) {
-  tmp[1][data[a]["key"]] ??= 0
-  tmp[1][data[a]["key"]] +=
-            data[a]["key"]      // computes partial aggregate
-  tmp[0][data[a]["key"]] = 
-            tmp[1][data[a]["key"]] / tmp[2] // proportion
-}
+/* result:
+ { total: 50, 
+   'A': 35,
+   'B': 15 } */
 \end{lstlisting}
 \end{minipage}
-\caption{
-On the left is the generated IR for the query in (a), comprising generators
-(diamonds) representing iterators and assignments (rectangles) corresponding
-to computations.
-On the right is the JS code generated from this IR.
-Notably, the `inner query' is hoisted in the final
-generated code.
-}\label{fig:ir_code}
+\begin{minipage}{0.21\textwidth}
+\centering
+\includegraphics[width=0.9\textwidth]{images/intro_q2_ir.pdf}
+\end{minipage}
+\begin{minipage}{0.54\textwidth}
+\begin{lstlisting}[style=JavaScript, columns=flexible]
+let tmp = {}
+tmp[0] ??= {}
+tmp[0]['total'] ??= 0
+(*@\highlight[highlightblue]{for (let star in data) }@*) {
+  tmp[0]['total'] += data[star]['val']
+  tmp[0][data[star]['key']] ??= 0
+  tmp[0][data[star]['key']] += data[star]['value']
+}
+return tmp[0]
+\end{lstlisting}
+\end{minipage}
+\caption{}
 \end{subfigure}
 
-\caption{
-The end-to-end workflow of \lang{}, starting with the query (a),
-followed by the construction of the IR on the left side of (b), and the
-final generated code on the right side of (b).
-\todo{have a simpler example here.}
-\todo{src | IR | generated code}
-}\label{fig:intro}
+\begin{subfigure}{\textwidth}
+\begin{minipage}{0.25\textwidth}
+\begin{lstlisting}[style=JavaScript, columns=flexible]
+// query
+{
+  data.*A.key: 
+   div(sum(data.*A.val),
+       sum(data.*B.val)) 
+}
+// result:
+// {'A': 0.7, 'B': 0.3}
+\end{lstlisting}
+\end{minipage}
+\begin{minipage}{0.21\textwidth}
+\centering
+\includegraphics[width=0.9\textwidth]{images/intro_q3_ir.pdf}
+\end{minipage}
+\begin{minipage}{0.54\textwidth}
+\begin{lstlisting}[style=JavaScript, columns=flexible]
+let tmp = {}
+tmp[1] ??= {}
+tmp[2] ??= 0
+(*@\highlight[highlightblue]{for (let starB in data)}@*) {  // loop hoisted!
+  tmp[2] += data[starB]['val']
+}
+tmp[0] ??= {}
+(*@\highlight[highlightred]{for (let starA in data)}@*) {
+  tmp[1][data[starA]['key']] ??= 0;
+  tmp[1][data[starA]['key']] += data[starA]['val']
+  tmp[0][data[starA]['key']] = tmp[1][data[starA]['key']] / tmp[2]
+}
+return tmp[0]
+\end{lstlisting}
+\end{minipage}
+\caption{}
+\end{subfigure}
+\caption{\todo{caption}}
 \end{figure}
 
 In \Cref{fig:intro}, we show a glimpse of how our query language works end-to-end.
