@@ -36,7 +36,7 @@
 %
 \begin{document}
 %
-\title{[TBD] Building a Query Language?}
+\title{\lang{}:A Data-Centric Expressive Query Language for Nested Data Structures}
 
 %
 %\titlerunning{Abbreviated paper title}
@@ -58,13 +58,23 @@
 \maketitle              % typeset the header of the contribution
 %
 \begin{abstract}
-We propose an expressive language for high-level data manipulation that
-mainly targets querying nested structures (e.g., JSON) and produce nested
-structures as results.
-Our query language resembles existing object notation, compositional, and
-permits query optimization and code generation via construction of an
-intermediate representation (IR).
-
+We present \lang{}, an expressive language designed for high-level data manipulation,
+with a primary focus on querying nested structures such as JSON and tensors,
+while yielding nested structures as output.
+\lang{} draws inspiration from a diverse range of declarative languages,
+including Datalog, JSONiq, Einstein summation (Einsum), GraphQL, and more
+recent functional logic programming languages like Verse.
+It has a syntax that closely resembles existing object notation,
+is compositional, and has the ability to perform query optimization and
+code generation through the construction of an intermediate
+representation (IR).
+Our IR comprises loop-free and branch-free code with program structure
+implicitly captured via dependencies.
+To demonstrate \lang{}'s versatility, 
+we implement \lang{} in JavaScript (as an embedded DSL) and 
+illustrate its application
+across various domains, showcasing its ability to express common
+data manipulation queries, tensor expressions (à la Einsum), and more.
 
 \keywords{First keyword  \and Second keyword \and Another keyword.}
 \end{abstract}
@@ -292,7 +302,7 @@ return tmp[0]
 \end{minipage}
 \caption{}
 \end{subfigure}
-\caption{\todo{caption}}
+\caption{\todo{caption}}\label{fig:intro}
 \end{figure}
 
 In \Cref{fig:intro}, we show a glimpse of how our query language works end-to-end.
@@ -324,6 +334,9 @@ that would translate to sub-query hoisting that typically happens at logical pla
 For instance, the expression \inline{sum(data.*B.val)} represents a nested sub-query,
 which our compiler efficiently hoists as a separate loop in the generated code.
 We will delve deep into each of these aspects of \lang{} in later sections of the paper.
+
+\todo{mention the fact that what is meant by \inline{sum(data.*.val)} varies by the context}
+
 
 The previous example exemplified \lang{}'s capability to express analytical queries on JSON
 objects.
@@ -716,9 +729,40 @@ $ik,kj \rightarrow ij$.
 This equation simply translates into a \lang{} query (\Cref{fig:tensors}, Line~\ref{code:matmulquery}) featuring \inline{*i} and
 \inline{*j} as query keys. The body of the query comprises the two matrices, accessed as
 \inline{A.*i.*k} corresponding to $ik$ and \inline{B.*k.*j} corresponding to $kj$.
+
+\Cref{fig:tensors} shows how \lang{} can be leveraged to express a variety of
+tensor expressions, ranging from simple queries like sums or sums along
+dimensions (e.g., rows or columns for matrices) to more complex expressions
+such as general tensor contractions for n-ary tensors and expressions like
+bilinear transformations that involve three tensors. 
 To mirror Einsum-style reductions, we employ \inline{sum(times(...))}.
 However, it is important to note that users have the freedom to choose
 any type of reductions beyond just $\sum$ and $\times$, allowing more flexibility.
+
+You may have observed that the iterators (e.g., \inline{*}, \inline{*i}, etc.) in these
+examples differ somewhat from what we encountered previously.
+Specifically, in prior cases, we explicitly specified the data source from which we iterate,
+as seen in constructs like \inline{data.*A}.
+However, here, we only specify the iterator as the key, and \lang{}'s backend
+automatically determines the appropriate data source by examining the query body.
+For instance, when we have a query like \inline{\{*i: sum(times(A.*i, B.*i))\}}, the
+backend selects either \inline{A} or \inline{B} as the data source for iteration.
+Subsequently, the generated code ensures that the iterated values exist in
+both \inline{A} and \inline{B}.
+For readers familiar with languages like Datalog, this concept essentially
+parallels unification.
+
+% Another key benefit of \lang{} is that these queries, for the most part are agnostic
+% to the underlying data structure.
+% For instance, one could use a JSON to represent a sparse tensor in a format similar to
+% coordinate list (COO) format (e.g., this is the format used in \inline{SparseTensor}
+% in TensorFlow) and use the same query to perform a matrix multiplication.
+% \begin{lstlisting}[style=JavaScript, columns=flexible]
+% let sparseA = [{row: 0, col: 1, val: 1}, {row: 1, col: 0, val: 2}] // [[0, 1], [2, 0]]
+% let sparseB = [{row: 0, col: 0, val: 2}, {row: 0, col: 1, val: 1}] // [[2, 1], [0, 0]]
+% // query TODO!
+% {"*i": {"*j": sum(times("sparseA.*i))}}
+% \end{lstlisting}
 
 These queries also go through the same compilation steps as we saw in \Cref{fig:intro}.
 Specifically, these queries get translated into a loop-free, branch-free IR that contains the
