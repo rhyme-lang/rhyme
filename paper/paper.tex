@@ -437,8 +437,8 @@ For instance, if we want to select a particular key of the dataset at a given
 index, we can use the following syntax.
 
 \begin{lstlisting}[style=JavaScript]
-data.0.country              // result: Japan
-{first : data.0.country}    // result: {first: Japan}
+'data.0.country'              // result: Japan
+{first : 'data.0.country'}    // result: {first: Japan}
 \end{lstlisting}
 
 Several key attributes of \lang{} can be observed from the aforementioned examples.
@@ -462,9 +462,9 @@ Below, we present three example queries that leverage iterators and compute
 aggregates over the iterated values.
 
 \begin{lstlisting}[style=JavaScript, columns=flexible]
-[data.*.city]             // result: [Tokyo, Beijing, ..., Birmingham]
-sum(data.*.population)    // result: 53
-max(data.*.population)    // result: 22
+['data.*.city']             // result: [Tokyo, Beijing, ..., Birmingham]
+sum('data.*.population')    // result: 53
+max('data.*.population')    // result: 22
 \end{lstlisting}
 
 The queries presented above are self-explanatory in nature.
@@ -476,7 +476,7 @@ As discussed previously, this queries can be used as parts of object
 construction logic and combined flexibly as shown below.
 
 \begin{lstlisting}[style=JavaScript, columns=flexible, numbers=none]
-{ total: sum(data.*.population), maximum: max(data.*.population) }
+{ total: sum('data.*.population'), maximum: max('data.*.population') }
 // result: {total: 53, max: 22}
 \end{lstlisting}
 
@@ -511,7 +511,7 @@ The following query exemplifies this, grouping records based on the
 for each group:
 
 \begin{lstlisting}[style=JavaScript, columns=flexible, numbers=none]
-{ data.*.country: sum(data.*.population) }
+{ 'data.*.country': sum('data.*.population') }
 // result: {Japan: 17, China: 22, France: 3, UK: 11}
 // SQL: SELECT country, SUM(population) FROM data GROUP BY country;
 \end{lstlisting}
@@ -529,13 +529,13 @@ and subsequently computes the population proportion of each city with respect to
 corresponding country:
 
 \begin{lstlisting}[style=JavaScript, columns=flexible, numbers=none]
-let countryPop = {data.*A.country: sum(data.*A.population)} // country -> total population
+let countryPop = {'data.*A.country': sum('data.*A.population')}// country -> population
 let query = { 
-    total: sum(data.*.population),                                // total population
-    data.*.country:
-    {   total: get(countryPop, data.*.country)                    // total population per country
-        data.*.city: div(sum(data.*.population),                  // population proportion
-                            get(countryPop, data.*.country))} // (per each city)
+    total: sum('data.*.population'),                                  // total population
+    'data.*.country':
+    {   total: get(countryPop, 'data.*.country')                      // population per country
+        'data.*.city': div(sum('data.*.population'),                  // population proportion
+                            get(countryPop, 'data.*.country'))}       // (per each city)
 }
 // result: {total: 53. Japan: {total: 17, Tokyo: 0.82, Osaka: 0.18}, ...}
 \end{lstlisting}
@@ -574,12 +574,12 @@ expressed:
 
 \begin{lstlisting}[style=JavaScript, columns=flexible]
 let countryToRegion = {
-    other.*O.country: other.*O.region
+    'other.*O.country': 'other.*O.region'
 }
 let query = {
-    "-": keyval(get(countryToRegion, data.*.country), {
-        total: sum(data.*.population)
-        data.*.country : sum(data.*.population)
+    "-": keyval(get(countryToRegion, 'data.*.country'), {
+        total: sum('data.*.population')
+        'data.*.country' : sum('data.*.population')
     }),
 }
 // result: {Asia: {total: 39, Japan: 17, China: 22}, Europe: {total: 14, France: 3, UK: 11}}
@@ -627,8 +627,8 @@ let udf = {
     formatPercent: v => (v*100).toFixed(2) + "%" // computes the percentage 
 }
 let query = {
-    data.*.country:
-        apply(udf.formatPercent, div(sum(data.*.population), sum(data.*A.population)))
+    'data.*.country':
+        apply(udf.formatPercent, div(sum('data.*.population'), sum('data.*A.population')))
 }
 // result: {Japan: 32.05%, China: 41.50%, France: 5.66%, UK: 20.75%}
 \end{lstlisting}
@@ -717,11 +717,11 @@ this query concisely as shown below.
 \begin{lstlisting}[style=JavaScript, columns=flexible]
 let query =
     pipe('.input')
-    .map('udf.splitNN').get('*chunk')   // 1. split into chunks
-    .map('udf.splitN').get('*line')      // 2. split by comma to get numbers of each chunk
-    .map('udf.toNum')                    // 3. convert each string number to a number object
-    .sum().group('*chunk').get('*')      // 4. group-by chunk and compute sum
-    .max()                               // 5. find maximum among group sums
+    .map('udf.splitPipe').get('*chunk')      // 1. split into chunks (and bind to *chunk)
+    .map('udf.splitComma').get('*line')      // 2. split by comma to get numbers of each chunk
+    .map('udf.toNum')                        // 3. convert each string number to a number object
+    .sum().group('*chunk').get('*')          // 4. group-by chunk and compute sum
+    .max()                                   // 5. find maximum among group sums
 \end{lstlisting}
 
 In this new version, you can observe that this high-level interface provides a
@@ -880,7 +880,7 @@ optimized JS code.
 
 Up to this point, we have provided an introduction to the syntax of
 \lang{} and explored its versatility across various domains.
-In \Cref{sec:intro} (\Cref{fig:intro}), we gained a preliminary understanding
+In \Cref{fig:intro}, we gained a preliminary understanding
 of how \lang{} queries are transformed into an IR, which subsequently serves
 as the basis for generating optimized code.
 In this section, we will delve into a detailed discussion of the IR structure
@@ -890,7 +890,8 @@ and the code generation process.
 % Loop-free and branch-free code, program structure implicit in dependencies
 
 \lang{}'s IR consists of two main types of instructions: generators and assignments.
-Generators corresponds to iterators that enumerate input (or intermediate) JSONs.
+Generators corresponds to iterators that enumerate input (or intermediate) JSONs
+and these translates to loops in the generated code.
 Assignments corresponds to any form of computation that updates or initialize an
 intermediate or output state.
 
