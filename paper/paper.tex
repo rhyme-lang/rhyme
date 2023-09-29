@@ -215,7 +215,7 @@ sum('data.*.val')
 \includegraphics[width=0.9\textwidth]{images/intro_q1_ir.pdf}
 \end{minipage}
 \begin{minipage}{0.54\textwidth}
-\begin{lstlisting}[style=JavaScript, columns=flexible]
+\begin{lstlisting}[style=JavaScript, columns=flexible, numbers=left, xleftmargin=2pt]
 let tmp = {}
 tmp[0] ??= 0
 (*@\highlight[highlightblue]{for (let star in data) }@*) {
@@ -246,7 +246,7 @@ return tmp[0]
 \includegraphics[width=0.9\textwidth]{images/intro_q2_ir.pdf}
 \end{minipage}
 \begin{minipage}{0.54\textwidth}
-\begin{lstlisting}[style=JavaScript, columns=flexible]
+\begin{lstlisting}[style=JavaScript, columns=flexible, numbers=left, xleftmargin=2pt]
 let tmp = {}
 tmp[0] ??= {}
 tmp[0]['total'] ??= 0
@@ -280,7 +280,7 @@ return tmp[0]
 \includegraphics[width=0.9\textwidth]{images/intro_q3_ir.pdf}
 \end{minipage}
 \begin{minipage}{0.54\textwidth}
-\begin{lstlisting}[style=JavaScript, columns=flexible]
+\begin{lstlisting}[style=JavaScript, columns=flexible, numbers=left, xleftmargin=2pt]
 let tmp = {}
 tmp[1] ??= {}
 tmp[2] ??= 0
@@ -291,7 +291,7 @@ tmp[0] ??= {}
 (*@\highlight[highlightred]{for (let starA in data)}@*) {
   tmp[1][data[starA]['key']] ??= 0;
   tmp[1][data[starA]['key']] += data[starA]['val']
-  tmp[0][data[starA]['key']] = tmp[1][data[starA]['key']] / tmp[2]
+  tmp[0][data[starA]['key']] = tmp[1][data[starA]['key']] / tmp[2] (*@\label{line:deps}@*)
 }
 return tmp[0]
 \end{lstlisting}
@@ -663,7 +663,7 @@ seamlessly integrates with other query constructs.
 Sometimes, the JSON-style query interface can be cumbersome,
 especially when dealing with deeply nested objects.
 To address this issue, \lang{} offers a higher-level API that employs
-metaprogramming to compose queries more straightforwardly.
+metaprogramming to compose queries more easily.
 This `fluent' API provides a pipeline-oriented interface that
 simplifies complex queries.
 
@@ -887,13 +887,55 @@ In this section, we will delve into a detailed discussion of the IR structure
 and the code generation process.
 
 \subsection{IR Structure}
-% Loop-free and branch-free code, program structure implicit in dependencies
+As discussed in \Cref{sec:intro}, the IR structure of \lang{} consists of two
+primary types of instructions: \emph{generators} and \emph{assignments}.
+Generators correspond to iterators responsible for enumerating input or intermediate
+nested objects, and these generators are transformed into loops in the generated code.
+Assignments, on the other hand, encompass any form of computation that updates or
+initializes an intermediate or output state.
 
-\lang{}'s IR consists of two main types of instructions: generators and assignments.
-Generators corresponds to iterators that enumerate input (or intermediate) JSONs
-and these translates to loops in the generated code.
-Assignments corresponds to any form of computation that updates or initialize an
-intermediate or output state.
+\lang{} queries inherently exhibit nested iterating structures that could be simply
+translated into a series of nested loop structures in the generated code.
+However, performing this transformation naively and enforcing the `program structure'
+implied by the user query would lead to missed optimization opportunities like
+hoisting computations and loops that are independent of outer loops,
+common sub-query/expression elimination, and more.
+Therefore, rather than naively transforming queries and directly imposing the program
+structure, we extract a set of generators, iterators, and their dependencies during
+IR construction.
+While the IR does not explicitly capture the program structure, the optimal program
+structure can be derived from an analysis of these dependencies.
+
+The dependency structure is relatively straightforward.
+As demonstrated in the generated code snippet in \Cref{fig:intro}, we utilize objects such
+as \inline{tmp[0]}, \inline{tmp[1]}, and so on, to maintain intermediate results required
+for computing the final query result.
+Assignment operators have these temporaries as operands, creating data dependencies in the
+process.
+Generators can also iterate values from these temporaries, and in such cases, we introduce
+similar dependencies for the generators.
+Similarly, when a generator symbol is used in an assignment or another generator, a
+dependency is added.
+To illustrate how dependencies are created, consider the following assignment instruction
+extracted from Line~\ref{line:deps} in \Cref{fig:intro_q3}:
+
+\begin{lstlisting}[style=JavaScript, columns=flexible, numbers=left, firstnumber=11]
+tmp[0][data[starA]['key']] = tmp[1][data[starA]['key']] / tmp[2]
+\end{lstlisting}
+
+This instruction relies on \inline{tmp[0]}, \inline{tmp[1]}, and \inline{tmp[2]} as operands.
+As a result, this instruction is associated with the last (write) operations of all three
+temporaries as dependencies, as depicted in the IR visualization presented in \Cref{fig:intro_q3}.
+Furthermore, since it employs the \inline{*A} iterator, it also exhibits a dependency on the
+corresponding generator.
+
+% In our current implementation, we track dependencies at the granularity of temporaries like
+% \inline{tmp[0]}, \inline{tmp[1]}, etc.
+% Specifically, we assign a write rank for each assignment and enforce the strict ordering of
+% write ranks during code generation.
+% But we can do this in a granular way --> essentially treating each writeRank as an SSA variable
+% and track dependencies at that level
+% \todo{should we mention this?}
 
 \subsection{Constructing the IR}
 How the \lang{} queries are transformed to the IR
