@@ -207,7 +207,7 @@ let data = [
   {key: "A", val: 25}
 ]
 // query (result: 50)
-sum(data.*.val)
+sum('data.*.val')
 \end{lstlisting}
 \end{minipage}
 \begin{minipage}{0.21\textwidth}
@@ -232,8 +232,8 @@ return tmp[0]
 \begin{lstlisting}[style=JavaScript, columns=flexible]
 // query
 {
- total: sum(data.*.val),
- data.*.key: sum(data.*.val)
+ total: sum('data.*.val'),
+ 'data.*.key': sum('data.*.val')
 }
 /* result:
  { total: 50, 
@@ -267,9 +267,9 @@ return tmp[0]
 \begin{lstlisting}[style=JavaScript, columns=flexible]
 // query
 {
-  data.*A.key: 
-   div(sum(data.*A.val),
-       sum(data.*B.val)) 
+  'data.*A.key': 
+   div(sum('data.*A.val'),
+       sum('data.*B.val')) 
 }
 // result:
 // {'A': 0.7, 'B': 0.3}
@@ -370,7 +370,7 @@ in other traditional query optimizers.
 These examples provide a broad overview of \lang{}'s functionalities and its
 syntax structure.
 In the subsequent sections of this paper, we will delve deeper into the syntax and capabilities
-of \lang{}, discussing the intricacies of IR construction and code generation.
+of \lang{} and discuss the process of IR construction and code generation.
 Moreover, the previous example queries exemplified \lang{}'s capability to
 express analytical queries on JSON objects.
 However, the versatility of \lang{} extends beyond this, encompassing an even broader
@@ -405,13 +405,13 @@ in \Cref{sec:conclusions}.
 
 \section{The Query Language}~\label{sec:query_language}
 
-In the previous section, we saw \lang{} in action for a simple query.
-In this section, we will formally introduce the syntax of the \lang{}, illustrating how it facilitates
+In the previous section, we saw \lang{} in action for a set of relatively simple queries.
+In this section, we will introduce the syntax of the \lang{}, illustrating how it facilitates
 the expression of common data manipulation operations like selections, aggregates,
 group-bys, and so on.
 To enhance comprehension, we will employ a running illustrative example dataset, as
 depicted below.
-Specifically, we have a dataset of containing population of several major cities,
+Specifically, we have a dataset containing population of several major cities,
 along with the respective country.
 Our chosen dataset is deliberately kept relatively straightforward, devoid of
 intricate nested structures.
@@ -430,16 +430,7 @@ let data = [
 ]
 \end{lstlisting}
 
-% \begin{lstlisting}[style=JavaScript]
-% let data = [
-%     {key: "A", val: 20},
-%     {key: "B", val: 30},
-%     {key: "A", val: 10}
-% ]
-% \end{lstlisting}
-
 \subsection{Basics}
-\todo{defined a grammar?}
 First we will look at how to perform several basic query operations on the
 aforementioned dataset.
 For instance, if we want to select a particular key of the dataset at a given
@@ -485,9 +476,9 @@ As discussed previously, this queries can be used as parts of object
 construction logic and combined flexibly as shown below.
 
 \begin{lstlisting}[style=JavaScript, columns=flexible, numbers=none]
-    { total: sum(data.*.population), maximum: max(data.*.population) }
-    // result: {total: 53, max: 22}
-    \end{lstlisting}
+{ total: sum(data.*.population), maximum: max(data.*.population) }
+// result: {total: 53, max: 22}
+\end{lstlisting}
 
 % \begin{minipage}{0.5\textwidth}
 % \begin{lstlisting}[style=JavaScript, columns=flexible, numbers=none]
@@ -551,33 +542,12 @@ let query = {
 
 Specifically, the \inline{countryPop} is a separate query that determines the total
 population for each country.
-This query is subsequently utilized within the main \inline{query} to access the
+This query is subsequently used within the main \inline{query} to access the
 total population for each country where required.
-\todo{point to IR section and say that the use of *A will make sure that
-this inner query is hoisted out, etc.}
-
-
-
-\subsection{Filters}
-\todo{
-    discuss about expressing filters. Duality with lambdas + if.
-}
-
-\begin{lstlisting}[style=JavaScript, columns=flexible]
-data2Map = {"data2.*.key": sum("data2.*.value")}
-query = {"data.*.key": get(data2Map, "data2.*.value")}
-
-// RPAI-style maps
-// select sum(r.A*r.B) from R r where 
-// 0.5*(select sum(r1.B) from R r1) == (select sum(r2.B) from R r2 where r2.A = r.A)
-lhsSum = sum(r.*p.B)
-rhsSum = { "r.*q.A": sum("r.*q.B")} // A --> rhsSum
-
-// TODO: how to express this declaratively?
-ansMap = { ???: sum(times("r.*q.A", "r.*q.B")) } // rhsSum --> sum(A*B)
-// need a way to encode shift of aggregates! 
-query = get(ansMap, lhsSum)
-\end{lstlisting}
+As we saw in \Cref{fig:intro_q3}, \lang{}'s backend optimizes the
+query by hoisting the independent \inline{*A} iterator outside and performing
+a lookup on the reified \inline{countryPop} instead of computing the
+corresponding aggregate inside a nested loop.
 
 \subsection{Join}
 Joins are another fundamental operator in data querying.
@@ -623,6 +593,29 @@ This query conducts a group-by based on the \inline{region} attribute initially,
 followed by another group-by based on \inline{country}, ultimately calculating the
 desired aggregates.
 
+% \todo{perhaps discuss this in future work}
+% \subsection{Conditionals}
+% \todo{
+%     discuss about expressing filters. Duality with lambdas + if.
+% }
+% One approach to handle conditionals is to provide 
+
+% \begin{lstlisting}[style=JavaScript, columns=flexible]
+% data2Map = {"data2.*.key": sum("data2.*.value")}
+% query = {"data.*.key": get(data2Map, "data2.*.value")}
+
+% // RPAI-style maps
+% // select sum(r.A*r.B) from R r where 
+% // 0.5*(select sum(r1.B) from R r1) == (select sum(r2.B) from R r2 where r2.A = r.A)
+% lhsSum = sum(r.*p.B)
+% rhsSum = { "r.*q.A": sum("r.*q.B")} // A --> rhsSum
+
+% // TODO: how to express this declaratively?
+% ansMap = { ???: sum(times("r.*q.A", "r.*q.B")) } // rhsSum --> sum(A*B)
+% // need a way to encode shift of aggregates! 
+% query = get(ansMap, lhsSum)
+% \end{lstlisting}
+
 \subsection{User-defined Functions}
 \lang{} allows using user-defined functions (UDFs) written in JS seamlessly with the
 queries.
@@ -647,11 +640,103 @@ proportions to percentages.
 
 
 \subsection{Arrays}
+We have encountered aggregates such as \inline{max}, \inline{min}, and \inline{sum}
+thus far.
+However, there can be scenarios where we require an aggregate that collects values
+into an array.
+For this, we provide the \inline{array} construct, also represented in \inline{[]} syntax.
+
+\begin{lstlisting}[style=JavaScript, columns=flexible]
+array('data.*.country')                                   // [Japan, China, France, ...]
+[{city: 'data.*.city'}]                                   // [{city: Tokyo}, {city: Beijing}, ...]
+[{country: 'data.*.country'}, {city: 'data.*.city'}]// [{country: Japan}, {city: Tokyo}, ...]
+[{country: 'data.*.country', city: 'data.*.city'}]        // [{country: Japan, city: Tokyo}, ...]
+\end{lstlisting}
+
+In the examples provided above, we show a set of simple queries that aggregate values
+into arrays.
+Each query is self-explanatory, with the expected result displayed on the right.
+Importantly, similar to other types of \lang{} operations, this array accumulation
+seamlessly integrates with other query constructs.
 
 \subsection{Fluent API}
+Sometimes, the JSON-style query interface can be cumbersome,
+especially when dealing with deeply nested objects.
+To address this issue, \lang{} offers a higher-level API that employs
+metaprogramming to compose queries more straightforwardly.
+This `fluent' API provides a pipeline-oriented interface that
+simplifies complex queries.
 
-\subsection{GUI Components}
-Basic building blocks -- table definition, and generic display, svg, etc. 
+To illustrate the advantages of this interface, let us consider a
+simple task borrowed from Advent of Code 2022~\cite{adventofcode22}.
+The task involves processing a sequence of values partitioned into chunks,
+each containing multiple values.
+The objective is to calculate the sum of values for each chunk and
+subsequently identify the maximum sum among those computed.
+To begin, let's examine how the \lang{} query appears when utilizing
+the familiar JSON-style API for data parsing and computation.
+
+
+\begin{lstlisting}[style=JavaScript, columns=flexible]
+let input = '100,200,300|400|500,600|700,800,900|1000' // sample input
+// some UDFs for parsing the data
+let udf = {
+    'splitPipe' : x => x.split('|'),
+    'splitComma': x => x.split(','),
+    'toNum'      : x => Number(x)
+}
+\end{lstlisting}
+
+First, we define several user-defined functions (UDFs) to assist with data parsing.
+The role of each UDF is simple and self-explanatory.
+Shown below is the \lang{} query responsible for executing the required
+computation, with comments provided alongside to elucidate each section
+of the query (numbered for clarity):
+
+\begin{lstlisting}[style=JavaScript, columns=flexible, numbers=left]
+let query = max(get({                      // 5. find maximum among group sums
+    '*chunk': sum(                         // 4. group-by chunk and compute sum
+        apply('udf.toNum',                 // 3. convert each string number to a number object
+            get(apply('udf.splitComma',    // 2. split by comma to get numbers of each chunk
+                get(apply('udf.splitPipe', '.input'), '*chunk')), // 1. split into chunks
+            '*line')))
+    },'*'))
+\end{lstlisting}
+
+\inline{apply()} is used to apply UDFs to arguments.
+\inline{get()}, when used with an unbounded generator symbol (e.g., \inline{*chunk}), binds the
+iterator to the object in the first argument.
+For example, in Line 5, \inline{get(..., '*chunk')} binds the iterator
+\inline{*chunk} to the result of splitting the output by the pipe symbol (\inline{|}).
+While this approach works as intended and yields the correct results, it can certainly be
+a bit too cumbersome to write the query in this deeply nested manner.
+In such cases, \lang{}'s `fluent' interface offers an alternative to express
+this query concisely as shown below.
+
+
+\begin{lstlisting}[style=JavaScript, columns=flexible]
+let query =
+    pipe('.input')
+    .map('udf.splitNN').get('*chunk')   // 1. split into chunks
+    .map('udf.splitN').get('*line')      // 2. split by comma to get numbers of each chunk
+    .map('udf.toNum')                    // 3. convert each string number to a number object
+    .sum().group('*chunk').get('*')      // 4. group-by chunk and compute sum
+    .max()                               // 5. find maximum among group sums
+\end{lstlisting}
+
+In this new version, you can observe that this high-level interface provides a
+much cleaner and more concise way to express the same query. 
+This high-level fluent API essentially functions as a metaprogramming layer
+that generates an equivalent query to the one we saw previously.
+The \inline{pipe()} function creates a \inline{Pipe} object equipped with
+APIs such as \inline{sum}, \inline{max}, and so on, all of which return a
+\inline{Pipe}.
+The \inline{map()} function, similar to \inline{apply()} mentioned earlier,
+is employed to apply a UDF, and \inline{group()} is used to perform a group-by.
+
+
+% \subsection{GUI Components}
+% Basic building blocks -- table definition, and generic display, svg, etc. 
 
 \begin{figure}[t]
 \begin{minipage}{0.5\textwidth}
@@ -661,25 +746,25 @@ let A = [[1, 2], [3, 4]]
 let B = [[1, 2, 3], [4, 5, 6]]
 
 // tensor transpose (ij->ji)
-{"*j": {"*i": "B.*i.*j"}}
+{'*j': {'*i': 'B.*i.*j'}}
 // result: {0: {0: 1, 1: 4}, 1: {0: 2, 1: 5},
 //           2: {0: 3, 1: 6}}
 
 // sum of all elements (ij->)
-sum("B.*i.*j")
+sum('B.*i.*j')
 // result: 21
 
 // column sum (ij->j)
-{"*j": sum("B.*i.*j")}
+{'*j': sum('B.*i.*j')}
 // result: {0: 5, 1: 7, 2: 9}
 
 // row sum (ij->i)
-{"*i": sum("B.*i.*j")}
+{'*i': sum('B.*i.*j')}
 // result: {0: 6, 1: 15}
 
 // matrix multiplication (ik,kj->ij)(*@\label{code:matmulquery}@*)
-{"*i": {"*j": sum(
-    times("A.*i.*k", "B.*k.*j")) }}
+{'*i': {'*j': sum(
+    times('A.*i.*k', 'B.*k.*j')) }}
 // result: {0: {0: 9, 1: 12, 2: 15},
 //           1: {0: 19, 1: 26, 2: 33}}
 \end{lstlisting}
@@ -687,30 +772,30 @@ sum("B.*i.*j")
 \begin{minipage}{0.5\textwidth}
 \begin{lstlisting}[style=JavaScript, columns=flexible, numbers=left, firstnumber=last]
 // diagonal (ii -> i)
-{"*i": "A.*i.*i"}
+{'*i': 'A.*i.*i'}
 // result: {0: 1, 1: 4}
 
 // Hadamard product (ij,ij->ij)
-{"*i": {"*j": times("A.*i.*j", "B.*i.*j") }}
+{'*i': {'*j': times('A.*i.*j', 'B.*i.*j') }}
 // result: {0: {0: 1, 1: 4}, 1: {0: 9, 1: 16}}
 
 // dot product (vector-vector) (i,i->)
-sum(times("vecA.*i", "vecB.*i"))
+sum(times('vecA.*i', 'vecB.*i'))
 
 // batched matmul (bik,bkj->bij)
 // T1 and T2 are tensors
 // T1: BxIxK, T2:BxKxJ (B is batch-dim)
-{"*b": {"*i": {"*j": sum(
-    times("T1.*b.*i.*k", "T2.*b.*k.*j")) }}}
+{'*b': {'*i': {'*j': sum(
+    times('T1.*b.*i.*k', 'T2.*b.*k.*j')) }}}
 
 // general tensor contraction
 // e.g., pqrs,tuqvr->pstuv
-{"*p":{"*s":{"*t":{"*u":{"*v":sum(
-    times("T1.*p.*q.*r.*s", "T2.*t.*u.*q.*v.*r")) }}}}}
+{'*p':{'*s':{'*t':{'*u':{'*v':sum(
+    times('T1.*p.*q.*r.*s', 'T2.*t.*u.*q.*v.*r')) }}}}}
 
 // bi-linear transformation (ik,jkl,il->ij)
-{"*i": {"j": sum(times(
-    "T1.*i.*k", "T2.*j.*k.*l", "T3.*i.*l"))} }
+{'*i': {'j': sum(times(
+    'T1.*i.*k', 'T2.*j.*k.*l', 'T3.*i.*l'))} }
 \end{lstlisting}
 \end{minipage}
 \caption{
@@ -783,7 +868,7 @@ parallels unification.
 % let sparseA = [{row: 0, col: 1, val: 1}, {row: 1, col: 0, val: 2}] // [[0, 1], [2, 0]]
 % let sparseB = [{row: 0, col: 0, val: 2}, {row: 0, col: 1, val: 1}] // [[2, 1], [0, 0]]
 % // query TODO!
-% {"*i": {"*j": sum(times("sparseA.*i))}}
+% {'*i': {'*j': sum(times('sparseA.*i))}}
 % \end{lstlisting}
 
 These queries also go through the same compilation steps as we saw in \Cref{fig:intro}.
@@ -818,13 +903,13 @@ Scheduling based on dependencies, lambda lifting to de-correlate queries
 \subsection{Implementation}
 We implement this in JavaScript so that it can run in the browser.
 
-\section{Incremental}
-Incremental queries for JSONs, incremental tensor computations!
+% \section{Incremental}
+% Incremental queries for JSONs, incremental tensor computations!
 
 
 
-\section{Example: Pivot Table}\label{sec:case_study}
-How to use group bys, partial aggregates, display, svg, etc.
+% \section{Example: Pivot Table}\label{sec:case_study}
+% How to use group bys, partial aggregates, display, svg, etc.
 
 \section{Experiments}\label{sec:experiments}
 We will have to variants: non-incremental and incremental.
