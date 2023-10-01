@@ -938,10 +938,171 @@ corresponding generator.
 % \todo{should we mention this?}
 
 \subsection{Constructing the IR}
-How the \lang{} queries are transformed to the IR
+How the \lang{} queries are transformed to the IR.
+Discuss path, how and when new temps are created, etc.
 
 \subsection{Code Generation}
-Scheduling based on dependencies, lambda lifting to de-correlate queries
+Once the IR is constructed for a query, next step is to generate the final code
+taking into account the instruction dependencies.
+This phase involves the crucial task of determining the program structure from
+the dependencies.
+Specifically, it entails determining where to insert loops, how to nest loops
+within one another, where to place assignment instructions, and so on. 
+We will use the query from \Cref{fig:intro_q3} as a running example for this
+section.
+
+The first step in doing this involves identifying two key
+components: \inline{tmpInsideLoop} and \inline{tmpAfterTmp}.
+These variables serve the purpose of tracking which temporaries should be scheduled
+inside particular loops and which temporaries should be scheduled after
+certain other temporaries.
+Shown below is an excerpt of the code doing that.
+\inline{e.writeSym} refers to the left-hand side temp of assignments.
+Shown on the right are \inline{tmpInsideLoop} (solid) and \inline{tmpAfterTmp} (dotted)
+for query in \Cref{fig:intro_q3}.
+
+\begin{minipage}{0.7\textwidth}
+\begin{lstlisting}[style=JavaScript, columns=flexible]
+// compute tmpInsideLoop and tmpAfterTmp
+for (let e of assignmentStms) {
+    for (let dep of e.deps) {
+        // depends on a loop, it should be inside the loop
+        if (isloop(dep)) tmpInsideLoop[e.writeSym][dep] = true
+        // depends on a tmp, expression should be after that
+        if (istmp(dep)) tmpAfterTmp[e.writeSym][dep] = true
+}   }
+\end{lstlisting}
+\end{minipage}
+\begin{minipage}{0.3\textwidth}
+% \centering
+\includegraphics[width=0.5\textwidth]{images/q3_deps.pdf}
+\end{minipage}
+
+In the above code, we iterate through all the assignment statements and examine all
+their dependencies.
+If a statement depends on a loop, it means the corresponding temporary variable must
+be scheduled inside the loop, thus updating the \inline{tmpInsideLoop} variable.
+Furthermore, if an assignment depends on another temporary value, it means the
+corresponding temporary variable must be scheduled after that, consequently updating
+the \inline{tmpAfterTmp} variable.
+
+The next step involves computing the \inline{tmpAfterLoop} based on the gathered information.
+Specifically, if we determined that a temp \inline{t2} should be scheduled after
+another temp \inline{t1} (i.e., \inline{tmpAfterTmp[t2][t1]}), which resides inside a loop \inline{l}
+(with the condition that \inline{t2} itself is not within loop \inline{l}),
+then this implies that \inline{t2} should be scheduled after the loop \inline{l}.
+For instance, in our sample query, \inline{tmp[0]} should be scheduled after \inline{*A}.
+Shown below is the code to implement this logic that populates the \inline{tmpAfterLoop}.
+
+\begin{lstlisting}[style=JavaScript, columns=flexible]
+// compute tmpAfterLoop
+for (let t2 in tmpAfterTmp) {
+    // gather loop 'prior' tmps are in
+    for (let t1 in tmpAfterTmp[t2]) {
+      for (let l in tmpInsideLoop[t1])
+        tmpAfterLoop[t2][l] = true
+    }
+    // remove own loops
+    for (let l in tmpInsideLoop[t2])
+      delete tmpAfterLoop[t2][l]
+}
+\end{lstlisting}
+
+Subsequently, as the final analysis step before code generation, we determine
+\inline{loopAfterLoop} and \inline{loopInsideLoop}.
+These essentially help identify how the loops should be scheduled.
+In particular, if we ascertain that a given temp \inline{t} should be scheduled
+inside both loops \inline{l1} and \inline{l2}, it implies that \inline{l1} and
+\inline{l2} should belong to the same loop nest.
+Conversely, if we determined that for a particular temp \inline{t},
+it resides within loop \inline{l2}, and we also know that \inline{t} should be
+scheduled after another loop \inline{l1}, then this indicates that the loop \inline{l2}
+should be scheduled after \inline{l1} (provided they are not part of the same loop nest).
+The corresponding code for both of these analyses is presented below.
+
+\hspace{-18pt}
+\begin{minipage}{0.5\textwidth}
+\begin{lstlisting}[style=JavaScript, columns=flexible]
+// compute loopInsideLoop
+for (let t in tmpInsideLoop) {
+    for (let l2 in tmpInsideLoop[t]) {
+        for (let l1 in tmpInsideLoop[t]) {
+            loopInsideLoop[l2][l1] = true
+            loopInsideLoop[l1][l2] = true
+        }
+    }
+}
+\end{lstlisting}
+\end{minipage}%
+\begin{minipage}{0.5\textwidth}
+\begin{lstlisting}[style=JavaScript, columns=flexible]
+// compute loopAfterLoop
+for (let t in tmpAfterLoop) {
+    for (let l2 in tmpInsideLoop[t]) {
+        for (let l1 in tmpAfterLoop[t]) {
+            if (!loopInsideLoop[l2][l1])
+                loopAfterLoop[l2][l1] = true
+        }
+    }
+}
+\end{lstlisting}
+\end{minipage}
+
+Once the analysis steps are completed, we proceed with the code
+generation process.
+Our approach to code generation draws inspiration from the IR scheduling
+algorithm utilized in Lightweight Modular Staging (LMS).
+In particular, we schedule generators and assignments in an
+`outside-in' fashion, commencing with the outer loops before
+progressing to the inner ones.
+
+
+The core driver of the code emission logic is encapsulated within
+the \inline{emitConvergence} function. 
+This function relies on two helper functions: \inline{emitGenerators}
+and \inline{emitAssignments}.
+The former is responsible for emitting loop structures, while the
+latter deals with the generation of assignment instructions.
+These functions are invoked repeatedly until all generators and
+assignments are fully emitted.
+We present an excerpt from the \inline{emitGenerators} function below:
+
+\begin{lstlisting}[style=JavaScript, columns=flexible]
+function emitGenerators() {
+    let (available, remaining) = getAvailable(generators) // identify current scope loops
+    generators = remaining              // remaining generators that are not available yet
+    for (let g of available) {
+        emitLoopHeader(g)
+        emitConvergence()               // emit loop body (nested generators and assignments)
+        emitLoopFooter()
+    }
+}
+\end{lstlisting}
+
+\inline{generators} here is as a global variable that keeps track of the
+remaining generators that is yet to be scheduled.
+The \inline{emitGenerators} function is responsible for orchestrating the
+generation of loops corresponding to these generators.
+It commences by identifying generators that become available in the
+current scope, leveraging information such as \inline{loopAfterLoop},
+\inline{tmpAfterTmp}, and others we saw before.
+The \inline{getAvailable} function checks the dependencies of pending
+generators and picks the ones where all dependencies are satisfied.
+Consequently, this function schedules loops that are available at the
+present scope and invokes \inline{emitConvergence} recursively to schedule
+any inner loops and assignments that must be scheduled inside these loops.
+\inline{emitAssignments} function follows a similar structure to that of
+the \inline{emitGenerators}.
+It schedules assignment instructions as soon as they become available in
+the current context.
+
+Since we did not have program control structures enforced from the front end,
+this code scheduling mechanism freely schedules assignments and generators
+in an optimal manner.
+For instance, any generator that does not have dependencies to the `other query'
+would be hoisted and scheduled as a separate query instead of repeating the
+computation multiple times inside a nested loop.
+
 
 \subsection{Implementation}
 We implement this in JavaScript so that it can run in the browser.
