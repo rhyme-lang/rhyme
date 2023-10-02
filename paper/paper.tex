@@ -6,6 +6,7 @@
 
 \pagestyle{plain}
 \usepackage{lineno}
+\usepackage{hyperref} % to make refs clickable
 \usepackage{cleveref}
 \usepackage{xcolor}
 \usepackage{listings}
@@ -103,9 +104,10 @@ specific languages~\cite{tensor_comprehensions}) for expressing tensor computati
 mathematically, and GraphQL~\cite{graphql} for data querying within the context of web application
 front-ends, and so on.
 
-\todo{connection to verse, functional logic programming}
+% \todo{connection to verse, functional logic programming}
 In this work, we draw inspiration from a wide array of such existing languages,
-including GraphQL, JQ, XQuery, Einstein notation, Datalog, etc. and 
+including GraphQL, JQ~\cite{jq}, XQuery~\cite{xquery}, Einstein notation,
+Datalog, recent functional logic programming languages like Verse~\cite{verse}, etc. and 
 we introduce a novel declarative language named \lang{}.
 \lang{} is designed to serve as an expressive language for high-level data
 manipulation, enabling the querying of nested data structures
@@ -938,8 +940,8 @@ corresponding generator.
 % \todo{should we mention this?}
 
 \subsection{Constructing the IR}
-How the \lang{} queries are transformed to the IR.
-Discuss path, how and when new temps are created, etc.
+\todo{mention How the \lang{} queries are transformed to the IR.
+Discuss path, how and when new temps are created, etc.}
 
 \subsection{Code Generation}
 Once the IR is constructed for a query, next step is to generate the final code
@@ -1105,7 +1107,7 @@ computation multiple times inside a nested loop.
 
 
 \subsection{Implementation}
-We implement this in JavaScript so that it can run in the browser.
+\todo{We implement this in <1000 lines of JavaScript, it can run in the browser, etc.}
 
 % \section{Incremental}
 % Incremental queries for JSONs, incremental tensor computations!
@@ -1116,19 +1118,57 @@ We implement this in JavaScript so that it can run in the browser.
 % How to use group bys, partial aggregates, display, svg, etc.
 
 \section{Experiments}\label{sec:experiments}
-We will have to variants: non-incremental and incremental.
-For incremental we can show the execution time per each `batch' of
-records (batch on x-axis).
+% We will have to variants: non-incremental and incremental.
+% For incremental we can show the execution time per each `batch' of
+% records (batch on x-axis).
+\todo{simple query examples with synthetic key-value data (a simple aggr, group-By,
+de-correlation, etc.). Compare against, JQ, JSONiq.}
 
 
 \section{Related Work}\label{sec:related_work}
-query languages, incremental triggers, FORWARD-style works that has the promise
-of program = query.
+There are several query languages designed for working with semi-structured data like
+JSON, each with its own focus and strengths.
+JSONiq~\cite{jsoniq,jsoniq_paper} is a notable query language explicitly tailored for
+JSON data, borrowing most of its syntax from XQuery~\cite{xquery} (e.g., FLWOR expressions).
+Zorba~\cite{zobra} and RumbleDB~\cite{rumble_vldb} are examples of engines that support
+JSONiq, with RumbleDB using Spark~\cite{spark} as a backend, leveraging the scalability
+of Spark for execution.
+AsterixDB, designed for semi-structured data, employs AQL~\cite{aql} and SQL++~\cite{sqlpp}
+as its query languages.
+GraphQL~\cite{graphql}, on the other hand, is widely used in web application development
+for querying data from backend services.
+Generally, resolvers for these queries should be manually implemented in the backend.
+Some systems like Hasura~\cite{hasura} automate the generation of SQL queries from
+GraphQL queries, simplifying query resolution.
+Most of these languages are specifically targeted towards large-scale JSON analytics workloads.
+While we take inspiration from these languages for the design of the language,
+\lang{}, is designed to handle various forms of nested data,
+including tensors, and it offers support for efficient code generation and optimizations
+through its IR.
 
+% We take inspiration from many other declarative programming languages.
+% Specifically, this includes
+% Logic programming, particularly, Datalog - choice and unification, einsum notation - for expressing tensor computations,
+% implicit aggregation.
+% Recent works like 
+
+% Our generated code
 
 \section{Conclusions and Future Work}\label{sec:conclusions}
 Incrementality, Datalog-style recursive queries?, partial re-evaluation as
 query changes (with minimal recomputation and index sharing)
+
+\textbf{Incrementality} Although not discussed extensively in this paper, the idea
+of using intermediate temporaries in the generated code is inspired by work in
+incremental execution like DBToaster~\cite{dbtoaster_vldb} and RPAI~\cite{rpai}.
+One of the immediate future works is to add support for incremental execution.
+
+\textbf{Partial Re-evaluation}
+
+\textbf{Missing Operators} sorting, arbitrary conditionals, etc.
+
+\textbf{Cycles}
+
 %
 % ---- Bibliography ----
 %
