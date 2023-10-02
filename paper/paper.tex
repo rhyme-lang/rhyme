@@ -1053,7 +1053,7 @@ for (let t in tmpAfterLoop) {
 Once the analysis steps are completed, we proceed with the code
 generation process.
 Our approach to code generation draws inspiration from the IR scheduling
-algorithm utilized in Lightweight Modular Staging (LMS).
+algorithm utilized in Lightweight Modular Staging (LMS)~\cite{lms}.
 In particular, we schedule generators and assignments in an
 `outside-in' fashion, commencing with the outer loops before
 progressing to the inner ones.
@@ -1147,27 +1147,61 @@ including tensors, and it offers support for efficient code generation and optim
 through its IR.
 
 % We take inspiration from many other declarative programming languages.
-% Specifically, this includes
+% Specifically, the \lang
 % Logic programming, particularly, Datalog - choice and unification, einsum notation - for expressing tensor computations,
 % implicit aggregation.
+
 % Recent works like 
 
 % Our generated code
 
 \section{Conclusions and Future Work}\label{sec:conclusions}
-Incrementality, Datalog-style recursive queries?, partial re-evaluation as
-query changes (with minimal recomputation and index sharing)
 
-\textbf{Incrementality} Although not discussed extensively in this paper, the idea
-of using intermediate temporaries in the generated code is inspired by work in
-incremental execution like DBToaster~\cite{dbtoaster_vldb} and RPAI~\cite{rpai}.
-One of the immediate future works is to add support for incremental execution.
+In this study, we introduced \lang{}, a new query language tailored for high-level
+data manipulation.
+We illustrated how \lang{}'s design facilitates query optimization and code generation
+through the construction of an IR.
+This IR comprises loop-free branch-free code, with program structure implicitly captured
+by dependencies, making it easier to implement optimizations.
+Throughout the paper, we demonstrated the versatility of \lang{} by showcasing its
+applicability across a wide range of expressive data manipulation operations,
+including tensor computations in a declarative manner.
+It is worth noting that \lang{} is still in its early developmental stages,
+and we are excited about exploring various avenues of interesting future work.
 
-\textbf{Partial Re-evaluation}
+\textbf{Incrementality}
+While not extensively covered in this paper, the concept of utilizing
+intermediate temporaries within the generated code is inspired by prior
+works in incremental execution, such as DBToaster~\cite{dbtoaster_vldb}
+and RPAI~\cite{rpai}.
+An immediate focus of our future work involves introducing support for
+incremental execution.
+Notably, our generated code is inherently designed to be `incremental-friendly'.
+This implies that we have the capability to generate code akin to update
+triggers, which are invoked whenever a modification is made to the dataset.
 
-\textbf{Missing Operators} sorting, arbitrary conditionals, etc.
+Another dimension of incrementality involves managing query changes.
+This entails finding ways to accommodate changes in queries while maximizing
+the utilization of previously computed temporaries and sharing state across
+multiple queries. 
+Such an approach will be useful in interactive applications, where users
+can dynamically modify their queries.
 
-\textbf{Cycles}
+\textbf{Performance}
+While the ability to generate JS for browser-based execution is undeniably valuable,
+there are specific scenarios where optimizing performance becomes paramount.
+In such cases, the generation of low-level, specialized C code becomes imperative to
+eliminate any potential overhead associated with managed runtimes.
+A substantial body of prior research has already demonstrated the efficacy of
+such compilation mechanisms~\cite{500lines,lb2,flare_osdi,sai_guannan}.
+Furthermore, it is feasible to leverage existing compiler infrastructures such
+as LMS~\cite{lms} or MLIR~\cite{mlir} for streamlined handling of tasks like
+IR construction, dependency analysis, and the eventual generation of highly
+specialized low-level code.
+
+% \textbf{Missing Operators}
+% Currently \lang{} lacks several operators like sorting and conditionals.
+
 
 %
 % ---- Bibliography ----
