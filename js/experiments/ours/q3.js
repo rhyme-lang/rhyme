@@ -1,5 +1,5 @@
 import { api } from "../../core.js"
-import { data } from "../data/toy.js" // load the data
+import { data } from "../data/data1M.js" // load the data
 
 let query = {
     "total": api.sum("data.*.value"),
@@ -9,5 +9,11 @@ let query = {
     }
 }
 let exec = api.compile(query)
+
+let start = Date.now()
 let res = exec({data})
+let end = Date.now()
+let elapsed = end - start
+console.log(elapsed + "ms")
+
 console.log(res)

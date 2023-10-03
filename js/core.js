@@ -663,25 +663,33 @@ function inspect(...args) {
         delete tmpAfterLoop[t2][l]
     }
     //
+    // compute loopInsideLoop
+    //
+    for (let t in tmpInsideLoop) {
+      for (let l2 in tmpInsideLoop[t]) {
+        loopInsideLoop[l2] ??= {}
+        for (let l1 in tmpInsideLoop[t]) {
+          loopInsideLoop[l2][l1] = true
+          loopInsideLoop[l1] ??= {}
+          loopInsideLoop[l1][l2] = true
+        }
+      }
+    }
+    //
     // compute loopAfterLoop
     //
     for (let t in tmpAfterLoop) {
       for (let l2 in tmpInsideLoop[t]) {
         loopAfterLoop[l2] ??= {}
         for (let l1 in tmpAfterLoop[t]) {
-          // loops may be nested or sequenced
-          loopInsideLoop[l1] ??= {}
-          let nested = false
-          for (let tx in tmpInsideLoop)
-            if (tmpInsideLoop[tx][l1] && tmpInsideLoop[tx][l2]) { nested = true; break }
-          if (nested)
-            loopInsideLoop[l1][l2] = true
-          else
+          // if not in loopInsideLoop, then l1 before l2
+          if (!loopInsideLoop[l2] || !loopInsideLoop[l2][l1])
             loopAfterLoop[l2][l1] = true
         }
       }
       // TODO: do we need loopAfterTmp? seed loopAfterTmp/Loop from generator.deps?
     }
+
     explain.dependencies = { tmpInsideLoop, tmpAfterTmp, tmpAfterLoop, loopAfterLoop, loopInsideLoop }
     let extraLoopDeps = loopAfterLoop
     if (debug) {

@@ -38,6 +38,7 @@ function check(query, expected, testName, inp = { data }) {
 // transpose (can be any permute)
 function transposeTest() {
     let transB = {"*j": {"*i": "mat.*i.*j"}}
+    
     let expected = {0: {0: 1, 1: 4}, 1: {0: 2, 1: 5}, 2: {0: 3, 1: 6}}
     check(transB, expected, "transposeTest", {mat: matB})
 }
@@ -88,6 +89,13 @@ function batchedMatmulTest() {
     check(matmul, expected, "matmulTest", {A: batchedMatA, B: batchedMatB})
 }
 
+function diagonalTest() {
+    // ii -> i
+    let diag = {"*i": "A.*i.*i"}
+    let expected = {0: 1, 1: 4}
+    check(diag, expected, "diagonalTest", {A: matA})
+}
+
 transposeTest()
 sumTest()
 columnSumTest()
@@ -96,3 +104,4 @@ matmulTest()
 dotProduct()
 hadamardTest()
 batchedMatmulTest()
+diagonalTest()

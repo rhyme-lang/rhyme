@@ -1,11 +1,24 @@
 import os
 import random
 
-num_records = 10000
+num_records = 10000000
 # generate a json lines dataset with {key1: v1, key2: v2, value: v3}
 
-jsonPath = "data/data.json"
-jsPath = "data/data.js"
+# convert to 1k, 10k, 100k, 1M, 10M, ..
+def number_to_string(num_records):
+    if num_records < 1000:
+        return str(num_records)
+    elif num_records < 1000000:
+        return str(num_records // 1000) + "k"
+    elif num_records < 1000000000:
+        return str(num_records // 1000000) + "M"
+    else:
+        return str(num_records // 1000000000) + "G"
+
+num_string = number_to_string(num_records)
+
+jsonPath = "data/data" + num_string + ".json"
+jsPath = "data/data" + num_string + ".js"
 
 # create data/ if not exists
 if not os.path.exists("data"):
@@ -25,4 +38,3 @@ with open(jsonPath, "w") as f1:
             f1.write(f'{{"key1": "{key1}", "key2": "{key2}", "value": {value}}}\n')
             f2.write(f'{{"key1": "{key1}", "key2": "{key2}", "value": {value}}},\n')
         f2.write("];\n")
-        
