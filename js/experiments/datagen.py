@@ -30,15 +30,17 @@ def generate_data(num_records):
     with open(jsonPath, "w") as f1:
         with open(jsPath, "w") as f2:
             with open(jqPath, "w") as f3:
+                f2.write("export let loadStartT = Date.now();\n")
                 f2.write("export let data = [\n")
                 f3.write("[\n")
                 for i in range(num_records):
+                    comma = "," if i < num_records-1 else ""
                     key1 = random.choice(keys)
                     key2 = random.choice(keys)
                     value = random.randint(valLower, valUpper)
                     f1.write(f'{{"key1": "{key1}", "key2": "{key2}", "value": {value}}}\n')
-                    f2.write(f'{{"key1": "{key1}", "key2": "{key2}", "value": {value}}},\n')
-                    f3.write(f'{{"key1": "{key1}", "key2": "{key2}", "value": {value}}},\n')
+                    f2.write(f'{{"key1": "{key1}", "key2": "{key2}", "value": {value}}}{comma}\n')
+                    f3.write(f'{{"key1": "{key1}", "key2": "{key2}", "value": {value}}}{comma}\n')
                 f2.write("];\n")
                 f3.write("]\n")
 num_recs = [10**4, 10**5, 10**6, 10**7]
