@@ -1,0 +1,768 @@
+Running case=ours query=q1
+Run 1
+Load Time: 651ms
+---- begin code ----
+tmp[0] += inp['data'][KEY_star_]['value']  // tmp[0] #2 <- *
+return tmp[0]
+---- end code ----
+{
+  tmpInsideLoop: { 'tmp[0]': { '*': true } },
+  tmpAfterTmp: { 'tmp[0]': {} },
+  tmpAfterLoop: { 'tmp[0]': {} },
+  loopAfterLoop: { '*': {} },
+  loopInsideLoop: { '*': { '*': true } }
+}
+---- end dependency data ----
+Query Time: 148ms
+49971002
+Run 2
+Load Time: 654ms
+---- begin code ----
+tmp[0] += inp['data'][KEY_star_]['value']  // tmp[0] #2 <- *
+return tmp[0]
+---- end code ----
+{
+  tmpInsideLoop: { 'tmp[0]': { '*': true } },
+  tmpAfterTmp: { 'tmp[0]': {} },
+  tmpAfterLoop: { 'tmp[0]': {} },
+  loopAfterLoop: { '*': {} },
+  loopInsideLoop: { '*': { '*': true } }
+}
+---- end dependency data ----
+Query Time: 149ms
+49971002
+Run 3
+Load Time: 649ms
+---- begin code ----
+tmp[0] += inp['data'][KEY_star_]['value']  // tmp[0] #2 <- *
+return tmp[0]
+---- end code ----
+{
+  tmpInsideLoop: { 'tmp[0]': { '*': true } },
+  tmpAfterTmp: { 'tmp[0]': {} },
+  tmpAfterLoop: { 'tmp[0]': {} },
+  loopAfterLoop: { '*': {} },
+  loopInsideLoop: { '*': { '*': true } }
+}
+---- end dependency data ----
+Query Time: 149ms
+49971002
+Run 4
+Load Time: 655ms
+---- begin code ----
+tmp[0] += inp['data'][KEY_star_]['value']  // tmp[0] #2 <- *
+return tmp[0]
+---- end code ----
+{
+  tmpInsideLoop: { 'tmp[0]': { '*': true } },
+  tmpAfterTmp: { 'tmp[0]': {} },
+  tmpAfterLoop: { 'tmp[0]': {} },
+  loopAfterLoop: { '*': {} },
+  loopInsideLoop: { '*': { '*': true } }
+}
+---- end dependency data ----
+Query Time: 148ms
+49971002
+Run 5
+Load Time: 655ms
+---- begin code ----
+tmp[0] += inp['data'][KEY_star_]['value']  // tmp[0] #2 <- *
+return tmp[0]
+---- end code ----
+{
+  tmpInsideLoop: { 'tmp[0]': { '*': true } },
+  tmpAfterTmp: { 'tmp[0]': {} },
+  tmpAfterLoop: { 'tmp[0]': {} },
+  loopAfterLoop: { '*': {} },
+  loopInsideLoop: { '*': { '*': true } }
+}
+---- end dependency data ----
+Query Time: 148ms
+49971002
+/homes/tabeysin/research/js-queries/js/experiments
+Running case=ours query=q2
+Run 1
+Load Time: 651ms
+---- begin code ----
+tmp[0]['total'] += inp['data'][KEY_star_]['value']  // tmp[0] #3 <- *
+tmp[0][inp['data'][KEY_star_]['key1']] += inp['data'][KEY_star_]['value']  // tmp[0] #5 <- *,*
+return tmp[0]
+---- end code ----
+{
+  tmpInsideLoop: { 'tmp[0]': { '*': true } },
+  tmpAfterTmp: { 'tmp[0]': {} },
+  tmpAfterLoop: { 'tmp[0]': {} },
+  loopAfterLoop: { '*': {} },
+  loopInsideLoop: { '*': { '*': true } }
+}
+---- end dependency data ----
+Query Time: 198ms
+{ total: 49971002, A: 12486732, D: 12503557, C: 12475018, B: 12505695 }
+Run 2
+Load Time: 655ms
+---- begin code ----
+tmp[0]['total'] += inp['data'][KEY_star_]['value']  // tmp[0] #3 <- *
+tmp[0][inp['data'][KEY_star_]['key1']] += inp['data'][KEY_star_]['value']  // tmp[0] #5 <- *,*
+return tmp[0]
+---- end code ----
+{
+  tmpInsideLoop: { 'tmp[0]': { '*': true } },
+  tmpAfterTmp: { 'tmp[0]': {} },
+  tmpAfterLoop: { 'tmp[0]': {} },
+  loopAfterLoop: { '*': {} },
+  loopInsideLoop: { '*': { '*': true } }
+}
+---- end dependency data ----
+Query Time: 197ms
+{ total: 49971002, A: 12486732, D: 12503557, C: 12475018, B: 12505695 }
+Run 3
+Load Time: 649ms
+---- begin code ----
+tmp[0]['total'] += inp['data'][KEY_star_]['value']  // tmp[0] #3 <- *
+tmp[0][inp['data'][KEY_star_]['key1']] += inp['data'][KEY_star_]['value']  // tmp[0] #5 <- *,*
+return tmp[0]
+---- end code ----
+{
+  tmpInsideLoop: { 'tmp[0]': { '*': true } },
+  tmpAfterTmp: { 'tmp[0]': {} },
+  tmpAfterLoop: { 'tmp[0]': {} },
+  loopAfterLoop: { '*': {} },
+  loopInsideLoop: { '*': { '*': true } }
+}
+---- end dependency data ----
+Query Time: 197ms
+{ total: 49971002, A: 12486732, D: 12503557, C: 12475018, B: 12505695 }
+Run 4
+Load Time: 654ms
+---- begin code ----
+tmp[0]['total'] += inp['data'][KEY_star_]['value']  // tmp[0] #3 <- *
+tmp[0][inp['data'][KEY_star_]['key1']] += inp['data'][KEY_star_]['value']  // tmp[0] #5 <- *,*
+return tmp[0]
+---- end code ----
+{
+  tmpInsideLoop: { 'tmp[0]': { '*': true } },
+  tmpAfterTmp: { 'tmp[0]': {} },
+  tmpAfterLoop: { 'tmp[0]': {} },
+  loopAfterLoop: { '*': {} },
+  loopInsideLoop: { '*': { '*': true } }
+}
+---- end dependency data ----
+Query Time: 198ms
+{ total: 49971002, A: 12486732, D: 12503557, C: 12475018, B: 12505695 }
+Run 5
+Load Time: 658ms
+---- begin code ----
+tmp[0]['total'] += inp['data'][KEY_star_]['value']  // tmp[0] #3 <- *
+tmp[0][inp['data'][KEY_star_]['key1']] += inp['data'][KEY_star_]['value']  // tmp[0] #5 <- *,*
+return tmp[0]
+---- end code ----
+{
+  tmpInsideLoop: { 'tmp[0]': { '*': true } },
+  tmpAfterTmp: { 'tmp[0]': {} },
+  tmpAfterLoop: { 'tmp[0]': {} },
+  loopAfterLoop: { '*': {} },
+  loopInsideLoop: { '*': { '*': true } }
+}
+---- end dependency data ----
+Query Time: 197ms
+{ total: 49971002, A: 12486732, D: 12503557, C: 12475018, B: 12505695 }
+/homes/tabeysin/research/js-queries/js/experiments
+Running case=ours query=q3
+Run 1
+Load Time: 654ms
+---- begin code ----
+tmp[0]['total'] += inp['data'][KEY_star_]['value']  // tmp[0] #3 <- *
+tmp[0][inp['data'][KEY_star_]['key1']]['total'] += inp['data'][KEY_star_]['value']  // tmp[0] #6 <- *,*
+tmp[0][inp['data'][KEY_star_]['key1']][inp['data'][KEY_star_]['key2']] += inp['data'][KEY_star_]['value']  // tmp[0] #8 <- *,*,*
+return tmp[0]
+---- end code ----
+{
+  tmpInsideLoop: { 'tmp[0]': { '*': true } },
+  tmpAfterTmp: { 'tmp[0]': {} },
+  tmpAfterLoop: { 'tmp[0]': {} },
+  loopAfterLoop: { '*': {} },
+  loopInsideLoop: { '*': { '*': true } }
+}
+---- end dependency data ----
+Query Time: 291ms
+{
+  total: 49971002,
+  A: { total: 12486732, C: 3129435, A: 3137902, D: 3121989, B: 3097406 },
+  D: { total: 12503557, C: 3123079, B: 3118249, D: 3132836, A: 3129393 },
+  C: { total: 12475018, D: 3150261, B: 3120891, A: 3097871, C: 3105995 },
+  B: { total: 12505695, A: 3140076, C: 3105107, B: 3139867, D: 3120645 }
+}
+Run 2
+Load Time: 657ms
+---- begin code ----
+tmp[0]['total'] += inp['data'][KEY_star_]['value']  // tmp[0] #3 <- *
+tmp[0][inp['data'][KEY_star_]['key1']]['total'] += inp['data'][KEY_star_]['value']  // tmp[0] #6 <- *,*
+tmp[0][inp['data'][KEY_star_]['key1']][inp['data'][KEY_star_]['key2']] += inp['data'][KEY_star_]['value']  // tmp[0] #8 <- *,*,*
+return tmp[0]
+---- end code ----
+{
+  tmpInsideLoop: { 'tmp[0]': { '*': true } },
+  tmpAfterTmp: { 'tmp[0]': {} },
+  tmpAfterLoop: { 'tmp[0]': {} },
+  loopAfterLoop: { '*': {} },
+  loopInsideLoop: { '*': { '*': true } }
+}
+---- end dependency data ----
+Query Time: 292ms
+{
+  total: 49971002,
+  A: { total: 12486732, C: 3129435, A: 3137902, D: 3121989, B: 3097406 },
+  D: { total: 12503557, C: 3123079, B: 3118249, D: 3132836, A: 3129393 },
+  C: { total: 12475018, D: 3150261, B: 3120891, A: 3097871, C: 3105995 },
+  B: { total: 12505695, A: 3140076, C: 3105107, B: 3139867, D: 3120645 }
+}
+Run 3
+Load Time: 652ms
+---- begin code ----
+tmp[0]['total'] += inp['data'][KEY_star_]['value']  // tmp[0] #3 <- *
+tmp[0][inp['data'][KEY_star_]['key1']]['total'] += inp['data'][KEY_star_]['value']  // tmp[0] #6 <- *,*
+tmp[0][inp['data'][KEY_star_]['key1']][inp['data'][KEY_star_]['key2']] += inp['data'][KEY_star_]['value']  // tmp[0] #8 <- *,*,*
+return tmp[0]
+---- end code ----
+{
+  tmpInsideLoop: { 'tmp[0]': { '*': true } },
+  tmpAfterTmp: { 'tmp[0]': {} },
+  tmpAfterLoop: { 'tmp[0]': {} },
+  loopAfterLoop: { '*': {} },
+  loopInsideLoop: { '*': { '*': true } }
+}
+---- end dependency data ----
+Query Time: 292ms
+{
+  total: 49971002,
+  A: { total: 12486732, C: 3129435, A: 3137902, D: 3121989, B: 3097406 },
+  D: { total: 12503557, C: 3123079, B: 3118249, D: 3132836, A: 3129393 },
+  C: { total: 12475018, D: 3150261, B: 3120891, A: 3097871, C: 3105995 },
+  B: { total: 12505695, A: 3140076, C: 3105107, B: 3139867, D: 3120645 }
+}
+Run 4
+Load Time: 651ms
+---- begin code ----
+tmp[0]['total'] += inp['data'][KEY_star_]['value']  // tmp[0] #3 <- *
+tmp[0][inp['data'][KEY_star_]['key1']]['total'] += inp['data'][KEY_star_]['value']  // tmp[0] #6 <- *,*
+tmp[0][inp['data'][KEY_star_]['key1']][inp['data'][KEY_star_]['key2']] += inp['data'][KEY_star_]['value']  // tmp[0] #8 <- *,*,*
+return tmp[0]
+---- end code ----
+{
+  tmpInsideLoop: { 'tmp[0]': { '*': true } },
+  tmpAfterTmp: { 'tmp[0]': {} },
+  tmpAfterLoop: { 'tmp[0]': {} },
+  loopAfterLoop: { '*': {} },
+  loopInsideLoop: { '*': { '*': true } }
+}
+---- end dependency data ----
+Query Time: 292ms
+{
+  total: 49971002,
+  A: { total: 12486732, C: 3129435, A: 3137902, D: 3121989, B: 3097406 },
+  D: { total: 12503557, C: 3123079, B: 3118249, D: 3132836, A: 3129393 },
+  C: { total: 12475018, D: 3150261, B: 3120891, A: 3097871, C: 3105995 },
+  B: { total: 12505695, A: 3140076, C: 3105107, B: 3139867, D: 3120645 }
+}
+Run 5
+Load Time: 650ms
+---- begin code ----
+tmp[0]['total'] += inp['data'][KEY_star_]['value']  // tmp[0] #3 <- *
+tmp[0][inp['data'][KEY_star_]['key1']]['total'] += inp['data'][KEY_star_]['value']  // tmp[0] #6 <- *,*
+tmp[0][inp['data'][KEY_star_]['key1']][inp['data'][KEY_star_]['key2']] += inp['data'][KEY_star_]['value']  // tmp[0] #8 <- *,*,*
+return tmp[0]
+---- end code ----
+{
+  tmpInsideLoop: { 'tmp[0]': { '*': true } },
+  tmpAfterTmp: { 'tmp[0]': {} },
+  tmpAfterLoop: { 'tmp[0]': {} },
+  loopAfterLoop: { '*': {} },
+  loopInsideLoop: { '*': { '*': true } }
+}
+---- end dependency data ----
+Query Time: 293ms
+{
+  total: 49971002,
+  A: { total: 12486732, C: 3129435, A: 3137902, D: 3121989, B: 3097406 },
+  D: { total: 12503557, C: 3123079, B: 3118249, D: 3132836, A: 3129393 },
+  C: { total: 12475018, D: 3150261, B: 3120891, A: 3097871, C: 3105995 },
+  B: { total: 12505695, A: 3140076, C: 3105107, B: 3139867, D: 3120645 }
+}
+/homes/tabeysin/research/js-queries/js/experiments
+Running case=rumble query=q1
+Run 1
+Did you know?  🧑‍🏫
+The RumbleDB command line interface was extended with convenient shortcuts. For example:
+
+spark-submit <spark parameters> rumbledb-<version>.jar run query.jq
+spark-submit <spark parameters> rumbledb-<version>.jar serve -p 8001
+spark-submit <spark parameters> rumbledb-<version>.jar run -q '1+1'
+spark-submit <spark parameters> rumbledb-<version>.jar repl -c 10
+
+The list of single-dash shortcuts is documented in our documentation page, accessible from www.rumbledb.org.
+
+Try it out! The old parameters will continue to work, though.
+23/10/04 18:31:54 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+49971002
+[ExecTime] 2613
+[ProfilerCount] 0
+Run 2
+Did you know?  🧑‍🏫
+The RumbleDB command line interface was extended with convenient shortcuts. For example:
+
+spark-submit <spark parameters> rumbledb-<version>.jar run query.jq
+spark-submit <spark parameters> rumbledb-<version>.jar serve -p 8001
+spark-submit <spark parameters> rumbledb-<version>.jar run -q '1+1'
+spark-submit <spark parameters> rumbledb-<version>.jar repl -c 10
+
+The list of single-dash shortcuts is documented in our documentation page, accessible from www.rumbledb.org.
+
+Try it out! The old parameters will continue to work, though.
+23/10/04 18:31:58 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+49971002
+[ExecTime] 2614
+[ProfilerCount] 0
+Run 3
+Did you know?  🧑‍🏫
+The RumbleDB command line interface was extended with convenient shortcuts. For example:
+
+spark-submit <spark parameters> rumbledb-<version>.jar run query.jq
+spark-submit <spark parameters> rumbledb-<version>.jar serve -p 8001
+spark-submit <spark parameters> rumbledb-<version>.jar run -q '1+1'
+spark-submit <spark parameters> rumbledb-<version>.jar repl -c 10
+
+The list of single-dash shortcuts is documented in our documentation page, accessible from www.rumbledb.org.
+
+Try it out! The old parameters will continue to work, though.
+23/10/04 18:32:02 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+49971002
+[ExecTime] 2598
+[ProfilerCount] 0
+Run 4
+Did you know?  🧑‍🏫
+The RumbleDB command line interface was extended with convenient shortcuts. For example:
+
+spark-submit <spark parameters> rumbledb-<version>.jar run query.jq
+spark-submit <spark parameters> rumbledb-<version>.jar serve -p 8001
+spark-submit <spark parameters> rumbledb-<version>.jar run -q '1+1'
+spark-submit <spark parameters> rumbledb-<version>.jar repl -c 10
+
+The list of single-dash shortcuts is documented in our documentation page, accessible from www.rumbledb.org.
+
+Try it out! The old parameters will continue to work, though.
+23/10/04 18:32:06 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+49971002
+[ExecTime] 2559
+[ProfilerCount] 0
+Run 5
+Did you know?  🧑‍🏫
+The RumbleDB command line interface was extended with convenient shortcuts. For example:
+
+spark-submit <spark parameters> rumbledb-<version>.jar run query.jq
+spark-submit <spark parameters> rumbledb-<version>.jar serve -p 8001
+spark-submit <spark parameters> rumbledb-<version>.jar run -q '1+1'
+spark-submit <spark parameters> rumbledb-<version>.jar repl -c 10
+
+The list of single-dash shortcuts is documented in our documentation page, accessible from www.rumbledb.org.
+
+Try it out! The old parameters will continue to work, though.
+23/10/04 18:32:10 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+49971002
+[ExecTime] 2810
+[ProfilerCount] 0
+/homes/tabeysin/research/js-queries/js/experiments
+Running case=rumble query=q2
+Run 1
+Did you know?  🧑‍🏫
+The RumbleDB command line interface was extended with convenient shortcuts. For example:
+
+spark-submit <spark parameters> rumbledb-<version>.jar run query.jq
+spark-submit <spark parameters> rumbledb-<version>.jar serve -p 8001
+spark-submit <spark parameters> rumbledb-<version>.jar run -q '1+1'
+spark-submit <spark parameters> rumbledb-<version>.jar repl -c 10
+
+The list of single-dash shortcuts is documented in our documentation page, accessible from www.rumbledb.org.
+
+Try it out! The old parameters will continue to work, though.
+23/10/04 18:32:14 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+{ "B" : 12505695, "C" : 12475018, "D" : 12503557, "A" : 12486732, "total" : 49971002 }
+[ExecTime] 6675
+[ProfilerCount] 0
+Run 2
+Did you know?  🧑‍🏫
+The RumbleDB command line interface was extended with convenient shortcuts. For example:
+
+spark-submit <spark parameters> rumbledb-<version>.jar run query.jq
+spark-submit <spark parameters> rumbledb-<version>.jar serve -p 8001
+spark-submit <spark parameters> rumbledb-<version>.jar run -q '1+1'
+spark-submit <spark parameters> rumbledb-<version>.jar repl -c 10
+
+The list of single-dash shortcuts is documented in our documentation page, accessible from www.rumbledb.org.
+
+Try it out! The old parameters will continue to work, though.
+23/10/04 18:32:22 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+{ "B" : 12505695, "C" : 12475018, "D" : 12503557, "A" : 12486732, "total" : 49971002 }
+[ExecTime] 6562
+[ProfilerCount] 0
+Run 3
+Did you know?  🧑‍🏫
+The RumbleDB command line interface was extended with convenient shortcuts. For example:
+
+spark-submit <spark parameters> rumbledb-<version>.jar run query.jq
+spark-submit <spark parameters> rumbledb-<version>.jar serve -p 8001
+spark-submit <spark parameters> rumbledb-<version>.jar run -q '1+1'
+spark-submit <spark parameters> rumbledb-<version>.jar repl -c 10
+
+The list of single-dash shortcuts is documented in our documentation page, accessible from www.rumbledb.org.
+
+Try it out! The old parameters will continue to work, though.
+23/10/04 18:32:30 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+{ "B" : 12505695, "C" : 12475018, "D" : 12503557, "A" : 12486732, "total" : 49971002 }
+[ExecTime] 6598
+[ProfilerCount] 0
+Run 4
+Did you know?  🧑‍🏫
+The RumbleDB command line interface was extended with convenient shortcuts. For example:
+
+spark-submit <spark parameters> rumbledb-<version>.jar run query.jq
+spark-submit <spark parameters> rumbledb-<version>.jar serve -p 8001
+spark-submit <spark parameters> rumbledb-<version>.jar run -q '1+1'
+spark-submit <spark parameters> rumbledb-<version>.jar repl -c 10
+
+The list of single-dash shortcuts is documented in our documentation page, accessible from www.rumbledb.org.
+
+Try it out! The old parameters will continue to work, though.
+23/10/04 18:32:38 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+{ "B" : 12505695, "C" : 12475018, "D" : 12503557, "A" : 12486732, "total" : 49971002 }
+[ExecTime] 6695
+[ProfilerCount] 0
+Run 5
+Did you know?  🧑‍🏫
+The RumbleDB command line interface was extended with convenient shortcuts. For example:
+
+spark-submit <spark parameters> rumbledb-<version>.jar run query.jq
+spark-submit <spark parameters> rumbledb-<version>.jar serve -p 8001
+spark-submit <spark parameters> rumbledb-<version>.jar run -q '1+1'
+spark-submit <spark parameters> rumbledb-<version>.jar repl -c 10
+
+The list of single-dash shortcuts is documented in our documentation page, accessible from www.rumbledb.org.
+
+Try it out! The old parameters will continue to work, though.
+23/10/04 18:32:46 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+{ "B" : 12505695, "C" : 12475018, "D" : 12503557, "A" : 12486732, "total" : 49971002 }
+[ExecTime] 6586
+[ProfilerCount] 0
+/homes/tabeysin/research/js-queries/js/experiments
+Running case=rumble query=q3
+Run 1
+Did you know?  🧑‍🏫
+The RumbleDB command line interface was extended with convenient shortcuts. For example:
+
+spark-submit <spark parameters> rumbledb-<version>.jar run query.jq
+spark-submit <spark parameters> rumbledb-<version>.jar serve -p 8001
+spark-submit <spark parameters> rumbledb-<version>.jar run -q '1+1'
+spark-submit <spark parameters> rumbledb-<version>.jar repl -c 10
+
+The list of single-dash shortcuts is documented in our documentation page, accessible from www.rumbledb.org.
+
+Try it out! The old parameters will continue to work, though.
+23/10/04 18:32:54 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+{ "B" : { "B" : 3139867, "C" : 3105107, "D" : 3120645, "A" : 3140076, "total" : 12505695 }, "C" : { "B" : 3120891, "C" : 3105995, "D" : 3150261, "A" : 3097871, "total" : 12475018 }, "D" : { "B" : 3118249, "C" : 3123079, "D" : 3132836, "A" : 3129393, "total" : 12503557 }, "A" : { "B" : 3097406, "C" : 3129435, "D" : 3121989, "A" : 3137902, "total" : 12486732 }, "total" : 49971002 }
+[ExecTime] 7017
+[ProfilerCount] 0
+Run 2
+Did you know?  🧑‍🏫
+The RumbleDB command line interface was extended with convenient shortcuts. For example:
+
+spark-submit <spark parameters> rumbledb-<version>.jar run query.jq
+spark-submit <spark parameters> rumbledb-<version>.jar serve -p 8001
+spark-submit <spark parameters> rumbledb-<version>.jar run -q '1+1'
+spark-submit <spark parameters> rumbledb-<version>.jar repl -c 10
+
+The list of single-dash shortcuts is documented in our documentation page, accessible from www.rumbledb.org.
+
+Try it out! The old parameters will continue to work, though.
+23/10/04 18:33:03 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+{ "B" : { "B" : 3139867, "C" : 3105107, "D" : 3120645, "A" : 3140076, "total" : 12505695 }, "C" : { "B" : 3120891, "C" : 3105995, "D" : 3150261, "A" : 3097871, "total" : 12475018 }, "D" : { "B" : 3118249, "C" : 3123079, "D" : 3132836, "A" : 3129393, "total" : 12503557 }, "A" : { "B" : 3097406, "C" : 3129435, "D" : 3121989, "A" : 3137902, "total" : 12486732 }, "total" : 49971002 }
+[ExecTime] 7222
+[ProfilerCount] 0
+Run 3
+Did you know?  🧑‍🏫
+The RumbleDB command line interface was extended with convenient shortcuts. For example:
+
+spark-submit <spark parameters> rumbledb-<version>.jar run query.jq
+spark-submit <spark parameters> rumbledb-<version>.jar serve -p 8001
+spark-submit <spark parameters> rumbledb-<version>.jar run -q '1+1'
+spark-submit <spark parameters> rumbledb-<version>.jar repl -c 10
+
+The list of single-dash shortcuts is documented in our documentation page, accessible from www.rumbledb.org.
+
+Try it out! The old parameters will continue to work, though.
+23/10/04 18:33:11 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+{ "B" : { "B" : 3139867, "C" : 3105107, "D" : 3120645, "A" : 3140076, "total" : 12505695 }, "C" : { "B" : 3120891, "C" : 3105995, "D" : 3150261, "A" : 3097871, "total" : 12475018 }, "D" : { "B" : 3118249, "C" : 3123079, "D" : 3132836, "A" : 3129393, "total" : 12503557 }, "A" : { "B" : 3097406, "C" : 3129435, "D" : 3121989, "A" : 3137902, "total" : 12486732 }, "total" : 49971002 }
+[ExecTime] 7099
+[ProfilerCount] 0
+Run 4
+Did you know?  🧑‍🏫
+The RumbleDB command line interface was extended with convenient shortcuts. For example:
+
+spark-submit <spark parameters> rumbledb-<version>.jar run query.jq
+spark-submit <spark parameters> rumbledb-<version>.jar serve -p 8001
+spark-submit <spark parameters> rumbledb-<version>.jar run -q '1+1'
+spark-submit <spark parameters> rumbledb-<version>.jar repl -c 10
+
+The list of single-dash shortcuts is documented in our documentation page, accessible from www.rumbledb.org.
+
+Try it out! The old parameters will continue to work, though.
+23/10/04 18:33:20 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+{ "B" : { "B" : 3139867, "C" : 3105107, "D" : 3120645, "A" : 3140076, "total" : 12505695 }, "C" : { "B" : 3120891, "C" : 3105995, "D" : 3150261, "A" : 3097871, "total" : 12475018 }, "D" : { "B" : 3118249, "C" : 3123079, "D" : 3132836, "A" : 3129393, "total" : 12503557 }, "A" : { "B" : 3097406, "C" : 3129435, "D" : 3121989, "A" : 3137902, "total" : 12486732 }, "total" : 49971002 }
+[ExecTime] 7043
+[ProfilerCount] 0
+Run 5
+Did you know?  🧑‍🏫
+The RumbleDB command line interface was extended with convenient shortcuts. For example:
+
+spark-submit <spark parameters> rumbledb-<version>.jar run query.jq
+spark-submit <spark parameters> rumbledb-<version>.jar serve -p 8001
+spark-submit <spark parameters> rumbledb-<version>.jar run -q '1+1'
+spark-submit <spark parameters> rumbledb-<version>.jar repl -c 10
+
+The list of single-dash shortcuts is documented in our documentation page, accessible from www.rumbledb.org.
+
+Try it out! The old parameters will continue to work, though.
+23/10/04 18:33:28 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+{ "B" : { "B" : 3139867, "C" : 3105107, "D" : 3120645, "A" : 3140076, "total" : 12505695 }, "C" : { "B" : 3120891, "C" : 3105995, "D" : 3150261, "A" : 3097871, "total" : 12475018 }, "D" : { "B" : 3118249, "C" : 3123079, "D" : 3132836, "A" : 3129393, "total" : 12503557 }, "A" : { "B" : 3097406, "C" : 3129435, "D" : 3121989, "A" : 3137902, "total" : 12486732 }, "total" : 49971002 }
+[ExecTime] 7084
+[ProfilerCount] 0
+/homes/tabeysin/research/js-queries/js/experiments
+Running case=jq query=q1
+Run 1
+49971002
+Elapsed time: 2532 ms
+Run 2
+49971002
+Elapsed time: 2549 ms
+Run 3
+49971002
+Elapsed time: 2526 ms
+Run 4
+49971002
+Elapsed time: 2536 ms
+Run 5
+49971002
+Elapsed time: 2540 ms
+/homes/tabeysin/research/js-queries/js/experiments
+Running case=jq query=q2
+Run 1
+{
+  "total": 49971002,
+  "A": 12486732,
+  "B": 12505695,
+  "C": 12475018,
+  "D": 12503557
+}
+Elapsed time: 8511 ms
+Run 2
+{
+  "total": 49971002,
+  "A": 12486732,
+  "B": 12505695,
+  "C": 12475018,
+  "D": 12503557
+}
+Elapsed time: 8477 ms
+Run 3
+{
+  "total": 49971002,
+  "A": 12486732,
+  "B": 12505695,
+  "C": 12475018,
+  "D": 12503557
+}
+Elapsed time: 8464 ms
+Run 4
+{
+  "total": 49971002,
+  "A": 12486732,
+  "B": 12505695,
+  "C": 12475018,
+  "D": 12503557
+}
+Elapsed time: 8468 ms
+Run 5
+{
+  "total": 49971002,
+  "A": 12486732,
+  "B": 12505695,
+  "C": 12475018,
+  "D": 12503557
+}
+Elapsed time: 8589 ms
+/homes/tabeysin/research/js-queries/js/experiments
+Running case=jq query=q3
+Run 1
+{
+  "total": 49971002,
+  "A": {
+    "total": 12486732,
+    "A": 3137902,
+    "B": 3097406,
+    "C": 3129435,
+    "D": 3121989
+  },
+  "B": {
+    "total": 12505695,
+    "A": 3140076,
+    "B": 3139867,
+    "C": 3105107,
+    "D": 3120645
+  },
+  "C": {
+    "total": 12475018,
+    "A": 3097871,
+    "B": 3120891,
+    "C": 3105995,
+    "D": 3150261
+  },
+  "D": {
+    "total": 12503557,
+    "A": 3129393,
+    "B": 3118249,
+    "C": 3123079,
+    "D": 3132836
+  }
+}
+Elapsed time: 14924 ms
+Run 2
+{
+  "total": 49971002,
+  "A": {
+    "total": 12486732,
+    "A": 3137902,
+    "B": 3097406,
+    "C": 3129435,
+    "D": 3121989
+  },
+  "B": {
+    "total": 12505695,
+    "A": 3140076,
+    "B": 3139867,
+    "C": 3105107,
+    "D": 3120645
+  },
+  "C": {
+    "total": 12475018,
+    "A": 3097871,
+    "B": 3120891,
+    "C": 3105995,
+    "D": 3150261
+  },
+  "D": {
+    "total": 12503557,
+    "A": 3129393,
+    "B": 3118249,
+    "C": 3123079,
+    "D": 3132836
+  }
+}
+Elapsed time: 14902 ms
+Run 3
+{
+  "total": 49971002,
+  "A": {
+    "total": 12486732,
+    "A": 3137902,
+    "B": 3097406,
+    "C": 3129435,
+    "D": 3121989
+  },
+  "B": {
+    "total": 12505695,
+    "A": 3140076,
+    "B": 3139867,
+    "C": 3105107,
+    "D": 3120645
+  },
+  "C": {
+    "total": 12475018,
+    "A": 3097871,
+    "B": 3120891,
+    "C": 3105995,
+    "D": 3150261
+  },
+  "D": {
+    "total": 12503557,
+    "A": 3129393,
+    "B": 3118249,
+    "C": 3123079,
+    "D": 3132836
+  }
+}
+Elapsed time: 14920 ms
+Run 4
+{
+  "total": 49971002,
+  "A": {
+    "total": 12486732,
+    "A": 3137902,
+    "B": 3097406,
+    "C": 3129435,
+    "D": 3121989
+  },
+  "B": {
+    "total": 12505695,
+    "A": 3140076,
+    "B": 3139867,
+    "C": 3105107,
+    "D": 3120645
+  },
+  "C": {
+    "total": 12475018,
+    "A": 3097871,
+    "B": 3120891,
+    "C": 3105995,
+    "D": 3150261
+  },
+  "D": {
+    "total": 12503557,
+    "A": 3129393,
+    "B": 3118249,
+    "C": 3123079,
+    "D": 3132836
+  }
+}
+Elapsed time: 14902 ms
+Run 5
+{
+  "total": 49971002,
+  "A": {
+    "total": 12486732,
+    "A": 3137902,
+    "B": 3097406,
+    "C": 3129435,
+    "D": 3121989
+  },
+  "B": {
+    "total": 12505695,
+    "A": 3140076,
+    "B": 3139867,
+    "C": 3105107,
+    "D": 3120645
+  },
+  "C": {
+    "total": 12475018,
+    "A": 3097871,
+    "B": 3120891,
+    "C": 3105995,
+    "D": 3150261
+  },
+  "D": {
+    "total": 12503557,
+    "A": 3129393,
+    "B": 3118249,
+    "C": 3123079,
+    "D": 3132836
+  }
+}
+Elapsed time: 15018 ms
+/homes/tabeysin/research/js-queries/js/experiments

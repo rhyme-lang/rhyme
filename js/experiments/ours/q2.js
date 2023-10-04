@@ -1,5 +1,8 @@
 import { api } from "../../core.js"
-import { data } from "../data/data1M.js"
+import { data, loadStartT} from "../data/data1M.js"
+
+let loadTime = Date.now() - loadStartT
+console.log("Load Time: " + loadTime + "ms")
 
 let query = {
     "total": api.sum("data.*.value"),

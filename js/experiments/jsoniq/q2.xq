@@ -6,11 +6,11 @@
 (: let $data := json-file("/Users/supun/phd/research/work/js-queries/js/experiments/data/toy.json") :)
 
 let $q2 := {|
-    for $data_item in json-file("/Users/supun/phd/research/work/js-queries/js/experiments/data/toy.json")
+    for $data_item in json-file("/homes/tabeysin/research/js-queries/js/experiments/data/data1M.json")
     group by $key := $data_item.key1
     return {
         $key : sum($data_item.value)
     },
-    {"total": sum(json-file("/Users/supun/phd/research/work/js-queries/js/experiments/data/toy.json").value)} |}
+    {"total": sum(json-file("/homes/tabeysin/research/js-queries/js/experiments/data/data1M.json").value)} |}
 
 return $q2

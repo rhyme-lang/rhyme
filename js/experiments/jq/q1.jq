@@ -1,1 +1,1 @@
-jq 'map(.value) | add' data/toy.jq
+jq 'map(.value) | add' /homes/tabeysin/research/js-queries/js/experiments/data/data1M.jq

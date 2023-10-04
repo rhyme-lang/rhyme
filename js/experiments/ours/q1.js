@@ -1,6 +1,6 @@
 import { api } from "../../core.js"
 // import { data } from "../data/toy.js" 
-import { data, loadStartT} from "../data/data10M.js"
+import { data, loadStartT} from "../data/data1M.js"
 
 let loadTime = Date.now() - loadStartT
 console.log("Load Time: " + loadTime + "ms")

@@ -3,7 +3,7 @@
 
 (: compute nested group-by (i.e., group by key1, then key2) :)
 
-let $data := json-file("/Users/supun/phd/research/work/js-queries/js/experiments/data/toy.json")
+let $data := json-file("/homes/tabeysin/research/js-queries/js/experiments/data/data1M.json")
 return 
     {|
         for $data_item in $data
