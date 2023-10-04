@@ -14,6 +14,6 @@ let start = Date.now()
 let res = exec({data})
 let end = Date.now()
 let elapsed = end - start
-console.log(elapsed + "ms")
+console.log("Query Time: " + elapsed + "ms")
 
 console.log(res)

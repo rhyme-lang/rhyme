@@ -1,1 +1,1 @@
-cat your_data.json | jq 'map(.value) | add'
+jq 'map(.value) | add' data/toy.jq
