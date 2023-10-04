@@ -19,7 +19,8 @@
 
 \linenumbers 
 
-\newcommand{\lang}{\textcolor{blue}{QL-TBD}}
+% \newcommand{\lang}{\textcolor{blue}{QL-TBD}}
+\newcommand{\lang}{Rhyme}
 
 \usepackage[T1]{fontenc}
 % T1 fonts will be used to generate the final print and online PDFs,
@@ -59,8 +60,11 @@
 \maketitle              % typeset the header of the contribution
 %
 \begin{abstract}
-We present \lang{}, an expressive language designed for high-level data manipulation,
-with a primary focus on querying nested structures such as JSON and tensors,
+We present \lang{},
+% (stands for JSON query notation)
+an expressive language
+designed for high-level data manipulation, with a primary focus on querying
+and transforming nested structures such as JSON and tensors,
 while yielding nested structures as output.
 \lang{} draws inspiration from a diverse range of declarative languages,
 including Datalog, JQ, JSONiq, Einstein summation (Einsum), GraphQL, and more
@@ -76,20 +80,12 @@ we implement \lang{} in JavaScript (as an embedded DSL) and
 illustrate its application
 across various domains, showcasing its ability to express common
 data manipulation queries, tensor expressions (à la Einsum), and more.
-
-\keywords{First keyword  \and Second keyword \and Another keyword.}
+% \keywords{First keyword  \and Second keyword \and Another keyword.}
 \end{abstract}
 %
 %
 %
 \section{Introduction}\label{sec:intro}
-
-% Meeting notes:
-% present it as a new declarative language that takes inspiration from existing ones
-% like Datalog, Einstein notation, GraphQL, JQ, etc.
-% Deals with tree-shaped data
-% and easily generate code + do optimizations using classical compiler optimizations
-% easier to meta program and composable.
 
 Declarative programming represents a paradigm in which users articulate \emph{what}
 computation needs to be performed, without the explicit specification of the
@@ -104,120 +100,87 @@ specific languages~\cite{tensor_comprehensions}) for expressing tensor computati
 mathematically, and GraphQL~\cite{graphql} for data querying within the context of web application
 front-ends, and so on.
 
-% \todo{connection to verse, functional logic programming}
-In this work, we draw inspiration from a wide array of such existing languages,
+In practical scenarios where diverse paradigms of workloads are combined
+(e.g., data frames + tensors), the necessity arises to employ multiple
+query languages in tandem.
+Each of these languages interfaces with the respective engines tasked
+with handling individual workloads.
+However, this approach can be inherently inefficient, both from a performance
+perspective, due to the reliance on multiple isolated backends, and from
+a programmer productivity standpoint, as it necessitates learning and
+maintaining code written in multiple query languages.
+In this work, we tackle this challenge by introducing a unified query language, 
+named \lang{},
+that comprises a general substrate capable of accommodating a wide array of
+different use cases.
+
+\lang{} takes inspiration from many existing declarative languages
 including GraphQL, JQ~\cite{jq}, XQuery~\cite{xquery}, Einstein notation,
-Datalog, recent functional logic programming languages like Verse~\cite{verse}, etc. and 
-we introduce a novel declarative language named \lang{}.
+Datalog, recent functional logic programming languages like Verse~\cite{verse}, etc.
 \lang{} is designed to serve as an expressive language for high-level data
-manipulation, enabling the querying of nested data structures
-(e.g., JSON, multi-dimensional tensors)
+manipulation, enabling the querying and transformation of nested data structures
+(e.g., JSON, tensors)
 and producing nested structures as output.
 There are several key defining characteristics of \lang{}.
 First, \lang{} adopts a query syntax that closely mirrors existing object notation,
-meaning that queries are essentially expressed as JSON objects.
+meaning that queries are essentially expressed as JSON objects (\todo{point to AST encoding in JSON}).
 Second, \lang{} is designed in a way that permits query optimization and
 code generation via the construction of an intermediate representation (IR).
 This IR contains loop-free and branch-free code with dependencies that implicitly
-captures the desired program structure.
-Third, \lang{} is compositional and easier to meta-program.
+captures the program structure.
+Third, \lang{} is compositional and easy to meta-program, recognizing that data
+transformation queries are typically used as part of larger programs and are often
+generated programmatically.
 
-% \begin{figure}[t]
-% \begin{subfigure}{\textwidth}
-% \begin{minipage}{0.3\textwidth}
-% \begin{lstlisting}[style=JavaScript,columns=flexible]
-% // input dataset
-% let data = [
-%     {key: "A", val: 10},
-%     {key: "B", val: 15},
-%     {key: "A", val: 25}
-% ]
-% \end{lstlisting}
-% \end{minipage}
-% \begin{minipage}{0.7\textwidth}
-% \begin{lstlisting}[style=JavaScript,columns=flexible]
-% // compute key-specific relative aggregate proportions
-% // (syntax introduced in Section 2)
-% // SQL: SELECT key, sum(val) / (SELECT sum(d.val) FROM data d) FROM data GROUP BY key
-% {  
-%     data.*A.key: div(sum(data.*A.val),sum(data.*B.val)) 
-% }
-% // result: {A: 0.7, B: 0.3}
-% \end{lstlisting}
-% \end{minipage}
+\begin{figure}[t!]
+\includegraphics[width=\textwidth]{images/intro_fig.pdf}
+\caption{
+End-to-end workflow of \lang{}, with green markers indicating various entry points
+leading to the common entry point, \lang{} AST.
+The \lang{} AST can be constructed directly from external tools or via metaprogramming
+using different APIs.
+This AST serves as the basis for generating an IR (with dependencies), driving
+subsequent code generation.
+}\label{fig:intro_overview}
+\end{figure}
 
-% \subcaption{
-% A \lang{} query example: \inline{data.*A.key} groups by key,
-% \inline{sum(data.*A.val)} computes the aggregate per group (notice the same \inline{*A}),
-% and \inline{sum(data.*B.val)} computes the total aggregate.
-% The syntax is formally introduced and explained in \Cref{sec:query_language}.
-% }~\label{fig:intro_query}
-% \end{subfigure}
-
-% \begin{subfigure}{\textwidth}
-% \begin{minipage}{0.38\textwidth}
-% \centering
-% \includegraphics{images/intro_ir.pdf}
-% \end{minipage}
-% \begin{minipage}{0.62\textwidth}
-% \begin{lstlisting}[style=JavaScript,columns=flexible]
-% let tmp = {}
-% tmp[0] ??= {}
-% tmp[1] ??= {}                   
-% tmp[2] ??= 0                        
-% // sub-query de-correlated (loop hoisted)
-% (*@\highlight[highlightblue]{for (let b in data)}@*) {
-%   tmp[2] += data[b]["val"]      // computes full aggregate
-% }
-% (*@\highlight[highlightred]{for (let a in data)}@*) {
-%   tmp[1][data[a]["key"]] ??= 0
-%   tmp[1][data[a]["key"]] +=
-%             data[a]["key"]      // computes partial aggregate
-%   tmp[0][data[a]["key"]] = 
-%             tmp[1][data[a]["key"]] / tmp[2] // proportion
-% }
-% \end{lstlisting}
-% \end{minipage}
-% \caption{
-% On the left is the generated IR for the query in (a), comprising generators
-% (diamonds) representing iterators and assignments (rectangles) corresponding
-% to computations.
-% On the right is the JS code generated from this IR.
-% Notably, the `inner query' is hoisted in the final
-% generated code.
-% }\label{fig:ir_code}
-% \end{subfigure}
-
-% \caption{
-% The end-to-end workflow of \lang{}, starting with the query (a),
-% followed by the construction of the IR on the left side of (b), and the
-% final generated code on the right side of (b).
-% \todo{have a simpler example here.}
-% \todo{src | IR | generated code}
-% }\label{fig:intro}
-% \end{figure}
-
+\Cref{fig:intro_overview} provides an overview of the end-to-end workflow of \lang{}.
+The central point of entry into this workflow is the \lang{} AST (\Cref{subsec:ast}).
+Notably, this AST is represented in JSON format, hence serializable, enabling the ability
+to be exported/imported from various other environments.
+We implement \lang{} as an embedded DSL in JavaScript (JS), 
+which constructs the \lang{} AST from \lang{} queries.
+Additionally, we provide alternative interfaces, such as pipes (discussed in \Cref{subsec:fluent}),
+or entirely textual inputs that can be processed by a parser to construct the same AST.
+Once the AST is constructed, it gets transformed into our IR.
+During this transformation, we map our declarative query operators to IR instructions
+along with their dependencies.
+Subsequently, this IR is used to analyze the looping structure and generate the final
+code.
 
 \begin{figure}[t!]
 \begin{subfigure}{\textwidth}
-\begin{minipage}{0.25\textwidth}
-\begin{lstlisting}[style=JavaScript, columns=flexible]
+\begin{minipage}{0.33\textwidth}
+\begin{lstlisting}[style=JavaScriptTiny, columns=flexible]
 // input dataset
 let data = [
   {key: "A", val: 10},
   {key: "B", val: 15},
   {key: "A", val: 25}
 ]
-// query (result: 50)
+// query
 sum('data.*.val')
+// AST:
+{key: 'sum', param: 'data.*.val'}
+// result: 50
 \end{lstlisting}
 \end{minipage}
-\begin{minipage}{0.21\textwidth}
+\begin{minipage}{0.27\textwidth}
 \centering
-\includegraphics[width=0.9\textwidth]{images/intro_q1_ir.pdf}
+\includegraphics[width=0.73\textwidth]{images/intro_q1_ir.pdf}
 \end{minipage}
-\begin{minipage}{0.54\textwidth}
-\begin{lstlisting}[style=JavaScript, columns=flexible, numbers=left, xleftmargin=2pt]
+\begin{minipage}{0.4\textwidth}
+\begin{lstlisting}[style=JavaScriptTiny, columns=flexible, numbers=left, xleftmargin=2pt]
 let tmp = {}
 tmp[0] ??= 0
 (*@\highlight[highlightblue]{for (let star in data) }@*) {
@@ -230,32 +193,40 @@ return tmp[0]
 \end{subfigure}
 
 \begin{subfigure}{\textwidth}
-\begin{minipage}{0.25\textwidth}
-\begin{lstlisting}[style=JavaScript, columns=flexible]
+\begin{minipage}{0.33\textwidth}
+\begin{lstlisting}[style=JavaScriptTiny, columns=flexible]
 // query
 {
- total: sum('data.*.val'),
- 'data.*.key': sum('data.*.val')
+  total: sum('data.*.val'),
+  'data.*.key': sum('data.*.val')
 }
-/* result:
- { total: 50, 
-   'A': 35,
-   'B': 15 } */
+// AST:
+{
+  total:
+    {key: 'sum', param: 'data.*.val'},
+  'data.*.key':
+    {key: 'sum', param: 'data.*.val'}
+}
+// result:
+//  { total: 50, 
+//    'A': 35,
+//    'B': 15 }
 \end{lstlisting}
 \end{minipage}
-\begin{minipage}{0.21\textwidth}
+\begin{minipage}{0.27\textwidth}
 \centering
-\includegraphics[width=0.9\textwidth]{images/intro_q2_ir.pdf}
+\includegraphics[width=0.73\textwidth]{images/intro_q2_ir.pdf}
 \end{minipage}
-\begin{minipage}{0.54\textwidth}
-\begin{lstlisting}[style=JavaScript, columns=flexible, numbers=left, xleftmargin=2pt]
+\begin{minipage}{0.4\textwidth}
+\begin{lstlisting}[style=JavaScriptTiny, columns=flexible, numbers=left, xleftmargin=2pt]
 let tmp = {}
 tmp[0] ??= {}
 tmp[0]['total'] ??= 0
+
 (*@\highlight[highlightblue]{for (let star in data) }@*) {
   tmp[0]['total'] += data[star]['val']
   tmp[0][data[star]['key']] ??= 0
-  tmp[0][data[star]['key']] += data[star]['value']
+  tmp[0][data[star]['key']] += data[star]['val']
 }
 return tmp[0]
 \end{lstlisting}
@@ -265,30 +236,42 @@ return tmp[0]
 \end{subfigure}
 
 \begin{subfigure}{\textwidth}
-\begin{minipage}{0.25\textwidth}
-\begin{lstlisting}[style=JavaScript, columns=flexible]
+\begin{minipage}{0.33\textwidth}
+\begin{lstlisting}[style=JavaScriptTiny, columns=flexible]
 // query
 {
-  'data.*A.key': 
-   div(sum('data.*A.val'),
-       sum('data.*B.val')) 
+  'data.*A.key': div(sum('data.*A.val'), 
+                    sum('data.*B.val')) 
 }
+// AST:
+{
+  'data.*.key': {
+    path: 'div',
+    param: [
+      {key: 'sum', param: 'data.*A.val'},
+      {key: 'sum', param: 'data.*B.val'}
+    ]
+  }
+}
+
 // result:
 // {'A': 0.7, 'B': 0.3}
 \end{lstlisting}
 \end{minipage}
-\begin{minipage}{0.21\textwidth}
+\begin{minipage}{0.27\textwidth}
 \centering
-\includegraphics[width=0.9\textwidth]{images/intro_q3_ir.pdf}
+\includegraphics[width=0.73\textwidth]{images/intro_q3_ir.pdf}
 \end{minipage}
-\begin{minipage}{0.54\textwidth}
-\begin{lstlisting}[style=JavaScript, columns=flexible, numbers=left, xleftmargin=2pt]
+\begin{minipage}{0.4\textwidth}
+\begin{lstlisting}[style=JavaScriptTiny, columns=flexible, numbers=left, xleftmargin=2pt]
 let tmp = {}
 tmp[1] ??= {}
 tmp[2] ??= 0
+
 (*@\highlight[highlightblue]{for (let starB in data)}@*) {  // loop hoisted!
   tmp[2] += data[starB]['val']
 }
+
 tmp[0] ??= {}
 (*@\highlight[highlightred]{for (let starA in data)}@*) {
   tmp[1][data[starA]['key']] ??= 0;
@@ -298,29 +281,33 @@ tmp[0] ??= {}
 return tmp[0]
 \end{lstlisting}
 \end{minipage}
-\caption{A query computing key-specific relative aggregate proportions}\label{fig:intro_q3}
+\caption{A query computing key-specific 
+relative aggregate proportions
+\todo{add the system components figure.}
+\todo{show the `AST' definition}
+}\label{fig:intro_q3}
 \end{subfigure}
 \caption{
-The end-to-end workflow of \lang{} for three queries, starting with the query (left),
-followed by the construction of the IR (mid), and the final generated code (right).
+The end-to-end workflow of \lang{} for three queries, starting with the query
+and the corresponding AST (left),
+followed by the construction of the IR (center), and the final generated code (right).
 }\label{fig:intro}
 \end{figure}
 
-In \Cref{fig:intro}, we show a glimpse of how our query language works end-to-end.
-Note that our current implementation is done in JavaScript (JS) and we generate JS
-code for given input queries.
-As shown in \Cref{fig:intro_q1}, the dataset for these examples consists of a collection
-of objects, each featuring a \inline{key} and a \inline{val}.
-The query in \Cref{fig:intro_q1} is a simple query that computes the sum of all
-\inline{val} values.
-Here, the \inline{*} symbol serves as an iterator, facilitating iteration through
-the \inline{val} values, while the reducer \inline{sum} calculates the sum of
-these iterated values.
+\Cref{fig:intro} shows this end-to-end workflow using several example queries.
+Specifically, the query is shown on the left, alongside its AST representation,
+the IR in the center, and the generated code on the right.
+While the comprehensive exploration of these components will be the focus of
+subsequent sections in this paper, we offer an introductory overview of each
+element here.
 
-In the middle section of the figure, we show the IR constructed from this query.
-\lang{}'s IR consists of two main types of operators.
+Consider the query in \Cref{fig:intro_q1}.
+In \lang{}, the \inline{*} symbol serves as an iterator, facilitating iteration through
+the \inline{val} values, while the aggregator \inline{sum} calculates the sum of
+these iterated values.
+\lang{}'s IR (shown in center) consists of two main types of operators.
 First, it has generators (represented as \emph{rounded} rectangles), which represents iterators
-that iterates through a list of items (ultimately translated into loops within
+that iterates through a list of items (ultimately translated into loops in
 the generated code).
 In our example, \inline{data.*} is a generator, iterating values from the data object.
 Second, the IR has assignments (represented as rectangles), comprising the
@@ -340,9 +327,9 @@ such as RPAI~\cite{rpai} and DBToaster~\cite{dbtoaster_vldb}.
 These systems utilize state variables (or maps) to maintain values for
 various sub-queries of the main query, which are then leveraged to compute the
 final result.
-Finally, the IR is translated into JS code, taking dependencies into account to
-extract the program structure and performing optimizations as part of this
-transformation process.
+Finally, the IR is translated into JS code (and compiled using \inline{eval()}),
+taking dependencies into account to extract the program structure and performing
+optimizations as part of this transformation process.
 
 \Cref{fig:intro_q2} and \Cref{fig:intro_q3} illustrate two additional queries executed on
 the same dataset.
@@ -352,7 +339,8 @@ a group-by sum operation.
 A key characteristic of \lang{} lies in the contextual interpretation of expressions
 such as \inline{sum(data.*.val)}.
 That is, the semantics of this expression differs depending on its context.
-For instance, when it is nested within \inline{data.*.key},
+This is similar to local unification semantics in Verse~\cite{verse}.
+For instance, when it is nested within \inline{\{data.*.key: ...\}},
 it signifies a group-by sum operation.
 Conversely, if it is not nested within an iterator (i.e., \inline{*}),
 it calculates the aggregate over the entire set of values.
@@ -386,15 +374,16 @@ Our specific contributions are as follows.
 \begin{itemize}
     \item We present the syntax of our query language and demonstrate how to express common
           data manipulation operators like, selections, group-bys, joins, user-defined functions (UDFs),
-          and so on.
-          Moreover, we show how \lang{} can be used to express complex tensor computations in a declarative
-          manner similar to Einsum notation (\Cref{sec:query_language}).
+          and so on (\Cref{sec:query_language}).
+    \item We demonstrate how \lang{} can be used in a variety of use cases like expressing visual aspects of
+          web applications like tables, charts (e.g., using SVG), etc., expressing complex tensor computations
+          declaratively (à la Einsum), and enabling `pipe' APIs via metaprogramming.
     \item We show how the queries are lowered into an IR that contains loop-free and branch-free code
           with dependencies implicitly representing the program structure.
           Then, we demonstrate how this IR can be used to generate code for a given query by constructing
-          the program structure from dependencies.
-          Moreover, we show how traditional compiler optimizations like lambda lifting translates to query
-          optimizations like sub-query de-correlation (\Cref{sec:ir_codegen}).
+          the program structure from dependencies (\Cref{sec:ir_codegen}).
+          % Moreover, we show how traditional compiler optimizations like lambda lifting translates to query
+          % optimizations like sub-query de-correlation 
     % \item We demonstrate the capabilities of our overall query language by taking a relatively simple example
     %       program that uses most of the features we have presented in previous sections (\Cref{sec:case_study}).
     \item We compare the performance of \lang{} on several practical JSON analytics workloads to demonstrate the
@@ -407,6 +396,10 @@ in \Cref{sec:conclusions}.
 
 \section{The Query Language}~\label{sec:query_language}
 
+
+\subsection{\lang{} AST}\label{subsec:ast}
+
+\todo{formal grammar -- figure: here's the sytnax}
 In the previous section, we saw \lang{} in action for a set of relatively simple queries.
 In this section, we will introduce the syntax of the \lang{}, illustrating how it facilitates
 the expression of common data manipulation operations like selections, aggregates,
@@ -420,6 +413,8 @@ intricate nested structures.
 However, it is worth noting that \lang{} has the capacity to seamlessly query
 deeply nested JSON data without any problem in the same way.
 
+\todo{how the queries are represented/constructed --> serialiable form that can be exported to a different environemtn}
+\todo{essentially an AST}
 
 \begin{lstlisting}[style=JavaScript]
 let data = [
@@ -661,7 +656,10 @@ Each query is self-explanatory, with the expected result displayed on the right.
 Importantly, similar to other types of \lang{} operations, this array accumulation
 seamlessly integrates with other query constructs.
 
-\subsection{Fluent API}
+\todo{separate top level section: case studies/applications}
+\todo{we can have a parser for both json like syntax and fluent-style}
+\subsection{Fluent API}\label{subsec:fluent}
+\todo{demonstrates the metaprogramming aspects}
 Sometimes, the JSON-style query interface can be cumbersome,
 especially when dealing with deeply nested objects.
 To address this issue, \lang{} offers a higher-level API that employs
@@ -725,6 +723,8 @@ let query =
     .sum().group('*chunk').get('*')          // 4. group-by chunk and compute sum
     .max()                                   // 5. find maximum among group sums
 \end{lstlisting}
+
+\todo{show what it really does}
 
 In this new version, you can observe that this high-level interface provides a
 much cleaner and more concise way to express the same query. 
@@ -813,6 +813,7 @@ Examples are taken from~\cite{einsumblog}.
 
 
 \subsection{Tensor Expressions}\label{subsec:tensor}
+\todo{starting with something not a tensor (say data frame) --> get a tensor --> and performing a tensor computation}
 In the preceding subsections, we have explored how \lang{} enables expressive
 manipulation of JSON-like data, demonstrating its utility in various contexts.
 However, \lang{}'s versatility extends beyond typical data workloads.
@@ -861,6 +862,7 @@ both \inline{A} and \inline{B}.
 For readers familiar with languages like Datalog, this concept essentially
 parallels unification.
 
+
 % Another key benefit of \lang{} is that these queries, for the most part are agnostic
 % to the underlying data structure.
 % For instance, one could use a JSON to represent a sparse tensor in a format similar to
@@ -878,6 +880,8 @@ Specifically, these queries get translated into a loop-free, branch-free IR that
 operators corresponding to the tensor expressions that then get translated into
 optimized JS code.
 
+\todo{dom manipulation stuff from the blog}
+
 \section{IR and Code Generation}~\label{sec:ir_codegen}
 
 Up to this point, we have provided an introduction to the syntax of
@@ -888,7 +892,10 @@ as the basis for generating optimized code.
 In this section, we will delve into a detailed discussion of the IR structure
 and the code generation process.
 
+\todo{to generate code we need two things: (1) construct IR ops, (2) identifying the loop structure}
+
 \subsection{IR Structure}
+
 As discussed in \Cref{sec:intro}, the IR structure of \lang{} consists of two
 primary types of instructions: \emph{generators} and \emph{assignments}.
 Generators correspond to iterators responsible for enumerating input or intermediate
@@ -940,8 +947,18 @@ corresponding generator.
 % \todo{should we mention this?}
 
 \subsection{Constructing the IR}
-\todo{mention How the \lang{} queries are transformed to the IR.
-Discuss path, how and when new temps are created, etc.}
+Now that we understand the structure of the IR, let's understand how it is constructed
+from a query.
+One key thing to figure out is when to create new temporaries, which, ultimately
+determines the dependencies and the structure of the final generated code.
+To do this, we define a notion of a `path', similar to the notion of XPath in XML.
+
+
+\todo{explaining all the nitty grity details might take a lot of space here. What are
+the key ideas we should mention?}
+
+\todo{what code snippets should we include here?}
+
 
 \subsection{Code Generation}
 Once the IR is constructed for a query, next step is to generate the final code
@@ -1081,7 +1098,7 @@ function emitGenerators() {
 }
 \end{lstlisting}
 
-\inline{generators} here is as a global variable that keeps track of the
+\inline{generators} here is a global variable that keeps track of the
 remaining generators that is yet to be scheduled.
 The \inline{emitGenerators} function is responsible for orchestrating the
 generation of loops corresponding to these generators.
@@ -1140,11 +1157,15 @@ for querying data from backend services.
 Generally, resolvers for these queries should be manually implemented in the backend.
 Some systems like Hasura~\cite{hasura} automate the generation of SQL queries from
 GraphQL queries, simplifying query resolution.
-Most of these languages are specifically targeted towards large-scale JSON analytics workloads.
+Most of these languages are specifically targeted towards large-scale JSON analytics workloads
+and are not expressive enough to support workloads like the ones
+in \Cref{subsec:tensor} and \Cref{subsec:fluent}.
 While we take inspiration from these languages for the design of the language,
-\lang{}, is designed to handle various forms of nested data,
-including tensors, and it offers support for efficient code generation and optimizations
+\lang{}, is designed to handle various forms of nested data (e.g., tensors),
+and it offers support for efficient code generation and optimizations
 through its IR.
+
+\todo{connection to functional logic programming}
 
 % We take inspiration from many other declarative programming languages.
 % Specifically, the \lang
@@ -1198,6 +1219,8 @@ Furthermore, it is feasible to leverage existing compiler infrastructures such
 as LMS~\cite{lms} or MLIR~\cite{mlir} for streamlined handling of tasks like
 IR construction, dependency analysis, and the eventual generation of highly
 specialized low-level code.
+
+\todo{conditionals?}
 
 % \textbf{Missing Operators}
 % Currently \lang{} lacks several operators like sorting and conditionals.
