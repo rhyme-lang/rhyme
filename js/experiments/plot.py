@@ -63,7 +63,10 @@ with open(raw_log, 'r') as f:
     for case in data:
         for query in data[case]:
             std = np.std(data[case][query])
-            df = df.append({"case": caseMap[case], "query": queryMap[query], "mean": sum(data[case][query]) / len(data[case][query]), "std": std}, ignore_index=True)
+            mean = np.mean(data[case][query])
+            # conver to seconds
+            mean /= 1000
+            df = df.append({"case": caseMap[case], "query": queryMap[query], "mean": mean, "std": std}, ignore_index=True)
     
     print(df)
 
@@ -80,16 +83,16 @@ with open(raw_log, 'r') as f:
 
     import matplotlib.pyplot as plt
 
+    # set legend font size
+    plt.rcParams["legend.fontsize"] = 14
+    # set y ticks font size
+    plt.rcParams["ytick.labelsize"] = 14
+    # set y label font size
+    plt.rcParams["axes.labelsize"] = 14
+
     # plot
     # df.plot(kind="bar", width=0.8, rot=0, yerr=std_df, fontsize=14, ecolor="black")
-    df.plot(kind="bar", width=0.8, rot=0, ylabel="Running Time (ms)")
-
-    # set font size
-    plt.xticks(fontsize=14)
-    # plt.yticks(fontsize=14)
-
-    # legend font size
-    plt.legend(fontsize=30)
+    df.plot(kind="bar", width=0.8, rot=0, fontsize=14, ylabel="Running Time (s)")
 
     # y axis log scale
     # plt.yscale("log")
