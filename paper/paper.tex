@@ -885,13 +885,11 @@ Examples are taken from~\cite{einsumblog}.
 \end{figure}
 
 
-\todo{starting with something not a tensor (say data frame) --> get a tensor --> and performing a tensor computation}
 \subsection{Tensor Expressions}\label{subsec:tensor}
 
 \lang{} provides an elegant framework for expressing tensor computations,
 drawing inspiration from the Einstein summation (Einsum) notation frequently
 employed in tensor frameworks.
-
 The Einsum notation offers a concise means of articulating tensor computations.
 For instance, the expression $ik,kj \rightarrow ij$ specifies a tensor operation
 that takes two two-dimensional tensors (say $A$ and $B$), and yields a third
@@ -902,7 +900,7 @@ be specified using such declarative expressions.
 \lang{} provides a similar way to express tensor computations in a declarative fashion,
 as illustrated in \Cref{fig:tensors}.
 The structure of a \lang{} query closely mirrors the corresponding Einsum equation.
-Notably, the keys (indices) following the `$\rightarrow$' symbol transition into keys
+Specifically, the keys (indices) following the `$\rightarrow$' symbol transition into keys
 within the query, while the equation's body simply becomes the corresponding tensors
 with their respective indices (i.e., \inline{*i}, \inline{*j}, and so on).
 For instance, consider matrix multiplication expressed in Einsum notation as
@@ -910,6 +908,29 @@ $ik,kj \rightarrow ij$.
 This equation simply translates into a \lang{} query (\Cref{fig:tensors}, Line~\ref{code:matmulquery}) featuring \inline{*i} and
 \inline{*j} as query keys. The body of the query comprises the two matrices, accessed as
 \inline{A.*i.*k} corresponding to $ik$ and \inline{B.*k.*j} corresponding to $kj$.
+\Cref{fig:tensors} shows a variety of such tensor computation.
+
+One benefit of having a unified query language for both data manipulation and tensor
+computations is the ability to handle combined workloads efficiently.
+To illustrate this, let's consider a simplified version of computing a city's
+`crime index' (taken from~\cite{weld}).
+We first select a set of features of cities (e.g., population, 
+adult population and number of robberies), followed by a dot product
+with a predefined weight vector.
+
+\begin{lstlisting}[style=JavaScript,columns=flexible]
+let cityVec = { 'data.*.city': ['data.*.pop', 'data.*.adultPop', 'data.*.numRobs'] }
+let weightVec = [1.0, 1.0, -2000.0] // weight of each feature
+let crimeIndex = {    // dot product
+  'data.*.city': sum(times('weightVec.*i', get(get(cityVec, 'data.*.city'), '*i')))
+} // computes the crime index for each city
+\end{lstlisting}
+
+We can specify both the data manipulation component (i.e., the projection) and
+the tensor computation (i.e., dot product) within the same query language, and
+we generate a unified code for the combined task.
+While this example may look simple, this has the potential to optimize practical
+intricate workloads that combine data processing with tensor computations.
 
 \Cref{fig:tensors} shows how \lang{} can be used to express a variety of
 tensor expressions, ranging from simple queries like sums or sums along
@@ -932,6 +953,9 @@ Subsequently, the generated code ensures that the iterated values exist in
 both \inline{A} and \inline{B}.
 For readers familiar with languages like logic programming, this concept essentially
 parallels the notion of unification.
+
+
+
 
 
 % Another key benefit of \lang{} is that these queries, for the most part are agnostic
