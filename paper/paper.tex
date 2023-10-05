@@ -15,6 +15,9 @@
 \usepackage{cite}
 \usepackage{textcomp} % for having straight quotes ' in lstlisting
 \usepackage[nounderscore]{syntax}  % for query grammar
+\usepackage{setspace} % to set line spacing for grammar
+
+\usepackage{backnaur}
 
 \input{macros.tex}
 
@@ -180,7 +183,7 @@ sum('data.*.val')
 \centering
 \includegraphics[width=0.73\textwidth]{images/intro_q1_ir.pdf}
 \end{minipage}
-\begin{minipage}{0.4\textwidth}
+\begin{minipage}{0.38\textwidth}
 \begin{lstlisting}[style=JavaScriptTiny, columns=flexible, numbers=left, xleftmargin=2pt]
 let tmp = {}
 tmp[0] ??= 0
@@ -218,7 +221,7 @@ return tmp[0]
 \centering
 \includegraphics[width=0.73\textwidth]{images/intro_q2_ir.pdf}
 \end{minipage}
-\begin{minipage}{0.4\textwidth}
+\begin{minipage}{0.38\textwidth}
 \begin{lstlisting}[style=JavaScriptTiny, columns=flexible, numbers=left, xleftmargin=2pt]
 let tmp = {}
 tmp[0] ??= {}
@@ -263,7 +266,7 @@ return tmp[0]
 \centering
 \includegraphics[width=0.73\textwidth]{images/intro_q3_ir.pdf}
 \end{minipage}
-\begin{minipage}{0.4\textwidth}
+\begin{minipage}{0.38\textwidth}
 \begin{lstlisting}[style=JavaScriptTiny, columns=flexible, numbers=left, xleftmargin=2pt]
 let tmp = {}
 tmp[1] ??= {}
@@ -395,60 +398,57 @@ in \Cref{sec:conclusions}.
 
 \section{The Query Language}~\label{sec:query_language}
 In the previous section, we saw \lang{} in action for a set of relatively simple queries.
-In this section, we will introduce the syntax of the \lang{}, illustrating how it facilitates
-the expression of common data manipulation operations like selections, aggregates,
-group-bys, and so on.
+\Cref{fig:grammar} shows the formal grammar for \lang{} queries.
+In this section, we 
+illustrate how it facilitates the expression of common data manipulation operations
+like selections, aggregates, group-bys, and so on.
 
-\begin{figure}
-\begin{lstlisting}[style=JavaScript, columns=flexible]
-// notes for grammar
-<reducer> ::= array | sum | max | min | avg | ... // TODO: check
-<bin_op> ::= get | plus | sub | mult | div | ... // TODO: check
-<iter_sym> ::= '*' <ident> | '*' <num>
-<iter_key> ::= <iter_sym> | <iter_sym>.<iter_key> | <ident>.<iter_key>
+% \begin{figure}
+%   \scriptsize
+% \begin{grammar}
+% <ident> ::= [a-zA-Z\_][a-zA-Z0-9\_]*
 
+% <reducer> ::= array | sum | count | max | min | last | first
 
-<kv> ::= <iter_key> ':' <query>
-<kv_list> ::= <pair> | <pair>, <pair_list>
-<query> ::= <iter_key> | <reducer>(<iter_key>) | <bin_op>(<iter_key>,<iter_key>)
-          | '{' pair_list '}' | '[' <query> ']'
-\end{lstlisting}
+% <bin-op> ::= get | apply | plus | minus | times | div | fdiv | mod
+
+% <iter-sym> ::= "*" | "*"<ident> | "*"<num>
+
+% <iter-arg> ::= <iter-sym> | <iter-sym>"."<iter-key> | <ident>"."<iter-key>
+
+% <arg> ::= <iter-arg> | <ident>
+
+% <pair> ::= <arg> ":" <query>
+
+% <pair-list> ::= <pair> | <pair> "," <pair-list>
+
+% <query> ::= <arg> | <reducer>"("<query>")" | <bin-op>"("<query>,<query>")" | "{"<pair-list>"}"
+% \end{grammar}
+% \caption{\todo{}}
+% \end{figure}
+
+\begin{figure}[t!]
+\scriptsize
+\begin{bnf*}
+\bnfprod{ident}{\bnfts{[a-zA-Z\_][a-zA-Z0-9\_]*}  \bnfsp\bnfsp\bnfsp\bnfsp\bnfsp\bnfsp \bnfpn{num} \bnfpo \bnfts{[0-9]+} }\\
+\bnfprod{reducer}{\bnfts{array} \bnfor \bnfts{sum} \bnfor \bnfts{count} \bnfor \bnfts{max} \bnfor \bnfts{min} \bnfor \bnfts{last} \bnfor \bnfts{first}} \\
+\bnfprod{bin-op}{\bnfts{get} \bnfor \bnfts{apply} \bnfor \bnfts{plus} \bnfor \bnfts{minus} \bnfor \bnfts{times} \bnfor \bnfts{div} \bnfor \bnfts{fdiv} \bnfor \bnfts{mod}} \\
+\bnfprod{iter-sym}{\bnfts{*} \bnfor \bnfts{*} \bnfpn{ident} \bnfor \bnfts{*} \bnfpn{num}} \\
+\bnfprod{iter-arg}{\bnfpn{iter-sym} \bnfor \bnfpn{iter-sym} \bnfts{.} \bnfpn{iter-arg} \bnfor \bnfpn{ident} \bnfts{.} \bnfpn{iter-arg}} \\
+\bnfprod{arg}{\bnfpn{iter-arg} \bnfor \bnfpn{ident}} \\
+\bnfprod{pair}{\bnfpn{arg} \bnfts{:} \bnfpn{query}} \\
+\bnfprod{query}{\bnfpn{arg} \bnfor \bnfpn{reducer}\bnfts{(}\bnfpn{query}\bnfts{)}
+\bnfor \bnfpn{bin-op}\bnfts{(} \bnfpn{query} \bnfts{,} \bnfpn{query} \bnfts{)}
+\bnfor \bnfts{\{} \bnfpn{pair-list} \bnfts{\}}
+}
+\end{bnf*}
+\caption{Grammar for \lang{} query languages. \Cref{sec:query_language} shows how to use this to express
+various kinds of queries.}\label{fig:grammar}
 \end{figure}
 
-\begin{figure}
-  \footnotesize
-\begin{grammar}
-<reducer> ::= array | sum | max | min | avg | 
-
-<bin-op> ::= get | plus | sub | mult | div | ... 
-
-  <query> ::= <identifier> "." <query>
-            | "\{" <pair\_list> "\}"
-            | "[" <list\_query> "]"
-            | "sum" "(" <list\_query> ")"
-            | "\{" <identifier> ":" <list\_query> "\}"
-  
-  <list\_query> ::= <identifier> ".*." <identifier>
-               | <query> ".*." <identifier>
-  
-  <pair\_list> ::= <pair>
-               | <pair> "," <pair\_list>
-  
-  <pair> ::= <identifier> ":" <query>
-  
-  <identifier> ::= [a-zA-Z\_][a-zA-Z0-9\_]*
-  
-\end{grammar}
-\end{figure}
-
-\subsection{\lang{} AST}\label{subsec:ast}
-\todo{maybe not the best place to discuss the AST}
 
 
-\todo{formal grammar -- figure: here's the sytnax}
-
-
-To enhance comprehension, we will employ a running illustrative example dataset, as
+To improve understanding, we will employ a running illustrative example dataset, as
 depicted below.
 Specifically, we have a dataset containing population of several major cities,
 along with the respective country.
@@ -456,9 +456,6 @@ Our chosen dataset is deliberately kept relatively straightforward, devoid of
 intricate nested structures.
 However, it is worth noting that \lang{} has the capacity to seamlessly query
 deeply nested JSON data without any problem in the same way.
-
-\todo{how the queries are represented/constructed --> serialiable form that can be exported to a different environemtn}
-\todo{essentially an AST}
 
 \begin{lstlisting}[style=JavaScript]
 let data = [
@@ -699,6 +696,9 @@ into arrays.
 Each query is self-explanatory, with the expected result displayed on the right.
 Importantly, similar to other types of \lang{} operations, this array accumulation
 seamlessly integrates with other query constructs.
+
+\subsection{\lang{} AST}\label{subsec:ast}
+\todo{maybe not the best place to discuss the AST}
 
 \todo{separate top level section: case studies/applications}
 \todo{we can have a parser for both json like syntax and fluent-style}
