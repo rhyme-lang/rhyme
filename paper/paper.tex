@@ -14,6 +14,7 @@
 \usepackage{multicol}
 \usepackage{cite}
 \usepackage{textcomp} % for having straight quotes ' in lstlisting
+\usepackage[nounderscore]{syntax}  % for query grammar
 
 \input{macros.tex}
 
@@ -150,7 +151,7 @@ Notably, this AST is represented in JSON format, hence serializable, enabling th
 to be exported/imported from various other environments.
 We implement \lang{} as an embedded DSL in JavaScript (JS), 
 which constructs the \lang{} AST from \lang{} queries.
-Additionally, we provide alternative interfaces, such as pipes (discussed in \Cref{subsec:fluent}),
+Additionally, alternative interfaces can be used, such as pipes (discussed in \Cref{subsec:fluent}),
 or entirely textual inputs that can be processed by a parser to construct the same AST.
 Once the AST is constructed, it gets transformed into our IR.
 During this transformation, we map our declarative query operators to IR instructions
@@ -283,8 +284,6 @@ return tmp[0]
 \end{minipage}
 \caption{A query computing key-specific 
 relative aggregate proportions
-\todo{add the system components figure.}
-\todo{show the `AST' definition}
 }\label{fig:intro_q3}
 \end{subfigure}
 \caption{
@@ -395,15 +394,60 @@ in \Cref{sec:conclusions}.
 
 
 \section{The Query Language}~\label{sec:query_language}
-
-
-\subsection{\lang{} AST}\label{subsec:ast}
-
-\todo{formal grammar -- figure: here's the sytnax}
 In the previous section, we saw \lang{} in action for a set of relatively simple queries.
 In this section, we will introduce the syntax of the \lang{}, illustrating how it facilitates
 the expression of common data manipulation operations like selections, aggregates,
 group-bys, and so on.
+
+\begin{figure}
+\begin{lstlisting}[style=JavaScript, columns=flexible]
+// notes for grammar
+<reducer> ::= array | sum | max | min | avg | ... // TODO: check
+<bin_op> ::= get | plus | sub | mult | div | ... // TODO: check
+<iter_sym> ::= '*' <ident> | '*' <num>
+<iter_key> ::= <iter_sym> | <iter_sym>.<iter_key> | <ident>.<iter_key>
+
+
+<kv> ::= <iter_key> ':' <query>
+<kv_list> ::= <pair> | <pair>, <pair_list>
+<query> ::= <iter_key> | <reducer>(<iter_key>) | <bin_op>(<iter_key>,<iter_key>)
+          | '{' pair_list '}' | '[' <query> ']'
+\end{lstlisting}
+\end{figure}
+
+\begin{figure}
+  \footnotesize
+\begin{grammar}
+<reducer> ::= array | sum | max | min | avg | 
+
+<bin-op> ::= get | plus | sub | mult | div | ... 
+
+  <query> ::= <identifier> "." <query>
+            | "\{" <pair\_list> "\}"
+            | "[" <list\_query> "]"
+            | "sum" "(" <list\_query> ")"
+            | "\{" <identifier> ":" <list\_query> "\}"
+  
+  <list\_query> ::= <identifier> ".*." <identifier>
+               | <query> ".*." <identifier>
+  
+  <pair\_list> ::= <pair>
+               | <pair> "," <pair\_list>
+  
+  <pair> ::= <identifier> ":" <query>
+  
+  <identifier> ::= [a-zA-Z\_][a-zA-Z0-9\_]*
+  
+\end{grammar}
+\end{figure}
+
+\subsection{\lang{} AST}\label{subsec:ast}
+\todo{maybe not the best place to discuss the AST}
+
+
+\todo{formal grammar -- figure: here's the sytnax}
+
+
 To enhance comprehension, we will employ a running illustrative example dataset, as
 depicted below.
 Specifically, we have a dataset containing population of several major cities,
@@ -658,6 +702,8 @@ seamlessly integrates with other query constructs.
 
 \todo{separate top level section: case studies/applications}
 \todo{we can have a parser for both json like syntax and fluent-style}
+
+\section{Case Studies}
 \subsection{Fluent API}\label{subsec:fluent}
 \todo{demonstrates the metaprogramming aspects}
 Sometimes, the JSON-style query interface can be cumbersome,
@@ -1123,24 +1169,82 @@ would be hoisted and scheduled as a separate query instead of repeating the
 computation multiple times inside a nested loop.
 
 
-\subsection{Implementation}
-\todo{We implement this in <1000 lines of JavaScript, it can run in the browser, etc.}
+% \subsection{Implementation}
+% \todo{We implement this in <1000 lines of JavaScript, it can run in the browser, etc.}
 
 % \section{Incremental}
 % Incremental queries for JSONs, incremental tensor computations!
-
 
 
 % \section{Example: Pivot Table}\label{sec:case_study}
 % How to use group bys, partial aggregates, display, svg, etc.
 
 \section{Experiments}\label{sec:experiments}
-% We will have to variants: non-incremental and incremental.
-% For incremental we can show the execution time per each `batch' of
-% records (batch on x-axis).
-\todo{simple query examples with synthetic key-value data (a simple aggr, group-By,
-de-correlation, etc.). Compare against, JQ, JSONiq.}
 
+\begin{figure}[t]
+\begin{minipage}{0.4\textwidth}
+\centering
+\includegraphics[width=0.8\textwidth]{images/plot.pdf}
+\end{minipage}
+\begin{minipage}{0.6\textwidth}
+\begin{lstlisting}[style=JavaScriptTiny, columns=flexible]
+// data = [ {key1: "A", key2: "B", val: 10}, ... ]
+Q1 = sum('data.*.val')
+Q2 = {
+  total: sum('data.*.val'), 'data.*.key1': sum('data.*.val')
+}
+Q3 = {
+  total: sum('data.*.val'),
+  'data.*.key1': {
+    total: sum('data.*.val'), 'data.*.key2': sum('data.*.val')
+  }
+}
+\end{lstlisting}
+\end{minipage}
+\caption{Running time (left) for JQ, Rumble, and Rhyme for three different simple queries shown
+on right
+\todo{plot increase font size}
+}\label{fig:plot}
+\end{figure}
+
+In this section, we conduct a performance evaluation of our current \lang{}
+implementation, comparing it against two established JSON processing
+systems: JQ~\cite{jq} and Rumble~\cite{rumble_vldb}, the latter of which
+utilizes Spark for distributed processing.
+We acknowledge that systems like Rumble are primarily designed for large-scale,
+cluster execution and may not exhibit optimal performance in a single-node,
+single-threaded context.
+Nevertheless, we consider it a valuable baseline for comparison.
+
+\subsection{Experimental Setup}
+We run three queries on a simple synthetic dataset comprising 1 million records of
+JSON objects.
+Each object in the dataset contains two string keys, \inline{key1} and \inline{key2}, 
+as well as an integer value.
+As depicted in \Cref{fig:plot}, the first query calculates the sum of the integer
+values, the second query performs an aggregate sum after grouping by the \inline{key1},
+and the third query computes a two-level aggregate using \inline{key1}, then \inline{key2}.
+
+We run all the experiments using a single thread, on a NUMA machine
+with 4 sockets, 24 Intel(R) Xeon(R) Platinum 8168 cores
+per socket, and 750GB RAM per socket (3 TB total) running Ubuntu
+18.04.4 LTS.
+We have used JQ v1.6, Rumble v1.21.0, and Node v18.18.0 (for running our JS code).
+
+\subsection{Results}
+Across the three queries, \lang{} demonstrates the best performance.
+This can be attributed to its ability to generate optimized JS code tailored
+to a specific query, which significantly reduces overhead compared to the
+general execution engines employed by systems like Rumble.
+JQ performs the worst, as it lacks any form of
+`query planning' and executes queries naively without optimizations
+such as loop fusion.
+
+While these results highlight the potential performance gains achievable
+through \lang{}'s code generation capabilities, it is important to note
+that this benchmark does not provide a comprehensive analysis that contains the
+full spectrum of representative cases in JSON analytics.
+Such a comprehensive evaluation is deferred to future research.
 
 \section{Related Work}\label{sec:related_work}
 There are several query languages designed for working with semi-structured data like
@@ -1164,8 +1268,10 @@ While we take inspiration from these languages for the design of the language,
 \lang{}, is designed to handle various forms of nested data (e.g., tensors),
 and it offers support for efficient code generation and optimizations
 through its IR.
+\lang{} borrows many ideas from functional logic programming language like
+Verse~\cite{verse}, Curry~\cite{curry}, miniKanren~\cite{miniKanren_thesis} and 
+Scalango~\cite{scalango} adapt them into a new data-centric declarative language.
 
-\todo{connection to functional logic programming}
 
 % We take inspiration from many other declarative programming languages.
 % Specifically, the \lang
@@ -1178,15 +1284,15 @@ through its IR.
 
 \section{Conclusions and Future Work}\label{sec:conclusions}
 
-In this study, we introduced \lang{}, a new query language tailored for high-level
+In this paper, we introduced \lang{}, a new query language tailored for high-level
 data manipulation.
 We illustrated how \lang{}'s design facilitates query optimization and code generation
 through the construction of an IR.
 This IR comprises loop-free branch-free code, with program structure implicitly captured
-by dependencies, making it easier to implement optimizations.
+by dependencies.
 Throughout the paper, we demonstrated the versatility of \lang{} by showcasing its
-applicability across a wide range of expressive data manipulation operations,
-including tensor computations in a declarative manner.
+applicability in expressive data manipulations,
+tensor computations, manipulation of visual aspects, and so on in a declarative manner.
 It is worth noting that \lang{} is still in its early developmental stages,
 and we are excited about exploring various avenues of interesting future work.
 
@@ -1200,6 +1306,8 @@ incremental execution.
 Notably, our generated code is inherently designed to be `incremental-friendly'.
 This implies that we have the capability to generate code akin to update
 triggers, which are invoked whenever a modification is made to the dataset.
+Specifically, instead of dense loops used in the current version, update triggers
+generate `sparse' loops in the sense that it iterates only over the deltas.
 
 Another dimension of incrementality involves managing query changes.
 This entails finding ways to accommodate changes in queries while maximizing
