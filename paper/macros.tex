@@ -1,5 +1,5 @@
 \newcommand{\todo}[1]{\textcolor{red}{TODO: #1}}
-\newcommand{\inline}[1]{\lstinline[style=JavaScript,basicstyle=\ttfamily\small]{#1}}
+\newcommand{\inline}[1]{\lstinline[style=JavaScriptInline,basicstyle=\ttfamily\small]{#1}}
 
 % colors for highlighting
 \definecolor{highlightred}{HTML}{F19C99}
@@ -17,14 +17,30 @@
     keywordstyle=\color{blue},
     commentstyle=\color{green!50!black},
     stringstyle=\color{orange},
+    showstringspaces=false,
+    breaklines=true,
+    breakatwhitespace=true,
+    tabsize=1,
+    numbersep=2pt,
+    numberstyle=\ttfamily\tiny,
+    morekeywords={let, const, var, function, if, else, pipe, map, group, count, plus, minus,
+    while, for, return, typeof, switch, case, merge, get, sum, min, max, div, keyval, apply, times},
+    escapeinside={(*@}{@*)}
+}
+
+\lstdefinestyle{JavaScriptInline}{
+    language=java,
+    basicstyle=\ttfamily\scriptsize,
+    keywordstyle=\color{blue},
+    commentstyle=\color{green!50!black},
+    stringstyle=\color{orange},
     showstringspaces=true,
     breaklines=true,
     breakatwhitespace=true,
     tabsize=1,
     numbersep=2pt,
     numberstyle=\ttfamily\tiny,
-    morekeywords={let, const, var, function, if, else, pipe, map, group,
-    while, for, return, typeof, switch, case, merge, get, sum, min, max, div, keyval, apply, times},
+    morekeywords={},
     escapeinside={(*@}{@*)}
 }
 
