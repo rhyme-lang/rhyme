@@ -56,27 +56,40 @@ with open(raw_log, 'r') as f:
     caseMap = {"rumble": "Rumble", "ours": "Rhyme (ours)", "jq": "JQ"}
     queryMap = {"q1": "Q1", "q2": "Q2", "q3":"Q3"}
 
+    import numpy as np
+
     # create a pandas dataframe: (case, query, mean time, std time)
     df = pd.DataFrame(columns=["case", "query", "mean", "std"])
     for case in data:
         for query in data[case]:
-            df = df.append({"case": caseMap[case], "query": queryMap[query], "mean": sum(data[case][query]) / len(data[case][query]), "std": 0}, ignore_index=True)
+            std = np.std(data[case][query])
+            df = df.append({"case": caseMap[case], "query": queryMap[query], "mean": sum(data[case][query]) / len(data[case][query]), "std": std}, ignore_index=True)
     
     print(df)
 
     # I want to plot query -> system -> mean time
     # so I need to pivot the table
+    std_df = df.pivot(index="query", columns="case", values="std")
     df = df.pivot(index="query", columns="case", values="mean")
 
     caseOrder = ["JQ", "Rumble", "Rhyme (ours)"]
     df = df[caseOrder]
+    std_df = std_df[caseOrder]
 
     print(df)
 
     import matplotlib.pyplot as plt
 
     # plot
-    df.plot(kind="bar")
+    # df.plot(kind="bar", width=0.8, rot=0, yerr=std_df, fontsize=14, ecolor="black")
+    df.plot(kind="bar", width=0.8, rot=0, ylabel="Running Time (ms)")
+
+    # set font size
+    plt.xticks(fontsize=14)
+    # plt.yticks(fontsize=14)
+
+    # legend font size
+    plt.legend(fontsize=30)
 
     # y axis log scale
     # plt.yscale("log")
@@ -89,15 +102,14 @@ with open(raw_log, 'r') as f:
 
     # add grid lines
     plt.grid(axis="y")
-
     # set size
-    plt.gcf().set_size_inches(8, 5)
-
+    plt.gcf().set_size_inches(7, 5)
 
     # hide label from legend
     plt.legend(title=None)
+    
 
-    plt.ylabel("Running Time (ms)")
     plt.savefig("plot.png")
+    plt.savefig("plot.pdf")
 
 
