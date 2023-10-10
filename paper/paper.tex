@@ -391,9 +391,9 @@ Our specific contributions are as follows.
           % optimizations like sub-query de-correlation 
     % \item We demonstrate the capabilities of our overall query language by taking a relatively simple example
     %       program that uses most of the features we have presented in previous sections (\Cref{sec:case_study}).
-    \item We compare the performance of \lang{} on several practical JSON analytics workloads to demonstrate the
+    \item We compare the performance of \lang{} on several small JSON analytics workloads to demonstrate the
           effectiveness of our code generation approach (\Cref{sec:experiments}).
-\end{itemize}
+\end{itemize} 
 
 We discuss related work in \Cref{sec:related_work}, followed by conclusions and potential future research directions
 in \Cref{sec:conclusions}.
@@ -460,7 +460,7 @@ Our chosen dataset is deliberately kept simple, devoid of
 intricate nested structures.
 However, \lang{} has the capacity to seamlessly query
 nested JSON data without any problem in the same way.
-We will see such example later in \Cref{sec:case_studies}
+We will see such examples later in \Cref{sec:case_studies}
 
 \begin{lstlisting}[style=JavaScript]
 let data = [
@@ -718,7 +718,7 @@ As we saw in \Cref{fig:intro_overview} and \Cref{fig:intro}, all the queries we
 saw above are `lowered' to the \lang{} AST representation which serves as the basis
 for the dependency analysis and IR construction.
 This AST representation is in JSON format, and closely mirror the query JSON structure.
-The different is, all the calls to reducers like \inline{sum}, \inline{count}, etc.
+The difference is, all the calls to reducers like \inline{sum}, \inline{count}, etc.
 and other operations like \inline{plus}, \inline{minus}, etc. will be translated to
 explicit objects components with \inline{key} (or \inline{path}) and the corresponding
 arguments.
@@ -729,7 +729,7 @@ and \inline{param}, and \inline{div} is translated to \inline{path} and param.
 
 \section{Case Studies}\label{sec:case_studies}
 \subsection{Fluent API}\label{subsec:fluent}
-\lang{} JSON frontend we saw in \Cref{sec:query_language} describes the query
+\lang{} query frontend (JSON) we saw in \Cref{sec:query_language} describes the query
 using the structure of the computed \emph{result}.
 However, sometimes, it is more natural to start from the structure of the 
 \emph{input}, and specify a sequence of transformation steps.
@@ -899,7 +899,7 @@ let crimeIndex = {    // dot product
 We can specify both the data manipulation component (i.e., the projection) and
 the tensor computation (i.e., dot product) within the same query language, and
 we generate a unified code for the combined task.
-While this example may look simple, this has the potential to optimize practical
+While we kept the example simple for brevity, this has the potential to optimize practical
 intricate workloads that combine data processing with tensor computations.
 
 
@@ -1003,7 +1003,8 @@ let query = {
       children: 'data.*.product': {     
         props: computeEntry,  // product-level aggr
         children: {
-          'data.*.model': computeEntry
+          'data.*.model':      // model-level aggr
+              computeEntry
         }
   ...
 }
