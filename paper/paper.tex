@@ -391,10 +391,6 @@ Our specific contributions are as follows.
     \item We highlight the versatility of \lang{} across various use cases, including the expression
           of visual elements in web applications (e.g., tables, charts using SVG), declarative
           tensor computations (akin to Einsum), and the enabling `pipe' APIs via metaprogramming (\Cref{sec:case_studies}).
-    % \item We show how the queries are lowered into an IR that contains loop-free and branch-free code
-          % with dependencies implicitly representing the program structure.
-          % Then, we demonstrate how this IR can be used to generate code for a given query by constructing
-          % the program structure from dependencies (\Cref{sec:ir_codegen}).
     \item We elucidate the process of lowering queries into an IR that features loop-free and
           branch-free code, with dependencies implicitly representing the program structure.
           Then, we illustrate how this IR facilitates code generation by constructing the optimal program
@@ -409,57 +405,12 @@ in \Cref{sec:conclusions}.
 
 \section{The Query Language}~\label{sec:query_language}
 In the previous section, we saw \lang{} in action for a set of relatively simple queries.
-\Cref{fig:grammar} shows the formal grammar for \lang{} queries.
-In this section, we 
-illustrate how it facilitates the expression of common data manipulation operations
-like selections, aggregates, group-bys, and so on.
-
-% \begin{figure}
-%   \scriptsize
-% \begin{grammar}
-% <ident> ::= [a-zA-Z\_][a-zA-Z0-9\_]*
-
-% <reducer> ::= array | sum | count | max | min | last | first
-
-% <bin-op> ::= get | apply | plus | minus | times | div | fdiv | mod
-
-% <iter-sym> ::= "*" | "*"<ident> | "*"<num>
-
-% <iter-arg> ::= <iter-sym> | <iter-sym>"."<iter-key> | <ident>"."<iter-key>
-
-% <arg> ::= <iter-arg> | <ident>
-
-% <pair> ::= <arg> ":" <query>
-
-% <pair-list> ::= <pair> | <pair> "," <pair-list>
-
-% <query> ::= <arg> | <reducer>"("<query>")" | <bin-op>"("<query>,<query>")" | "{"<pair-list>"}"
-% \end{grammar}
-% \caption{\todo{}}
-% \end{figure}
-
-\begin{figure}[t!]
-\scriptsize
-\begin{bnf*}
-\bnfprod{ident}{\bnfts{[a-zA-Z\_][a-zA-Z0-9\_]*}  \bnfsp\bnfsp\bnfsp\bnfsp\bnfsp\bnfsp \bnfpn{num} \bnfpo \bnfts{[0-9]+} }\\
-\bnfprod{reducer}{\bnfts{array} \bnfor \bnfts{sum} \bnfor \bnfts{count} \bnfor \bnfts{max} \bnfor \bnfts{min} \bnfor \bnfts{last} \bnfor \bnfts{first} \bnfts{last} \bnfor \bnfts{keyval}} \\
-\bnfprod{bin-op}{\bnfts{get} \bnfor \bnfts{apply} \bnfor \bnfts{plus} \bnfor \bnfts{minus} \bnfor \bnfts{times} \bnfor \bnfts{div} \bnfor \bnfts{fdiv} \bnfor \bnfts{mod}} \\
-\bnfprod{iter-sym}{\bnfts{*} \bnfor \bnfts{*} \bnfpn{ident} \bnfor \bnfpn{num}} \\
-\bnfprod{iter-arg}{\bnfpn{iter-sym} \bnfor \bnfpn{iter-sym} \bnfts{.} \bnfpn{iter-arg} \bnfor \bnfpn{ident} \bnfts{.} \bnfpn{iter-arg}} \\
-\bnfprod{arg}{\bnfpn{iter-arg} \bnfor \bnfpn{ident}} \\
-\bnfprod{pair}{\bnfpn{arg} \bnfts{:} \bnfpn{query}} \\
-\bnfprod{pair-list}{\bnfpn{pair} \bnfor \bnfpn{pair}\bnfts{,}\bnfpn{pair-list}} \\
-\bnfprod{query}{\bnfpn{arg} \bnfor \bnfpn{reducer}\bnfts{(}\bnfpn{query}\bnfts{)}
-\bnfor \bnfpn{bin-op}\bnfts{(} \bnfpn{query} \bnfts{,} \bnfpn{query} \bnfts{)}
-\bnfor \bnfts{\{} \bnfpn{pair-list} \bnfts{\}}
-}
-\end{bnf*}
-\caption{Grammar for \lang{} query languages. \Cref{sec:query_language} shows how to use this to express
-various kinds of queries.}\label{fig:grammar}
-\end{figure}
-
-
-
+In this section, we will introduce the syntax of \lang{}, illustrating
+how it facilitates the expression of common data manipulation operations like
+selections, aggregates, group-bys, and so on.
+The formal grammar is shown in \Cref{fig:grammar} and
+rest of this section illustrates how each of these components are used to express
+different kinds of queries.
 To improve understanding, we will employ a running illustrative example dataset, as
 depicted below.
 The dataset contains populations of several major cities,
@@ -468,16 +419,41 @@ Our chosen dataset is deliberately kept simple, devoid of
 intricate nested structures.
 However, \lang{} has the capacity to seamlessly query
 nested JSON data without any problem in the same way.
-We will see such examples later in \Cref{sec:case_studies}
+We will see such examples later in \Cref{sec:case_studies}.
+
+
+
+
+\begin{figure}[t!]
+\scriptsize
+\begin{bnf*}
+\bnfprod{ident}{\bnfts{[a-zA-Z\_][a-zA-Z0-9\_]*}  \bnfsp\bnfsp\bnfsp\bnfsp\bnfsp\bnfsp \bnfpn{num} \bnfpo \bnfts{[0-9]+} }\\
+\bnfprod{reducer}{\bnfts{array} \bnfor \bnfts{sum} \bnfor \bnfts{count} \bnfor \bnfts{max} \bnfor \bnfts{min} \bnfor \bnfts{last} \bnfor \bnfts{first}} \\
+\bnfprod{bin-op}{\bnfts{get} \bnfor \bnfts{apply} \bnfor \bnfts{plus} \bnfor \bnfts{minus} \bnfor \bnfts{times} \bnfor \bnfts{div} \bnfor \bnfts{fdiv} \bnfor \bnfts{mod} \bnfor \bnfts{keyval}} \\
+\bnfprod{iter-sym}{\bnfts{*} \bnfor \bnfts{*} \bnfpn{ident} \bnfor \bnfpn{num}} \\
+\bnfprod{iter-arg}{\bnfpn{iter-sym} \bnfor \bnfpn{iter-sym} \bnfts{.} \bnfpn{iter-arg} \bnfor \bnfpn{ident} \bnfts{.} \bnfpn{iter-arg}} \\
+\bnfprod{arg}{\bnfpn{iter-arg} \bnfor \bnfpn{ident}} \\
+\bnfprod{pair}{\bnfpn{arg} \bnfts{:} \bnfpn{query}} \\
+\bnfprod{pair-list}{\bnfpn{pair} \bnfor \bnfpn{pair}\bnfts{,}\bnfpn{pair-list}} \\
+\bnfprod{query}{\bnfpn{arg} \bnfor \bnfpn{reducer}\bnfts{(}\bnfpn{arg}\bnfts{)}
+\bnfor \bnfpn{bin-op}\bnfts{(} \bnfpn{arg} \bnfts{,} \bnfpn{arg} \bnfts{)}
+\bnfor \bnfts{\{} \bnfpn{pair-list} \bnfts{\}}
+}
+\end{bnf*}
+\vspace{-7mm}
+\caption{Syntax for expressing \lang{} queries. \Cref{sec:query_language} shows how to use this to express
+various kinds of queries.}\label{fig:grammar}
+\vspace{-5mm}
+\end{figure}
 
 \begin{lstlisting}[style=JavaScript]
 let data = [
-    {country: "Japan", city: "Tokyo",     population: 14},
-    {country: "China", city: "Beijing",   population: 22},
-    {country: "France",city: "Paris",     population: 3},
-    {country: "UK",    city: "London",    population: 9},
-    {country: "Japan", city: "Osaka",     population: 3},
-    {country: "UK",    city: "Birmingham",population: 2}
+  {country: "Japan", city: "Tokyo",      population: 14},
+  {country: "China", city: "Beijing",    population: 22},
+  {country: "France",city: "Paris",      population: 3},
+  {country: "UK",    city: "London",     population: 9},
+  {country: "Japan", city: "Osaka",      population: 3},
+  {country: "UK",    city: "Birmingham", population: 2}
 ]
 \end{lstlisting}
 
@@ -488,15 +464,15 @@ For instance, if we want to select a particular key of the dataset at a given
 index, we can use the following syntax.
 
 \begin{lstlisting}[style=JavaScript]
-'data.0.country'              // result: Japan
+'data.2.country'              // result: France
 {first : 'data.0.country'}    // result: {first: Japan}
 \end{lstlisting}
 
 Several key attributes of \lang{} can be observed from the aforementioned examples.
-In the given illustration, the reference \inline{data} refers to
-the dataset object, enabling simple indexing into the array of data through integer
-indices.
-Furthermore, the selection of specific keys is facilitated by specifying the desired
+Here, the reference \inline{data} refers to
+the dataset object, 
+and can be simply indexed through integer indices.
+Furthermore, specific keys can be selected by specifying the desired
 key names (e.g., \inline{.country}).
 Notably, \lang{} offers the convenience of the familiar JS-like syntax for constructing
 structured output from extracted values, as exemplified in the second instance.
@@ -505,9 +481,8 @@ While this form of explicit indexing into the array can be useful for several
 use cases, generally, queries involve some form of iterating over the dataset.
 \lang{} offers this capability through the \inline{*} operator,
 serving as an implicit iteration operator.
-As we saw in \Cref{fig:intro_q3}, we can perform controlled iteration with multiple
-named iterators (e.g., \inline{*A}, \inline{*B}, etc.), but,
-for now, our focus centers on relatively simple queries.
+Moreover, as we saw in \Cref{fig:intro_q3}, we can perform controlled iteration with multiple
+named iterators (e.g., \inline{*A}, \inline{*B}, etc.).
 Below, we present three example queries that leverage iterators and compute
 aggregates over the iterated values.
 
@@ -517,42 +492,31 @@ sum('data.*.population')    // result: 53
 max('data.*.population')    // result: 22
 \end{lstlisting}
 
-The queries presented above are self-explanatory in nature.
+These queries are self-explanatory in nature.
 In the first example, we illustrate a scenario where an array can be constructed
 from the values obtained through iteration, employing the \inline{[...]} syntax.
-Alternatively, users can compute aggregates over the iterated values using the
+Moreover, users can compute aggregates over the iterated values using the
 relevant aggregate functions, such as \inline{sum}, \inline{max}, and so forth.
-As discussed previously, this queries can be used as parts of object
-construction logic and combined flexibly as shown below.
+As discussed previously, these queries can be used as parts of object
+construction logic and combined flexibly, as shown below.
 
+\hspace{-18pt}
+\begin{minipage}{0.5\textwidth}
 \begin{lstlisting}[style=JavaScript, columns=flexible, numbers=none]
-{ total: sum('data.*.population'), highest: max('data.*.population') }
-// result: {total: 53, highest: 22}
+{ total: sum('data.*.population'), 
+  highest: max('data.*.population') }
 \end{lstlisting}
-
-% \begin{minipage}{0.5\textwidth}
-% \begin{lstlisting}[style=JavaScript, columns=flexible, numbers=none]
-% { 
-%     total: sum(data.*.population),
-%     maximum: max(data.*.population) 
-% }
-% \end{lstlisting}
-% \end{minipage}
-
-% \begin{minipage}{0.5\textwidth}
-% \begin{lstlisting}[style=JSComment, columns=flexible, numbers=none]
-% result: 
-% {
-%     total: 53,
-%     max: 22
-% }
-% \end{lstlisting}
-% \end{minipage}
-
+\end{minipage}%
+\begin{minipage}{0.5\textwidth}
+\begin{lstlisting}[style=JavaScript, columns=flexible, numbers=none]
+// result: 
+//  {total: 53, highest: 22}
+\end{lstlisting}
+\end{minipage}
 
 \subsection{Group By}\label{subsec:groupby}
-Up to this point, we have explored fundamental query operations, including indexing,
-iteration, and aggregate computation.
+% Up to this point, we have explored fundamental query operations, including indexing,
+% iteration, and aggregate computation.
 Another vital query operator, especially relevant to JSON-style objects,
 is the group-by query.
 \lang{} offers an intuitive means of implicitly expressing group-bys.
@@ -565,38 +529,38 @@ for each group:
 // result: {Japan: 17, China: 22, France: 3, UK: 11}
 \end{lstlisting}
 
-In the above syntax, specifying \inline{data.*.country} as the key implies
+In the above syntax, specifying \inline{\{data.*.country: ...\}} as the key implies
 that any iteration carried out within this key utilizing the same
 iterator (\inline{*}) is performed for records with each unique value of \inline{country}
 separately.
-
-The next example shown below demonstrates the versatility of \lang{} group-by queries, showcasing
-aggregations at different levels.
-Moreover, it shows the composability of \lang{} queries.
+The next example shows how to use this form of grouping to compute aggregates at different
+levels.
 This query computes the total population of all records, breaks it down by country,
-and subsequently computes the population proportion of each city with respect to its
-corresponding country:
+and subsequently computes the population proportion of each city with respect to total
+population:
 
 \begin{lstlisting}[style=JavaScript, columns=flexible, numbers=none]
-let countryPop = {'data.*A.country': sum('data.*A.population')}// country -> population
 let query = { 
-    total: sum('data.*.population'),                                  // total population
-    'data.*.country': {
-        total: get(countryPop, 'data.*.country')                      // population per country
-        'data.*.city': div(sum('data.*.population'),                  // population proportion
-                            get(countryPop, 'data.*.country'))}       // (per each city)
+  total: sum('data.*.population'),                                // total population
+  'data.*.country': {
+    total: sum('data.*.country')                                  // population per country
+    'data.*.city': div(sum('data.*.population'),                  // population proportion
+                          sum('data.*A.country'))}                // (per each city)
 }
-// result: {total: 53. Japan: {total: 17, Tokyo: 0.82, Osaka: 0.18}, ...}
+// result: {total: 53. Japan: {total: 17, Tokyo: 0.26, Osaka: 0.06}, ...}
 \end{lstlisting}
 
-Specifically, the \inline{countryPop} is a separate query that determines the total
-population for each country.
-This query is subsequently used within the main \inline{query} to access the
-total population for each country where required.
-As we saw in \Cref{fig:intro_q3}, \lang{}'s backend optimizes the
-query by hoisting the independent \inline{*A} iterator outside and performing
-a lookup on the reified \inline{countryPop} instead of computing the
-corresponding aggregate inside a nested loop.
+In the given query, the \inline{sum('data.*.population')} at each query level computes
+distinct results: total population, total population per country, and population per city,
+respectively. 
+If we had multiple population values for a given city (e.g., county data), then the
+last aggregation would compute the per city sum.
+As previously discussed, since \inline{sum('data.*A.country')} is not nested within a
+\inline{*A} key, it performs a total aggregation, which sums all the population values.
+It is worth noting that our implementation employs calls like \inline{div} for some operators
+since it functions as an embedded DSL in JS.
+In a textual frontend, the query could appear even more concise, using standard operators 
+like \inline{/} for division.
 
 \subsection{Join}
 Joins are another fundamental operator in data querying.
@@ -613,20 +577,20 @@ let other = [
 ]
 \end{lstlisting}
 
-Now, let's consider a scenario where we aim to compute aggregate population
+Now, consider a scenario where we aim to compute aggregate population
 values based on regions.
-To achieve this, we must perform a join operation between our original
-\inline{data} object and this new \inline{other} object to acquire the
+For this, we must perform a join between our original
+\inline{data} and this new \inline{other} object to acquire the
 corresponding region for each country.
-The following \lang{} query demonstrates how such an operation can be
+\lang{} query below demonstrates how such an operation can be
 expressed.
 
 \begin{lstlisting}[style=JavaScript, columns=flexible]
-let countryToRegion = {
-    'other.*O.country': 'other.*O.region'
+let countryToRegion = {                                         // create a mapping of 
+    'other.*O.country': 'other.*O.region'                       // country -> region
 }
 let query = {
-    "-": keyval(get(countryToRegion, 'data.*.country'), { // Use of "-" and keyval is because
+    '-': keyval(get(countryToRegion, 'data.*.country'), { // Use of "-" and keyval is because
         total: sum('data.*.population')                         // JS enforces JSON keys to be
         'data.*.country' : sum('data.*.population')             // strings and our key is a var
     }),
@@ -634,16 +598,16 @@ let query = {
 // result: {Asia: {total: 39, Japan: 17, China: 22}, Europe: {total: 14, France: 3, UK: 11}}
 \end{lstlisting}
 
-As with the example in \Cref{subsec:groupby}, we use a distinct query
-(\inline{countryToRegion}) to map countries to regions.
-This query conducts a group-by based on the \inline{region} attribute initially,
-followed by another group-by based on \inline{country}, ultimately calculating the
+Here, we use a distinct query (\inline{countryToRegion}) to retrieve the
+corresponding region for a given country.
+The main query conducts a group-by based on the \inline{region} (retrieved using \inline{get}) initially,
+followed by another group-by based on \inline{country}, ultimately computing the
 desired aggregates.
- We employ the use of \inline{"-"} in our implementation due to JS's requirement that JSON
+ We employ the use of \inline{'-'} in our implementation due to JS's requirement that JSON
 keys be represented as strings.
 Consequently, specifying \inline{get(countryToRegion, 'data.*.country')} as the key directly
 is not possible.
-To overcome this limitation, we introduce \inline{keyval(<key>, <value>)} as a workaround that allows arbitrary
+Hence, we introduce \inline{keyval(<key>, <value>)} as a workaround that allows arbitrary
 arguments to be used as a key.
 It is worth noting that in a textual frontend, such workarounds would not be necessary.
 
@@ -1337,4 +1301,10 @@ specialized low-level code.
 
 \bibliographystyle{splncs04}
 \bibliography{references}
+
+\appendix
+\section{Expressing }
+
+% \subsection{Expressing Visual Components}
+
 \end{document}
