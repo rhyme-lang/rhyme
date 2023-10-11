@@ -140,7 +140,8 @@ transformation queries are typically used as part of larger programs and are oft
 generated programmatically.
 
 \begin{figure}[t!]
-\includegraphics[width=\textwidth]{images/intro_fig.pdf}
+\centering
+\includegraphics[width=0.8\textwidth]{images/intro_fig.pdf}
 \caption{
 End-to-end workflow of \lang{}, with green markers indicating various entry points
 leading to the common entry point, \lang{} AST.
@@ -149,6 +150,7 @@ using different APIs.
 This AST serves as the basis for generating an IR (with dependencies), driving
 subsequent code generation.
 }\label{fig:intro_overview}
+\vspace{-7mm}
 \end{figure}
 
 \Cref{fig:intro_overview} provides an overview of the end-to-end workflow of \lang{}.
@@ -167,7 +169,7 @@ code.
 
 \begin{figure}[t!]
 \begin{subfigure}{\textwidth}
-\begin{minipage}{0.33\textwidth}
+\begin{minipage}{0.3\textwidth}
 \begin{lstlisting}[style=JavaScriptTiny, columns=flexible]
 // input dataset
 let data = [
@@ -177,18 +179,20 @@ let data = [
 ]
 // query
 sum('data.*.val')
-// AST:
+// AST constructed from the query:
 {key: 'sum', param: 'data.*.val'}
 // result: 50
 \end{lstlisting}
 \end{minipage}
-\begin{minipage}{0.27\textwidth}
-\centering
-\includegraphics[width=0.73\textwidth]{images/intro_q1_ir.pdf}
+\begin{minipage}{0.3\textwidth}
+% \centering
+\hspace{3.6mm}
+\includegraphics[width=0.657\textwidth]{images/intro_q1_ir.pdf}
 \end{minipage}
 \begin{minipage}{0.38\textwidth}
 \begin{lstlisting}[style=JavaScriptTiny, columns=flexible, numbers=left, xleftmargin=2pt]
 let tmp = {}
+// ??= is assign if null operator
 tmp[0] ??= 0
 (*@\highlight[highlightblue]{for (let star in data) }@*) {
     tmp[0] += data[star]['val']
@@ -200,14 +204,14 @@ return tmp[0]
 \end{subfigure}
 
 \begin{subfigure}{\textwidth}
-\begin{minipage}{0.33\textwidth}
+\begin{minipage}{0.3\textwidth}
 \begin{lstlisting}[style=JavaScriptTiny, columns=flexible]
 // query
 {
   total: sum('data.*.val'),
   'data.*.key': sum('data.*.val')
 }
-// AST:
+// AST constructed from the query:
 {
   total:
     {key: 'sum', param: 'data.*.val'},
@@ -220,9 +224,10 @@ return tmp[0]
 //    'B': 15 }
 \end{lstlisting}
 \end{minipage}
-\begin{minipage}{0.27\textwidth}
-\centering
-\includegraphics[width=0.73\textwidth]{images/intro_q2_ir.pdf}
+\begin{minipage}{0.3\textwidth}
+% \centering
+\hspace{3.6mm}
+\includegraphics[width=0.657\textwidth]{images/intro_q2_ir.pdf}
 \end{minipage}
 \begin{minipage}{0.38\textwidth}
 \begin{lstlisting}[style=JavaScriptTiny, columns=flexible, numbers=left, xleftmargin=2pt]
@@ -250,7 +255,7 @@ return tmp[0]
   'data.*A.key': div(sum('data.*A.val'), 
                     sum('data.*B.val')) 
 }
-// AST:
+// AST constructed from the query:
 {
   'data.*.key': {
     path: 'div',
@@ -266,7 +271,8 @@ return tmp[0]
 \end{lstlisting}
 \end{minipage}
 \begin{minipage}{0.27\textwidth}
-\centering
+% \centering
+\hspace{1mm}
 \includegraphics[width=0.73\textwidth]{images/intro_q3_ir.pdf}
 \end{minipage}
 \begin{minipage}{0.38\textwidth}
@@ -297,6 +303,7 @@ The end-to-end workflow of \lang{} for three queries, starting with the query
 and the corresponding AST (left; \Cref{subsec:ast}),
 followed by the construction of the IR (center; \Cref{subsec:ir}), and the final generated code (right).
 }\label{fig:intro}
+\vspace{-7mm}
 \end{figure}
 
 \Cref{fig:intro} shows this end-to-end workflow using several example queries.
@@ -329,8 +336,8 @@ Additionally, it is worth noting that computations are performed on temporary
 state variables (\inline{tmp[0]} in the first example).
 This approach, utilizing intermediate temporaries, draws inspiration from works
 such as RPAI~\cite{rpai} and DBToaster~\cite{dbtoaster_vldb}.
-These systems utilize state variables (or maps) to maintain values for
-various sub-queries of the main query, which are then leveraged to compute the
+These systems utilize such state variables to maintain values for
+various sub-queries of the main query, which are then used to compute the
 final result.
 Finally, the IR is translated into JS code (and compiled using \inline{eval()}),
 taking dependencies into account to extract the program structure and performing
@@ -350,7 +357,7 @@ it signifies a group-by sum operation.
 Conversely, if it is not nested within an iterator (i.e., \inline{*}),
 it calculates the aggregate over the entire set of values.
 This distinction is exemplified in the query presented in \Cref{fig:intro_q3}.
-Here, \inline{sum(data.*A.val)} is nested within \inline{data.*A.key}, signifying a
+Here, \inline{sum(data.*A.val)} is nested within \inline{\{data.*A.key: ...\}}, signifying a
 group-by aggregate operation.
 Conversely, \inline{sum(data.*B.val)} computes a total aggregate, as it is not nested
 within a \inline{*B} iterator.
@@ -369,30 +376,31 @@ of \lang{} and discuss the process of IR construction and code generation.
 Moreover, the previous example queries exemplified \lang{}'s capability to
 express analytical queries on JSON objects.
 However, the versatility of \lang{} extends beyond this, encompassing an even broader
-spectrum of use cases. 
-For example, this includes its ability to 
-express tensor computations in a style similar to
-Einstein notation as we discuss in \Cref{subsec:tensor}.
+spectrum of use cases, including the ability to express tensor computations and declaratively specify
+visual components (e.g., tables) of web applications.
+% For example, this includes its ability to 
+% express tensor computations in a style similar to
+% Einstein notation as we discuss in \Cref{subsec:tensor}.
 
 Our specific contributions are as follows.
 
 \begin{itemize}
-    \item We present the syntax of our query language and demonstrate how to express common
-          data manipulation operators like, selections, group-bys, joins, user-defined functions (UDFs),
+    \item We introduce the syntax of \lang{}, showcasing the ability to express common data
+          manipulation operators such as selections, group-bys, joins, user-defined functions (UDFs),
           and so on (\Cref{sec:query_language}).
-    \item We demonstrate how \lang{} can be used in a variety of use cases like expressing visual aspects of
-          web applications like tables, charts (e.g., using SVG), etc., expressing complex tensor computations
-          declaratively (à la Einsum), and enabling `pipe' APIs via metaprogramming.
-    \item We show how the queries are lowered into an IR that contains loop-free and branch-free code
-          with dependencies implicitly representing the program structure.
-          Then, we demonstrate how this IR can be used to generate code for a given query by constructing
-          the program structure from dependencies (\Cref{sec:ir_codegen}).
-          % Moreover, we show how traditional compiler optimizations like lambda lifting translates to query
-          % optimizations like sub-query de-correlation 
-    % \item We demonstrate the capabilities of our overall query language by taking a relatively simple example
-    %       program that uses most of the features we have presented in previous sections (\Cref{sec:case_study}).
-    \item We compare the performance of \lang{} on several small JSON analytics workloads to demonstrate the
-          effectiveness of our code generation approach (\Cref{sec:experiments}).
+    \item We highlight the versatility of \lang{} across various use cases, including the expression
+          of visual elements in web applications (e.g., tables, charts using SVG), declarative
+          tensor computations (akin to Einsum), and the enabling `pipe' APIs via metaprogramming (\Cref{sec:case_studies}).
+    % \item We show how the queries are lowered into an IR that contains loop-free and branch-free code
+          % with dependencies implicitly representing the program structure.
+          % Then, we demonstrate how this IR can be used to generate code for a given query by constructing
+          % the program structure from dependencies (\Cref{sec:ir_codegen}).
+    \item We elucidate the process of lowering queries into an IR that features loop-free and
+          branch-free code, with dependencies implicitly representing the program structure.
+          Then, we illustrate how this IR facilitates code generation by constructing the optimal program
+          structure from dependencies (\Cref{sec:ir_codegen}).
+    \item We evaluate the performance of \lang{} on several JSON analytics workloads
+          to demonstrate the effectiveness of our code generation approach (\Cref{sec:experiments}).
 \end{itemize} 
 
 We discuss related work in \Cref{sec:related_work}, followed by conclusions and potential future research directions
@@ -620,7 +628,7 @@ let countryToRegion = {
 let query = {
     "-": keyval(get(countryToRegion, 'data.*.country'), { // Use of "-" and keyval is because
         total: sum('data.*.population')                         // JS enforces JSON keys to be
-        'data.*.country' : sum('data.*.population')             // strings
+        'data.*.country' : sum('data.*.population')             // strings and our key is a var
     }),
 }
 // result: {Asia: {total: 39, Japan: 17, China: 22}, Europe: {total: 14, France: 3, UK: 11}}
@@ -960,7 +968,7 @@ values inside \lang{} queries, and compose them as necessary.
 For instance, the progress bars are manipulated as values in the query.
 These visualizations can take various forms, including standard DOM elements
 like \inline{h1}, \inline{p}, or high-level components like
-\inline{table}, \inline{bar}, \inline{select}, and more (provided within \lang{}),
+\inline{table}, \inline{bar}, \inline{select}, and more,
 as well as SVG objects.
 
 To exemplify the practical utility of this approach, let's consider a scenario involving
@@ -1216,6 +1224,7 @@ with 4 sockets, 24 Intel(R) Xeon(R) Platinum 8168 cores
 per socket, and 750GB RAM per socket (3 TB total) running Ubuntu
 18.04.4 LTS.
 We have used JQ v1.6, Rumble v1.21.0, and Node v18.18.0 (for running our JS code).
+All experiments are run five times and the mean execution time is reported.
 
 \subsection{Results}
 Across the three queries, \lang{} demonstrates the best performance.
