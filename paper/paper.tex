@@ -833,7 +833,7 @@ is employed to apply a UDF, and \inline{group()} is used to perform a group-by.
 
 \lang{} provides an elegant framework for expressing tensor computations,
 drawing inspiration from the Einstein summation (Einsum) notation frequently
-employed in tensor frameworks.
+employed in tensor frameworks and Einops~\cite{einops}.
 The Einsum notation offers a concise means of articulating tensor computations.
 For instance, the expression $ik,kj \rightarrow ij$ specifies a tensor operation
 that takes two two-dimensional tensors (say $A$ and $B$), and yields a third
@@ -1107,9 +1107,9 @@ corresponding generator.
 
 The final missing piece in our lowering process is determining the appropriate
 IR instruction from our query AST.
-This is done distinctly for stateful operators (those with a
+This is done distinctly for reduction operators (those with a
 \inline{key} in the AST) and other operators (those with a \inline{path} in the AST).
-For stateful operators, which require the management of state, we introduce stateful
+For reduction operators, which require the management of state, we introduce stateful
 temporary variables indexed by the current grouping path.
 In this context, `path' refers to the pertinent `parent' grouping keys within the
 query nest.
