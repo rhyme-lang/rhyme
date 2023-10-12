@@ -7,21 +7,22 @@
 \pagestyle{plain}
 \usepackage{lineno}
 \usepackage{hyperref} % to make refs clickable
-\usepackage{cleveref}
 \usepackage{xcolor}
 \usepackage{listings}
 \usepackage{subcaption}
 \usepackage{multicol}
 \usepackage{cite}
 \usepackage{textcomp} % for having straight quotes ' in lstlisting
-\usepackage[nounderscore]{syntax}  % for query grammar
-\usepackage{setspace} % to set line spacing for grammar
+\usepackage{amsmath} % use align for grammar
+\usepackage{cleveref}
+\usepackage[scaled]{beramono} % nicer font for code snippets
 
-\usepackage{backnaur}
+\usepackage{wrapfig}
+
 
 \input{macros.tex}
 
-\linenumbers 
+\linenumbers
 
 % \newcommand{\lang}{\textcolor{blue}{QL-TBD}}
 \newcommand{\lang}{Rhyme}
@@ -197,7 +198,7 @@ let tmp = {}
 // ??= is assign if null operator
 tmp[0] ??= 0
 (*@\highlight[highlightblue]{for (let star in data) }@*) {
-    tmp[0] += data[star]['val']
+  tmp[0] += data[star]['val']
 }
 return tmp[0]
 \end{lstlisting}
@@ -441,23 +442,42 @@ let data = [
 
 \begin{figure}[t!]
 \scriptsize
-\begin{bnf*}
-\bnfprod{ident}{\bnfts{[a-zA-Z\_][a-zA-Z0-9\_]*}  \bnfsp\bnfsp\bnfsp\bnfsp\bnfsp\bnfsp \bnfpn{num} \bnfpo \bnfts{[0-9]+} }\\
-\bnfprod{reducer}{\bnfts{array} \bnfor \bnfts{sum} \bnfor \bnfts{count} \bnfor \bnfts{max} \bnfor \bnfts{min} \bnfor \bnfts{last} \bnfor \bnfts{first}} \\
-\bnfprod{bin-op}{\bnfts{get} \bnfor \bnfts{apply} \bnfor \bnfts{plus} \bnfor \bnfts{minus} \bnfor \bnfts{times} \bnfor \bnfts{div} \bnfor \bnfts{fdiv} \bnfor \bnfts{mod} \bnfor \bnfts{keyval}} \\
-\bnfprod{iter-sym}{\bnfts{*} \bnfor \bnfts{*} \bnfpn{ident} \bnfor \bnfpn{num}} \\
-\bnfprod{iter-arg}{\bnfpn{iter-sym} \bnfor \bnfpn{iter-sym} \bnfts{.} \bnfpn{iter-arg} \bnfor \bnfpn{ident} \bnfts{.} \bnfpn{iter-arg}} \\
-\bnfprod{arg}{\bnfpn{iter-arg} \bnfor \bnfpn{ident}} \\
-\bnfprod{pair}{\bnfpn{arg} \bnfts{:} \bnfpn{query}} \\
-\bnfprod{pair-list}{\bnfpn{pair} \bnfor \bnfpn{pair}\bnfts{,}\bnfpn{pair-list}} \\
-\bnfprod{query}{\bnfpn{arg} \bnfor \bnfpn{reducer}\bnfts{(}\bnfpn{arg}\bnfts{)}
-\bnfor \bnfpn{bin-op}\bnfts{(} \bnfpn{query} \bnfts{,} \bnfpn{query} \bnfts{)}
-\bnfor \bnfts{\{} \bnfpn{pair-list} \bnfts{\}}
-}
-\end{bnf*}
-\vspace{-7mm}
+% \begin{align*}
+% \text{Ident} &::= \texttt{[a-zA-Z\_][a-zA-Z0-9\_]*} \\
+% \text{Num} & ::= \texttt{[0-9]+} \quad \text{Var} ::= \texttt{*}\;\text{Ident} \\
+% \text{ScalarOp} &::= \textsf{get} \mid \textsf{apply} \mid \textsf{plus} \mid \textsf{minus} \mid \textsf{div} \mid \textsf{fdiv} \mid \textsf{times} \mid \textsf{mod} \\ 
+% \text{ReductionOp} &::= \textsf{sum} \mid \textsf{count} \mid \textsf{max} \mid \textsf{min} \mid \textsf{first} \mid \textsf{last} \mid \textsf{array} \\[4pt]
+% \text{Atom} &::= \text{Ident} \mid \text{Num} \mid \text{Var} \\
+% \text{Path} &::= \text{Atom ( . Atom )*} \\
+% \text{Expr} &::= \text{Path} \mid \text{Expr} \ \text{ScalarOp} \ \text{Expr} \mid \text{ReductionOp ( Expr )} \\
+% &\quad\;\; \mid \text{[ Expr ]} \mid \text{{ ( Path : Expr )* }} \\
+% \text{Query} &::= \text{Expr}
+% \end{align*}
+
+\begin{minipage}{0.5\textwidth}
+\begin{align*}
+\text{Ident} &::= \texttt{[a-zA-Z\_][a-zA-Z0-9\_]*} \\
+\text{Num} & ::= \texttt{[0-9]+} \quad \text{Var} ::= \texttt{*}\;\text{Ident} \\
+\text{ScalarOp} &::= \textsf{get} \mid \textsf{apply} \mid \textsf{plus} \mid \textsf{minus} \\ 
+&\mid \textsf{div} \mid \textsf{fdiv} \mid \textsf{times} \mid \textsf{mod} \\ 
+\text{ReductionOp} &::= \textsf{sum} \mid \textsf{count} \mid \textsf{max} \mid \textsf{min} \\ 
+&\mid \textsf{first} \mid \textsf{last} \mid \textsf{array}
+\end{align*}
+\end{minipage}%
+\begin{minipage}{0.5\textwidth}
+\begin{align*}
+\text{Atom} &::= \text{Ident} \mid \text{Num} \mid \text{Var} \\
+\text{Path} &::= \text{Atom ( . Atom )*} \\
+\text{Expr} &::= \text{Path} \mid \text{Expr} \ \text{ScalarOp} \ \text{Expr} \\
+&\quad\;\; \mid \text{ReductionOp ( Expr )} \\
+&\quad\;\; \mid \text{[ Expr ]} \mid \text{\{ ( Path : Expr )* \}} \\
+\text{Query} &::= \text{Expr}
+\end{align*}
+\end{minipage}
+
+% \vspace{-7mm}
 \caption{Syntax for expressing \lang{} queries. \Cref{sec:query_language} shows how to use this to express
-various kinds of queries.}\label{fig:grammar}
+various kinds of queries. \todo{perhaps remove trivial Ident, Num}}\label{fig:grammar}
 \vspace{-5mm}
 \end{figure}
 
@@ -582,10 +602,10 @@ new dataset named \inline{other}, which includes information about the
 
 \begin{lstlisting}[style=JavaScript, columns=flexible]
 let other = [
-    {country: "Japan", region: "Asia"},
-    {country: "China", region: "Asia"},
-    {country: "France",region: "Europe"},
-    {country: "UK",    region: "Europe"},
+  {country: "Japan", region: "Asia"},
+  {country: "China", region: "Asia"},
+  {country: "France",region: "Europe"},
+  {country: "UK",    region: "Europe"},
 ]
 \end{lstlisting}
 \vspace{-2mm}
@@ -600,15 +620,15 @@ expressed.
 
 \begin{lstlisting}[style=JavaScript, columns=flexible]
 let countryToRegion = {                                         // create a mapping of 
-    'other.*O.country': 'other.*O.region'                       // country -> region
+  'other.*O.country': 'other.*O.region'                         // country -> region
 }
 let query = {
-    '-': keyval(get(countryToRegion, 'data.*.country'), { // Use of "-" and keyval is because
-        total: sum('data.*.population')                         // JS enforces JSON keys to be
-        'data.*.country' : sum('data.*.population')             // strings and our key is a var
-    }),
+  '-': keyval(get(countryToRegion, 'data.*.country'), { // Use of "-" and keyval is because
+    total: sum('data.*.population')                                       // JS enforces JSON keys to be
+      'data.*.country' : sum('data.*.population')                         // strings and our key is a var
+    })
 }
-// result: {Asia: {total: 39, Japan: 17, China: 22}, Europe: {total: 14, France: 3, UK: 11}}
+// result: {Asia: {total:39, Japan:17, China:22}, Europe: {total:14, France:3, UK:11}}
 \end{lstlisting}
 
 Here, we use a distinct query (\inline{countryToRegion}) to retrieve the
@@ -665,11 +685,11 @@ country from our dataset.
 
 \begin{lstlisting}[style=JavaScript, columns=flexible]
 let udf = {
-    formatPercent: v => (v*100).toFixed(2) + "%" // computes the percentage 
+  formatPercent: v => (v*100).toFixed(2) + "%" // computes the percentage 
 }
 let query = {
-    'data.*.country':
-        apply(udf.formatPercent, div(sum('data.*.population'), sum('data.*A.population')))
+  'data.*.country':
+    apply(udf.formatPercent, div(sum('data.*.population'), sum('data.*A.population')))
 }
 // result: {Japan: 32.05%, China: 41.50%, France: 5.66%, UK: 20.75%}
 \end{lstlisting}
@@ -753,9 +773,9 @@ The role of each UDF is simple and self-explanatory.
 let input = '100,200,300|400|500,600|700,800,900|1000' // sample input
 // some UDFs for parsing the data
 let udf = {
-    'splitPipe' : x => x.split('|'),
-    'splitComma': x => x.split(','),
-    'toNum'      : x => Number(x)
+  'splitPipe' : x => x.split('|'),
+  'splitComma': x => x.split(','),
+  'toNum'      : x => Number(x)
 }
 \end{lstlisting}
 
@@ -765,12 +785,12 @@ of the query (numbered for clarity):
 
 \begin{lstlisting}[style=JavaScript, columns=flexible, numbers=left]
 let query = max(get({                      // 5. find maximum among group sums
-    '*chunk': sum(                         // 4. group-by chunk and compute sum
-        apply('udf.toNum',                 // 3. convert each string number to a number object
-            get(apply('udf.splitComma',    // 2. split by comma to get numbers of each chunk
-                get(apply('udf.splitPipe', '.input'), '*chunk')), // 1. split into chunks
-            '*line')))
-    },'*'))
+  '*chunk': sum(                           // 4. group-by chunk and compute sum
+    apply('udf.toNum',                     // 3. convert each string number to a number object
+      get(apply('udf.splitComma',          // 2. split by comma to get numbers of each chunk
+        get(apply('udf.splitPipe', '.input'), '*chunk')), // 1. split into chunks
+        '*line')))
+  },'*'))
 \end{lstlisting}
 
 \inline{apply()} is used to apply UDFs to arguments.
@@ -787,12 +807,12 @@ this query concisely as shown below.
 
 \begin{lstlisting}[style=JavaScript, columns=flexible]
 let query =
-    pipe('.input')
+  pipe('.input')
     .map('udf.splitPipe').get('*chunk')      // 1. split into chunks (and bind to *chunk)
     .map('udf.splitComma').get('*line')      // 2. split by comma to get numbers of each chunk
-    .map('udf.toNum')                        // 3. convert each string number to a number object
-    .sum().group('*chunk').get('*')          // 4. group-by chunk and compute sum
-    .max()                                   // 5. find maximum among group sums
+    .map('udf.toNum')                               // 3. convert each string number to a number object
+    .sum().group('*chunk').get('*')                 // 4. group-by chunk and compute sum
+    .max()                                          // 5. find maximum among group sums
 \end{lstlisting}
 
 Here, we specify the query as a sequence of transformation steps on the input.
@@ -866,13 +886,13 @@ sum(times('vecA.*i', 'vecB.*i'))
 \begin{lstlisting}[style=JavaScript,columns=flexible]
 // matrix multiplication (ik,kj->ij)(*@\label{code:matmulquery}@*)
 {'*i': {'*j': sum(
-    times('A.*i.*k', 'B.*k.*j')) }}
+  times('A.*i.*k', 'B.*k.*j')) }}
 // Hadamard product (ij,ij->ij)
 {'*i': {'*j': times('A.*i.*j', 'B.*i.*j') }}
 // general tensor contraction (n-d Tensors)
 // e.g., pqrs,tuqvr->pstuv
 {'*p':{'*s':{'*t':{'*u':{'*v':sum(
-    times('T1.*p.*q.*r.*s', 'T2.*t.*u.*q.*v.*r')) }}}}}
+  times('T1.*p.*q.*r.*s', 'T2.*t.*u.*q.*v.*r')) }}}}}
 \end{lstlisting}
 \end{minipage}
 
@@ -932,7 +952,7 @@ To illustrate this, consider the following example query, alongside its correspo
 \begin{minipage}{0.6\textwidth}
 \begin{lstlisting}[style=JavaScript,columns=flexible]
 {
-  '$display': 'table'     // display data in a table
+  '$display': 'table'           // display data in a table
   rows: [0], cols: [1], // row:data index, col:keys
   data: [
     {region:"Asia",city:"Beijing",
@@ -1164,30 +1184,32 @@ computation multiple times inside a nested loop.
 
 \section{Experiments}\label{sec:experiments}
 
-\begin{figure}[t]
-\begin{minipage}{0.4\textwidth}
-\centering
-\includegraphics[width=0.8\textwidth]{images/plot.pdf}
-\end{minipage}
-\begin{minipage}{0.6\textwidth}
-\begin{lstlisting}[style=JavaScriptTiny, columns=flexible]
-// data = [ {key1: "A", key2: "B", val: 10}, ... ]
-Q1 = sum('data.*.val')
-Q2 = {
-  total: sum('data.*.val'), 'data.*.key1': sum('data.*.val')
-}
-Q3 = {
-  total: sum('data.*.val'),
-  'data.*.key1': {
-    total: sum('data.*.val'), 'data.*.key2': sum('data.*.val')
-  }
-}
-\end{lstlisting}
-\end{minipage}
-\caption{Running time (left) for JQ, Rumble, and Rhyme for three different simple queries shown
-on right
-}\label{fig:plot}
-\end{figure}
+% \begin{figure}[t]
+% \begin{minipage}{0.4\textwidth}
+% \centering
+% \includegraphics[width=0.8\textwidth]{images/plot.pdf}
+% \end{minipage}
+% \begin{minipage}{0.6\textwidth}
+% \begin{lstlisting}[style=JavaScriptTiny, columns=flexible]
+% // data = [ {key1: "A", key2: "B", val: 10}, ... ]
+% Q1 = sum('data.*.val')
+% Q2 = {
+%   total: sum('data.*.val'), 'data.*.key1': sum('data.*.val')
+% }
+% Q3 = {
+%   total: sum('data.*.val'),
+%   'data.*.key1': {
+%     total: sum('data.*.val'), 'data.*.key2': sum('data.*.val')
+%   }
+% }
+% \end{lstlisting}
+% \end{minipage}
+% \caption{Running time (left) for JQ, Rumble, and Rhyme for three different simple queries shown
+% on right
+% }\label{fig:plot}
+% \end{figure}
+
+
 
 In this section, we conduct a performance evaluation of our current \lang{}
 implementation, comparing it against two established JSON processing
@@ -1202,9 +1224,9 @@ Nevertheless, we consider it a valuable baseline for comparison.
 We run three queries on a simple synthetic dataset comprising 1 million records of
 JSON objects.
 Each object in the dataset contains two string keys, \inline{key1} and \inline{key2}, 
-as well as an integer value.
-As depicted in \Cref{fig:plot}, the first query calculates the sum of the integer
-values, the second query performs an aggregate sum after grouping by the \inline{key1},
+as well as an integer \inline{value}.
+The first query calculates the sum of all \inline{value}s, the second query performs
+an aggregate sum after grouping by the \inline{key1},
 and the third query computes a two-level aggregate using \inline{key1}, then \inline{key2}.
 
 We run all the experiments using a single thread, on a NUMA machine
@@ -1215,6 +1237,14 @@ We have used JQ v1.6, Rumble v1.21.0, and Node v18.18.0 (for running our JS code
 All experiments are run five times and the mean execution time is reported.
 
 \subsection{Results}
+\begin{wrapfigure}{l}{0.4\textwidth}
+\vspace{-30pt}
+\centering
+\includegraphics[width=0.4\textwidth]{images/plot.pdf}
+\caption{Running time (left) for JQ, Rumble, and Rhyme for three different simple queries shown
+on right}\label{fig:plot}
+\vspace{-20pt}
+\end{wrapfigure} 
 Across the three queries, \lang{} demonstrates the best performance.
 This can be attributed to its ability to generate optimized JS code tailored
 to a specific query, which significantly reduces overhead compared to the
@@ -1222,6 +1252,8 @@ general execution engines employed by systems like Rumble.
 JQ performs the worst, as it lacks any form of
 `query planning' and executes queries naively without optimizations
 such as loop fusion.
+
+
 
 While these results highlight the potential performance gains achievable
 through \lang{}'s code generation capabilities, it is important to note
