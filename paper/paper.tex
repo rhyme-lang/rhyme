@@ -64,7 +64,7 @@
 % }
 %
 \maketitle              % typeset the header of the contribution
-\vspace{-12mm} %TODO: remove
+\vspace{-15mm} %TODO: remove
 %
 \begin{abstract}
 We present \lang{},
@@ -92,7 +92,9 @@ data manipulation queries, tensor expressions (à la Einsum), and more.
 %
 %
 %
+\vspace{-10mm}
 \section{Introduction}\label{sec:intro}
+\vspace{-3mm}
 
 Declarative programming represents a paradigm in which users articulate \emph{what}
 computation needs to be performed, without the explicit specification of the
@@ -200,6 +202,7 @@ tmp[0] ??= 0
 return tmp[0]
 \end{lstlisting}
 \end{minipage}
+\vspace{-4mm}
 \caption{A query computing the sum of all values}\label{fig:intro_q1}
 \end{subfigure}
 
@@ -243,6 +246,7 @@ tmp[0]['total'] ??= 0
 return tmp[0]
 \end{lstlisting}
 \end{minipage}
+\vspace{-4mm}
 \caption{A query computing sum of all values
 (\inline{total}) and sum per each key}\label{fig:intro_q2}
 \end{subfigure}
@@ -294,15 +298,17 @@ tmp[0] ??= {}
 return tmp[0]
 \end{lstlisting}
 \end{minipage}
+\vspace{-2mm}
 \caption{A query computing key-specific 
 relative aggregate proportions
 }\label{fig:intro_q3}
 \end{subfigure}
+\vspace{-2mm}
 \caption{
 The end-to-end workflow of \lang{} for three queries, starting with the query
 and the corresponding AST (left; \Cref{subsec:ast}),
 followed by the construction of the IR (center; \Cref{subsec:ir}), and the final generated code (right).
-}\label{fig:intro}
+}\label{fig:intro} 
 \vspace{-7mm}
 \end{figure}
 
@@ -383,7 +389,6 @@ visual components (e.g., tables) of web applications.
 % Einstein notation as we discuss in \Cref{subsec:tensor}.
 
 Our specific contributions are as follows.
-
 \begin{itemize}
     \item We introduce the syntax of \lang{}, showcasing the ability to express common data
           manipulation operators such as selections, group-bys, joins, user-defined functions (UDFs),
@@ -403,6 +408,7 @@ We discuss related work in \Cref{sec:related_work}, followed by conclusions and 
 in \Cref{sec:conclusions}.
 
 
+\vspace{-4mm}
 \section{The Query Language}~\label{sec:query_language}
 In the previous section, we saw \lang{} in action for a set of relatively simple queries.
 In this section, we will introduce the syntax of \lang{}, illustrating
@@ -421,7 +427,16 @@ However, \lang{} has the capacity to seamlessly query
 nested JSON data without any problem in the same way.
 We will see such examples later in \Cref{sec:case_studies}.
 
-
+\begin{lstlisting}[style=JavaScript]
+let data = [
+  {country: "Japan", city: "Tokyo",      population: 14},
+  {country: "China", city: "Beijing",    population: 22},
+  {country: "France",city: "Paris",      population: 3},
+  {country: "UK",    city: "London",     population: 9},
+  {country: "Japan", city: "Osaka",      population: 3},
+  {country: "UK",    city: "Birmingham", population: 2}
+]
+\end{lstlisting}
 
 
 \begin{figure}[t!]
@@ -436,7 +451,7 @@ We will see such examples later in \Cref{sec:case_studies}.
 \bnfprod{pair}{\bnfpn{arg} \bnfts{:} \bnfpn{query}} \\
 \bnfprod{pair-list}{\bnfpn{pair} \bnfor \bnfpn{pair}\bnfts{,}\bnfpn{pair-list}} \\
 \bnfprod{query}{\bnfpn{arg} \bnfor \bnfpn{reducer}\bnfts{(}\bnfpn{arg}\bnfts{)}
-\bnfor \bnfpn{bin-op}\bnfts{(} \bnfpn{arg} \bnfts{,} \bnfpn{arg} \bnfts{)}
+\bnfor \bnfpn{bin-op}\bnfts{(} \bnfpn{query} \bnfts{,} \bnfpn{query} \bnfts{)}
 \bnfor \bnfts{\{} \bnfpn{pair-list} \bnfts{\}}
 }
 \end{bnf*}
@@ -446,18 +461,11 @@ various kinds of queries.}\label{fig:grammar}
 \vspace{-5mm}
 \end{figure}
 
-\begin{lstlisting}[style=JavaScript]
-let data = [
-  {country: "Japan", city: "Tokyo",      population: 14},
-  {country: "China", city: "Beijing",    population: 22},
-  {country: "France",city: "Paris",      population: 3},
-  {country: "UK",    city: "London",     population: 9},
-  {country: "Japan", city: "Osaka",      population: 3},
-  {country: "UK",    city: "Birmingham", population: 2}
-]
-\end{lstlisting}
 
+
+\vspace{-4mm}
 \subsection{Basics}
+\vspace{-2mm}
 First we will look at how to perform several basic query operations on the
 aforementioned dataset.
 For instance, if we want to select a particular key of the dataset at a given
@@ -514,7 +522,9 @@ construction logic and combined flexibly, as shown below.
 \end{lstlisting}
 \end{minipage}
 
+\vspace{-3mm}
 \subsection{Group By}\label{subsec:groupby}
+\vspace{-2mm}
 % Up to this point, we have explored fundamental query operations, including indexing,
 % iteration, and aggregate computation.
 Another vital query operator, especially relevant to JSON-style objects,
@@ -529,13 +539,13 @@ for each group:
 // result: {Japan: 17, China: 22, France: 3, UK: 11}
 \end{lstlisting}
 
-In the above syntax, specifying \inline{\{data.*.country: ...\}} as the key implies
+Here, specifying \inline{\{data.*.country: ...\}} as the key implies
 that any iteration carried out within this key utilizing the same
 iterator (\inline{*}) is performed for records with each unique value of \inline{country}
 separately.
 The next example shows how to use this form of grouping to compute aggregates at different
 levels.
-This query computes the total population of all records, breaks it down by country,
+It computes the total population of all records, breaks it down by country,
 and subsequently computes the population proportion of each city with respect to total
 population:
 
@@ -562,7 +572,9 @@ since it functions as an embedded DSL in JS.
 In a textual frontend, the query could appear even more concise, using standard operators 
 like \inline{/} for division.
 
+\vspace{-3mm}
 \subsection{Join}
+\vspace{-2mm}
 Joins are another fundamental operator in data querying.
 To illustrate how joins work in \lang{}, consider the following
 new dataset named \inline{other}, which includes information about the
@@ -576,6 +588,7 @@ let other = [
     {country: "UK",    region: "Europe"},
 ]
 \end{lstlisting}
+\vspace{-2mm}
 
 Now, consider a scenario where we aim to compute aggregate population
 values based on regions.
@@ -642,7 +655,9 @@ It is worth noting that in a textual frontend, such workarounds would not be nec
 % query = get(ansMap, lhsSum)
 % \end{lstlisting}
 
+\vspace{-3mm}
 \subsection{User-defined Functions}
+\vspace{-2mm}
 \lang{} allows using user-defined functions (UDFs) written in JS seamlessly with the
 queries.
 Consider a simple query where we want to obtain the percentage population per each
@@ -665,29 +680,31 @@ We can then use \inline{apply} in the query to call this UDF to convert the
 proportions to percentages.
 
 
-\subsection{Arrays}
-We have encountered aggregates such as \inline{max}, \inline{min}, and \inline{sum}
-thus far.
-However, there can be scenarios where we require an aggregate that collects values
-into an array.
-For this, we provide the \inline{array} construct, also represented in \inline{[]} syntax.
+% \subsection{Arrays}
+% We have encountered aggregates such as \inline{max}, \inline{min}, and \inline{sum}
+% thus far.
+% However, there can be scenarios where we require an aggregate that collects values
+% into an array.
+% For this, we provide the \inline{array} construct, also represented in \inline{[]} syntax.
 
-\begin{lstlisting}[style=JavaScript, columns=flexible]
-array('data.*.country')                                   // [Japan, China, France, ...]
-[{city: 'data.*.city'}]                                   // [{city: Tokyo}, {city: Beijing}, ...]
-[{country: 'data.*.country'}, {city: 'data.*.city'}]// [{country: Japan}, {city: Tokyo}, ...]
-[{country: 'data.*.country', city: 'data.*.city'}]        // [{country: Japan, city: Tokyo}, ...]
-\end{lstlisting}
+% \begin{lstlisting}[style=JavaScript, columns=flexible]
+% array('data.*.country')                                   // [Japan, China, France, ...]
+% [{city: 'data.*.city'}]                                   // [{city: Tokyo}, {city: Beijing}, ...]
+% [{country: 'data.*.country'}, {city: 'data.*.city'}]// [{country: Japan}, {city: Tokyo}, ...]
+% [{country: 'data.*.country', city: 'data.*.city'}]        // [{country: Japan, city: Tokyo}, ...]
+% \end{lstlisting}
 
-In the examples provided above, we show a set of simple queries that aggregate values
-into arrays.
-Each query is self-explanatory, with the expected result displayed on the right.
+% In the examples provided above, we show a set of simple queries that aggregate values
+% into arrays.
+% Each query is self-explanatory, with the expected result displayed on the right.
 % Importantly, similar to other types of \lang{} operations, this array accumulation
 % seamlessly integrates with other query constructs.
 
+\vspace{-3mm}
 \subsection{\lang{} AST}\label{subsec:ast}
-As we saw in \Cref{fig:intro_overview} and \Cref{fig:intro}, all the queries we
-saw above are `lowered' to the \lang{} AST representation which serves as the basis
+\vspace{-2mm}
+As we saw in \Cref{fig:intro_overview,fig:intro}, all the queries we
+saw above construct a \lang{} AST representation which serves as the basis
 for the dependency analysis and IR construction.
 This AST representation is in JSON format, and closely mirror the query JSON structure.
 The difference is, all the calls to reducers like \inline{sum}, \inline{count}, etc.
@@ -698,6 +715,13 @@ arguments.
 simply performs a lookup and some computation.
 For instance, \Cref{fig:intro_q3} (left) shows how \inline{sum} is translated to \inline{key}
 and \inline{param}, and \inline{div} is translated to \inline{path} and param.
+
+This AST representation serves as the entry point for our compiler backend, and gets
+translated into an IR, as elucidated in \Cref{sec:ir_codegen}.
+Moreover, as depicted in \Cref{fig:intro_overview}, the creation of this AST is not
+limited to the aforementioned JS embedding.
+Instead, it can be constructed using different APIs, (e.g., Fluent API introduced in \Cref{subsec:fluent}),
+or a textual frontend with a parser, and so on.
 
 \section{Case Studies}\label{sec:case_studies}
 \subsection{Fluent API}\label{subsec:fluent}
@@ -714,13 +738,13 @@ layer a LINQ-style~\cite{linq_sigmod} pipeline API on top.
 % This `fluent' API provides a pipeline-oriented interface that
 % simplifies complex queries.
 
-To illustrate the advantages of such an interface, let us consider a
+To illustrate the advantages of such an interface, consider a
 simple task borrowed from Advent of Code 2022~\cite{adventofcode22}.
 The task involves processing a sequence of values partitioned into chunks,
 each containing multiple values.
 The objective is to calculate the sum of values for each chunk and
 subsequently identify the maximum sum among those computed.
-To begin, let's examine how the \lang{} query appears when utilizing
+To begin, let us examine how the \lang{} query appears when utilizing
 the familiar JSON-style API for data parsing and computation.
 First, we define several user-defined functions (UDFs) to assist with data parsing.
 The role of each UDF is simple and self-explanatory.
@@ -757,7 +781,7 @@ For example, in Line 5, \inline{get(..., '*chunk')} binds the iterator
 While this approach works as intended and yields the correct results, 
 for these kinds of workloads, it is more natural to think starting from the input
 instead of the output structure.
-In such cases, \lang{}'s `fluent' interface offers an alternative to express
+In such cases, \lang{}'s `fluent' interface offers an alternative way to express
 this query concisely as shown below.
 
 
@@ -779,7 +803,7 @@ APIs such as \inline{sum}, \inline{max}, and so on, all of which return a
 \inline{Pipe}.
 The \inline{map()} function, similar to \inline{apply()} mentioned earlier,
 is employed to apply a UDF, and \inline{group()} is used to perform a group-by.
-\todo{show the definition of group?}
+% \todo{show the definition of group?}
 
 
 % \subsection{GUI Components}
@@ -819,7 +843,7 @@ let A = [[1, 2], [3, 4]]
 let B = [[1, 2, 3], [4, 5, 6]]
 \end{lstlisting}
 
-Now, let's explore a selection of tensor computations that can be performed using \lang{}.
+Shown below are a set of tensor computations that can be performed using \lang{}.
 Shown in parenthesis are the corresponding computation in Einsum notation
 and we can see it mirrors our query structure.
 
@@ -854,7 +878,7 @@ sum(times('vecA.*i', 'vecB.*i'))
 
 One benefit of having a unified query language for both data manipulation and tensor
 computations is the ability to handle combined workloads efficiently.
-To illustrate this, let's consider a simplified version of computing a city's
+To illustrate this, consider a simplified version of computing a city's
 `crime index' (taken from~\cite{weld}).
 We first select a set of features of cities (e.g., population, 
 adult population and number of robberies), followed by a dot product
@@ -896,12 +920,12 @@ intricate workloads that combine data processing with tensor computations.
 % optimized JS code.
 
 \subsection{Combining UI logic}
-Given that \lang{} is embedded within JS, we can extend its capabilities by introducing
+Since \lang{} is embedded within JS, we can extend its capabilities by introducing
 a means to \emph{declaratively} specify the visual components of websites using a similar
 structural approach.
-This facilitates the seamless integration of data querying logic with the corresponding
-logic needed to visualize the data, such as creating tables.
-To enable this functionality, we introduce a special key called \inline{'\$display'}.
+This allows the seamless integration of data querying logic with the corresponding
+data visualization logic, such as creating tables.
+This is enabled by a special key called \inline{'\$display'}.
 To illustrate this, consider the following example query, alongside its corresponding output:
 
 \hspace{-18pt}
@@ -935,7 +959,7 @@ like \inline{h1}, \inline{p}, or high-level components like
 \inline{table}, \inline{bar}, \inline{select}, and more,
 as well as SVG objects.
 
-To exemplify the practical utility of this approach, let's consider a scenario involving
+To exemplify the practical utility of this approach, consider a scenario involving
 the visualization of data related to mobile phone supplier warehouses.
 Imagine the raw data is represented as an array of JSON objects, each featuring attributes
 such as warehouse, product, model, and quantity.
