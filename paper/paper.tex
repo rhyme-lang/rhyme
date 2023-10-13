@@ -125,7 +125,7 @@ that comprises a general substrate capable of accommodating a wide array of
 different use cases.
 
 \lang{} takes inspiration from many existing declarative languages
-including GraphQL, JQ~\cite{jq}, XQuery~\cite{xquery}, Einstein notation,
+including GraphQL, JQ~\cite{jq}, XQuery~\cite{xquery}, JSONPath~\cite{jsonpath}, Einstein notation,
 Datalog, recent functional logic programming languages like Verse~\cite{verse}, etc.
 \lang{} is designed to serve as an expressive language for high-level data
 manipulation, enabling the querying and transformation of nested data structures
@@ -324,6 +324,7 @@ Consider the query in \Cref{fig:intro_q1}.
 In \lang{}, the \inline{*} symbol serves as an iterator, facilitating iteration through
 the \inline{val} values, while the aggregator \inline{sum} calculates the sum of
 these iterated values.
+\inline{data.*.val} is called a \emph{path} expression and this notation is inspired by JSONPath~\cite{jsonpath}.
 \lang{}'s IR (shown in center) consists of two main types of operators.
 First, it has generators (represented as \emph{rounded} rectangles), which represents iterators
 that iterates through a list of items (ultimately translated into loops in
@@ -477,7 +478,7 @@ let data = [
 
 % \vspace{-7mm}
 \caption{Syntax for expressing \lang{} queries. \Cref{sec:query_language} shows how to use this to express
-various kinds of queries. \todo{perhaps remove trivial Ident, Num}}\label{fig:grammar}
+various kinds of queries.}\label{fig:grammar}
 \vspace{-5mm}
 \end{figure}
 
@@ -939,7 +940,7 @@ intricate workloads that combine data processing with tensor computations.
 % operators corresponding to the tensor expressions that then get translated into
 % optimized JS code.
 
-\subsection{Combining UI logic}
+\subsection{Combining UI logic}\label{subsec:view}
 Since \lang{} is embedded within JS, we can extend its capabilities by introducing
 a means to \emph{declaratively} specify the visual components of websites using a similar
 structural approach.
@@ -1273,17 +1274,21 @@ AsterixDB, designed for semi-structured data, employs AQL~\cite{aql} and SQL++~\
 as its query languages.
 GraphQL~\cite{graphql}, on the other hand, is widely used in web application development
 for querying data from backend services.
-Generally, resolvers for these queries should be manually implemented in the backend.
-Some systems like Hasura~\cite{hasura} automate the generation of SQL queries from
-GraphQL queries, simplifying query resolution.
+% Generally, resolvers for these queries should be manually implemented in the backend.
+% Some systems like Hasura~\cite{hasura} automate the generation of SQL queries from
+% GraphQL queries, simplifying query resolution.
 Most of these languages are specifically targeted towards large-scale JSON analytics workloads
-and are not expressive enough to support workloads like the ones
-in \Cref{subsec:tensor} and \Cref{subsec:fluent}.
+and are not expressive enough to support cases like the ones
+in \Cref{subsec:tensor,subsec:fluent,subsec:view}.
 While we take inspiration from these languages for the design of the language,
 \lang{}, is designed to handle various forms of nested data (e.g., tensors),
 and it offers support for efficient code generation and optimizations
 through its IR.
-\lang{} borrows many ideas from functional logic programming language like
+
+\lang{}'s path expressions are inspired by JSONPath~\cite{jsonpath} (a descendent of XPath).
+Although not discussed extensively in this paper, it is possible to extend \lang{} to support
+the full set of JSONPath operators, which include conditions, recursion, etc.
+\lang{} also borrows many ideas from functional logic programming languages like
 Verse~\cite{verse}, Curry~\cite{curry}, miniKanren~\cite{miniKanren_thesis} and 
 Scalango~\cite{scalango} adapt them into a new data-centric declarative language.
 
@@ -1358,8 +1363,8 @@ specialized low-level code.
 \bibliographystyle{splncs04}
 \bibliography{references}
 
-\appendix
-\section{Expressing }
+% \appendix
+% \section{Expressing }
 
 % \subsection{Expressing Visual Components}
 
