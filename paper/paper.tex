@@ -115,11 +115,11 @@ In practical scenarios where diverse paradigms of workloads are combined
 query languages in tandem.
 Each of these languages interfaces with the respective engines tasked
 with handling individual workloads.
-However, this approach can be inherently inefficient, both from a performance
+However, this approach is inherently inefficient, both from a performance
 perspective, due to the reliance on multiple isolated backends, and from
 a programmer productivity standpoint, as it necessitates learning and
 maintaining code written in multiple query languages.
-In this work, we tackle this challenge by introducing a unified query language, 
+In this work, we address this challenge by introducing a unified query language, 
 named \lang{},
 that comprises a general substrate capable of accommodating a wide array of
 different use cases.
@@ -137,7 +137,7 @@ meaning that queries are essentially expressed as JSON objects.
 Second, \lang{} is designed in a way that permits query optimization and
 code generation via the construction of an intermediate representation (IR).
 This IR contains loop-free and branch-free code with dependencies that implicitly
-captures the program structure.
+capture the program structure.
 Third, \lang{} is compositional and easy to meta-program, recognizing that data
 transformation queries are typically used as part of larger programs and are often
 generated programmatically.
@@ -162,10 +162,10 @@ Notably, this AST is represented in JSON format, hence serializable, enabling th
 to be exported/imported from various other environments.
 We implement \lang{} as an embedded DSL in JavaScript (JS), 
 which constructs the \lang{} AST from \lang{} queries.
-Additionally, alternative interfaces can be used, such as pipes (discussed in \Cref{subsec:fluent}),
+Additionally, alternative interfaces can be used, such as pipes (\Cref{subsec:fluent}),
 or entirely textual inputs that can be processed by a parser to construct the same AST.
-Once the AST is constructed, it gets transformed into our IR.
-During this transformation, we map our declarative query operators to IR instructions
+Once the AST is constructed, it gets transformed into \lang{} IR.
+During this transformation, declarative query operators are mapped to IR instructions
 along with their dependencies.
 Subsequently, this IR is used to analyze the looping structure and generate the final
 code.
@@ -183,7 +183,7 @@ let data = [
 // query
 sum('data.*.val')
 // AST constructed from the query:
-{key: 'sum', param: 'data.*.val'}
+{agg: 'sum', param: 'data.*.val'}
 // result: 50
 \end{lstlisting}
 \end{minipage}
@@ -218,9 +218,9 @@ return tmp[0]
 // AST constructed from the query:
 {
   total:
-    {key: 'sum', param: 'data.*.val'},
+    {agg: 'sum', param: 'data.*.val'},
   'data.*.key':
-    {key: 'sum', param: 'data.*.val'}
+    {agg: 'sum', param: 'data.*.val'}
 }
 // result:
 //  { total: 50, 
@@ -265,8 +265,8 @@ return tmp[0]
   'data.*.key': {
     path: 'div',
     param: [
-      {key: 'sum', param: 'data.*A.val'},
-      {key: 'sum', param: 'data.*B.val'}
+      {agg: 'sum', param: 'data.*A.val'},
+      {agg: 'sum', param: 'data.*B.val'}
     ]
   }
 }
@@ -321,24 +321,27 @@ subsequent sections in this paper, we offer an introductory overview of each
 element here.
 
 Consider the query in \Cref{fig:intro_q1}.
-In \lang{}, the \inline{*} symbol serves as an iterator, facilitating iteration through
+In \lang{}, 
+\inline{data.*.val} is called a \emph{path} expression, a notation inspired by
+JSONPath~\cite{jsonpath}.
+The \inline{*} symbol serves as an iterator, facilitating iteration through
 the \inline{val} values, while the aggregator \inline{sum} calculates the sum of
 these iterated values.
-\inline{data.*.val} is called a \emph{path} expression and this notation is inspired by JSONPath~\cite{jsonpath}.
-\lang{}'s IR (shown in center) consists of two main types of operators.
-First, it has generators (represented as \emph{rounded} rectangles), which represents iterators
-that iterates through a list of items (ultimately translated into loops in
+\lang{}'s IR (shown in the center) consists of two main types of operators.
+First, it has \emph{generators} (represented as \emph{rounded} rectangles),
+which represents iterators
+that enumerate a list of items (ultimately translated into loops in
 the generated code).
 In our example, \inline{data.*} is a generator, iterating values from the data object.
-Second, the IR has assignments (represented as rectangles), comprising the
+Second, the IR has \emph{assignments} (represented as rectangles), comprising the
 computations required for executing the query.
 In the case of our first query, the initialization logic \inline{tmp[0] ??= 0} and
 the subsequent sum computation \inline{tmp[0] += ...} are assignments.
 
 Notably, the IR operates without the need for explicit control flow constructs.
 Instead, the program's structure is implicitly inferred through dependencies.
-For our example query, the update assignment \inline{tmp[0] += ...} has dependencies to
-both the initializer (because have to initialize first) and the generator
+For our example query, the assignment \inline{tmp[0] += ...} has dependencies to
+both the initializer (because initialization must come first) and the generator
 (because its operand is the iterated value).
 Additionally, it is worth noting that computations are performed on temporary
 state variables (\inline{tmp[0]} in the first example).
@@ -361,7 +364,7 @@ such as \inline{sum(data.*.val)}.
 That is, the semantics of this expression differs depending on its context.
 This is similar to local unification semantics in Verse~\cite{verse}.
 For instance, when it is nested within \inline{\{data.*.key: ...\}},
-it signifies a group-by sum operation.
+the expression signifies a group-by sum operation.
 Conversely, if it is not nested within an iterator (i.e., \inline{*}),
 it calculates the aggregate over the entire set of values.
 This distinction is exemplified in the query presented in \Cref{fig:intro_q3}.
@@ -374,18 +377,18 @@ Additionally, \Cref{fig:intro_q3} also demonstrates an optimization that occurs 
 Specifically, even though the \inline{sum(data.*B.val)} appears as a nested sub-query
 in the original query, the \lang{} backend can determine that the generated
 \inline{*B} can be hoisted out as a separate loop by analyzing the IR dependencies.
-This is essentially similar to sub-query hoisting that happens at logical plan level
+This is essentially similar to sub-query hoisting that happens at the logical plan level
 in other traditional query optimizers.
 
 These examples provide a broad overview of \lang{}'s functionalities and its
-syntax structure.
+syntactic structure.
 In the subsequent sections of this paper, we will delve deeper into the syntax and capabilities
 of \lang{} and discuss the process of IR construction and code generation.
-Moreover, the previous example queries exemplified \lang{}'s capability to
+Moreover, the previous example queries focused on \lang{}'s capability to
 express analytical queries on JSON objects.
-However, the versatility of \lang{} extends beyond this, encompassing an even broader
+However, \lang{} covers an even broader
 spectrum of use cases, including the ability to express tensor computations and declaratively specify
-visual components (e.g., tables) of web applications.
+visual components (e.g., tables, charts) of web applications.
 % For example, this includes its ability to 
 % express tensor computations in a style similar to
 % Einstein notation as we discuss in \Cref{subsec:tensor}.
@@ -394,10 +397,10 @@ Our specific contributions are as follows.
 \begin{itemize}
     \item We introduce the syntax of \lang{}, showcasing the ability to express common data
           manipulation operators such as selections, group-bys, joins, user-defined functions (UDFs),
-          and so on (\Cref{sec:query_language}).
+          and others (\Cref{sec:query_language}).
     \item We highlight the versatility of \lang{} across various use cases, including the expression
           of visual elements in web applications (e.g., tables, charts using SVG), declarative
-          tensor computations (akin to Einsum), and the enabling `pipe' APIs via metaprogramming (\Cref{sec:case_studies}).
+          tensor computations (akin to Einsum), and alternative `pipe' APIs via metaprogramming (\Cref{sec:case_studies}).
     \item We elucidate the process of lowering queries into an IR that features loop-free and
           branch-free code, with dependencies implicitly representing the program structure.
           Then, we illustrate how this IR facilitates code generation by constructing the optimal program
@@ -410,14 +413,15 @@ We discuss related work in \Cref{sec:related_work}, followed by conclusions and 
 in \Cref{sec:conclusions}.
 
 
-\vspace{-4mm}
-\section{The Query Language}~\label{sec:query_language}
+\vspace{-2mm}
+\section{The \lang{} Query Language}\label{sec:query_language}
+\vspace{-2mm}
 In the previous section, we saw \lang{} in action for a set of relatively simple queries.
 In this section, we will introduce the syntax of \lang{}, illustrating
 how it facilitates the expression of common data manipulation operations like
 selections, aggregates, group-bys, and so on.
-The formal grammar is shown in \Cref{fig:grammar} and
-rest of this section illustrates how each of these components are used to express
+The formal grammar is shown in \Cref{fig:grammar}.
+The rest of this section illustrates how each of these components are used to express
 different kinds of queries.
 To improve understanding, we will employ a running illustrative example dataset, as
 depicted below.
@@ -426,17 +430,17 @@ along with the respective country.
 Our chosen dataset is deliberately kept simple, devoid of
 intricate nested structures.
 However, \lang{} has the capacity to seamlessly query
-nested JSON data without any problem in the same way.
+nested JSON data in the same way.
 We will see such examples later in \Cref{sec:case_studies}.
 
 \begin{lstlisting}[style=JavaScript]
 let data = [
-  {country: "Japan", city: "Tokyo",      population: 14},
-  {country: "China", city: "Beijing",    population: 22},
-  {country: "France",city: "Paris",      population: 3},
-  {country: "UK",    city: "London",     population: 9},
-  {country: "Japan", city: "Osaka",      population: 3},
-  {country: "UK",    city: "Birmingham", population: 2}
+  {country: "Japan",  city: "Tokyo",      population: 14},
+  {country: "China",  city: "Beijing",    population: 22},
+  {country: "France", city: "Paris",      population: 3},
+  {country: "UK",     city: "London",     population: 9},
+  {country: "Japan",  city: "Osaka",      population: 3},
+  {country: "UK",     city: "Birmingham", population: 2}
 ]
 \end{lstlisting}
 
@@ -446,7 +450,8 @@ let data = [
 \begin{minipage}{0.5\textwidth}
 \begin{align*}
 \text{Ident} &::= \texttt{[a-zA-Z\_][a-zA-Z0-9\_]*} \\
-\text{Num} & ::= \texttt{[0-9]+} \quad \text{Var} ::= \texttt{*}\;\text{Ident} \\
+\text{Num} &::= \texttt{[0-9]+} \\ 
+\text{Var} &::= \texttt{*}\;\text{Ident} \\
 \text{ScalarOp} &::= \textsf{get} \mid \textsf{apply} \mid \textsf{plus} \mid \textsf{minus} \\ 
 &\mid \textsf{div} \mid \textsf{fdiv} \mid \textsf{times} \mid \textsf{mod} \\ 
 \text{ReductionOp} &::= \textsf{sum} \mid \textsf{count} \mid \textsf{max} \mid \textsf{min} \\ 
@@ -457,16 +462,17 @@ let data = [
 \begin{align*}
 \text{Atom} &::= \text{Ident} \mid \text{Num} \mid \text{Var} \\
 \text{Path} &::= \text{Atom ( . Atom )*} \\
-\text{Expr} &::= \text{Path} \mid \text{Expr} \ \text{ScalarOp} \ \text{Expr} \\
+\text{Expr} &::= \;\text{Path} \\
+&\quad\;\; \mid \text{Expr} \ \text{ScalarOp} \ \text{Expr} \\
 &\quad\;\; \mid \text{ReductionOp ( Expr )} \\
-&\quad\;\; \mid \text{[ Expr ]} \mid \text{\{ ( Path : Expr )* \}} \\
+&\quad\;\; \mid \text{[ Expr ]} \\
+&\quad\;\; \mid \text{\{ ( Path : Expr )* \}} \\
 \text{Query} &::= \text{Expr}
 \end{align*}
 \end{minipage}
 
 % \vspace{-7mm}
-\caption{Syntax for expressing \lang{} queries. \Cref{sec:query_language} shows how to use this to express
-various kinds of queries.}\label{fig:grammar}
+\caption{Syntax for expressing \lang{} queries.}\label{fig:grammar}
 \vspace{-5mm}
 \end{figure}
 
@@ -497,7 +503,9 @@ use cases, generally, queries involve some form of iterating over the dataset.
 \lang{} offers this capability through the \inline{*} operator,
 serving as an implicit iteration operator.
 Moreover, as we saw in \Cref{fig:intro_q3}, we can perform controlled iteration with multiple
-named iterators (e.g., \inline{*A}, \inline{*B}, etc.).
+generator symbols (e.g., \inline{*A}, \inline{*B}, etc.).
+In fact, these generator symbols behave like logic variables in Datalog, Prolog,
+and other logic programming languages as we see in \Cref{subsec:tensor}.
 Below, we present three example queries that leverage iterators and compute
 aggregates over the iterated values.
 
@@ -560,7 +568,7 @@ population:
 let query = { 
   total: sum('data.*.population'),                                // total population
   'data.*.country': {
-    total: sum('data.*.country')                                  // population per country
+    total: sum('data.*.country'),                                 // population per country
     'data.*.city': div(sum('data.*.population'),                  // population proportion
                           sum('data.*A.country'))}                // (per each city)
 }
@@ -589,10 +597,10 @@ new dataset named \inline{other}, which includes information about the
 
 \begin{lstlisting}[style=JavaScript, columns=flexible]
 let other = [
-  {country: "Japan", region: "Asia"},
-  {country: "China", region: "Asia"},
-  {country: "France",region: "Europe"},
-  {country: "UK",    region: "Europe"},
+  {country: "Japan",         region: "Asia"},
+  {country: "China",         region: "Asia"},
+  {country: "France", region: "Europe"},
+  {country: "UK",            region: "Europe"},
 ]
 \end{lstlisting}
 \vspace{-2mm}
@@ -602,8 +610,7 @@ values based on regions.
 For this, we must perform a join between our original
 \inline{data} and this new \inline{other} object to acquire the
 corresponding region for each country.
-\lang{} query below demonstrates how such an operation can be
-expressed.
+The following \lang{} query illustrates how this is expressed.
 
 \begin{lstlisting}[style=JavaScript, columns=flexible]
 let countryToRegion = {                                         // create a mapping of 
@@ -620,10 +627,10 @@ let query = {
 
 Here, we use a distinct query (\inline{countryToRegion}) to retrieve the
 corresponding region for a given country.
-The main query conducts a group-by based on the \inline{region} (retrieved using \inline{get}) initially,
-followed by another group-by based on \inline{country}, ultimately computing the
+The main query conducts a group-by based on the \inline{region} (retrieved using \inline{get}) 
+first, followed by another group-by based on \inline{country}, ultimately computing the
 desired aggregates.
- We employ the use of \inline{'-'} in our implementation due to JS's requirement that JSON
+We use \inline{'-'} in our implementation due to JS's requirement that JSON
 keys be represented as strings.
 Consequently, specifying \inline{get(countryToRegion, 'data.*.country')} as the key directly
 is not possible.
@@ -681,7 +688,7 @@ let query = {
 // result: {Japan: 32.05%, China: 41.50%, France: 5.66%, UK: 20.75%}
 \end{lstlisting}
 
-We have defined the \inline{formatPercent} that given a proportion value (float),
+We have defined the UDF \inline{formatPercent} that, given a proportion value,
 computes the percentage and adds a \% sign at the end.
 We can then use \inline{apply} in the query to call this UDF to convert the
 proportions to percentages.
@@ -710,17 +717,17 @@ proportions to percentages.
 \vspace{-3mm}
 \subsection{\lang{} AST}\label{subsec:ast}
 \vspace{-2mm}
-As we saw in \Cref{fig:intro_overview,fig:intro}, all the queries we
-saw above construct a \lang{} AST representation which serves as the basis
+As we saw in \Cref{fig:intro_overview,fig:intro}, all the queries
+above construct a \lang{} AST representation which serves as the basis
 for the dependency analysis and IR construction.
-This AST representation is in JSON format, and closely mirror the query JSON structure.
+This AST representation is in JSON format, and closely mirrors the query JSON structure.
 The difference is, all the calls to reducers like \inline{sum}, \inline{count}, etc.
 and other operations like \inline{plus}, \inline{minus}, etc. will be translated to
-explicit objects components with \inline{key} (or \inline{path}) and the corresponding
+explicit objects components with \inline{agg} (or \inline{path}) and the corresponding
 arguments.
-\inline{key} is for reducers (which are stateful), and \inline{path} is for operations
+\inline{agg} is for reducers (which are stateful), and \inline{path} is for operations
 simply performs a lookup and some computation.
-For instance, \Cref{fig:intro_q3} (left) shows how \inline{sum} is translated to \inline{key}
+For instance, \Cref{fig:intro_q3} (left) shows how \inline{sum} is translated to \inline{agg}
 and \inline{param}, and \inline{div} is translated to \inline{path} and param.
 
 This AST representation serves as the entry point for our compiler backend, and gets
@@ -735,7 +742,7 @@ or a textual frontend with a parser, and so on.
 \vspace{-3mm}
 \subsection{Fluent API}\label{subsec:fluent}
 \vspace{-2mm}
-\lang{} query frontend (JSON) we saw in \Cref{sec:query_language} describes the query
+\lang{}'s query frontend (JSON) we saw in \Cref{sec:query_language} describes the query
 using the structure of the computed \emph{result}.
 However, sometimes, it is more natural to start from the structure of the 
 \emph{input}, and specify a sequence of transformation steps.
@@ -765,7 +772,7 @@ let input = '100,200,300|400|500,600|700,800,900|1000' // sample input
 let udf = {
   'splitPipe' : x => x.split('|'),
   'splitComma': x => x.split(','),
-  'toNum'      : x => Number(x)
+  'toNum'         : x => Number(x)
 }
 \end{lstlisting}
 
@@ -783,7 +790,7 @@ let query = max(get({                      // 5. find maximum among group sums
   },'*'))
 \end{lstlisting}
 
-\inline{apply()} is used to apply UDFs to arguments.
+Function \inline{apply()} is used to apply UDFs to arguments;
 \inline{get()}, when used with an unbounded generator symbol (e.g., \inline{*chunk}), binds the
 iterator to the object in the first argument.
 For example, in Line 5, \inline{get(..., '*chunk')} binds the iterator
@@ -808,10 +815,11 @@ let query =
 \end{lstlisting}
 
 The \inline{pipe()} function creates a \inline{Pipe} object equipped with
-APIs such as \inline{sum}, \inline{max}, and so on, all of which return a
+methods \inline{sum}, \inline{max}, and so on, all of which return a
 \inline{Pipe}.
 The \inline{map()} function, similar to \inline{apply()} mentioned earlier,
-is employed to apply a UDF, and \inline{group()} is used to perform a group-by.
+is employed to apply a UDF, and \inline{group()} is used to perform a group-by
+(i.e., \inline{e.group(x)} is \inline{\{x : e\}}).
 
 % \todo{show the definition of group?}
 
@@ -821,13 +829,13 @@ is employed to apply a UDF, and \inline{group()} is used to perform a group-by.
 
 \vspace{-4mm}
 \subsection{Tensor Expressions}\label{subsec:tensor}
-
+\vspace{-2mm}
 \lang{} provides an elegant framework for expressing tensor computations,
 drawing inspiration from the Einstein summation (Einsum) notation frequently
 employed in tensor frameworks and Einops~\cite{einops}.
 The Einsum notation offers a concise means of articulating tensor computations.
-For instance, the expression $ik,kj \rightarrow ij$ specifies a tensor operation
-that takes two two-dimensional tensors (say $A$ and $B$), and yields a third
+For instance, $ik,kj \rightarrow ij$ specifies a standard matrix
+product that takes two two-dimensional tensors (i.e., matrices $A$ and $B$), and yields a third
 tensor (say $C$), as the result, computed as $C_{ij} = \sum_k A_{ik} \times B_{kj}$.
 Likewise, complex tensor computations involving multiple n-dimensional tensors can
 be specified using such declarative expressions.
@@ -836,16 +844,16 @@ be specified using such declarative expressions.
 To perform tensor computations, we rely on using the notion of unbounded iterators in \lang{}.
 Specifically, in prior cases, we explicitly specified the data source from which we iterate,
 as seen in constructs like \inline{data.*A}.
-However, instead if you only specify the iterator as the key, and \lang{}'s backend
+However, if instead we only specify the iterator as the key, \lang{}'s backend
 automatically determines the appropriate data source by examining the query body.
 For instance, when we have a query like \inline{\{*i: sum(times(A.*i, B.*i))\}}, the
 backend selects either \inline{A} or \inline{B} as the data source for iteration.
 Subsequently, the generated code ensures that the iterated values exist in
 both \inline{A} and \inline{B}.
-For readers familiar with languages like logic programming, this concept essentially
-parallels the notion of unification.
+This concept essentially parallels the notion of unification in logic programming,
+and more specifically narrowing in functional logic programming\cite{curry,verse}.
 
-To demonstrate how tensor computations are expressed in \lang{}, let's delve into
+To demonstrate how tensor computations are expressed in \lang{}, let's consider
 some examples.
 While \lang{} accommodates tensors in various nested formats, for the sake of simplicity,
 we will consider a scenario where we represent tensors using JS Arrays, as illustrated below:
@@ -854,7 +862,7 @@ let A = [[1, 2], [3, 4]]; let B = [[1, 2, 3], [4, 5, 6]]
 \end{lstlisting}
 
 Shown below are a set of example tensor computations expressed in \lang{}.
-Einsum notation counterparts (closely mirroring \lang{} query structure) 
+Einsum notation counterparts (which closely mirrors \lang{} query structure) 
 are shown in parentheses for each example.
 
 \hspace{-18pt}
@@ -931,6 +939,7 @@ intricate workloads that combine data processing with tensor computations.
 
 \vspace{-3mm}
 \subsection{Declarative Visualizations}\label{subsec:view}
+\vspace{-2mm}
 Since \lang{} is embedded within JS, we can extend its capabilities by introducing
 a means to \emph{declaratively} specify the visual components of websites using a similar
 structural approach.
@@ -996,8 +1005,8 @@ aggregates computed on \inline{*} iterators are grouped based on the \inline{war
 Below, we present a query that leverages the above sub query and visualizes our data in a pivot table.
 This query performs aggregations at multiple levels and displays each level of
 aggregate in a single table as shown on the right.
-We can similarly use \lang{} to visualize data in different types of charts using SVG graphics.
-(such examples are omitted due to space concerns).
+Naturally, this repeated structure could be abstracted further into a single
+operation such as \inline{rollup('data.*', [model, product, warehouse], computeEntry)}.
 
 \hspace{-18pt}
 \begin{minipage}{0.6\textwidth}
@@ -1024,16 +1033,19 @@ let query = {
 \includegraphics[width=\textwidth]{images/big_table.png}
 \end{minipage}
 
-Regarding how this is handled in the backend, we start by building the necessary helper
+We can similarly use \lang{} to visualize data in different types of charts using SVG graphics
+(such examples are omitted due to space concerns).
+Regarding how this visualizations are handled in the backend, we start by building the necessary helper
 functions to create these components (tables, bars, etc.) programmatically.
 Then, the backend is augmented to use these functions whenever a \inline{'\$display'}
 is encountered.
 Our ultimate goal of these kinds of integrations is to enable users
 to use \lang{} to build interactive dashboards and CRUD applications 
-directly from a single query, that essentially becomes the program.
+directly from a single query.
 
 \vspace{-3mm}
-\section{IR and Code Generation}~\label{sec:ir_codegen}
+\section{IR and Code Generation}\label{sec:ir_codegen}
+\vspace{-3mm}
 Up to this point, we have provided an introduction to the syntax of
 \lang{} and explored its versatility across various domains.
 In \Cref{fig:intro_overview} and \Cref{fig:intro}, we gained a preliminary understanding
@@ -1042,9 +1054,8 @@ as the basis for generating optimized code.
 In this section, we will delve into a detailed discussion of the IR structure
 and the code generation process.
 
-\vspace{-3mm}
+\vspace{-4mm}
 \subsection{IR Structure}\label{subsec:ir}
-
 As discussed in \Cref{sec:intro} (\Cref{fig:intro}), the IR structure of \lang{} consists of two
 primary types of instructions: \emph{generators} and \emph{assignments}.
 Generators correspond to iterators responsible for enumerating input or intermediate
@@ -1064,8 +1075,8 @@ IR construction.
 While the IR does not explicitly capture the program structure, the optimal program
 structure can be derived from an analysis of these dependencies.
 
+\vspace{-4mm}
 \subsection{Constructing the IR}
-
 The dependency structure is relatively straightforward.
 As demonstrated in the generated code snippet in \Cref{fig:intro}, we utilize objects such
 as \inline{tmp[0]}, \inline{tmp[1]}, and so on, to maintain intermediate results required
@@ -1113,28 +1124,28 @@ desired computation.
 For example, for \inline{plus}, we retrieve the left and right operands and create
 a binary operation utilizing the \inline{+} operator.
 
+\vspace{-2mm}
 \subsection{Code Generation}
-Once the IR is constructed for a query, next step is to generate the final code
+\vspace{-2mm}
+Once the IR is constructed for a query, the next step is to generate the final code
 taking into account the instruction dependencies.
-This phase involves the crucial task of determining the program structure from
-the dependencies.
 Specifically, it entails determining where to insert loops, how to nest loops
 within one another, where to place assignment instructions, and so on. 
 We will use the query from \Cref{fig:intro_q3} as a running example for this
 section.
 
-This happens in a multi-step manner.
-The first step is identifying two key
-components: \inline{tmpInsideLoop} and \inline{tmpAfterTmp}.
-These variables serve the purpose of tracking which temporaries should be scheduled
+The first step is computing two auxiliary relations:
+\inline{tmpInsideLoop} and \inline{tmpAft- erTmp}.
+These relations track which temporaries should be scheduled
 inside particular loops and which temporaries should be scheduled after
 certain other temporaries.
 This can be done by analyzing assignment to assignment dependencies and
 generator to assignment dependencies.
 
-The next step involves computing the \inline{tmpAfterLoop} based on the above two components.
-Specifically, if we determined that a temp \inline{t2} should be scheduled after
-another temp \inline{t1} (i.e., \inline{tmpAfterTmp[t2][t1]}), which resides inside a loop \inline{l}
+The next step involves computing the relation \inline{tmpAfterLoop} based on the two
+relations computed above.
+Specifically, if we determined that a temp variable \inline{t2} should be scheduled after
+another temp variable \inline{t1} (i.e., \inline{tmpAfterTmp[t2][t1]}), which resides inside a loop \inline{l}
 (with the condition that \inline{t2} itself is not within loop \inline{l}),
 then this implies that \inline{t2} should be scheduled after the loop \inline{l}.
 For instance, in our sample query, \inline{tmp[0]} should be scheduled after \inline{*A}.
@@ -1176,7 +1187,9 @@ computation multiple times inside a nested loop.
 % \section{Example: Pivot Table}\label{sec:case_study}
 % How to use group bys, partial aggregates, display, svg, etc.
 
+\vspace{-4mm}
 \section{Experiments}\label{sec:experiments}
+\vspace{-3mm}
 
 % \begin{figure}[t]
 % \begin{minipage}{0.4\textwidth}
@@ -1214,6 +1227,7 @@ cluster execution and may not exhibit optimal performance in a single-node,
 single-threaded context.
 Nevertheless, we consider it a valuable baseline for comparison.
 
+\vspace{-4mm}
 \subsection{Experimental Setup}
 We run three queries on a simple synthetic dataset comprising 1 million records of
 JSON objects.
@@ -1228,15 +1242,15 @@ with 4 sockets, 24 Intel(R) Xeon(R) Platinum 8168 cores
 per socket, and 750GB RAM per socket (3 TB total) running Ubuntu
 18.04.4 LTS.
 We have used JQ v1.6, Rumble v1.21.0, and Node v18.18.0 (for running our JS code).
-All experiments are run five times and the mean execution time is reported.
+All experiments are run five times, reporting the mean execution time.
 
+\vspace{-4mm}
 \subsection{Results}
 \begin{wrapfigure}{l}{0.4\textwidth}
 \vspace{-30pt}
 \centering
-\includegraphics[width=0.4\textwidth]{images/plot.pdf}
-\caption{Running time (left) for JQ, Rumble, and Rhyme for three different simple queries shown
-on right}\label{fig:plot}
+\includegraphics[width=0.4\textwidth,clip,trim={7mm 7mm 17mm 12mm}]{images/plot.pdf}
+\caption{Running time (left) for JQ, Rumble, and Rhyme for three different queries}\label{fig:plot}
 \vspace{-20pt}
 \end{wrapfigure} 
 Across the three queries, \lang{} demonstrates the best performance.
@@ -1255,7 +1269,9 @@ that this benchmark does not provide a comprehensive analysis that contains the
 full spectrum of representative cases in JSON analytics.
 Such a comprehensive evaluation is deferred to future research.
 
+\vspace{-4mm}
 \section{Related Work}\label{sec:related_work}
+\vspace{-3mm}
 There are several query languages designed for working with semi-structured data like
 JSON, each with its own focus and strengths.
 JSONiq~\cite{jsoniq,jsoniq_paper} is a notable query language explicitly tailored for
@@ -1274,7 +1290,7 @@ Most of these languages are specifically targeted towards large-scale JSON analy
 and are not expressive enough to support cases like the ones
 in \Cref{subsec:tensor,subsec:fluent,subsec:view}.
 While we take inspiration from these languages for the design of the language,
-\lang{}, is designed to handle various forms of nested data (e.g., tensors),
+\lang{} is designed to handle various forms of nested data (e.g., tensors),
 and it offers support for efficient code generation and optimizations
 through its IR.
 
@@ -1283,7 +1299,7 @@ Although not discussed extensively in this paper, it is possible to extend \lang
 the full set of JSONPath operators, which include conditions, recursion, etc.
 \lang{} also borrows many ideas from functional logic programming languages like
 Verse~\cite{verse}, Curry~\cite{curry}, miniKanren~\cite{miniKanren_thesis} and 
-Scalango~\cite{scalango} adapt them into a new data-centric declarative language.
+Scalogno~\cite{scalango}, and adapts them into a new data-centric declarative language.
 
 % We take inspiration from many other declarative programming languages.
 % Specifically, the \lang
@@ -1294,7 +1310,9 @@ Scalango~\cite{scalango} adapt them into a new data-centric declarative language
 
 % Our generated code
 
+\vspace{-5mm}
 \section{Conclusions and Future Work}\label{sec:conclusions}
+\vspace{-3mm}
 In this paper, we introduced \lang{}, a new query language tailored for high-level
 data manipulation.
 We illustrated how \lang{}'s design facilitates query optimization and code generation
@@ -1318,7 +1336,7 @@ Notably, our generated code is inherently designed to be `incremental-friendly'.
 This implies that we have the capability to generate code akin to update
 triggers, which are invoked whenever a modification is made to the dataset.
 Specifically, instead of dense loops used in the current version, update triggers
-generate `sparse' loops in the sense that it iterates only over the deltas.
+generate `sparse' loops in the sense that they iterate only over the deltas.
 
 Another dimension of incrementality involves managing query changes.
 This entails finding ways to accommodate changes in queries while maximizing
