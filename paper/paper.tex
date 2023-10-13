@@ -443,18 +443,6 @@ let data = [
 
 \begin{figure}[t!]
 \scriptsize
-% \begin{align*}
-% \text{Ident} &::= \texttt{[a-zA-Z\_][a-zA-Z0-9\_]*} \\
-% \text{Num} & ::= \texttt{[0-9]+} \quad \text{Var} ::= \texttt{*}\;\text{Ident} \\
-% \text{ScalarOp} &::= \textsf{get} \mid \textsf{apply} \mid \textsf{plus} \mid \textsf{minus} \mid \textsf{div} \mid \textsf{fdiv} \mid \textsf{times} \mid \textsf{mod} \\ 
-% \text{ReductionOp} &::= \textsf{sum} \mid \textsf{count} \mid \textsf{max} \mid \textsf{min} \mid \textsf{first} \mid \textsf{last} \mid \textsf{array} \\[4pt]
-% \text{Atom} &::= \text{Ident} \mid \text{Num} \mid \text{Var} \\
-% \text{Path} &::= \text{Atom ( . Atom )*} \\
-% \text{Expr} &::= \text{Path} \mid \text{Expr} \ \text{ScalarOp} \ \text{Expr} \mid \text{ReductionOp ( Expr )} \\
-% &\quad\;\; \mid \text{[ Expr ]} \mid \text{{ ( Path : Expr )* }} \\
-% \text{Query} &::= \text{Expr}
-% \end{align*}
-
 \begin{minipage}{0.5\textwidth}
 \begin{align*}
 \text{Ident} &::= \texttt{[a-zA-Z\_][a-zA-Z0-9\_]*} \\
@@ -481,8 +469,6 @@ let data = [
 various kinds of queries.}\label{fig:grammar}
 \vspace{-5mm}
 \end{figure}
-
-
 
 \vspace{-4mm}
 \subsection{Basics}
@@ -744,8 +730,11 @@ limited to the aforementioned JS embedding.
 Instead, it can be constructed using different APIs, (e.g., Fluent API introduced in \Cref{subsec:fluent}),
 or a textual frontend with a parser, and so on.
 
+\vspace{-4mm}
 \section{Case Studies}\label{sec:case_studies}
+\vspace{-3mm}
 \subsection{Fluent API}\label{subsec:fluent}
+\vspace{-2mm}
 \lang{} query frontend (JSON) we saw in \Cref{sec:query_language} describes the query
 using the structure of the computed \emph{result}.
 However, sometimes, it is more natural to start from the structure of the 
@@ -804,7 +793,9 @@ for these kinds of workloads, it is more natural to think starting from the inpu
 instead of the output structure.
 In such cases, \lang{}'s `fluent' interface offers an alternative way to express
 this query concisely as shown below.
-
+Here, we specify the query as a sequence of transformation steps on the input.
+This high-level fluent API essentially functions as a metaprogramming layer
+that generates an equivalent \lang{} AST as before.
 
 \begin{lstlisting}[style=JavaScript, columns=flexible]
 let query =
@@ -816,20 +807,19 @@ let query =
     .max()                                          // 5. find maximum among group sums
 \end{lstlisting}
 
-Here, we specify the query as a sequence of transformation steps on the input.
-This high-level fluent API essentially functions as a metaprogramming layer
-that generates an equivalent \lang{} AST as before.
 The \inline{pipe()} function creates a \inline{Pipe} object equipped with
 APIs such as \inline{sum}, \inline{max}, and so on, all of which return a
 \inline{Pipe}.
 The \inline{map()} function, similar to \inline{apply()} mentioned earlier,
 is employed to apply a UDF, and \inline{group()} is used to perform a group-by.
+
 % \todo{show the definition of group?}
 
 
 % \subsection{GUI Components}
 % Basic building blocks -- table definition, and generic display, svg, etc. 
 
+\vspace{-4mm}
 \subsection{Tensor Expressions}\label{subsec:tensor}
 
 \lang{} provides an elegant framework for expressing tensor computations,
@@ -860,13 +850,12 @@ some examples.
 While \lang{} accommodates tensors in various nested formats, for the sake of simplicity,
 we will consider a scenario where we represent tensors using JS Arrays, as illustrated below:
 \begin{lstlisting}[style=JavaScript,columns=flexible]
-let A = [[1, 2], [3, 4]]
-let B = [[1, 2, 3], [4, 5, 6]]
+let A = [[1, 2], [3, 4]]; let B = [[1, 2, 3], [4, 5, 6]]
 \end{lstlisting}
 
-Shown below are a set of tensor computations that can be performed using \lang{}.
-Shown in parenthesis are the corresponding computation in Einsum notation
-and we can see it mirrors our query structure.
+Shown below are a set of example tensor computations expressed in \lang{}.
+Einsum notation counterparts (closely mirroring \lang{} query structure) 
+are shown in parentheses for each example.
 
 \hspace{-18pt}
 \begin{minipage}{0.5\textwidth}
@@ -940,7 +929,8 @@ intricate workloads that combine data processing with tensor computations.
 % operators corresponding to the tensor expressions that then get translated into
 % optimized JS code.
 
-\subsection{Combining UI logic}\label{subsec:view}
+\vspace{-3mm}
+\subsection{Declarative Visualizations}\label{subsec:view}
 Since \lang{} is embedded within JS, we can extend its capabilities by introducing
 a means to \emph{declaratively} specify the visual components of websites using a similar
 structural approach.
@@ -1003,9 +993,11 @@ As previously discussed, the semantics of these aggregations varies depending on
 calling context.
 For instance, when invoked within the context of \inline{\{'data.*.warehouse': ...\}}, the
 aggregates computed on \inline{*} iterators are grouped based on the \inline{warehouse} attribute.
-Below, we present the query that is used for visualizing our data.
+Below, we present a query that leverages the above sub query and visualizes our data in a pivot table.
 This query performs aggregations at multiple levels and displays each level of
-aggregate in a single table (right).
+aggregate in a single table as shown on the right.
+We can similarly use \lang{} to visualize data in different types of charts using SVG graphics.
+(such examples are omitted due to space concerns).
 
 \hspace{-18pt}
 \begin{minipage}{0.6\textwidth}
@@ -1032,7 +1024,7 @@ let query = {
 \includegraphics[width=\textwidth]{images/big_table.png}
 \end{minipage}
 
-Regarding the backend implementation, we start by building the necessary helper
+Regarding how this is handled in the backend, we start by building the necessary helper
 functions to create these components (tables, bars, etc.) programmatically.
 Then, the backend is augmented to use these functions whenever a \inline{'\$display'}
 is encountered.
@@ -1040,8 +1032,8 @@ Our ultimate goal of these kinds of integrations is to enable users
 to use \lang{} to build interactive dashboards and CRUD applications 
 directly from a single query, that essentially becomes the program.
 
+\vspace{-3mm}
 \section{IR and Code Generation}~\label{sec:ir_codegen}
-
 Up to this point, we have provided an introduction to the syntax of
 \lang{} and explored its versatility across various domains.
 In \Cref{fig:intro_overview} and \Cref{fig:intro}, we gained a preliminary understanding
@@ -1050,6 +1042,7 @@ as the basis for generating optimized code.
 In this section, we will delve into a detailed discussion of the IR structure
 and the code generation process.
 
+\vspace{-3mm}
 \subsection{IR Structure}\label{subsec:ir}
 
 As discussed in \Cref{sec:intro} (\Cref{fig:intro}), the IR structure of \lang{} consists of two
@@ -1292,7 +1285,6 @@ the full set of JSONPath operators, which include conditions, recursion, etc.
 Verse~\cite{verse}, Curry~\cite{curry}, miniKanren~\cite{miniKanren_thesis} and 
 Scalango~\cite{scalango} adapt them into a new data-centric declarative language.
 
-
 % We take inspiration from many other declarative programming languages.
 % Specifically, the \lang
 % Logic programming, particularly, Datalog - choice and unification, einsum notation - for expressing tensor computations,
@@ -1303,7 +1295,6 @@ Scalango~\cite{scalango} adapt them into a new data-centric declarative language
 % Our generated code
 
 \section{Conclusions and Future Work}\label{sec:conclusions}
-
 In this paper, we introduced \lang{}, a new query language tailored for high-level
 data manipulation.
 We illustrated how \lang{}'s design facilitates query optimization and code generation
@@ -1364,8 +1355,15 @@ specialized low-level code.
 \bibliography{references}
 
 % \appendix
-% \section{Expressing }
+% \section{More Declarative Visualizations}\label{apen:moreview}
+% Due to space limitations, we decided to move several examples from \Cref{subsec:view}
+% involving using \lang{} to declaratively express visualizations
+% to the appendix.
+% \Cref{subsec:view} illustrated the use of \inline{'\$display'} to create pivot
+% tables from some sample data.
+% In this section, we will look into the expressivity of \lang{}'s display logic
+% for even more type of visualizations.
 
-% \subsection{Expressing Visual Components}
+% Consider a situation where we want to visualize our data in a graph.
 
 \end{document}
