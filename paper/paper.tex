@@ -510,7 +510,7 @@ Below, we present three example queries that leverage iterators and compute
 aggregates over the iterated values.
 
 \begin{lstlisting}[style=JavaScript, columns=flexible]
-['data.*.city']             // result: [Tokyo, Beijing, ..., Birmingham]
+['data.*.city']                  // result: [Tokyo, Beijing, ..., Birmingham]
 sum('data.*.population')    // result: 53
 max('data.*.population')    // result: 22
 \end{lstlisting}
@@ -566,13 +566,13 @@ population:
 
 \begin{lstlisting}[style=JavaScript, columns=flexible, numbers=none]
 let query = { 
-  total: sum('data.*.population'),                                // total population
+  total: sum('data.*.population'),                                    // total population
   'data.*.country': {
-    total: sum('data.*.country'),                                 // population per country
-    'data.*.city': div(sum('data.*.population'),                  // population proportion
-                          sum('data.*A.country'))}                // (per each city)
+    total: sum('data.*.population'),                                  // population per country
+    'data.*.city': div(sum('data.*.population'),                      // population proportion
+                          sum('data.*A.population'))}                 // (per each city)
 }
-// result: {total: 53. Japan: {total: 17, Tokyo: 0.26, Osaka: 0.06}, ...}
+// result: {total: 53, Japan: {total: 17, Tokyo: 0.26, Osaka: 0.06}, ...}
 \end{lstlisting}
 
 In the given query, the \inline{sum('data.*.population')} at each query level computes
@@ -580,7 +580,7 @@ distinct results: total population, total population per country, and population
 respectively. 
 If we had multiple population values for a given city (e.g., county data), then the
 last aggregation would compute the per city sum.
-As previously discussed, since \inline{sum('data.*A.country')} is not nested within a
+As previously discussed, since \inline{sum('data.*A.population')} is not nested within a
 \inline{*A} key, it performs a total aggregation, which sums all the population values.
 It is worth noting that our implementation employs calls like \inline{div} for some operators
 since it functions as an embedded DSL in JS.
@@ -956,9 +956,9 @@ To illustrate this, consider the following example query, alongside its correspo
   rows: [0], cols: [1], // row:data index, col:keys
   data: [
     {region:"Asia",city:"Beijing",
-      "population":{"$display":"bar",value:40}},
+      "population":{'$display':"bar",value:40}},
     {region:"Asia",city:"Tokyo",
-      "population":{"$display":"bar",value:70}}
+      "population":{'$display':"bar",value:70}}
   ]
 }
 \end{lstlisting}
