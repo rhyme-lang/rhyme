@@ -1,9 +1,15 @@
 {
-  "name": "js-queries",
-  "type": "module",
+  "name": "rhyme-lang",
+  "type": "commonjs",
   "version": "0.0.1",
-  "description": "",
+  "description": "Rhyme-lang: a data-centric expressive language for nested data structures",
+  "scripts": {
+    "test": "jest"
+  },
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
 }

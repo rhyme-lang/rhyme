@@ -1,1 +1,0 @@
-jq 'group_by(.key1) | map({(.[0].key1): map(.value) | add}) | add as $grouped | {total: $grouped|add} + $grouped' /homes/tabeysin/research/js-queries/js/experiments/data/data1M.jq
