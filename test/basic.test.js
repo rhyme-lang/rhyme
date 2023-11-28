@@ -1,4 +1,4 @@
-const rhyme = require('../app')
+const rhyme = require('../src/rhyme')
 
 // some sample data for testing
 let data = [
