@@ -382,8 +382,6 @@ exports.createIR = (query) => {
             assign(lhs2, "=", expr("[" + res1.map(x => x.txt).join(",") + "].flat()", ...res1.flatMap(x => x.deps)))
             return closeTempVar(lhs, lhs2)
         } else if (p.xxkey == "array") { // array
-            if (p.xxparam[0] == "Extra1")
-                console.dir(p)
             let rhs = p.xxparam.map(path)
             let lhs1 = openTempVar(lhs, rhs.flatMap(x => x.deps))
             assign(lhs1, "??=", expr("[]"))
