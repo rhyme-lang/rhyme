@@ -1,4 +1,5 @@
 const { quoteVar, debug, trace, print, inspect } = require("./utils")
+const { parse } = require("./parser")
 
 exports.createIR = (query) => {
     //
@@ -26,9 +27,6 @@ exports.createIR = (query) => {
     //      - total +=
     //      - data.foo +=
     //
-    //
-    // TODO: reset these in main func
-    //
     let generatorStms = []
     let assignmentStms = []
     let allsyms = {}
@@ -40,6 +38,7 @@ exports.createIR = (query) => {
 
     let subQueryCache = {}
 
+    // XXX seems no longer needed
     function resetState() {
         generatorStms = []
         assignmentStms = []
@@ -83,31 +82,6 @@ exports.createIR = (query) => {
     }
     //
     //
-    // -- Textual parser --
-    //
-    // TODO: extract into its own file and add
-    // functionality
-    //
-    function ast_ident(a) {
-        return { xxpath: "ident", xxparam: a }
-    }
-    function ast_raw(a) {
-        return { xxpath: "raw", xxparam: a }
-    }
-    function ast_get(a,b) {
-        return { xxpath: "get", xxparam: [a,b] }
-    }
-    function parse(p) {
-        let as = p.split(".")
-        if (as.length == 1) return ast_ident(as[0])
-        let ret = ast_raw("inp")
-        for (let i = 0; i < as.length; i++) {
-            if (as[i] == "")
-                continue // skip empty
-            ret = ast_get(ret, ast_ident(as[i]))
-        }
-        return ret
-    }
     // -- Paths (pure) --
     //
     // base path: number (5), string (foo), selection (foo.bar)
@@ -117,7 +91,9 @@ exports.createIR = (query) => {
     //
     // contract: argument p is a Number or String
     //
-    // NOTE(supuna): some kind of expressions here (basic arithmetic, etc.)
+    // refactored to allow parsing other relevant expressions, such 
+    // as data.foo + data.bar or 5 + sum(data.*.val) or ...
+    //    
     function path0(p) {
         if (typeof (p) == "number" || !Number.isNaN(Number(p)))  // number?
             return expr(p)
@@ -125,7 +101,6 @@ exports.createIR = (query) => {
     }
     //
     // special path operators: get, apply (TODO!)
-    //
     //
     function path1(p) {
         // TODO: assert non null?
