@@ -1,4 +1,4 @@
-const rhyme = require('../src/rhyme')
+const { api } = require('../src/rhyme')
 
 // some sample data for testing
 let data = [
@@ -22,66 +22,66 @@ let regionData = [
 ]
 
 test("plainSumTest", () => {
-    let query = rhyme.api.sum("data.*.value")
-    let res = rhyme.api.compile(query)({ data })
+    let query = api.sum("data.*.value")
+    let res = api.compile(query)({ data })
     let expected = 60
     expect(res).toBe(expected)
 })
 
 test("plainAverageTest", () => {
-    let query = rhyme.api.div(rhyme.api.sum("data.*.value"), rhyme.api.count("data.*.value"))
-    let res = rhyme.api.compile(query)({ data })
+    let query = api.div(api.sum("data.*.value"), api.count("data.*.value"))
+    let res = api.compile(query)({ data })
     let expected = 20
     expect(res).toBe(expected)
 })
 
 test("uncorrelatedAverageTest", () => {
-    let query = rhyme.api.div(rhyme.api.sum("data.*A.value"), rhyme.api.count("data.*B.value"))
-    let res = rhyme.api.compile(query)({ data })
+    let query = api.div(api.sum("data.*A.value"), api.count("data.*B.value"))
+    let res = api.compile(query)({ data })
     let expected = 20
     expect(res).toBe(expected)
 })
 
 test("groupByTest", () => {
     let query = {
-        total: rhyme.api.sum("data.*.value"),
-        "data.*.key": rhyme.api.sum("data.*.value"),
+        total: api.sum("data.*.value"),
+        "data.*.key": api.sum("data.*.value"),
     }
-    let res = rhyme.api.compile(query)({ data })
+    let res = api.compile(query)({ data })
     let expected = { "total": 60, "A": 40, "B": 20 }
     expect(res).toEqual(expected)
 })
 
 test("groupByAverageTest", () => {
-    let avg = p => rhyme.api.div(rhyme.api.sum(p), rhyme.api.count(p))
+    let avg = p => api.div(api.sum(p), api.count(p))
     let query = {
-        total: rhyme.api.sum("data.*.value"),
+        total: api.sum("data.*.value"),
         "data.*.key": avg("data.*.value"),
     }
-    let res = rhyme.api.compile(query)({ data })
+    let res = api.compile(query)({ data })
     let expected = { "total": 60, "A": 20, "B": 20 }
     expect(res).toEqual(expected)
 })
 
 test("groupByRelativeSum", () => {
     let query = {
-        total: rhyme.api.sum("data.*.value"),
-        "data.*.key": rhyme.api.fdiv(rhyme.api.sum("data.*.value"), rhyme.api.sum("data.*B.value"))
+        total: api.sum("data.*.value"),
+        "data.*.key": api.fdiv(api.sum("data.*.value"), api.sum("data.*B.value"))
     }
-    let res = rhyme.api.compile(query)({ data })
+    let res = api.compile(query)({ data })
     let expected = { "total": 60, "A": 0.6666666666666666, "B": 0.3333333333333333 }
     expect(res).toEqual(expected)
 })
 
 test("nestedGroupAggregateTest", () => {
     let query = {
-        total: rhyme.api.sum("data.*.population"),
+        total: api.sum("data.*.population"),
         "data.*.region": {
-            total: rhyme.api.sum("data.*.population"),
-            "data.*.city": rhyme.api.sum("data.*.population")
+            total: api.sum("data.*.population"),
+            "data.*.city": api.sum("data.*.population")
         },
     }
-    let res = rhyme.api.compile(query)({ data: countryData })
+    let res = api.compile(query)({ data: countryData })
     let expected = {
         "total": 70,
         "Asia": { "total": 50, "Beijing": 20, "Tokyo": 30 },
@@ -95,11 +95,11 @@ test("joinSimpleTest", () => {
         "other.*O.country": "other.*O.region"
     }
     let query = {
-        "-": rhyme.api.merge(rhyme.api.get(q1, "data.*.country"), {
-            "data.*.city": rhyme.api.sum("data.*.population")
+        "-": api.merge(api.get(q1, "data.*.country"), {
+            "data.*.city": api.sum("data.*.population")
         }),
     }
-    let res = rhyme.api.compile(query)({ data: countryData, other: regionData })
+    let res = api.compile(query)({ data: countryData, other: regionData })
     let expected = {
         "Asia": {
             "Tokyo": 30,
@@ -118,13 +118,13 @@ test("joinWithAggrTest", () => {
         "other.*O.country": "other.*O.region"
     }
     let query = {
-        total: rhyme.api.sum("data.*.population"),
-        "-": rhyme.api.merge(rhyme.api.get(q1, "data.*.country"), {
-            total: rhyme.api.sum("data.*.population"),
-            "data.*.city": rhyme.api.sum("data.*.population")
+        total: api.sum("data.*.population"),
+        "-": api.merge(api.get(q1, "data.*.country"), {
+            total: api.sum("data.*.population"),
+            "data.*.city": api.sum("data.*.population")
         }),
     }
-    let res = rhyme.api.compile(query)({ data: countryData, other: regionData })
+    let res = api.compile(query)({ data: countryData, other: regionData })
     let expected = {
         "total": 70,
         "Asia": {
@@ -151,28 +151,28 @@ test("udfTest", () => {
     }
     let query = [{
         item: "data.*.item",
-        price: rhyme.api.apply("udf.formatDollar", "data.*.price")
+        price: api.apply("udf.formatDollar", "data.*.price")
     }]
-    let res = rhyme.api.compile(query)({ data, udf })
+    let res = api.compile(query)({ data, udf })
     let expected = [{ item: "iPhone", price: "$1200.00" }, { item: "Galaxy", price: "$800.00" }]
     expect(res).toEqual(expected)
 })
 
 test("arrayTest1", () => {
-    let query4 = rhyme.api.sum(rhyme.api.sum("data.*.value"))
-    let res = rhyme.api.compile(query4)({ data })
+    let query4 = api.sum(api.sum("data.*.value"))
+    let res = api.compile(query4)({ data })
     let expected = 60
     expect(res).toBe(expected)
 })
 
 test("arrayTest2", () => {
-    let query1 = rhyme.api.array(rhyme.api.array("data.*.value"))
-    let query2 = rhyme.api.array(rhyme.api.sum("data.*.value"))
-    let query2A = rhyme.api.array({ v: rhyme.api.sum("data.*.value") })
-    let query3 = rhyme.api.join(rhyme.api.array("data.*.value"))
-    let query4 = rhyme.api.sum(rhyme.api.sum("data.*.value"))
+    let query1 = api.array(api.array("data.*.value"))
+    let query2 = api.array(api.sum("data.*.value"))
+    let query2A = api.array({ v: api.sum("data.*.value") })
+    let query3 = api.join(api.array("data.*.value"))
+    let query4 = api.sum(api.sum("data.*.value"))
 
-    let res = rhyme.api.compile({ query1, query2, query2A, query3, query4 })({ data })
+    let res = api.compile({ query1, query2, query2A, query3, query4 })({ data })
     let expected = {
         "query1": [[10, 20, 30]],
         "query2": [60],
@@ -186,7 +186,7 @@ test("arrayTest2", () => {
 // TODO: this is the failing test from https://tiarkrompf.github.io/notes/?/js-queries/aside24
 // test("arrayTest3", () => {
 //     let query = { "data.*.key": ["Extra1", { foo: "data.*.value" }, "Extra2"] }
-//     let res = rhyme.api.compile(query)({ data })
+//     let res = api.compile(query)({ data })
 //     let expected = {
 //         A: ["Extra1", "Extra2", { foo: 10 }, { foo: 30 }],
 //         B: ["Extra1", "Extra2", { foo: 20 }]

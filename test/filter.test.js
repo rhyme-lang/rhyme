@@ -1,4 +1,4 @@
-const rhyme = require('../src/rhyme')
+const { api } = require('../src/rhyme')
 
 // some sample data for testing
 let data = [
@@ -8,12 +8,12 @@ let data = [
 ]
 
 test("simpleFilterTest", () => {
-    let aggr = { "data.*.key": rhyme.api.sum("data.*.value") }
+    let aggr = { "data.*.key": api.sum("data.*.value") }
     let query = {
-        "A": rhyme.api.get(aggr, "A")
+        "A": api.get(aggr, "A")
     }
     let expected = { "A": 40 } // essentially a filter (TODO: but no predicate pushdown; we materialize the entire group by first)
-    let res = rhyme.api.compile(query)({ data })
+    let res = api.compile(query)({ data })
     expect(res).toEqual(expected)
 })
 

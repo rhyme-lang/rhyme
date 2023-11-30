@@ -1,4 +1,4 @@
-const { quoteVar, debug, trace, print, inspect} = require("./utils")
+const { quoteVar, debug, trace, print, inspect } = require("./utils")
 
 exports.createIR = (query) => {
     //
@@ -437,6 +437,6 @@ exports.createIR = (query) => {
     }
 
     let res = transStatefulTopLevel(query)
-    let ir = { assignmentStms, generatorStms, tmpVarWriteRank, res }
+    let ir = { assignmentStms, generatorStms, tmpVarWriteRank, res, query }
     return ir
 }

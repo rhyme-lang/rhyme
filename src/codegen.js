@@ -9,7 +9,7 @@ exports.generate = (ir) => {
     // debug information
     //
     let explain = {}
-    //   explain.src = query
+    explain.src = ir.query
 
     //
     // init codegen
