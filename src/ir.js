@@ -83,6 +83,31 @@ exports.createIR = (query) => {
     }
     //
     //
+    // -- Textual parser --
+    //
+    // TODO: extract into its own file and add
+    // functionality
+    //
+    function ast_ident(a) {
+        return { xxpath: "ident", xxparam: a }
+    }
+    function ast_raw(a) {
+        return { xxpath: "raw", xxparam: a }
+    }
+    function ast_get(a,b) {
+        return { xxpath: "get", xxparam: [a,b] }
+    }
+    function parse(p) {
+        let as = p.split(".")
+        if (as.length == 1) return ast_ident(as[0])
+        let ret = ast_raw("inp")
+        for (let i = 0; i < as.length; i++) {
+            if (as[i] == "")
+                continue // skip empty
+            ret = ast_get(ret, ast_ident(as[i]))
+        }
+        return ret
+    }
     // -- Paths (pure) --
     //
     // base path: number (5), string (foo), selection (foo.bar)
@@ -96,15 +121,7 @@ exports.createIR = (query) => {
     function path0(p) {
         if (typeof (p) == "number" || !Number.isNaN(Number(p)))  // number?
             return expr(p)
-        let as = p.split(".")
-        if (as.length == 1) return ident(as[0])
-        let ret = expr("inp")
-        for (let i = 0; i < as.length; i++) {
-            if (as[i] == "")
-                continue // skip empty
-            ret = selectUser(ret, ident(as[i]))
-        }
-        return ret
+        return path1(parse(p))
     }
     //
     // special path operators: get, apply (TODO!)
@@ -114,14 +131,19 @@ exports.createIR = (query) => {
         // TODO: assert non null?
         if (typeof (p) == "object" || typeof (p) == "function") { // treat fct as obj
             if (p.xxpath) { // path
-                if (p.xxpath == "get") {
+                if (p.xxpath == "ident") {
+                    return ident(p.xxparam)
+                } else if (p.xxpath == "raw") {
+                    return expr(p.xxparam)
+                } else if (p.xxpath == "get") {
                     let [e1, e2] = p.xxparam
                     // TODO: e1 should never be treated as id!
                     // TODO: vararg?
                     let subQueryPath = subQueryCache[e1] // cache lookup and update
                     if (!subQueryPath) {
                         subQueryPath = path1(e1)
-                        subQueryCache[e1] = subQueryPath
+                        let key = JSON.stringify(e1)
+                        subQueryCache[key] = subQueryPath
                     }
                     return (e2 !== undefined) ? selectUser(subQueryPath, path1(e2)) : subQueryPath
                 } else if (p.xxpath == "apply") {
