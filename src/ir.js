@@ -356,7 +356,34 @@ exports.createIR = (query) => {
             assign(lhs1, "??=", expr("''"))
             assign(lhs1, "+=", rhs)
             return closeTempVar(lhs, lhs1)
+        } else if (p.xxkey == "array" && p.xxparam.length > 1) { // multi-array
+            let rhs = p.xxparam.map(path)
+            let lhs2 = openTempVar(lhs,rhs.flatMap(x => x.deps))
+            let res1 = []
+            for (let e of rhs) {
+                let lhs1 = createFreshTempVar(e.deps)
+                assign(lhs1, "??=", expr("[]"))
+                assign(lhs1, ".push", expr("(" + e.txt + ")", ...e.deps))
+                res1.push(lhs1)
+            }
+            //
+            // XXX FIXME: this is *extremely* slow -- we're calling .flat()
+            // for every newly created tuple! (but it works...)
+            //
+            // Better solutions:
+            // - have a separate flatten pass at the end
+            // - use a proxy object that flattens literates
+            //
+            // In essence, this is a sorting problem (order by rank in outer array).
+            // How do we want to implement sorting in general?
+            // - separate sortin pass at the end
+            // - return a sorted tree that iterates in the right order
+            //
+            assign(lhs2, "=", expr("[" + res1.map(x => x.txt).join(",") + "].flat()", ...res1.flatMap(x => x.deps)))
+            return closeTempVar(lhs, lhs2)
         } else if (p.xxkey == "array") { // array
+            if (p.xxparam[0] == "Extra1")
+                console.dir(p)
             let rhs = p.xxparam.map(path)
             let lhs1 = openTempVar(lhs, rhs.flatMap(x => x.deps))
             assign(lhs1, "??=", expr("[]"))
