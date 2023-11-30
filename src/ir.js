@@ -152,12 +152,10 @@ exports.createIR = (query) => {
                 }
             } else if (p.xxkey) { // reducer (stateful)
                 return transStatefulInPath(p)
+            } else if (p instanceof Array) {
+                print("WARN - Array in path expr not thoroughly tested yet!")
+                return transStatefulInPath({ xxkey: "array", xxparam: p })
             } else { // subquery
-                if (p instanceof Array)
-                    print("ERROR - Array in path expr not supported yet!")
-                //print("ERROR - we don't support subqueries right now!")
-                //print("TODO: decorrelate and extract")
-                //inspect(p)
                 //
                 // A stateless object literal: we treat individual
                 // entries as paths, and build a new object for each
@@ -197,7 +195,7 @@ exports.createIR = (query) => {
                 let plus = deps.map(ident)
                 currentGroupPath = [...currentGroupPath, ...plus]
                 let lhs1 = createFreshTempVar(deps)
-                assign(lhs1, "??=", expr("{}"))
+                assign(lhs1, "??=", expr("{} //!"))
                 for (let k of Object.keys(p)) {
                     let { key, rhs } = entries[k]
                     let ll1 = select(lhs1, key)
@@ -372,7 +370,7 @@ exports.createIR = (query) => {
             //
             // Better solutions:
             // - have a separate flatten pass at the end
-            // - use a proxy object that flattens literates
+            // - return a proxy object that flattens when iterating
             //
             // In essence, this is a sorting problem (order by rank in outer array).
             // How do we want to implement sorting in general?

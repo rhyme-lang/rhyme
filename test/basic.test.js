@@ -183,7 +183,9 @@ test("arrayTest2", () => {
     expect(res).toEqual(expected)
 })
 
-// TODO: this is the failing test from https://tiarkrompf.github.io/notes/?/js-queries/aside24
+// this was the failing test from https://tiarkrompf.github.io/notes/?/js-queries/aside24
+// TODO: currently implementation is inefficient, look to replace
+// with a solution modeled after the manual flattening below
 test("arrayTest3", () => {
     let query = { "data.*.key": ["Extra1", { foo: "data.*.value" }, "Extra2"] }
     let func = api.compile(query)
@@ -218,25 +220,27 @@ test("arrayTest5Zip", () => {
 
 test("arrayTest6Flatten", () => {
     let query0 = { "data.*.key": {v1:["data.*.value"], v2:["data.*.value"]} }
-    let query = { "*k": api.get(query0,"*k") }
+    let query = { "*k": [api.get(api.get(api.get(query0,"*k"), "*A"), "*B")] }
     let func = api.compile(query)
     // console.dir(func.explain)
     let res = func({ data })
     let expected = {
       "A": [10, 30, 10,30],
       "B": [20, 20]}
-    //expect(res).toEqual(expected)  // XXX currently fails, see below
+    expect(res).toEqual(expected)
 })
 
-// XXX FIXME
 test("arrayTest7Eta", () => {
     let query0 = { "data.*.key": ["data.*.value"] }
     let query = { "*k": api.get(query0,"*k") }
+    let func0 = api.compile(query0)
     let func = api.compile(query)
+    // console.dir(func0.explain)
+    // console.dir(func.explain)
     let res = func({ data })
     let expected = {
       "A": [10, 30],
       "B": [20]}
-    // expect(res).toEqual(expected)  // XXX currently broken!!
+    expect(res).toEqual(expected)
 })
 
