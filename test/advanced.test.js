@@ -1,4 +1,4 @@
-const { api } = require('../src/rhyme')
+const api = require('../src/rhyme')
 
 // some sample data for testing
 let data = [
