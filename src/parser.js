@@ -9,6 +9,14 @@ function ast_raw(a) {
 function ast_get(a,b) {
   return { xxpath: "get", xxparam: [a,b] }
 }
+function ast_get_smart(a,b) {
+  if (a.xxpath == "ident")
+    a = ast_get(ast_raw("inp"), a)
+  return ast_get(a,b)
+}
+function ast_call_smart(a,b) {
+  return { xxpath: "apply", xxparam: [a,b] }
+}
 function ast_binop(op, a,b) {
   return { xxpath: op, xxparam: [a,b] }
 }
@@ -17,7 +25,7 @@ function ast_binop(op, a,b) {
 // ---------- Textual parser ----------
 //
 
-exports.parse2 = (p) => {
+exports.parse = (p) => {
   let input = p
   let pos = 0
   let peek
@@ -28,6 +36,9 @@ exports.parse2 = (p) => {
   let bullet
 
   // ----- Lexer -----
+  let opchars = '+-*/%<>=!'
+  let optable = {}
+  for (let c of opchars) optable[c] = 1
 
   // init lexer with first token to get going
   indent = gap = whitespace();
@@ -50,10 +61,6 @@ exports.parse2 = (p) => {
     return c
   }
 
-  let opchars = '+-*/%<>=!'
-  let optable = {}
-  for (let c of opchars) optable[c] = 1
-
   function read() {
     let isdigit = () => '0' <= input[pos] && input[pos] <= '9'
     let isletter = () => 'a' <= input[pos] && input[pos] <= 'z' || 'A' <= input[pos] && input[pos] <= 'Z'
@@ -61,13 +68,22 @@ exports.parse2 = (p) => {
     start = pos
     if (isdigit()) {
       while (isdigit()) pos++
-        peek = "num"
-    } else if (isletter()) {
-      while (isletter() || isdigit()) pos++
+      peek = "num"
+    } else if (isletter() || input[pos] == "_") {
+      while (isletter() || isdigit() || input[pos] == "_") pos++
+      peek = "ident"
+    } else if (input[pos] == "*") { // special case!
+      while (input[pos] == "*") pos++
+      if (isletter() || isdigit() || input[pos] == "_") {
+        while (isletter() || isdigit() || input[pos] == "_") pos++
         peek = "ident"
+      } else {
+        while (isopchar()) pos++
+        peek = input.substring(start,pos)
+      }
     } else if (isopchar()) {
       while (isopchar()) pos++
-        peek = input.substring(start,pos)
+      peek = input.substring(start,pos)
     } else if (input[pos] == '"') {
       pos++
       while (input[pos] && input[pos] != '\n' && input[pos] != '"') pos++
@@ -147,6 +163,18 @@ exports.parse2 = (p) => {
     return res
   }
 
+  function brackets(f) {
+    if (peek != '[')
+      error("'[' expected") // not really used!
+    next()
+    let res = f()
+    //try { f(); } catch (ex) {};
+    if (peek != ']')
+      error("']' expected but got '"+sanitize(peek)+"'")
+    next()
+    return res
+  }
+
   // precedence: higher binds tighter
   let prec = {
     '=' :  80,
@@ -190,23 +218,41 @@ exports.parse2 = (p) => {
     }
     return res
   }
-  function tight() {
+  function atom() {
     if (peek == '(') {
       return parens(expr)
     } else if (peek == "num" || peek == "str" || peek == "ident") {
       let res = ast_ident(str)
       next()
       return res
+    } else if (peek == '{') {
+      error("object constructor syntax not supported yet")
+    } else if (peek == '[') {
+      error("array constructor syntax not supported yet")
     } else {
-      if (isknown(peek))
-        error("atom expected")
-      else {
-        error("atom expected but got '"+sanitize(peek)+"'")
+      error("atom expected but got '"+sanitize(peek)+"'")
+    }
+  }
+  function tight() {
+    let res = atom()
+    while (peek == "." || peek == "(" || peek == "[") {
+      if (peek == ".") {
         next()
+        if (peek == "ident" || peek == "*") {
+          let rhs = ast_ident(str)
+          res = ast_get_smart(res, rhs)
+          next()
+        } else error("ident expected")
+
+      } else if (peek == "(") {
+        let rhs = parens(expr)
+        res = ast_call_smart(res, rhs)
+      } else if (peek == "[") {
+        let rhs = brackets(expr)
+        res = ast_get_smart(res, rhs)
       }
     }
-    // todo: while (peek == '(')
-    // (parse function call syntax)
+    return res
   }
 
   // parser main entrypoint
@@ -217,7 +263,8 @@ exports.parse2 = (p) => {
 }
 
 
-exports.parse = (p) => {
+// not used anymore
+exports.parsePurePath = (p) => {
   let as = p.split(".")
   if (as.length == 1) return ast_ident(as[0])
     let ret = ast_raw("inp")
