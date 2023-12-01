@@ -183,13 +183,64 @@ test("arrayTest2", () => {
     expect(res).toEqual(expected)
 })
 
-// TODO: this is the failing test from https://tiarkrompf.github.io/notes/?/js-queries/aside24
-// test("arrayTest3", () => {
-//     let query = { "data.*.key": ["Extra1", { foo: "data.*.value" }, "Extra2"] }
-//     let res = api.compile(query)({ data })
-//     let expected = {
-//         A: ["Extra1", "Extra2", { foo: 10 }, { foo: 30 }],
-//         B: ["Extra1", "Extra2", { foo: 20 }]
-//     }
-//     expect(res).toEqual(expected)
-// })
+// this was the failing test from https://tiarkrompf.github.io/notes/?/js-queries/aside24
+// TODO: currently implementation is inefficient, look to replace
+// with a solution modeled after the manual flattening below
+test("arrayTest3", () => {
+    let query = { "data.*.key": ["Extra1", { foo: "data.*.value" }, "Extra2"] }
+    let func = api.compile(query)
+    let res = func({ data })
+    let expected = {
+        A: ["Extra1", { foo: 10 }, { foo: 30 }, "Extra2"],
+        B: ["Extra1", { foo: 20 }, "Extra2"]
+    }
+    expect(res).toEqual(expected)
+})
+
+test("arrayTest4", () => {
+    let query = { "data.*.key": [{ v1: "data.*.value" }, { v2: "data.*.value" }] }
+    let func = api.compile(query)
+    let res = func({ data })
+    let expected = {
+      "A": [{"v1": 10},{"v1": 30},{"v2": 10},{"v2": 30}],
+      "B": [{"v1": 20},{"v2": 20}]}
+    expect(res).toEqual(expected)
+})
+
+// test manual zip and flatten patterns for nested array traversal
+test("arrayTest5Zip", () => {
+    let query = { "data.*.key": [api.get({ v1: "data.*.value", v2: "data.*.value" },"*A")] }
+    let func = api.compile(query)
+    let res = func({ data })
+    let expected = {
+      "A": [10, 10, 30, 30],
+      "B": [20, 20]}
+    expect(res).toEqual(expected)
+})
+
+test("arrayTest6Flatten", () => {
+    let query0 = { "data.*.key": {v1:["data.*.value"], v2:["data.*.value"]} }
+    let query = { "*k": [api.get(api.get(api.get(query0,"*k"), "*A"), "*B")] }
+    let func = api.compile(query)
+    // console.dir(func.explain)
+    let res = func({ data })
+    let expected = {
+      "A": [10, 30, 10,30],
+      "B": [20, 20]}
+    expect(res).toEqual(expected)
+})
+
+test("arrayTest7Eta", () => {
+    let query0 = { "data.*.key": ["data.*.value"] }
+    let query = { "*k": api.get(query0,"*k") }
+    let func0 = api.compile(query0)
+    let func = api.compile(query)
+    // console.dir(func0.explain)
+    // console.dir(func.explain)
+    let res = func({ data })
+    let expected = {
+      "A": [10, 30],
+      "B": [20]}
+    expect(res).toEqual(expected)
+})
+

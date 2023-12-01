@@ -1,4 +1,5 @@
 const { quoteVar, debug, trace, print, inspect } = require("./utils")
+const { parse } = require("./parser")
 
 exports.createIR = (query) => {
     //
@@ -26,9 +27,6 @@ exports.createIR = (query) => {
     //      - total +=
     //      - data.foo +=
     //
-    //
-    // TODO: reset these in main func
-    //
     let generatorStms = []
     let assignmentStms = []
     let allsyms = {}
@@ -40,6 +38,7 @@ exports.createIR = (query) => {
 
     let subQueryCache = {}
 
+    // XXX seems no longer needed
     function resetState() {
         generatorStms = []
         assignmentStms = []
@@ -92,36 +91,34 @@ exports.createIR = (query) => {
     //
     // contract: argument p is a Number or String
     //
-    // NOTE(supuna): some kind of expressions here (basic arithmetic, etc.)
+    // refactored to allow parsing other relevant expressions, such 
+    // as data.foo + data.bar or 5 + sum(data.*.val) or ...
+    //    
     function path0(p) {
         if (typeof (p) == "number" || !Number.isNaN(Number(p)))  // number?
             return expr(p)
-        let as = p.split(".")
-        if (as.length == 1) return ident(as[0])
-        let ret = expr("inp")
-        for (let i = 0; i < as.length; i++) {
-            if (as[i] == "")
-                continue // skip empty
-            ret = selectUser(ret, ident(as[i]))
-        }
-        return ret
+        return path1(parse(p))
     }
     //
     // special path operators: get, apply (TODO!)
-    //
     //
     function path1(p) {
         // TODO: assert non null?
         if (typeof (p) == "object" || typeof (p) == "function") { // treat fct as obj
             if (p.xxpath) { // path
-                if (p.xxpath == "get") {
+                if (p.xxpath == "ident") {
+                    return ident(p.xxparam)
+                } else if (p.xxpath == "raw") {
+                    return expr(p.xxparam)
+                } else if (p.xxpath == "get") {
                     let [e1, e2] = p.xxparam
                     // TODO: e1 should never be treated as id!
                     // TODO: vararg?
                     let subQueryPath = subQueryCache[e1] // cache lookup and update
                     if (!subQueryPath) {
                         subQueryPath = path1(e1)
-                        subQueryCache[e1] = subQueryPath
+                        let key = JSON.stringify(e1)
+                        subQueryCache[key] = subQueryPath
                     }
                     return (e2 !== undefined) ? selectUser(subQueryPath, path1(e2)) : subQueryPath
                 } else if (p.xxpath == "apply") {
@@ -152,12 +149,10 @@ exports.createIR = (query) => {
                 }
             } else if (p.xxkey) { // reducer (stateful)
                 return transStatefulInPath(p)
+            } else if (p instanceof Array) {
+                print("WARN - Array in path expr not thoroughly tested yet!")
+                return transStatefulInPath({ xxkey: "array", xxparam: p })
             } else { // subquery
-                if (p instanceof Array)
-                    print("ERROR - Array in path expr not supported yet!")
-                //print("ERROR - we don't support subqueries right now!")
-                //print("TODO: decorrelate and extract")
-                //inspect(p)
                 //
                 // A stateless object literal: we treat individual
                 // entries as paths, and build a new object for each
@@ -197,7 +192,7 @@ exports.createIR = (query) => {
                 let plus = deps.map(ident)
                 currentGroupPath = [...currentGroupPath, ...plus]
                 let lhs1 = createFreshTempVar(deps)
-                assign(lhs1, "??=", expr("{}"))
+                assign(lhs1, "??=", expr("{} //!"))
                 for (let k of Object.keys(p)) {
                     let { key, rhs } = entries[k]
                     let ll1 = select(lhs1, key)
@@ -356,6 +351,31 @@ exports.createIR = (query) => {
             assign(lhs1, "??=", expr("''"))
             assign(lhs1, "+=", rhs)
             return closeTempVar(lhs, lhs1)
+        } else if (p.xxkey == "array" && p.xxparam.length > 1) { // multi-array
+            let rhs = p.xxparam.map(path)
+            let lhs2 = openTempVar(lhs,rhs.flatMap(x => x.deps))
+            let res1 = []
+            for (let e of rhs) {
+                let lhs1 = createFreshTempVar(e.deps)
+                assign(lhs1, "??=", expr("[]"))
+                assign(lhs1, ".push", expr("(" + e.txt + ")", ...e.deps))
+                res1.push(lhs1)
+            }
+            //
+            // XXX FIXME: this is *extremely* slow -- we're calling .flat()
+            // for every newly created tuple! (but it works...)
+            //
+            // Better solutions:
+            // - have a separate flatten pass at the end
+            // - return a proxy object that flattens when iterating
+            //
+            // In essence, this is a sorting problem (order by rank in outer array).
+            // How do we want to implement sorting in general?
+            // - separate sortin pass at the end
+            // - return a sorted tree that iterates in the right order
+            //
+            assign(lhs2, "=", expr("[" + res1.map(x => x.txt).join(",") + "].flat()", ...res1.flatMap(x => x.deps)))
+            return closeTempVar(lhs, lhs2)
         } else if (p.xxkey == "array") { // array
             let rhs = p.xxparam.map(path)
             let lhs1 = openTempVar(lhs, rhs.flatMap(x => x.deps))
