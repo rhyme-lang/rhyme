@@ -25,8 +25,18 @@ function ast_binop(op, a,b) {
 // ---------- Textual parser ----------
 //
 
+
+exports.rh = (strings, ...holes) => {
+  return exports.parserImpl(strings, holes)
+}
+
 exports.parse = (p) => {
-  let input = p
+  return exports.parserImpl([p],[])
+}
+
+
+exports.parserImpl = (strings, holes) => {
+  let input = strings.join("\0") // combine segments using a distinguished marker
   let pos = 0
   let peek
   let gap
@@ -34,6 +44,7 @@ exports.parse = (p) => {
   let start
   let indent
   let bullet
+  let hole = -1
 
   // ----- Lexer -----
   let opchars = '+-*/%<>=!'
@@ -100,6 +111,10 @@ exports.parse = (p) => {
         pos += 2; bullet = true; indent+=2
       } else bullet = false
         // }
+    } else if (input[pos] === '\0') {
+      pos += 1
+      hole += 1
+      peek = "hole"
     } else {
       peek = input[pos++]
     }
@@ -225,6 +240,10 @@ exports.parse = (p) => {
       let res = ast_ident(str)
       next()
       return res
+    } else if (peek == "hole") {
+      let res = holes[hole]
+      next()
+      return res
     } else if (peek == '{') {
       error("object constructor syntax not supported yet")
     } else if (peek == '[') {
@@ -242,8 +261,8 @@ exports.parse = (p) => {
           let rhs = ast_ident(str)
           res = ast_get_smart(res, rhs)
           next()
-        } else error("ident expected")
-
+        } else 
+          error("ident expected")
       } else if (peek == "(") {
         let rhs = parens(expr)
         res = ast_call_smart(res, rhs)
