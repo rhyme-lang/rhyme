@@ -6,6 +6,7 @@ const ir = require('./ir')
 //
 let api = {}
 exports.api = api
+exports.pipe = pipe
 
 //
 // reducer (e.g., sum) expressions

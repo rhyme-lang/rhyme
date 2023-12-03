@@ -236,7 +236,7 @@ exports.parserImpl = (strings, holes) => {
   function atom() {
     if (peek == '(') {
       return parens(expr)
-    } else if (peek == "num" || peek == "str" || peek == "ident") {
+    } else if (peek == "num" || peek == "str" || peek == "ident" || peek == "*") {
       let res = ast_ident(str)
       next()
       return res
