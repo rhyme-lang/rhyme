@@ -1,4 +1,4 @@
-const { quoteVar, debug, trace, print, inspect } = require("./utils")
+const { quoteVar, debug, trace, print, inspect, error, warn } = require("./utils")
 const { parse } = require("./parser")
 
 exports.createIR = (query) => {
@@ -144,7 +144,7 @@ exports.createIR = (query) => {
                     let [e1, e2] = p.xxparam
                     return unop("Math.trunc", binop("%", path1(e1), path1(e2)))
                 } else {
-                    print("ERROR - unknown path key '" + p.xxpath + "'")
+                    error("ERROR - unknown path key '" + p.xxpath + "'")
                     return expr("undefined")
                 }
             } else if (p.xxkey) { // reducer (stateful)
@@ -384,14 +384,14 @@ exports.createIR = (query) => {
                 assign(lhs1, ".push", expr("(" + e.txt + ")", ...e.deps))
             return closeTempVar(lhs, lhs1)
         } else if (p.xxkey) {
-            print("ERROR: unknown reducer key '" + p.xxkey + "'")
+            error("ERROR: unknown reducer key '" + p.xxkey + "'")
             return expr("undefined")
         } else if (p instanceof Array) {
             return stateful(lhs, { xxkey: "array", xxparam: p })
         } else if (p instanceof Array) {
             // XXX not using this anymore
             if (p.length > 1) {
-                print("ERROR: currently not dealing correctly with multi-element arrays")
+                error("ERROR: currently not dealing correctly with multi-element arrays")
                 //return expr("undefined")
             }
             let lhs1 = openTempVar(lhs, null)

@@ -10,3 +10,11 @@ exports.print = (...args) => {
 exports.inspect = (...args) => {
     if (this.debug) console.dir(...args)
 }
+
+exports.error = (...args) => {
+    console.error(...args)
+}
+
+exports.warn = (...args) => {
+    console.warn(...args)
+}
