@@ -327,6 +327,8 @@ exports.createIR = (query) => {
         // total: api.sum(data.*.value)
         // k:     api.xxkey(xxparam)
         //
+        // XXX TODO: check nullish values are dealt with correctly
+        //
         if (p.xxkey == "sum") { // sum
             let rhs = path(p.xxparam)
             let lhs1 = openTempVar(lhs, rhs.deps)
@@ -344,6 +346,16 @@ exports.createIR = (query) => {
             let lhs1 = openTempVar(lhs, rhs.deps)
             assign(lhs1, "??=", expr("-Infinity"))
             assign(lhs1, "=", expr("Math.max(" + lhs1.txt + "," + rhs.txt + ")", ...rhs.deps))
+            return closeTempVar(lhs, lhs1)
+        } else if (p.xxkey == "first") { // first
+            let rhs = path(p.xxparam)
+            let lhs1 = openTempVar(lhs, rhs.deps)
+            assign(lhs1, "??=", expr(rhs.txt, ...rhs.deps))
+            return closeTempVar(lhs, lhs1)
+        } else if (p.xxkey == "last") { // last
+            let rhs = path(p.xxparam)
+            let lhs1 = openTempVar(lhs, rhs.deps)
+            assign(lhs1, "=", expr(rhs.txt + " ?? " + lhs1.txt, ...rhs.deps))
             return closeTempVar(lhs, lhs1)
         } else if (p.xxkey == "join") { // string join
             let rhs = path(p.xxparam)
