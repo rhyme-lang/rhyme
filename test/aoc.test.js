@@ -111,3 +111,34 @@ test("day1-B", () => {
   expect(res).toBe(24000)
 })
 
+test("day1-C", () => {
+    let input = `1000
+2000
+3000
+
+4000
+
+5000
+6000
+
+7000
+8000
+9000
+
+10000`
+  // utilities to split input
+  let udf = {
+    splitNN: x => x.split("\n\n"),
+    splitN: x => x.split("\n"),
+    toNum: x => Number(x),
+  }
+  // potential textual syntax:
+  // input | split "\n\n"  | get *chunk
+  //       | split "\n"    | get *line  | toNum
+  //       | sum | group *chunk | get * | max
+  let query = rh`.input | udf.splitNN | get(*chunk) 
+                        | udf.splitN  | get(*line) | udf.toNum`
+  let func = api.compile(query)
+  let res = func({input, udf})
+  expect(res).toBe(10000)
+})

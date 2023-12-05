@@ -57,7 +57,7 @@ exports.parserImpl = (strings, holes) => {
   let hole = -1
 
   // ----- Lexer -----
-  let opchars = '+-*/%<>=!'
+  let opchars = '+-*/%<>=!|&?'
   let optable = {}
   for (let c of opchars) optable[c] = 1
 
@@ -120,7 +120,8 @@ exports.parserImpl = (strings, holes) => {
       } else*/ if (input[pos] == '-' && input[pos+1] == ' ') {
         pos += 2; bullet = true; indent+=2
       } else bullet = false
-        // }
+        // }      
+      next() // XXX TODO: treat as whitespace for now ...
     } else if (input[pos] === '\0') {
       pos += 1
       hole += 1
@@ -202,7 +203,7 @@ exports.parserImpl = (strings, holes) => {
 
   // precedence: higher binds tighter
   let prec = {
-    '=' :  80,
+    '|' :  80,
     '<' :  90,
     '<=':  90,
     '>' :  90,
@@ -217,6 +218,7 @@ exports.parserImpl = (strings, holes) => {
   }
   // associativity: 1 for left, 0 for right
   let assoc = {
+    '|' : 1,
     '=' : 0,
     '<' : 1,
     '<=': 1,

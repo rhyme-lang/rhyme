@@ -133,6 +133,16 @@ exports.createIR = (query) => {
                             return path1({ xxpath: "get", xxparam: es2})
                     }
                     return call(path1(e1), ...es2.map(path1))
+                } else if (p.xxpath == "pipe") {
+                    // XXX: move this desugaring into parser?
+                    // a | b          -->   b(a)
+                    // a | b(c,d,e)   -->   b(a,c,d,e)
+                    let [e1, e2] = p.xxparam
+                    if (e2.xxpath == "apply") {
+                        let [a1, ...as2] = e2.xxparam
+                        return path1({ xxpath: "apply", xxparam: [a1, e1, ...as2]})
+                    }
+                    return path1({ xxpath: "apply", xxparam: [e2, e1]})
                 } else if (p.xxpath == "plus") {
                     let [e1, e2] = p.xxparam
                     return binop("+", path1(e1), path1(e2))
