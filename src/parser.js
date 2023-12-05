@@ -11,7 +11,7 @@ function ast_get(a,b) {
 }
 function ast_get_smart(a,b) {
   if (a.xxpath == "ident")
-    a = ast_get(ast_raw("inp"), a)
+    a = ast_get(a)
   return ast_get(a,b)
 }
 function ast_call_smart(a,b) {
@@ -256,7 +256,7 @@ exports.parserImpl = (strings, holes) => {
     let res
     if (peek == ".") { // e.g. .input, to distinguish 'get' from 'ident'
       next()
-      res = ast_get(ast_raw("inp"), atom())
+      res = ast_get(atom())
     } else
       res = atom()
     while (peek == "." || peek == "(" || peek == "[") {

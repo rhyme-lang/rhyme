@@ -34,11 +34,10 @@ test("pathTest2", () => {
 
 test("pathTest3", () => {
     let res = parse("a.*.*c")
-    let root = ast_raw("inp")
     let a = ast_ident("a")
     let b = ast_ident("*")
     let c = ast_ident("*c")
-    let expected = ast_get(ast_get(ast_get(root, a), b), c)
+    let expected = ast_get(ast_get(ast_get(a), b), c)
     expect(res).toEqual(expected)
 })
 
@@ -48,7 +47,7 @@ test("pathTest4", () => {
     let a = ast_ident("a")
     let b = ast_ident("b")
     let c = ast_ident("c")
-    let expected = ast_apply(ast_get(ast_get(root, a), b), c)
+    let expected = ast_apply(ast_get(ast_get(a), b), c)
     expect(res).toEqual(expected)
 })
 
@@ -58,7 +57,7 @@ test("templateTest1", () => {
     let a = ast_ident("a")
     let b = ast_ident("b")
     let c = ast_ident("c")
-    let expected = ast_get(ast_get(ast_get(root, a), b), c)
+    let expected = ast_get(ast_get(ast_get(a), b), c)
     expect(res).toEqual(expected)
 })
 
