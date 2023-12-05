@@ -253,7 +253,12 @@ exports.parserImpl = (strings, holes) => {
     }
   }
   function tight() {
-    let res = atom()
+    let res
+    if (peek == ".") { // e.g. .input, to distinguish 'get' from 'ident'
+      next()
+      res = ast_get(ast_raw("inp"), atom())
+    } else
+      res = atom()
     while (peek == "." || peek == "(" || peek == "[") {
       if (peek == ".") {
         next()

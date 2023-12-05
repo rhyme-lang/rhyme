@@ -112,6 +112,10 @@ exports.createIR = (query) => {
                     return expr(p.xxparam)
                 } else if (p.xxpath == "get") {
                     let [e1, e2] = p.xxparam
+                    if (e2 === undefined) {
+                        e2 = e1
+                        e1 = { xxpath: "raw", xxparam: "inp" }
+                    }
                     // TODO: e1 should never be treated as id!
                     // TODO: vararg?
                     let subQueryPath = subQueryCache[e1] // cache lookup and update
@@ -120,7 +124,7 @@ exports.createIR = (query) => {
                         let key = JSON.stringify(e1)
                         subQueryCache[key] = subQueryPath
                     }
-                    return (e2 !== undefined) ? selectUser(subQueryPath, path1(e2)) : subQueryPath
+                    return selectUser(subQueryPath, path1(e2))
                 } else if (p.xxpath == "apply") {
                     let [e1, e2] = p.xxparam
                     // TODO: e1 should never be treated as id!
