@@ -138,6 +138,7 @@ test("day1-C", () => {
   //       | sum | group *chunk | get * | max
   let query = rh`.input | udf.splitNN | get(*chunk) 
                         | udf.splitN  | get(*line) | udf.toNum`
+  // TODO: reducers sum, group, max
   let func = api.compile(query)
   let res = func({input, udf})
   expect(res).toBe(10000)

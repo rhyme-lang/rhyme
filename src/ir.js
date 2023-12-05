@@ -131,6 +131,16 @@ exports.createIR = (query) => {
                     if (e1.xxpath == "ident") {
                         if (e1.xxparam == "get")
                             return path1({ xxpath: "get", xxparam: es2})
+                        else if (e1.xxparam == "sum")
+                            return path1({ xxkey: "sum", xxparam: es2})
+                        else if (e1.xxparam == "group"){
+                            let o = {}
+                            console.dir(es2)
+                            o[es2[0].xxparam[1]] = es2[0].xxparam[0]
+                            return path1(o)
+                        }
+                        // FIXME: not dealing adequately with
+                        // reducers yet!
                     }
                     return call(path1(e1), ...es2.map(path1))
                 } else if (p.xxpath == "pipe") {
