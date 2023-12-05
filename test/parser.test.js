@@ -8,7 +8,7 @@ function ast_raw(a) {
     return { xxpath: "raw", xxparam: a }
 }
 function ast_plus(a,b) {
-    return { xxpath: "+", xxparam: [a,b] }
+    return { xxpath: "plus", xxparam: [a,b] }
 }
 function ast_get(a,b) {
     return { xxpath: "get", xxparam: [a,b] }

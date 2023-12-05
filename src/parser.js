@@ -17,8 +17,18 @@ function ast_get_smart(a,b) {
 function ast_call_smart(a,b) {
   return { xxpath: "apply", xxparam: [a,b] }
 }
+let binop_table = {
+  "|": "pipe",
+
+  "+": "plus",
+  "-": "minus",
+  "*": "times",
+  "/": "div", // float or int by default? use '//' for the other?
+  "%": "mod",
+}
 function ast_binop(op, a,b) {
-  return { xxpath: op, xxparam: [a,b] }
+  let op1 = binop_table[op] ?? op
+  return { xxpath: op1, xxparam: [a,b] }
 }
 
 //
