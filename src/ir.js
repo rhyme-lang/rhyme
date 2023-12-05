@@ -126,9 +126,13 @@ exports.createIR = (query) => {
                     }
                     return selectUser(subQueryPath, path1(e2))
                 } else if (p.xxpath == "apply") {
-                    let [e1, e2] = p.xxparam
+                    let [e1, ...es2] = p.xxparam
                     // TODO: e1 should never be treated as id!
-                    return call(path1(e1), path1(e2))
+                    if (e1.xxpath == "ident") {
+                        if (e1.xxparam == "get")
+                            return path1({ xxpath: "get", xxparam: es2})
+                    }
+                    return call(path1(e1), ...es2.map(path1))
                 } else if (p.xxpath == "plus") {
                     let [e1, e2] = p.xxparam
                     return binop("+", path1(e1), path1(e2))
