@@ -5,8 +5,12 @@
 const codegen = require('./codegen')
 const ir = require('./ir')
 
-// this file contains the main API for rhyme
-// TODO: minimal docs atm. Update with examples, etc.
+// ---------- API ----------
+//
+//
+let api = {}
+exports.api = api
+exports.pipe = pipe
 
 //
 // reducer (e.g., sum) expressions

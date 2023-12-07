@@ -1,4 +1,4 @@
-const { quoteVar, debug, trace, print, inspect } = require("./utils")
+const { quoteVar, debug, trace, print, inspect, error, warn } = require("./utils")
 const { parse } = require("./parser")
 
 exports.createIR = (query) => {
@@ -112,6 +112,10 @@ exports.createIR = (query) => {
                     return expr(p.xxparam)
                 } else if (p.xxpath == "get") {
                     let [e1, e2] = p.xxparam
+                    if (e2 === undefined) {
+                        e2 = e1
+                        e1 = { xxpath: "raw", xxparam: "inp" }
+                    }
                     // TODO: e1 should never be treated as id!
                     // TODO: vararg?
                     let subQueryPath = subQueryCache[e1] // cache lookup and update
@@ -120,11 +124,40 @@ exports.createIR = (query) => {
                         let key = JSON.stringify(e1)
                         subQueryCache[key] = subQueryPath
                     }
-                    return (e2 !== undefined) ? selectUser(subQueryPath, path1(e2)) : subQueryPath
+                    return selectUser(subQueryPath, path1(e2))
                 } else if (p.xxpath == "apply") {
-                    let [e1, e2] = p.xxparam
+                    let [e1, ...es2] = p.xxparam
                     // TODO: e1 should never be treated as id!
-                    return call(path1(e1), path1(e2))
+                    if (e1.xxpath == "ident") {
+                        if (e1.xxparam == "get")
+                            return path1({ xxpath: "get", xxparam: es2})
+                        else if (e1.xxparam == "sum")
+                            return path1({ xxkey: "sum", xxparam: es2[0]})
+                        else if (e1.xxparam == "max")
+                            return path1({ xxkey: "max", xxparam: es2[0]})
+                        else if (e1.xxparam == "group"){
+                            // TODO: keyval not yet supported
+                            // let o = { "Z": { xxkey: "keyval" , xxparam: [es2[1], es2[0]]}}
+                            if (es2[1].xxpath != "ident")
+                                error("ERROR - key passed to 'group' needs to be an ident but got '" + e2[1] + "'")
+                            let k = es2[1].xxparam
+                            let o = { [k] : es2[0] }
+                            return path1(o)
+                        }
+                        // FIXME: not dealing adequately with
+                        // reducers yet!
+                    }
+                    return call(path1(e1), ...es2.map(path1))
+                } else if (p.xxpath == "pipe") {
+                    // XXX: move this desugaring into parser?
+                    // a | b          -->   b(a)
+                    // a | b(c,d,e)   -->   b(a,c,d,e)
+                    let [e1, e2] = p.xxparam
+                    if (e2.xxpath == "apply") {
+                        let [a1, ...as2] = e2.xxparam
+                        return path1({ xxpath: "apply", xxparam: [a1, e1, ...as2]})
+                    }
+                    return path1({ xxpath: "apply", xxparam: [e2, e1]})
                 } else if (p.xxpath == "plus") {
                     let [e1, e2] = p.xxparam
                     return binop("+", path1(e1), path1(e2))
@@ -144,7 +177,7 @@ exports.createIR = (query) => {
                     let [e1, e2] = p.xxparam
                     return unop("Math.trunc", binop("%", path1(e1), path1(e2)))
                 } else {
-                    print("ERROR - unknown path key '" + p.xxpath + "'")
+                    error("ERROR - unknown path key '" + p.xxpath + "'")
                     return expr("undefined")
                 }
             } else if (p.xxkey) { // reducer (stateful)
@@ -192,7 +225,7 @@ exports.createIR = (query) => {
                 let plus = deps.map(ident)
                 currentGroupPath = [...currentGroupPath, ...plus]
                 let lhs1 = createFreshTempVar(deps)
-                assign(lhs1, "??=", expr("{} //!"))
+                assign(lhs1, "??=", expr("{} //"))
                 for (let k of Object.keys(p)) {
                     let { key, rhs } = entries[k]
                     let ll1 = select(lhs1, key)
@@ -327,6 +360,8 @@ exports.createIR = (query) => {
         // total: api.sum(data.*.value)
         // k:     api.xxkey(xxparam)
         //
+        // XXX TODO: check nullish values are dealt with correctly
+        //
         if (p.xxkey == "sum") { // sum
             let rhs = path(p.xxparam)
             let lhs1 = openTempVar(lhs, rhs.deps)
@@ -344,6 +379,16 @@ exports.createIR = (query) => {
             let lhs1 = openTempVar(lhs, rhs.deps)
             assign(lhs1, "??=", expr("-Infinity"))
             assign(lhs1, "=", expr("Math.max(" + lhs1.txt + "," + rhs.txt + ")", ...rhs.deps))
+            return closeTempVar(lhs, lhs1)
+        } else if (p.xxkey == "first") { // first
+            let rhs = path(p.xxparam)
+            let lhs1 = openTempVar(lhs, rhs.deps)
+            assign(lhs1, "??=", expr(rhs.txt, ...rhs.deps))
+            return closeTempVar(lhs, lhs1)
+        } else if (p.xxkey == "last") { // last
+            let rhs = path(p.xxparam)
+            let lhs1 = openTempVar(lhs, rhs.deps)
+            assign(lhs1, "=", expr(rhs.txt + " ?? " + lhs1.txt, ...rhs.deps))
             return closeTempVar(lhs, lhs1)
         } else if (p.xxkey == "join") { // string join
             let rhs = path(p.xxparam)
@@ -384,14 +429,14 @@ exports.createIR = (query) => {
                 assign(lhs1, ".push", expr("(" + e.txt + ")", ...e.deps))
             return closeTempVar(lhs, lhs1)
         } else if (p.xxkey) {
-            print("ERROR: unknown reducer key '" + p.xxkey + "'")
+            error("ERROR: unknown reducer key '" + p.xxkey + "'")
             return expr("undefined")
         } else if (p instanceof Array) {
             return stateful(lhs, { xxkey: "array", xxparam: p })
         } else if (p instanceof Array) {
             // XXX not using this anymore
             if (p.length > 1) {
-                print("ERROR: currently not dealing correctly with multi-element arrays")
+                error("ERROR: currently not dealing correctly with multi-element arrays")
                 //return expr("undefined")
             }
             let lhs1 = openTempVar(lhs, null)
@@ -447,6 +492,31 @@ exports.createIR = (query) => {
                 currentGroupPath = save
             }
             return closeTempVar(lhs, lhs1)
+        } else if (p.xxpath == "apply") {
+            let [e1, ...es2] = p.xxparam
+            if (e1.xxpath == "ident") {
+                if (e1.xxparam == "sum") {
+                    return stateful(lhs, { xxkey: "sum", xxparam: es2[0] })
+                } else if (e1.xxparam == "max") {
+                    return stateful(lhs, { xxkey: "max", xxparam: es2[0] })
+                } else if (e1.xxparam == "group") {
+                    let o = { "_MERGE_": { xxkey: "keyval" , xxparam: [es2[1], es2[0]]}}
+                    return stateful(lhs, o) // xxx unpack array!
+                }
+            }
+            // default case, same as below
+            let rhs = path(p)
+            let lhs1 = openTempVar(lhs, rhs.deps)
+            assign(lhs1, "=", rhs)
+            return closeTempVar(lhs, lhs1)
+        } else if (p.xxpath == "pipe") {
+            // XXX: pipe desugaring
+            let [e1, e2] = p.xxparam
+            if (e2.xxpath == "apply") {
+                let [a1, ...as2] = e2.xxparam
+                return stateful(lhs, { xxpath: "apply", xxparam: [a1, e1, ...as2]})
+            }
+            return stateful(lhs, { xxpath: "apply", xxparam: [e2, e1]})
         } else {
             // regular path
             let rhs = path(p)
