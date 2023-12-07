@@ -1,7 +1,3 @@
-/**
- @module API
-*/
-
 const codegen = require('./codegen')
 const ir = require('./ir')
 
@@ -23,10 +19,13 @@ exports.pipe = pipe
  * @example
  *  api.sum("data.*.value")- finds the 
  */
-exports.sum = (expr) => ({
-    xxkey: "sum",
-    xxparam: expr
-})
+function sum(expr) {
+    return {
+        xxkey: "sum",
+        xxparam: expr
+    }
+}
+api.sum = sum
 
 /**
  * Count operation.
@@ -35,10 +34,13 @@ exports.sum = (expr) => ({
  * @example
  *  api.count("data.*.value")
  */
-exports.count = (expr) => ({
-    xxkey: "count",
-    xxparam: expr
-})
+function count(expr) {
+    return {
+        xxkey: "count",
+        xxparam: expr
+    }
+}
+api.count = count
 
 /**
  * Max operation.
@@ -47,10 +49,13 @@ exports.count = (expr) => ({
  * @example
  *  api.max("data.*.value")
  */
-exports.max = (expr) => ({
-    xxkey: "max",
-    xxparam: expr
-})
+function max(expr) {
+    return {
+        xxkey: "max",
+        xxparam: expr
+    }
+}
+api.max = max
 
 /**
  * String join operation.
@@ -59,10 +64,13 @@ exports.max = (expr) => ({
  * @example
  * TODO: add example
  */
-exports.join = (expr) => ({
-    xxkey: "join",
-    xxparam: expr
-})
+function join(expr) {
+    return {
+        xxkey: "join",
+        xxparam: expr
+    }
+}
+api.join = join
 
 /**
  * Array operation.
@@ -71,10 +79,13 @@ exports.join = (expr) => ({
  * @example
  *  api.array("data.*.value") - will collect all the values into an array
  */
-exports.array = (...exprs) => ({
-    xxkey: "array",
-    xxparam: exprs
-})
+function array(...exprs) {
+    return {
+        xxkey: "array",
+        xxparam: exprs
+    }
+}
+api.array = array
 
 /**
  * First operation.
@@ -83,10 +94,13 @@ exports.array = (...exprs) => ({
  * @example
  *  api.first("data.*.value") - will get the first value from the values
  */
-exports.first = (expr) => ({
-    xxkey: "first",
-    xxparam: expr
-})
+function first(expr) {
+    return {
+        xxkey: "first",
+        xxparam: expr
+    }
+}
+api.first = first
 
 /**
  * Last operation.
@@ -95,10 +109,13 @@ exports.first = (expr) => ({
  * @example
  *  api.last("data.*.value") - will get the last value from the values
  */
-exports.last = (expr) => ({
-    xxkey: "last",
-    xxparam: expr
-})
+function last(expr) {
+    return {
+        xxkey: "last",
+        xxparam: expr
+    }
+}
+api.last = last
 
 /**
  * Key-value operation used as a workaround for JSON with expressions as keys (not allowed in JS).
@@ -108,10 +125,13 @@ exports.last = (expr) => ({
  * @example
  * {"-" : api.keyval(api.get(q, "xyz"), "value")} -- will be equivalent to {api.get(q, "xyz"): "value"}
  */
-exports.keyval = (key, value) => ({
-    xxkey: "keyval",
-    xxparam: [key, value]
-})
+function keyval(key, value) {
+    return {
+        xxkey: "keyval",
+        xxparam: [key, value]
+    }
+}
+api.keyval = keyval
 
 /**
  * Flatten operation.
@@ -121,10 +141,13 @@ exports.keyval = (key, value) => ({
  * @example
  *  TODO
  */
-exports.flatten = (k, v) => ({
-    xxkey: "flatten",
-    xxparam: [k, v]
-})
+function flatten(k, v) {
+    return {
+        xxkey: "flatten",
+        xxparam: [k, v]
+    }
+}
+api.flatten = flatten
 
 /**
  * Merge operation. TODO: same as keyval?
@@ -134,10 +157,13 @@ exports.flatten = (k, v) => ({
  * @example
  *  TODO: same as keyval?
  */
-exports.merge = (key, value) => ({
-    xxkey: "merge",
-    xxparam: [key, value]
-})
+function merge(key, value) {
+    return {
+        xxkey: "merge",
+        xxparam: [key, value]
+    }
+}
+api.merge = merge
 
 //
 // path expressions
@@ -150,10 +176,13 @@ exports.merge = (key, value) => ({
  * @example
  *  TODO: add example
  */
-exports.get = (exp1, exp2) => ({
-    xxpath: "get",
-    xxparam: [exp1, exp2]
-})
+function get(exp1, exp2) {
+    return {
+        xxpath: "get",
+        xxparam: [exp1, exp2]
+    }
+}
+api.get = get
 
 /**
  * TODO: add docs 
@@ -162,10 +191,13 @@ exports.get = (exp1, exp2) => ({
  * @example
  *  TODO: add example
  */
-exports.apply = (e1, e2) => ({
-    xxpath: "apply",
-    xxparam: [e1, e2]
-})
+function apply(e1, e2) {
+    return {
+        xxpath: "apply",
+        xxparam: [e1, e2]
+    }
+}
+api.apply = apply
 
 /**
  * Reverse of apply.
@@ -174,70 +206,91 @@ exports.apply = (e1, e2) => ({
  * @example
  *  TODO: add example 
  */
-exports.pipe = (e1, e2) => ({ // reverse apply
-    xxpath: "apply",
-    xxparam: [e2, e1]
-})
+function pipe_(e1, e2) {
+    return {
+        xxpath: "apply",
+        xxparam: [e2, e1]
+    }
+}
+api.pipe = pipe_
 
 /**
  * Plus operation (e1 + e2)
  * @param {*} e1 
  * @param {*} e2 
  */
-exports.plus = (e1, e2) => ({
-    xxpath: "plus",
-    xxparam: [e1, e2]
-})
+function plus(e1, e2) {
+    return {
+        xxpath: "plus",
+        xxparam: [e1, e2]
+    }
+}
+api.plus = plus
 
 /**
  * Minus operation (e1 - e2)
  * @param {*} e1 
  * @param {*} e2 
  */
-exports.minus = (e1, e2) => ({
-    xxpath: "minus",
-    xxparam: [e1, e2]
-})
+function minus(e1, e2) {
+    return {
+        xxpath: "minus",
+        xxparam: [e1, e2]
+    }
+}
+api.minus = minus
 
 /**
  * Multiplication operation (e1 * e2)
  * @param {*} e1 
  * @param {*} e2 
  */
-exports.times = (e1, e2) => ({
-    xxpath: "times",
-    xxparam: [e1, e2]
-})
+function times(e1, e2) {
+    return {
+        xxpath: "times",
+        xxparam: [e1, e2]
+    }
+}
+api.times = times
 
 /**
  * Floor division operation (e1 // e2)
  * @param {*} e1 
  * @param {*} e2 
  */
-exports.fdiv = (e1, e2) => ({
-    xxpath: "fdiv",
-    xxparam: [e1, e2]
-})
+function fdiv(e1, e2) {
+    return {
+        xxpath: "fdiv",
+        xxparam: [e1, e2]
+    }
+}
+api.fdiv = fdiv
 
 /**
  * Division operation (e1 / e2)
  * @param {*} e1 
  * @param {*} e2 
  */
-exports.div = (e1, e2) => ({
-    xxpath: "div",
-    xxparam: [e1, e2]
-})
+function div(e1, e2) {
+    return {
+        xxpath: "div",
+        xxparam: [e1, e2]
+    }
+}
+api.div = div
 
 /**
  * Mod operation (e1 % e2)
  * @param {*} e1 
  * @param {*} e2 
  */
-exports.mod = (e1, e2) => ({
-    xxpath: "mod",
-    xxparam: [e1, e2]
-})
+function mod(e1, e2) {
+    return {
+        xxpath: "mod",
+        xxparam: [e1, e2]
+    }
+}
+api.mod = mod
 
 // ---------- Fluent API ----------
 let Pipe = {
@@ -263,11 +316,11 @@ function pipe(e) {
 // main entrypoint
 //
 
-
-exports.show = (query, data, explain) => {
+function show(query, data, explain) {
     let f = api["query"](query)
     return display(f(data))
 }
+api.show = show
 
 /**
  * Compile and execute query on the provided data operation (e1 + e2)
@@ -276,10 +329,12 @@ exports.show = (query, data, explain) => {
  * @example
  *  TODO: add example 
  */
-exports.exec = (query, data) => {
+function exec(query, data) {
     let f = api["query"](query)
     return f(data)
 }
+api.exec = exec
+
 // api["getIR"] = (query) => {
 //   resetState()
 //   transStatefulTopLevel(query)
@@ -298,7 +353,8 @@ exports.exec = (query, data) => {
  * let func = api.compile(query) // produces the compiled function for the query
  * let res = func({data})        // executes the compiled query on the data
  */
-exports.compile = (query) => {
+function compile(query) {
     let rep = ir.createIR(query)
     return codegen.generate(rep)
 }
+api.compile = compile
