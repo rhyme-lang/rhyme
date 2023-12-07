@@ -1,3 +1,7 @@
+/**
+ @module API
+*/
+
 const codegen = require('./codegen')
 const ir = require('./ir')
 
@@ -11,9 +15,9 @@ const ir = require('./ir')
 /**
  * Sum operation.
  * @function
- * @param {string} expr - Argument to sum over.
+ * @param {*} expr - Argument to sum over.
  * @example
- *  api.sum("data.*.value")
+ *  api.sum("data.*.value")- finds the 
  */
 exports.sum = (expr) => ({
     xxkey: "sum",
@@ -23,9 +27,9 @@ exports.sum = (expr) => ({
 /**
  * Count operation.
  * @function
- * @param {string} expr - Argument to count over.
+ * @param {*} expr - Argument to count over.
  * @example
- * api.count("data.*.value")
+ *  api.count("data.*.value")
  */
 exports.count = (expr) => ({
     xxkey: "count",
@@ -35,9 +39,9 @@ exports.count = (expr) => ({
 /**
  * Max operation.
  * @function
- * @param {string} expr - Argument to find the maximum value.
+ * @param {*} expr - Argument to find the maximum value.
  * @example
- * api.max("data.*.value")
+ *  api.max("data.*.value")
  */
 exports.max = (expr) => ({
     xxkey: "max",
@@ -47,7 +51,7 @@ exports.max = (expr) => ({
 /**
  * String join operation.
  * @function
- * @param {string} expr - Strings to join.
+ * @param {*} expr - Strings to join.
  * @example
  * TODO: add example
  */
@@ -61,7 +65,7 @@ exports.join = (expr) => ({
  * @function
  * @param {...string} exprs - Arguments to create an array.
  * @example
- * api.array("data.*.value") - will collect all the values into an array
+ *  api.array("data.*.value") - will collect all the values into an array
  */
 exports.array = (...exprs) => ({
     xxkey: "array",
@@ -71,9 +75,9 @@ exports.array = (...exprs) => ({
 /**
  * First operation.
  * @function
- * @param {string} expr - Argument to get the first value from.
+ * @param {*} expr - Argument to get the first value from.
  * @example
- * api.first("data.*.value")
+ *  api.first("data.*.value") - will get the first value from the values
  */
 exports.first = (expr) => ({
     xxkey: "first",
@@ -83,9 +87,9 @@ exports.first = (expr) => ({
 /**
  * Last operation.
  * @function
- * @param {string} expr - Argument to get the last value.
+ * @param {*} expr - Argument to get the last value.
  * @example
- * api.last("data.*.value")
+ *  api.last("data.*.value") - will get the last value from the values
  */
 exports.last = (expr) => ({
     xxkey: "last",
@@ -93,10 +97,10 @@ exports.last = (expr) => ({
 })
 
 /**
- * Key-value operation used as a workaround for JSON with expressions as keys.
+ * Key-value operation used as a workaround for JSON with expressions as keys (not allowed in JS).
  * @function
- * @param {string} key - Key argument.
- * @param {string} value - Value argument.
+ * @param {*} key - Key argument.
+ * @param {*} value - Value argument.
  * @example
  * {"-" : api.keyval(api.get(q, "xyz"), "value")} -- will be equivalent to {api.get(q, "xyz"): "value"}
  */
@@ -108,8 +112,8 @@ exports.keyval = (key, value) => ({
 /**
  * Flatten operation.
  * @function
- * @param {string} k - TODO
- * @param {string} v - TODO
+ * @param {*} k - TODO
+ * @param {*} v - TODO
  * @example
  *  TODO
  */
@@ -121,8 +125,8 @@ exports.flatten = (k, v) => ({
 /**
  * Merge operation. TODO: same as keyval?
  * @function
- * @param {string} key - Key argument.
- * @param {string} value - Value argument.
+ * @param {*} key - Key argument.
+ * @param {*} value - Value argument.
  * @example
  *  TODO: same as keyval?
  */
@@ -137,8 +141,8 @@ exports.merge = (key, value) => ({
 
 /**
  * TODO: add docs
- * @param {string} exp1 
- * @param {string} exp2 
+ * @param {*} exp1 
+ * @param {*} exp2 
  * @example
  *  TODO: add example
  */
@@ -175,8 +179,6 @@ exports.pipe = (e1, e2) => ({ // reverse apply
  * Plus operation (e1 + e2)
  * @param {*} e1 
  * @param {*} e2 
- * @example
- *  TODO: add example 
  */
 exports.plus = (e1, e2) => ({
     xxpath: "plus",
@@ -187,8 +189,6 @@ exports.plus = (e1, e2) => ({
  * Minus operation (e1 - e2)
  * @param {*} e1 
  * @param {*} e2 
- * @example
- *  TODO: add example 
  */
 exports.minus = (e1, e2) => ({
     xxpath: "minus",
@@ -199,8 +199,6 @@ exports.minus = (e1, e2) => ({
  * Multiplication operation (e1 * e2)
  * @param {*} e1 
  * @param {*} e2 
- * @example
- *  TODO: add example 
  */
 exports.times = (e1, e2) => ({
     xxpath: "times",
@@ -211,8 +209,6 @@ exports.times = (e1, e2) => ({
  * Floor division operation (e1 // e2)
  * @param {*} e1 
  * @param {*} e2 
- * @example
- *  TODO: add example 
  */
 exports.fdiv = (e1, e2) => ({
     xxpath: "fdiv",
@@ -223,8 +219,6 @@ exports.fdiv = (e1, e2) => ({
  * Division operation (e1 / e2)
  * @param {*} e1 
  * @param {*} e2 
- * @example
- *  TODO: add example 
  */
 exports.div = (e1, e2) => ({
     xxpath: "div",
@@ -235,8 +229,6 @@ exports.div = (e1, e2) => ({
  * Mod operation (e1 % e2)
  * @param {*} e1 
  * @param {*} e2 
- * @example
- *  TODO: add example 
  */
 exports.mod = (e1, e2) => ({
     xxpath: "mod",
@@ -297,7 +289,10 @@ exports.exec = (query, data) => {
  * Compile the query and return the generated executable function.
  * @param {*} query - query to execute
  * @example
- *  TODO: add example 
+ *  let data = [{"key": "A", "val": 10}, {"key": "B", "val": 20}, {"key": "A", "val": 30}]
+ * let query = { "data.*.key": api.sum()}
+ * let func = api.compile(query) // produces the compiled function for the query
+ * let res = func({data})        // executes the compiled query on the data
  */
 exports.compile = (query) => {
     let rep = ir.createIR(query)

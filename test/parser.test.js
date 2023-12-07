@@ -1,5 +1,5 @@
 const { parse2 } = require('../src/parser')
-const { api } = require('../src/rhyme')
+const api = require('../src/rhyme')
 
 let parse = parse2
 
