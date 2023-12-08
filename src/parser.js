@@ -23,7 +23,8 @@ let binop_table = {
   "+": "plus",
   "-": "minus",
   "*": "times",
-  "/": "div", // float or int by default? use '//' for the other?
+  "/": "fdiv",  // float div by default
+  "//": "div", // integer division
   "%": "mod",
 }
 function ast_binop(op, a,b) {

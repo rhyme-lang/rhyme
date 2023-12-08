@@ -1,4 +1,5 @@
 const { api } = require('../src/rhyme')
+const { rh } = require('../src/parser')
 
 // some sample data for testing
 let data = [
@@ -28,8 +29,24 @@ test("plainSumTest", () => {
     expect(res).toBe(expected)
 })
 
+test("plainSumTest_parse", () => {
+    let query = rh`${api.sum("data.*.value")}`
+    let res = api.compile(query)({ data })
+    let expected = 60
+    expect(res).toBe(expected)
+})
+
 test("plainAverageTest", () => {
     let query = api.div(api.sum("data.*.value"), api.count("data.*.value"))
+    console.dir(query)
+    let res = api.compile(query)({ data })
+    let expected = 20
+    expect(res).toBe(expected)
+})
+
+test("plainAverageTest_parse", () => {
+    let query = rh`${api.sum("data.*.value")} / ${api.count("data.*.value")}`
+    console.dir(query)
     let res = api.compile(query)({ data })
     let expected = 20
     expect(res).toBe(expected)
@@ -37,6 +54,13 @@ test("plainAverageTest", () => {
 
 test("uncorrelatedAverageTest", () => {
     let query = api.div(api.sum("data.*A.value"), api.count("data.*B.value"))
+    let res = api.compile(query)({ data })
+    let expected = 20
+    expect(res).toBe(expected)
+})
+
+test("uncorrelatedAverageTest_parse", () => {
+    let query = rh`${api.sum("data.*A.value")} / ${api.count("data.*B.value")}`
     let res = api.compile(query)({ data })
     let expected = 20
     expect(res).toBe(expected)
@@ -63,10 +87,31 @@ test("groupByAverageTest", () => {
     expect(res).toEqual(expected)
 })
 
+test("groupByAverageTest_parse", () => {
+    let avg = p => rh`${api.sum(p)} / ${api.count(p)}`
+    let query = {
+        total: api.sum("data.*.value"),
+        "data.*.key": avg("data.*.value"),
+    }
+    let res = api.compile(query)({ data })
+    let expected = { "total": 60, "A": 20, "B": 20 }
+    expect(res).toEqual(expected)
+})
+
 test("groupByRelativeSum", () => {
     let query = {
         total: api.sum("data.*.value"),
         "data.*.key": api.fdiv(api.sum("data.*.value"), api.sum("data.*B.value"))
+    }
+    let res = api.compile(query)({ data })
+    let expected = { "total": 60, "A": 0.6666666666666666, "B": 0.3333333333333333 }
+    expect(res).toEqual(expected)
+})
+
+test("groupByRelativeSum_parse", () => {
+    let query = {
+        total: api.sum("data.*.value"),
+        "data.*.key": rh`${api.sum("data.*.value")} / ${api.sum("data.*B.value")}`
     }
     let res = api.compile(query)({ data })
     let expected = { "total": 60, "A": 0.6666666666666666, "B": 0.3333333333333333 }
