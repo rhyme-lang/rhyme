@@ -289,3 +289,22 @@ test("arrayTest7Eta", () => {
     expect(res).toEqual(expected)
 })
 
+
+
+
+test("graphicsBasicTestParsing", () => {
+    // to make sure $display doesn't mess up with parsing
+    // TODO: currently "type:svg", "300px" won't work unless we mark
+    // them as strings like '"300px"'
+    let data = [{x:20,y:70},{x:40,y:30},{x:60,y:50},{x:80,y:60},{x:100,y:40}]
+    let query = {
+        "$display": "select",
+        data: data
+    }
+    let res = api.compile(query)({ data })
+    let expected = {
+        "$display": "select",
+        data: data
+    }
+    expect(res).toEqual(expected)
+})

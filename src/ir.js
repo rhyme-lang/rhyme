@@ -97,6 +97,8 @@ exports.createIR = (query) => {
     function path0(p) {
         if (typeof (p) == "number" || !Number.isNaN(Number(p)))  // number?
             return expr(p)
+        if (p == "$display")
+            return path1({ xxpath: "ident", xxparam: "$display" }) // FixMe: handle this properly
         return path1(parse(p))
     }
     //
