@@ -89,14 +89,14 @@ Shown below is a simple complete example HTML file:
 
             <script>
                 let api = rhyme.api
-                m.domParent = document.getElementById("root")
+                let domParent = document.getElementById("root")
                 let data = [{x:20,y:70},{x:40,y:30},{x:60,y:50},{x:80,y:60},{x:100,y:40}]
                 let query = {
                     "$display": "select",
                     data: data
                 }
                 let res = api.query(query)
-                display(res({}))
+                display(res({}), domParent)
             </script>
         </body>
 </html>
