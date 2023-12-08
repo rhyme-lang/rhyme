@@ -1,5 +1,7 @@
 # Rhyme-Private
 
+![CI Tests](https://github.com/rhyme-lang/rhyme-private/actions/workflows/node.js.yml/badge.svg)
+
 TODO
 
 ## Running tests
