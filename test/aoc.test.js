@@ -136,9 +136,9 @@ test("day1-C", () => {
   // input | split "\n\n"  | get *chunk
   //       | split "\n"    | get *line  | toNum
   //       | sum | group *chunk | get * | max
-  let query = rh`.input | udf.splitNN | get(*chunk) 
-                        | udf.splitN  | get(*line) | udf.toNum
-                        | sum | group(*chunk) | get(*) | max`
+  let query = rh`.input | udf.splitNN | .*chunk 
+                        | udf.splitN  | .*line | udf.toNum
+                        | sum | group(*chunk) | .* | max`
   let func = api.compile(query)
   let res = func({input, udf})
   expect(res).toBe(24000)

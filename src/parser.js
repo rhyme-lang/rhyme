@@ -9,13 +9,14 @@ function ast_raw(a) {
 function ast_get(a,b) {
   return { xxpath: "get", xxparam: [a,b] }
 }
-function ast_get_smart(a,b) {
-  if (a.xxpath == "ident")
-    a = ast_get(a)
-  return ast_get(a,b)
-}
-function ast_call_smart(a,b) {
+function ast_call(a,b) {
   return { xxpath: "apply", xxparam: [a,b] }
+}
+function ast_root() {
+  return ast_raw("inp")
+}
+function ast_arg() {
+  return ast_raw("_ARG_")
 }
 let binop_table = {
   "|": "pipe",
@@ -38,11 +39,11 @@ function ast_binop(op, a,b) {
 
 
 exports.rh = (strings, ...holes) => {
-  return exports.parserImpl(strings, holes)
+  return exports.desugar(exports.parserImpl(strings, holes))
 }
 
 exports.parse = (p) => {
-  return exports.parserImpl([p],[])
+  return exports.desugar(exports.parserImpl([p],[]))
 }
 
 
@@ -267,7 +268,7 @@ exports.parserImpl = (strings, holes) => {
   }
   function tight() {
     let res
-    if (peek == ".") { // e.g. .input, to distinguish 'get' from 'ident'
+    if (peek == ".") { // e.g. .input, to distinguish 'get' from 'ident'  TODO: require no space?
       next()
       res = ast_get(atom())
     } else
@@ -277,16 +278,16 @@ exports.parserImpl = (strings, holes) => {
         next()
         if (peek == "ident" || peek == "*") {
           let rhs = ast_ident(str)
-          res = ast_get_smart(res, rhs)
+          res = ast_get(res, rhs)
           next()
         } else 
           error("ident expected")
       } else if (peek == "(") {
         let rhs = parens(expr)
-        res = ast_call_smart(res, rhs)
+        res = ast_call(res, rhs)
       } else if (peek == "[") {
         let rhs = brackets(expr)
-        res = ast_get_smart(res, rhs)
+        res = ast_get(res, rhs)
       }
     }
     return res
@@ -311,4 +312,83 @@ exports.parsePurePath = (p) => {
     ret = ast_get(ret, ast_ident(as[i]))
   }
   return ret
+}
+
+
+exports.desugar = (p) => {
+
+  let argProvided = { xxpath: "raw", xxparam: "inp" }
+  let argUsed = false
+
+  function toFunc(p, args) {
+    let save = [argProvided, argUsed]
+    argProvided = args[0]
+    argUsed = false
+    p = trans(p)
+    let h = argUsed
+    argProvided = save[0]; argUsed = save[1] // [argProvided, argUsed] = save doesn't work??
+
+    // is the argument used? i.e. syntax '.foo' --> we have 'arg.foo', just return
+    if (h)
+      return p
+
+    // argument not used yet: i.e. syntax 'udf.fun' --> apply to arg, return 'udf.fun(arg)'
+    if (p.xxpath == "ident") {
+      if (p.xxparam == "get") {
+        return { xxpath: "get", xxparam: args }
+      } else if (p.xxparam == "sum") {
+        return { xxkey: "sum", xxparam: args[0] } // unpack!
+      } else if (p.xxparam == "max") {
+        return { xxkey: "max", xxparam: args[0] } // unpack!
+      } else if (p.xxparam == "group" && args.length < 2) {
+        if (args[0].xxpath != "ident")
+          error("ERROR - key passed to 'group' needs to be an ident but got '" + args[0] + "'")
+        return { xxpath: "group", xxparam: args[0].xxparam } // unpack!
+      }
+    } else if (p.xxpath == "get" && p.xxparam.length == 1) { // partially applied, i.e. 'get(*line)'
+      return { xxpath: "get", xxparam: [args[0],p.xxparam[0]] }
+    } else if (p.xxpath == "group") { // partially applied, i.e. 'group(*line)'
+      return { [p.xxparam]: args[0] }
+    }
+
+    return { xxpath: "apply", xxparam: [p,...args] }
+  }
+
+  function trans(p) {
+    if (p == undefined) {
+      return p
+    } else if (p.xxpath == "ident") {
+      return p
+    } else if (p.xxpath == "raw") {
+      if (p.xxparam == "_ARG_") {
+        argUsed = true
+        return argProvided
+      }
+      return p
+    } else if (p.xxpath == "pipe") {
+      let [e1,e2,...e3s] = p.xxparam
+      return trans ({ xxpath: "apply", xxparam: [e2,e1,...e3s] })
+    } else if (p.xxpath == "apply") {
+      let [e1,...e2s] = p.xxparam
+      return toFunc(e1, e2s.map(trans))
+    } else if (p.xxpath == "get") {
+      let [e1, ...e2s] = p.xxparam.map(trans)
+      if (e2s.length == 0 || e2s[0] === undefined) {
+        // implicit hole = argument ref
+        e2s = [e1]
+        e1 = argProvided
+        argUsed = true
+      }
+      if (e1.xxpath == "ident")
+        e1 = { xxpath: "get", xxparam: [{ xxpath: "raw", xxparam: "inp"}, e1] }
+      return { xxpath: "get", xxparam: [e1,...e2s] }
+    } else if (p.xxpath) {
+      return { xxpath: p.xxpath, xxparam: p.xxparam.map(trans) }
+    } else if (p.xxkey) {
+      return { xxkey: p.xxkey, xxparam: trans(p.xxparam) }
+    }
+    return p
+  }
+
+  return trans(p)
 }
