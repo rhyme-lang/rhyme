@@ -338,8 +338,16 @@ exports.desugar = (p) => {
         return { xxpath: "get", xxparam: args }
       } else if (p.xxparam == "sum") {
         return { xxkey: "sum", xxparam: args[0] } // unpack!
+      } else if (p.xxparam == "count") {
+        return { xxkey: "count", xxparam: args[0] } // unpack!
       } else if (p.xxparam == "max") {
         return { xxkey: "max", xxparam: args[0] } // unpack!
+      } else if (p.xxparam == "min") {
+        return { xxkey: "min", xxparam: args[0] } // unpack!
+      } else if (p.xxparam == "first") {
+        return { xxkey: "first", xxparam: args[0] } // unpack!
+      } else if (p.xxparam == "last") {
+        return { xxkey: "last", xxparam: args[0] } // unpack!
       } else if (p.xxparam == "group" && args.length < 2) {
         if (args[0].xxpath != "ident")
           error("ERROR - key passed to 'group' needs to be an ident but got '" + args[0] + "'")

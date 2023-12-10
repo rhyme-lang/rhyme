@@ -36,9 +36,16 @@ test("plainSumTest_parse", () => {
     expect(res).toBe(expected)
 })
 
+test("plainSumTest_parse2", () => {
+    let query = rh`sum(data.*.value)`
+    let res = api.compile(query)({ data })
+    let expected = 60
+    expect(res).toBe(expected)
+})
+
 test("plainAverageTest", () => {
     let query = api.div(api.sum("data.*.value"), api.count("data.*.value"))
-    console.dir(query)
+    // console.dir(query)
     let res = api.compile(query)({ data })
     let expected = 20
     expect(res).toBe(expected)
@@ -46,7 +53,15 @@ test("plainAverageTest", () => {
 
 test("plainAverageTest_parse", () => {
     let query = rh`${api.sum("data.*.value")} / ${api.count("data.*.value")}`
-    console.dir(query)
+    // console.dir(query)
+    let res = api.compile(query)({ data })
+    let expected = 20
+    expect(res).toBe(expected)
+})
+
+test("plainAverageTest_parse2", () => {
+    let query = rh`sum(data.*.value) / count(data.*.value)`
+    // console.dir(query)
     let res = api.compile(query)({ data })
     let expected = 20
     expect(res).toBe(expected)
@@ -61,6 +76,13 @@ test("uncorrelatedAverageTest", () => {
 
 test("uncorrelatedAverageTest_parse", () => {
     let query = rh`${api.sum("data.*A.value")} / ${api.count("data.*B.value")}`
+    let res = api.compile(query)({ data })
+    let expected = 20
+    expect(res).toBe(expected)
+})
+
+test("uncorrelatedAverageTest_parse2", () => {
+    let query = rh`sum(data.*A.value) / count(data.*B.value)`
     let res = api.compile(query)({ data })
     let expected = 20
     expect(res).toBe(expected)
@@ -91,6 +113,17 @@ test("groupByAverageTest_parse", () => {
     let avg = p => rh`${api.sum(p)} / ${api.count(p)}`
     let query = {
         total: api.sum("data.*.value"),
+        "data.*.key": avg("data.*.value"),
+    }
+    let res = api.compile(query)({ data })
+    let expected = { "total": 60, "A": 20, "B": 20 }
+    expect(res).toEqual(expected)
+})
+
+test("groupByAverageTest_parse2", () => {
+    let avg = p => rh`sum(${p}) / count(${p})`
+    let query = {
+        total: "sum(data.*.value)",
         "data.*.key": avg("data.*.value"),
     }
     let res = api.compile(query)({ data })
