@@ -111,3 +111,8 @@ textual interface for writing certain Rhyme expressions.
 `npm test` will run all the tests that are in the `test` directory.
 
 If you're using VSCode, you can install [Jest Runner](https://marketplace.visualstudio.com/items?itemName=firsttris.vscode-jest-runner) extension and run/debug individual tests.
+
+
+### Useful Links
+- An upcoming publication on Rhyme (to appear at PADL 2024): [Rhyme: A Data-Centric Expressive Query Language for Nested Data Structures](https://www.cs.purdue.edu/homes/rompf/papers/abeysinghe-padl24.pdf)
+- An interactive blog introducing Rhyme can be found [here](https://tiarkrompf.github.io/notes/?/js-queries/).
