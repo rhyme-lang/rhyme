@@ -1,5 +1,6 @@
 const codegen = require('./codegen')
 const ir = require('./ir')
+const graphics = require('./graphics')
 
 // ---------- API ----------
 //
@@ -133,3 +134,6 @@ api["query"] = api["compile"] = (query) => {
     let rep = ir.createIR(query)
     return codegen.generate(rep)
 }
+
+// displaying graphics/visualizations in the browser
+api["display"] = (o, domParent) => graphics.display(o, domParent)

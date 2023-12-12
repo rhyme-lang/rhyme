@@ -1,4 +1,4 @@
-function display(o, domParent) {
+exports.display = (o, domParent) => {
     function createElement(type, props, ...children) {
         const dom = type.startsWith("svg:")
             ? document.createElementNS("http://www.w3.org/2000/svg", type.slice(4))

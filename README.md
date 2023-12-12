@@ -41,36 +41,12 @@ Visit [documentation](https://rhyme-lang.github.io/docs/) to get a glimpse of wh
 ## Using in the browser/frontend
 Npm package `rhyme-lang` installed using above command is intended for use in nodejs projects.
 However, if you want to use Rhyme in the browser (especially the visualization features),
-you can use the following steps to create a JS file using `browserify`.
-We plan to make this process easier soon by uploading
-the browser version of the library to a CDN.
-
-
-If you don't have `browserify` please install it using the following command:
-```bash
-npm install -g browserify
+you can use `unpkg` CDN to get the browser version of the library.
+Specifically, you can include the script from the following URL in your HTML file:
+```
+https://unpkg.com/rhyme-lang/umd/rhyme-lang.min.js
 ```
 
-We also need babel to transpile the code to ES5. Please install it using the following command (you can use `--save-dev` flag instead of `-g` if you don't want to install it globally):
-```bash
-npm install -g @babel/core @babel/cli @babel/preset-env
-```
-
-Then, we can use `browserify` to create a JS file that can be used in the browser:
-```bash
-browserify src/rhyme.js -o bundle.js -t [ babelify --presets [ @babel/preset-env ] --plugins [ @babel/plugin-transform-class-properties ] ] --s rhyme
-```
-
-This will create a file named `bundle.js` in the root directory of the repo.
-You can then use this file in your HTML file as follows:
-```html
-<script src="/path/to/bundle.js"></script>
-```
-
-If you want to use the visualization features, you also need to include the `src/graphics.js` file in your HTML file:
-```html
-<script src="/path/to/rhyme/src/graphics.js"></script>
-```
 
 Shown below is a simple complete example HTML file:
 ```html
@@ -84,8 +60,7 @@ Shown below is a simple complete example HTML file:
             <h1>Rhyme Example</h1>
             <div id="root"></div>
 
-            <script src="/path/to/bundle.js"></script>
-            <script src="/path/to/rhyme/src/graphics.js"></script>
+            <script src="https://unpkg.com/rhyme-lang/umd/rhyme-lang.min.js"></script>
 
             <script>
                 let api = rhyme.api
@@ -96,7 +71,7 @@ Shown below is a simple complete example HTML file:
                     data: data
                 }
                 let res = api.query(query)
-                display(res({}), domParent)
+                api.display(res({}), domParent)
             </script>
         </body>
 </html>
@@ -111,8 +86,17 @@ If you want to use the development version of the library you cloned in a differ
 project, you can run `npm link` in the root directory of the repo and then run
 `npm link rhyme-lang` in your project directory.
 
+### Setup for running on browser
+If you want to use the development version of the library in the browser, you can use
+webpack to build the browser version of the library.
+Use the following commands.
 
+```bash
+npm install webpack webpack-cli --save-dev
+./node_modules/.bin/webpack
+```
 
+This will generate a file `umd/rhyme-lang.min.js` that you can include in your HTML file.
 
 ### Code Structure
 Currently the code is structured into four main javascript files:
