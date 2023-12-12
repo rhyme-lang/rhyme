@@ -74,6 +74,7 @@ test("pipeTest3", () => {
   let q4 = rh`input | sum .foo`
   let q5 = rh`input | (get foo | sum)`
   let q6 = rh`(input | get foo) | sum`
+  let q7 = rh`sum input.foo`
   
   q0 = desugar(q0)
 
@@ -83,6 +84,7 @@ test("pipeTest3", () => {
   let q4d = desugar(q4)
   let q5d = desugar(q5)
   let q6d = desugar(q6)
+  let q7d = desugar(q7)
 
   expect(q1d).toEqual(q0)
   expect(q2d).toEqual(q0)
@@ -90,6 +92,7 @@ test("pipeTest3", () => {
   expect(q4d).toEqual(q0)
   expect(q5d).toEqual(q0)
   expect(q6d).toEqual(q0)
+  expect(q7d).toEqual(q0)
 
   let func = api.compile(q0)
   let res = func({input})
