@@ -1,12 +1,14 @@
 # Rhyme
 
-![CI Tests](https://github.com/rhyme-lang/rhyme-private/actions/workflows/node.js.yml/badge.svg)
+![CI Tests](https://github.com/rhyme-lang/rhyme/actions/workflows/node.js.yml/badge.svg)
 
 Rhyme is an expressive declarative query language designed for high-level data manipulation, with a primary focus on querying nested structures (e.g., JSON, Tensors, etc.) and producing nested structures as a result.
 
 Rhyme is still at very early stages of development and therefore expect rough edges
 and breaking changes.
 However, we are actively working on it and would love to hear your feedback.
+
+Checkout our website [rhyme-lang.github.io](https://rhyme-lang.github.io/) for more information.
 
 
 ## Getting Started

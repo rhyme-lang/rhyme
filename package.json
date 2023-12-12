@@ -1,10 +1,11 @@
 {
   "name": "rhyme-lang",
   "type": "commonjs",
-  "version": "0.0.2",
+  "version": "0.0.4",
   "description": "Rhyme: An Expressive Data-Centric Query Language",
   "scripts": {
-    "test": "jest"
+    "test": "jest",
+    "prepublishOnly": "./node_modules/.bin/webpack"
   },
   "keywords": [],
   "author": "",
@@ -16,5 +17,8 @@
   },
   "exports": {
     ".": "./src/rhyme.js"
-  }
+  },
+  "files": [
+    "src",
+    "umd"]
 }
