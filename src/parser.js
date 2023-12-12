@@ -205,7 +205,7 @@ exports.parserImpl = (strings, holes) => {
 
   // precedence: higher binds tighter
   let prec = {
-    '|' :  80,
+    '|' :  40,
     '<' :  90,
     '<=':  90,
     '>' :  90,
@@ -239,11 +239,22 @@ exports.parserImpl = (strings, holes) => {
   function expr() {
     return binop(0)
   }
+  function exprTight() {
+    return binopTight(50)
+  }
   function binop(min) {
-    let res = tight()
+    let res = loose()
     while (peek in prec && prec[peek] >= min) {
       let nextMin = prec[peek] + assoc[peek] // + 1 for left assoc
       res = ast_binop(next(), res, binop(nextMin))
+    }
+    return res
+  }
+  function binopTight(min) {
+    let res = tight()
+    while (peek in prec && prec[peek] >= min) {
+      let nextMin = prec[peek] + assoc[peek] // + 1 for left assoc
+      res = ast_binop(next(), res, binopTight(nextMin))
     }
     return res
   }
@@ -273,7 +284,7 @@ exports.parserImpl = (strings, holes) => {
       res = ast_get(atom())
     } else
       res = atom()
-    while (peek == "." || peek == "(" || peek == "[") {
+    while (gap == "" && (peek == "." || peek == "(" || peek == "[")) {
       if (peek == ".") {
         next()
         if (peek == "ident" || peek == "*") {
@@ -289,6 +300,14 @@ exports.parserImpl = (strings, holes) => {
         let rhs = brackets(expr)
         res = ast_get(res, rhs)
       }
+    }
+    return res
+  }
+  function loose() {
+    let res = exprTight()
+    while (peek == "num" || peek == "str" || peek == "ident" || peek == "*" ||
+           peek == "." || peek == "(" || peek == "[") {
+      res = ast_call(res, loose())
     }
     return res
   }
