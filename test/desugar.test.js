@@ -26,15 +26,23 @@ test("pipeTest1", () => {
   let q3 = rh`.input | get(foo)`
   let q4 = rh`.input | get foo`
 
+  expect(q1).toEqual(q0)
+  expect(q2).toEqual(q0)
+  expect(q3).toEqual(q0)
+  expect(q4).toEqual(q0)
+
+  // sanity: desugar is idempotent
+  let q0d = desugar(q0)
   let q1d = desugar(q1)
   let q2d = desugar(q2)
   let q3d = desugar(q2)
   let q4d = desugar(q2)
 
-  expect(q1d).toEqual(q0)
-  expect(q2d).toEqual(q0)
-  expect(q3d).toEqual(q0)
-  expect(q4d).toEqual(q0)
+  expect(q0d).toEqual(q0)
+  expect(q1d).toEqual(q1)
+  expect(q2d).toEqual(q2)
+  expect(q3d).toEqual(q3)
+  expect(q4d).toEqual(q4)
 
   let func = api.compile(q0)
   let res = func({input})
@@ -50,13 +58,19 @@ test("pipeTest2", () => {
   
   let q3 = rh`.input | get foo  | .bar | get baz  | .boom`
 
+  expect(q1).toEqual(q0)
+  expect(q2).toEqual(q0)
+  expect(q3).toEqual(q0)
+
+  let q0d = desugar(q0)
   let q1d = desugar(q1)
   let q2d = desugar(q2)
   let q3d = desugar(q3)
 
-  expect(q1d).toEqual(q0)
-  expect(q2d).toEqual(q0)
-  expect(q3d).toEqual(q0)
+  expect(q0d).toEqual(q0)
+  expect(q1d).toEqual(q1)
+  expect(q2d).toEqual(q2)
+  expect(q3d).toEqual(q3)
 
   let func = api.compile(q0)
   let res = func({input})
@@ -76,7 +90,13 @@ test("pipeTest3", () => {
   let q6 = rh`(input | get foo) | sum`
   let q7 = rh`sum input.foo`
   
-  q0 = desugar(q0)
+  expect(q1).toEqual(q0)
+  expect(q2).toEqual(q0)
+  expect(q3).toEqual(q0)
+  expect(q4).toEqual(q0)
+  expect(desugar(q5)).toEqual(q0) // XXX TODO: fix!
+  expect(desugar(q6)).toEqual(q0) // XXX TODO: fix!
+  expect(q7).toEqual(q0)
 
   let q1d = desugar(q1)
   let q2d = desugar(q2)
@@ -86,13 +106,13 @@ test("pipeTest3", () => {
   let q6d = desugar(q6)
   let q7d = desugar(q7)
 
-  expect(q1d).toEqual(q0)
-  expect(q2d).toEqual(q0)
-  expect(q3d).toEqual(q0)
-  expect(q4d).toEqual(q0)
-  expect(q5d).toEqual(q0)
-  expect(q6d).toEqual(q0)
-  expect(q7d).toEqual(q0)
+  expect(q1d).toEqual(q1)
+  expect(q2d).toEqual(q2)
+  expect(q3d).toEqual(q3)
+  expect(q4d).toEqual(q4)
+  // expect(q5d).toEqual(q5)
+  // expect(q6d).toEqual(q6)
+  expect(q7d).toEqual(q7)
 
   let func = api.compile(q0)
   let res = func({input})
