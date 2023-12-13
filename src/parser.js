@@ -340,6 +340,10 @@ exports.desugar = (p) => {
   let argUsed = false
 
   function toFunc(p, args) {
+    // is it a present-stage function, spliced into a hole via ${p} ?
+    if (p instanceof Function)
+      return p(...args)
+
     let save = [argProvided, argUsed]
     argProvided = args[0]
     argUsed = false

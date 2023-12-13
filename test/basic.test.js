@@ -124,7 +124,7 @@ test("groupByAverageTest_parse2", () => {
     let avg = p => rh`sum(${p}) / count(${p})`
     let query = {
         total: "sum(data.*.value)",
-        "data.*.key": avg("data.*.value"),
+        "data.*.key": rh`${avg}(data.*.value)`,
     }
     let res = api.compile(query)({ data })
     let expected = { "total": 60, "A": 20, "B": 20 }
