@@ -339,7 +339,7 @@ exports.desugar = (p) => {
   let argProvided = { xxpath: "raw", xxparam: "inp" }
   let argUsed = false
 
-  function toFunc(p, args) {
+  function transFuncApply(p, args) {
     // is it a present-stage function, spliced into a hole via ${p} ?
     if (p instanceof Function)
       return p(...args)
@@ -385,6 +385,11 @@ exports.desugar = (p) => {
     return { xxpath: "apply", xxparam: [p,...args] }
   }
 
+  function transApply(p, args) {
+    // special non-cbv forms can be added here
+    return transFuncApply(p, args.map(trans))
+  }
+
   function trans(p) {
     if (p == undefined) {
       return p
@@ -398,13 +403,13 @@ exports.desugar = (p) => {
       return p
     } else if (p.xxpath == "pipe") {
       let [e1,e2,...e3s] = p.xxparam
-      return trans ({ xxpath: "apply", xxparam: [e2,e1,...e3s] })
+      return transApply(e2,[e1,...e3s])
     } else if (p.xxpath == "apply") {
       let [e1,...e2s] = p.xxparam
-      return toFunc(e1, e2s.map(trans))
+      return transApply(e1, e2s)
     } else if (p.xxpath == "get") {
       let [e1, ...e2s] = p.xxparam.map(trans)
-      if (e2s.length == 0 || e2s[0] === undefined) {
+      if (e2s.length == 0 || e2s[0] === undefined) { // .foo
         // implicit hole = argument ref
         e2s = [e1]
         e1 = argProvided
