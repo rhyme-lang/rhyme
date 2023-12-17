@@ -22,35 +22,46 @@ let regionData = [
     { region: "Europe", country: "UK" },
 ]
 
+function order(as) {
+    let idx = as.map((x,i)=>i)
+    return idx.sort((ix,iy) => as[ix]-as[iy])
+}
+
+let udf = { order }
+
+function sorted(as) {
+    let permutation = api.apply("udf.order", [as])
+    return api.get(permutation,"*S")
+    // XXX: needs to be a fresh sym? not quite, should be specific
+    // enough so that sorted(as) can be CSE'd for repeated as
+    // (but what about context -- i.e. one in group, other total?)
+}
+
+
 test("plainSortTest1", () => {
-    function order(as) {
-        let idx = as.map((x,i)=>i)
-        return idx.sort((ix,iy) => as[ix]-as[iy])
-    }
-    let udf = { order }
     let permutation = api.apply("udf.order", ["countryData.*.population"])
     let query = [rh`countryData[${permutation}.*S].city`]
+
+    let res = api.compile(query)({ countryData, udf })
+    let expected = ["Paris", "London", "Beijing", "Tokyo"]
+    expect(res).toEqual(expected)
+})
+
+
+test("plainSortTest2", () => {
+    let query = [rh`countryData[${sorted("countryData.*.population")}].city`]
+
     let res = api.compile(query)({ countryData, udf })
     let expected = ["Paris", "London", "Beijing", "Tokyo"]
     expect(res).toEqual(expected)
 })
 
 test("plainSortTest2", () => {
-    function order(as) {
-        let idx = as.map((x,i)=>i)
-        return idx.sort((ix,iy) => as[ix]-as[iy])
-    }
-    let udf = { order }
-
-    function sorted(as) {
-        let permutation = api.apply("udf.order", [as])
-        return api.get(permutation,"*S") // XXX: needs to be a fresh sym!
-    }
-
-    let query = [rh`countryData[${sorted("countryData.*.population")}].city`]
+    let sp = sorted("countryData.*.population")
+    let query = api.group(rh`countryData[${sp}].population`, rh`countryData[${sp}].city`)
 
     let res = api.compile(query)({ countryData, udf })
-    let expected = ["Paris", "London", "Beijing", "Tokyo"]
-    expect(res).toEqual(expected)
+    let expected = [["Paris",10], ["London",10], ["Beijing",20], ["Tokyo",30]]
+    expect(Object.entries(res)).toEqual(expected) // order matters!
 })
 

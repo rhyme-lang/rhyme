@@ -258,7 +258,7 @@ exports.generate = (ir) => {
             emit("for (let " + quoteVar(e.sym) + " in " + e.rhs + ") {")
             // filters
             for (let e1 of es) {
-                emit("if (!" + e1.rhs + "[" + quoteVar(e1.sym) + "]) continue")
+                emit("if (" + e1.rhs + "[" + quoteVar(e1.sym) + "] === undefined) continue")
             }
             // recurse!
             availableSyms[s] = true
