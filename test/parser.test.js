@@ -80,3 +80,13 @@ test("templateTest3", () => {
     let expected = ast_get(ast_get(a, b), c)
     expect(res).toEqual(expected)
 })
+
+test("templateTest4", () => {
+    let a = { foo: "bar" }
+    let b = rh`b`
+    let res = rh`${a}.${b}.c` // <-- this currently isn't allowed -- should it be?
+    // let res = rh`${a}[${b}].c`
+    let c = ast_ident("c")
+    let expected = ast_get(ast_get(a, b), c)
+    expect(res).toEqual(expected)
+})

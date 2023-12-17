@@ -287,12 +287,15 @@ exports.parserImpl = (strings, holes) => {
     while (gap == "" && (peek == "." || peek == "(" || peek == "[")) {
       if (peek == ".") {
         next()
-        if (peek == "ident" || peek == "*") {
-          let rhs = ast_ident(str)
-          res = ast_get(res, rhs)
-          next()
-        } else 
-          error("ident expected")
+        let rhs = atom()
+        res = ast_get(res, rhs)
+        // TODO: might want to prevent .{}. and .[]. which don't make sense
+        // if (peek == "ident" || peek == "*") {
+        //   let rhs = ast_ident(str)
+        //   res = ast_get(res, rhs)
+        //   next()
+        // } else 
+        //   error("ident expected")
       } else if (peek == "(") {
         let rhs = parens(expr)
         res = ast_call(res, rhs)

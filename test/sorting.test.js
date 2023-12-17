@@ -40,7 +40,7 @@ function sorted(as) {
 
 test("plainSortTest1", () => {
     let permutation = api.apply("udf.order", ["countryData.*.population"])
-    let query = [rh`countryData[${permutation}.*S].city`]
+    let query = [rh`countryData.(${permutation}.*S).city`]
 
     let res = api.compile(query)({ countryData, udf })
     let expected = ["Paris", "London", "Beijing", "Tokyo"]
@@ -49,7 +49,7 @@ test("plainSortTest1", () => {
 
 
 test("plainSortTest2", () => {
-    let query = [rh`countryData[${sorted("countryData.*.population")}].city`]
+    let query = [rh`countryData.${sorted("countryData.*.population")}.city`]
 
     let res = api.compile(query)({ countryData, udf })
     let expected = ["Paris", "London", "Beijing", "Tokyo"]
@@ -58,7 +58,7 @@ test("plainSortTest2", () => {
 
 test("plainSortTest2", () => {
     let sp = sorted("countryData.*.population")
-    let query = api.group(rh`countryData[${sp}].population`, rh`countryData[${sp}].city`)
+    let query = api.group(rh`countryData.${sp}.population`, rh`countryData.${sp}.city`)
 
     let res = api.compile(query)({ countryData, udf })
     let expected = [["Paris",10], ["London",10], ["Beijing",20], ["Tokyo",30]]
