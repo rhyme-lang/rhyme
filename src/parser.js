@@ -380,6 +380,8 @@ exports.desugar = (p) => {
       return transStateful(p, args[0]) // unpack!
     } else if (p == "group" && args.length < 2) {
       // XXX seems restrictive?
+      // TODO: keyval/merge not yet supported for paths
+      // let o = { "Z": { xxkey: "keyval" , xxparam: [es2[1], es2[0]]}}
       if (args[0].xxpath != "ident")
         error("ERROR - key passed to 'group' needs to be an ident but got '" + args[0] + "'")
       return { xxpath: "group", xxparam: args[0].xxparam } // unpack!

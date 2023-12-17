@@ -114,7 +114,7 @@ exports.createIR = (query) => {
                     return expr(p.xxparam)
                 } else if (p.xxpath == "get") {
                     let [e1, e2] = p.xxparam
-                    if (e2 === undefined) {
+                    if (e2 === undefined) { // XXX redundant with desugar?
                         e2 = e1
                         e1 = { xxpath: "raw", xxparam: "inp" }
                     }
@@ -129,37 +129,7 @@ exports.createIR = (query) => {
                     return selectUser(subQueryPath, path1(e2))
                 } else if (p.xxpath == "apply") {
                     let [e1, ...es2] = p.xxparam
-                    // TODO: e1 should never be treated as id!
-                    if (e1.xxpath == "ident") {
-                        if (e1.xxparam == "get")
-                            return path1({ xxpath: "get", xxparam: es2})
-                        else if (e1.xxparam == "sum")
-                            return path1({ xxkey: "sum", xxparam: es2[0]})
-                        else if (e1.xxparam == "max")
-                            return path1({ xxkey: "max", xxparam: es2[0]})
-                        else if (e1.xxparam == "group"){
-                            // TODO: keyval not yet supported
-                            // let o = { "Z": { xxkey: "keyval" , xxparam: [es2[1], es2[0]]}}
-                            if (es2[1].xxpath != "ident")
-                                error("ERROR - key passed to 'group' needs to be an ident but got '" + e2[1] + "'")
-                            let k = es2[1].xxparam
-                            let o = { [k] : es2[0] }
-                            return path1(o)
-                        }
-                        // FIXME: not dealing adequately with
-                        // reducers yet!
-                    }
                     return call(path1(e1), ...es2.map(path1))
-                } else if (p.xxpath == "pipe") {
-                    // XXX: move this desugaring into parser?
-                    // a | b          -->   b(a)
-                    // a | b(c,d,e)   -->   b(a,c,d,e)
-                    let [e1, e2] = p.xxparam
-                    if (e2.xxpath == "apply") {
-                        let [a1, ...as2] = e2.xxparam
-                        return path1({ xxpath: "apply", xxparam: [a1, e1, ...as2]})
-                    }
-                    return path1({ xxpath: "apply", xxparam: [e2, e1]})
                 } else if (p.xxpath == "plus") {
                     let [e1, e2] = p.xxparam
                     return binop("+", path1(e1), path1(e2))
@@ -494,31 +464,6 @@ exports.createIR = (query) => {
                 currentGroupPath = save
             }
             return closeTempVar(lhs, lhs1)
-        } else if (p.xxpath == "apply") {
-            let [e1, ...es2] = p.xxparam
-            if (e1.xxpath == "ident") {
-                if (e1.xxparam == "sum") {
-                    return stateful(lhs, { xxkey: "sum", xxparam: es2[0] })
-                } else if (e1.xxparam == "max") {
-                    return stateful(lhs, { xxkey: "max", xxparam: es2[0] })
-                } else if (e1.xxparam == "group") {
-                    let o = { "_MERGE_": { xxkey: "keyval" , xxparam: [es2[1], es2[0]]}}
-                    return stateful(lhs, o) // xxx unpack array!
-                }
-            }
-            // default case, same as below
-            let rhs = path(p)
-            let lhs1 = openTempVar(lhs, rhs.deps)
-            assign(lhs1, "=", rhs)
-            return closeTempVar(lhs, lhs1)
-        } else if (p.xxpath == "pipe") {
-            // XXX: pipe desugaring
-            let [e1, e2] = p.xxparam
-            if (e2.xxpath == "apply") {
-                let [a1, ...as2] = e2.xxparam
-                return stateful(lhs, { xxpath: "apply", xxparam: [a1, e1, ...as2]})
-            }
-            return stateful(lhs, { xxpath: "apply", xxparam: [e2, e1]})
         } else {
             // regular path
             let rhs = path(p)
