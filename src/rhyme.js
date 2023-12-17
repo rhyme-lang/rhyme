@@ -52,6 +52,9 @@ api["merge"] = (k, v) => ({
   xxkey: "merge",
   xxparam: [k, v]
 })
+api["group"] = (e, k) => ({
+  "_IGNORE_": api.keyval(k,e)
+})
 //
 // path expressions
 //
@@ -98,7 +101,7 @@ let Pipe = {
   max: function () { return pipe(api.max(this)) },
   first: function () { return pipe(api.first(this)) },
   last: function () { return pipe(api.last(this)) },
-  group: function (k) { let o = {}; o[k] = this; return pipe(o) },
+  group: function (k) { return pipe(api.group(this, k)) },
   map: function (e) { return pipe(api.apply(e, this)) },
   get: function (e) { return pipe(api.get(this, e)) },
 }
