@@ -94,8 +94,8 @@ test("pipeTest3", () => {
   expect(q2).toEqual(q0)
   expect(q3).toEqual(q0)
   expect(q4).toEqual(q0)
-  expect(desugar(q5)).toEqual(q0) // XXX TODO: fix!
-  expect(desugar(q6)).toEqual(q0) // XXX TODO: fix!
+  expect(q5).toEqual(q0)
+  expect(q6).toEqual(q0)
   expect(q7).toEqual(q0)
 
   let q1d = desugar(q1)
@@ -110,8 +110,8 @@ test("pipeTest3", () => {
   expect(q2d).toEqual(q2)
   expect(q3d).toEqual(q3)
   expect(q4d).toEqual(q4)
-  // expect(q5d).toEqual(q5)
-  // expect(q6d).toEqual(q6)
+  expect(q5d).toEqual(q5)
+  expect(q6d).toEqual(q6)
   expect(q7d).toEqual(q7)
 
   let func = api.compile(q0)

@@ -339,13 +339,63 @@ exports.desugar = (p) => {
   let argProvided = { xxpath: "raw", xxparam: "inp" }
   let argUsed = false
 
+  // contract: args are already desugared
+  function transPath(p, args) {
+    if (p == "get") {
+      let [e1, ...e2s] = args
+      if (e2s.length == 0 || e2s[0] === undefined) { // .foo
+        // implicit hole = argument ref
+        e2s = [e1]
+        e1 = argProvided
+        argUsed = true
+      }
+      if (e1.xxpath == "ident")
+        e1 = { xxpath: "get", xxparam: [{ xxpath: "raw", xxparam: "inp"}, e1] }
+      return { xxpath: "get", xxparam: [e1,...e2s] }
+    } else {
+      return { xxpath: p, xxparam: args }
+    }
+  }
+
+  // contract: args are already desugared
+  function transStateful(p, arg) {
+    return { xxkey: p, xxparam: arg }
+  }
+
+
+  let primStateful = {
+    "sum":   true,
+    "count": true,
+    "max":   true,
+    "min":   true,
+    "first": true,
+    "last":  true,
+  }
+
+  // contract: args are already desugared
+  function transPrimitiveApply(p, args) {
+    if (p == "get") {
+      return transPath("get", args)
+    } else if (primStateful[p]) {
+      return transStateful(p, args[0]) // unpack!
+    } else if (p == "group" && args.length < 2) {
+      // XXX seems restrictive?
+      if (args[0].xxpath != "ident")
+        error("ERROR - key passed to 'group' needs to be an ident but got '" + args[0] + "'")
+      return { xxpath: "group", xxparam: args[0].xxparam } // unpack!
+    } else {
+      return { xxpath: "apply", xxparam: [{ xxpath: "ident", xxparam: p }, ...args] }
+    }
+  }
+
+  // contract: args are already desugared, p is not
   function transFuncApply(p, args) {
     // is it a present-stage function, spliced into a hole via ${p} ?
     if (p instanceof Function)
       return p(...args)
 
     let save = [argProvided, argUsed]
-    argProvided = args[0]
+    argProvided = args[0] // XXX what about the others?
     argUsed = false
     p = trans(p)
     let h = argUsed
@@ -353,29 +403,11 @@ exports.desugar = (p) => {
 
     // is the argument used? i.e. syntax '.foo' --> we have 'arg.foo', just return
     if (h)
-      return p
+      return p // XXX apply to remaining args, if any?
 
     // argument not used yet: i.e. syntax 'udf.fun' --> apply to arg, return 'udf.fun(arg)'
     if (p.xxpath == "ident") {
-      if (p.xxparam == "get") {
-        return { xxpath: "get", xxparam: args }
-      } else if (p.xxparam == "sum") {
-        return { xxkey: "sum", xxparam: args[0] } // unpack!
-      } else if (p.xxparam == "count") {
-        return { xxkey: "count", xxparam: args[0] } // unpack!
-      } else if (p.xxparam == "max") {
-        return { xxkey: "max", xxparam: args[0] } // unpack!
-      } else if (p.xxparam == "min") {
-        return { xxkey: "min", xxparam: args[0] } // unpack!
-      } else if (p.xxparam == "first") {
-        return { xxkey: "first", xxparam: args[0] } // unpack!
-      } else if (p.xxparam == "last") {
-        return { xxkey: "last", xxparam: args[0] } // unpack!
-      } else if (p.xxparam == "group" && args.length < 2) {
-        if (args[0].xxpath != "ident")
-          error("ERROR - key passed to 'group' needs to be an ident but got '" + args[0] + "'")
-        return { xxpath: "group", xxparam: args[0].xxparam } // unpack!
-      }
+      return transPrimitiveApply(p.xxparam, args)
     } else if (p.xxpath == "get" && p.xxparam.length == 1) { // partially applied, i.e. 'get(*line)'
       return { xxpath: "get", xxparam: [args[0],p.xxparam[0]] }
     } else if (p.xxpath == "group") { // partially applied, i.e. 'group(*line)'
@@ -407,21 +439,10 @@ exports.desugar = (p) => {
     } else if (p.xxpath == "apply") {
       let [e1,...e2s] = p.xxparam
       return transApply(e1, e2s)
-    } else if (p.xxpath == "get") {
-      let [e1, ...e2s] = p.xxparam.map(trans)
-      if (e2s.length == 0 || e2s[0] === undefined) { // .foo
-        // implicit hole = argument ref
-        e2s = [e1]
-        e1 = argProvided
-        argUsed = true
-      }
-      if (e1.xxpath == "ident")
-        e1 = { xxpath: "get", xxparam: [{ xxpath: "raw", xxparam: "inp"}, e1] }
-      return { xxpath: "get", xxparam: [e1,...e2s] }
     } else if (p.xxpath) {
-      return { xxpath: p.xxpath, xxparam: p.xxparam.map(trans) }
+      return transPath(p.xxpath, p.xxparam.map(trans))
     } else if (p.xxkey) {
-      return { xxkey: p.xxkey, xxparam: trans(p.xxparam) }
+      return transStateful(p.xxkey, trans(p.xxparam))
     }
     return p
   }
