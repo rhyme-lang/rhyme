@@ -374,17 +374,13 @@ exports.desugar = (p) => {
 
   // contract: args are already desugared
   function transPrimitiveApply(p, args) {
-    if (p == "get") {
+    if (p == "get") { // XXX others? plus, minus, etc?
       return transPath("get", args)
     } else if (primStateful[p]) {
       return transStateful(p, args[0]) // unpack!
     } else if (p == "group" && args.length < 2) {
-      // XXX seems restrictive?
-      // TODO: keyval/merge not yet supported for paths
-      // let o = { "Z": { xxkey: "keyval" , xxparam: [es2[1], es2[0]]}}
-      if (args[0].xxpath != "ident")
-        error("ERROR - key passed to 'group' needs to be an ident but got '" + args[0] + "'")
-      return { xxpath: "group", xxparam: args[0].xxparam } // unpack!
+      // partial application -- this will later turn into a keyval object
+      return { xxpath: "group", xxparam: args[0].xxparam } 
     } else {
       return { xxpath: "apply", xxparam: [{ xxpath: "ident", xxparam: p }, ...args] }
     }
@@ -413,7 +409,8 @@ exports.desugar = (p) => {
     } else if (p.xxpath == "get" && p.xxparam.length == 1) { // partially applied, i.e. 'get(*line)'
       return { xxpath: "get", xxparam: [args[0],p.xxparam[0]] }
     } else if (p.xxpath == "group") { // partially applied, i.e. 'group(*line)'
-      return { [p.xxparam]: args[0] }
+      // return { [p.xxparam]: args[0] }
+      return { "_IGNORE_": { xxkey: "keyval" , xxparam: [p.xxparam, args[0]]}}
     }
 
     return { xxpath: "apply", xxparam: [p,...args] }

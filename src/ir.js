@@ -177,11 +177,20 @@ exports.createIR = (query) => {
                 let keydeps = {}
                 let rhsdeps = {}
                 for (let k of Object.keys(p)) {
-                    // flatten, merge, etc.
+                    let o = p[k]
+                    // NOTE: more expressive merge/flatten could traverse
+                    //       child object (to support multiple keys)
+                    if (p[k].xxkey == "keyval" || p[k].xxkey == "merge") { // nesting
+                        o = p[k].xxparam[1]
+                        k = p[k].xxparam[0]
+                    } else if (p[k].xxkey == "flatten") { // same, but include parent key
+                        o = p[k].xxparam[1]
+                        k = api.plus(api.plus(k, "-"), p[k].xxparam[0])
+                    }
                     let k1 = path(k)
                     let save = currentGroupPath
                     currentGroupPath = [...currentGroupPath, k1]
-                    let rhs1 = path(p[k])
+                    let rhs1 = path(o)
                     currentGroupPath = save
                     entries[k] = { key: k1, rhs: rhs1 }
                     for (let d of k1.deps) keydeps[d] = true
@@ -199,6 +208,13 @@ exports.createIR = (query) => {
                 let lhs1 = createFreshTempVar(deps)
                 assign(lhs1, "??=", expr("{} //"))
                 for (let k of Object.keys(p)) {
+                    // NOTE: more expressive merge/flatten could traverse
+                    //       child object (to support multiple keys)
+                    if (p[k].xxkey == "keyval" || p[k].xxkey == "merge") { // nesting
+                        k = p[k].xxparam[0]
+                    } else if (p[k].xxkey == "flatten") { // same, but include parent key
+                        k = api.plus(api.plus(k, "-"), p[k].xxparam[0])
+                    }
                     let { key, rhs } = entries[k]
                     let ll1 = select(lhs1, key)
                     ll1.root = lhs1.root
