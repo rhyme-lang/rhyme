@@ -343,12 +343,14 @@ exports.desugar = (p) => {
   function transPath(p, args) {
     if (p == "get") {
       let [e1, ...e2s] = args
-      if (e2s.length == 0 || e2s[0] === undefined) { // .foo
+      // incomplete path like .foo? implicit hole, treat as function!
+      if (e2s.length == 0 || e2s[0] === undefined) {
         // implicit hole = argument ref
         e2s = [e1]
         e1 = argProvided
         argUsed = true
       }
+      // selecting on an ident like input.foo? implicit root field access
       if (e1.xxpath == "ident")
         e1 = { xxpath: "get", xxparam: [{ xxpath: "raw", xxparam: "inp"}, e1] }
       return { xxpath: "get", xxparam: [e1,...e2s] }
@@ -372,7 +374,7 @@ exports.desugar = (p) => {
     "last":  true,
   }
 
-  // contract: args are already desugared
+  // contract: args are already desugared, p is an ident
   function transPrimitiveApply(p, args) {
     if (p == "get") { // XXX others? plus, minus, etc?
       return transPath("get", args)
