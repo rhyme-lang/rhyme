@@ -158,14 +158,6 @@ exports.display = (o, domParent) => {
 
     m.domParent = domParent
 
-    //
-    // default display function -- refine this later
-    //
-    function display__(o) {
-        return m.add(inspector(o))
-    }
-
-
     // object inspector
     function toDetailString(a, depth) {
         let maxLen = depth * 20
@@ -307,7 +299,7 @@ exports.display = (o, domParent) => {
                 m.domParent.style["border"] = "thin solid lightgray"
                 m.domParent.style["padding"] = "0px 5px 0px 5px"
                 m.domParent.style["vertical-align"] = "middle"
-                display__(x)
+                display_(x)
             }
         //
         // TODO: add a slow mode for col template: compute all cols
