@@ -84,8 +84,7 @@ test("templateTest3", () => {
 test("templateTest4", () => {
     let a = { foo: "bar" }
     let b = rh`b`
-    let res = rh`${a}.${b}.c` // <-- this currently isn't allowed -- should it be?
-    // let res = rh`${a}[${b}].c`
+    let res = rh`${a}.${b}.c` // <-- this is now allowed
     let c = ast_ident("c")
     let expected = ast_get(ast_get(a, b), c)
     expect(res).toEqual(expected)

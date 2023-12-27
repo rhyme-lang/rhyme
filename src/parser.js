@@ -426,6 +426,13 @@ exports.desugar = (p) => {
     return transFuncApply(p, args.map(trans))
   }
 
+  function transPipe(p, args) {
+    // special non-cbv pipe forms can be added here
+    // (args[0] is the arg the left of the pipe, rest currently empty)
+    console.assert(args.length == 1)
+    return transFuncApply(p, args.map(trans))
+  }
+
   function trans(p) {
     if (p == undefined) {
       return p
@@ -439,7 +446,7 @@ exports.desugar = (p) => {
       return p
     } else if (p.xxpath == "pipe") {
       let [e1,e2,...e3s] = p.xxparam
-      return transApply(e2,[e1,...e3s])
+      return transPipe(e2,[e1,...e3s])
     } else if (p.xxpath == "apply") {
       let [e1,...e2s] = p.xxparam
       return transApply(e1, e2s)
