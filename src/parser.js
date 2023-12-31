@@ -110,6 +110,7 @@ exports.parserImpl = (strings, holes) => {
     } else if (input[pos] == '"') {
       pos++
       while (input[pos] && input[pos] != '\n' && input[pos] != '"') pos++
+      // note: unclosed string literals need to be detected later
       if (input[pos] == '"') pos++ // consume closing
         peek = "str"
     } else if (input[pos] == '\n') {
@@ -262,7 +263,16 @@ exports.parserImpl = (strings, holes) => {
     if (peek == '(') {
       return parens(expr)
     } else if (peek == "num" || peek == "str" || peek == "ident" || peek == "*") {
-      let res = ast_ident(str)
+      let s = str
+      if (peek == "str") { // strip quotes
+        if (s.startsWith('"')) {
+          s = s.substring(1,s.length)
+          if (!s.endsWith('"'))
+            error("unclosed string literal")
+          s = s.substring(0,s.length-1)
+        }
+      }
+      let res = ast_ident(s)
       next()
       return res
     } else if (peek == "hole") {

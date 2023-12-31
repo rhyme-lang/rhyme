@@ -89,3 +89,11 @@ test("templateTest4", () => {
     let expected = ast_get(ast_get(a, b), c)
     expect(res).toEqual(expected)
 })
+
+
+test("stringTest1", () => {
+    let res = parse('"a"')
+    let expected = ast_ident("a") // test stripping of quotes
+    expect(res).toEqual(expected)
+})
+
