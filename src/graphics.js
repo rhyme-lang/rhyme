@@ -588,6 +588,8 @@ exports.display = (o, domParent) => {
                 return table3d(o.rows, o.cols, o.data, o.template)
             case "select":
                 return tabGroups(o.data)
+            case "slider":
+                return sliderGroups(o.data)
             case "bar":
                 let x = o.value
                 let dd = m.add(e("span", {}))
@@ -659,6 +661,34 @@ exports.display = (o, domParent) => {
         }
         render()
     }
-
+    //
+    // slider select panel
+    //
+    function sliderGroups(data) {
+        let keys = Object.keys(data)
+        if (!keys.length) return d
+        let index = 0
+        let selected = keys[index]
+        let d
+        m.begin()
+        m.begin()
+        m.domParent.style.marginBottom = "5px"
+        let slider = m.add(e("input", {
+            "type": "range", "min": 0, "max": keys.length-1, "value": index
+        }))
+        slider.oninput = m.local(ev => render(selected = keys[index = slider.value]))
+        let value = m.add(e("span", {}))
+        m.end()
+        d = m.div()
+        m.end()
+        function render() {
+            d.innerText = ""
+            value.innerText = selected
+            m.begin(d)
+            display_(data[selected])
+            m.end()
+        }
+        render()
+    }
     display_(o)
 }
