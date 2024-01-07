@@ -158,7 +158,7 @@ test("letTest1", () => {
 
   expect(q1d).toEqual(q1)
 
-  let func = api.compile(q0)
+  let func = api.compile(q1)
   let res = func({})
   expect(res).toBe(7)
 })
@@ -176,7 +176,7 @@ test("letTest2", () => {
 
   expect(q1d).toEqual(q1)
 
-  let func = api.compile(q0)
+  let func = api.compile(q1)
   let res = func({input})
   expect(res).toBe(7)
 })
