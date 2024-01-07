@@ -181,3 +181,54 @@ test("letTest2", () => {
   expect(res).toBe(7)
 })
 
+
+test("lambdaTest1", () => {
+
+  let input = { foo:  7 }
+  let q0 = rh`input.foo`
+
+  let q1 = rh`(fn x x.foo) input`
+  let q2 = rh`input | fn x x.foo`
+
+  let q3 = rh`.foo input`
+  let q4 = rh`input | .foo`
+  
+  expect(q1).toEqual(q0)
+  expect(q2).toEqual(q0)
+  expect(q3).toEqual(q0)
+  expect(q4).toEqual(q0)
+
+  let q1d = desugar(q1)
+  let q2d = desugar(q2)
+  let q3d = desugar(q3)
+  let q4d = desugar(q4)
+
+  expect(q1d).toEqual(q1)
+  expect(q2d).toEqual(q2)
+  expect(q3d).toEqual(q3)
+  expect(q4d).toEqual(q4)
+
+  let func = api.compile(q1)
+  let res = func({input})
+  expect(res).toBe(7)
+})
+
+
+test("lambdaTest2", () => {
+
+  let input = { foo:  7 }
+  let q0 = rh`3 + 4`
+  let q1 = rh`(fn x (fn y x+y)) 3 4`
+  
+  expect(q1).toEqual(q0)
+
+  let q1d = desugar(q1)
+
+  expect(q1d).toEqual(q1)
+
+  let func = api.compile(q1)
+  let res = func({input})
+  expect(res).toBe(7)
+})
+
+

@@ -430,6 +430,19 @@ exports.desugar = (p) => {
     } else if (p.xxpath == "group") { // partially applied, i.e. 'group(*line)'
       // return { [p.xxparam]: args[0] }
       return { "_IGNORE_": { xxkey: "keyval" , xxparam: [p.xxparam, args[0]]}}
+    } else if (p.xxpath == "closure") {
+      console.assert(args.length >= 1)
+      let [e1, ...args1] = args
+      let [env1, x, body] = p.xxparam
+      let save = env
+      env = {...env1}
+      env[x.xxparam] = args[0]
+      let res = trans(body)
+      env = save
+      if (args1.length > 0)
+        return transFuncApply(res, args1)
+      else
+        return res
     }
 
     return { xxpath: "apply", xxparam: [p,...args] }
@@ -438,17 +451,29 @@ exports.desugar = (p) => {
   function transApply(p, args) {
     // special non-cbv forms can be added here
     if (p.xxpath == "ident" && p.xxparam == "let") { // let x rhs body
-      // contract: rhs is evaluated here
-      console.assert(args.length == 3)
-      let [e1,e2,e3] = args
-      console.assert(e1.xxpath == "ident")
+      // contract: rhs gets evaluated here
+      console.assert(args.length >= 3)
+      console.assert(args[0].xxpath == "ident")
+      let [e1,e2,e3,...args1] = args
       e2 = trans(e2)
       let save = env
       env = {...env}
       env[e1.xxparam] = e2
       let res = trans(e3)
       env = save
-      return res
+      if (args1.length > 0)
+        return transApply(res, args1)
+      else
+        return res
+    } else if (p.xxpath == "ident" && p.xxparam == "fn") { // fn x body
+      console.assert(args.length >= 2)
+      console.assert(args[0].xxpath == "ident")
+      let [e1, e2, ...args1] = args
+      let res = { xxpath: "closure", xxparam: [env, e1, e2] }
+      if (args1.length > 0)
+        return transApply(res, args1)
+      else
+        return res
     } else if (p.xxpath == "apply") { // collect all arguments for curried apply
       let [p1,...args1] = p.xxparam
       return transApply(p1, [...args1,...args])
