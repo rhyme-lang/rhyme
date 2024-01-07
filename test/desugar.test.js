@@ -125,9 +125,23 @@ test("callTest1", () => {
   let q0 = rh`a(b)(c)(d)`
   let q1 = rh`a b c d`
   
+  let e = {
+    xxpath: 'apply',
+    xxparam: [
+      { xxpath: 'ident', xxparam: 'a' },
+      { xxpath: 'ident', xxparam: 'b' },
+      { xxpath: 'ident', xxparam: 'c' },
+      { xxpath: 'ident', xxparam: 'd' }
+    ]
+  }
+
+  expect(q1).toEqual(e)
+
   expect(q1).toEqual(q0)
 
+  let q0d = desugar(q0)
   let q1d = desugar(q1)
 
+  expect(q0d).toEqual(q0)
   expect(q1d).toEqual(q1)
 })

@@ -433,6 +433,10 @@ exports.desugar = (p) => {
 
   function transApply(p, args) {
     // special non-cbv forms can be added here
+    if (p.xxpath == "apply") { // collect all arguments for curried apply
+      let [p1,...args1] = p.xxparam
+      return transApply(p1, [...args1,...args])
+    }
     return transFuncApply(p, args.map(trans))
   }
 
