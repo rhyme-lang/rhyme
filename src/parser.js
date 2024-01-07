@@ -6,6 +6,9 @@ function ast_ident(a) {
 function ast_raw(a) {
   return { xxpath: "raw", xxparam: a }
 }
+function ast_num(a) {
+  return { xxpath: "raw", xxparam: a } // treat as raw for now
+}
 function ast_get(a,b) {
   return { xxpath: "get", xxparam: [a,b] }
 }
@@ -272,7 +275,7 @@ exports.parserImpl = (strings, holes) => {
           s = s.substring(0,s.length-1)
         }
       }
-      let res = ast_ident(s)
+      let res = peek == "num" ? ast_num(s) : ast_ident(s)
       next()
       return res
     } else if (peek == "hole") {
