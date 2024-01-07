@@ -320,7 +320,7 @@ exports.parserImpl = (strings, holes) => {
     let res = exprTight()
     while (peek == "num" || peek == "str" || peek == "ident" || peek == "*" ||
            peek == "." || peek == "(" || peek == "[") {
-      res = ast_call(res, loose())
+      res = ast_call(res, exprTight())
     }
     return res
   }

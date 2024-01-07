@@ -120,3 +120,14 @@ test("pipeTest3", () => {
 })
 
 
+test("callTest1", () => {
+
+  let q0 = rh`a(b)(c)(d)`
+  let q1 = rh`a b c d`
+  
+  expect(q1).toEqual(q0)
+
+  let q1d = desugar(q1)
+
+  expect(q1d).toEqual(q1)
+})
