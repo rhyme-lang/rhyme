@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Rhyme Table Examples</title>
+    <!-- <script src="https://unpkg.com/rhyme-lang/umd/rhyme-lang.min.js"></script> -->
+    <script src="../umd/rhyme-lang.min.js"></script>
+    <script>
+      // minimal csv parser -- use a proper csv library for any production code
+      function parseCSV(data) {
+        data = data.split("\n")
+        let names = data[0].split(",")
+        let types = data[1].split(",").map(x => isNaN(Number(x)) ? (x => x.trim()) : (x => Number(x)))
+        let data1 = []
+        for (let i = 1; i < data.length; i++) {
+          let line = data[i]
+          let items = line.split(",")
+          let row = {}
+          for (let i in names)
+            row[names[i]] = types[i](items[i])
+          data1.push(row)
+        }
+        return data1
+      }
+      function loadCSV(url) {
+        return fetch(url).then(p => p.text()).then(p => parseCSV(p))
+      }
+    </script>
+    <style type="text/css">
+      body {
+        margin: 40px
+        auto;
+        max-width: 650px;
+        line-height: 1.4;
+        font-size: 16px;
+        font-family: sans-serif;
+        color: #333;
+        padding: 0
+        10px
+      }
+      h1, h2, h3 {
+        line-height: 1.1
+      }
+    </style>
+</head>
+<body>
+    <h1>Rhyme Table Demos</h1>
+
+    <p>Use the browser developer tools to inspect the source code, and check the console output for query IR and generated code.</p>
+
+
+    <div id="root"></div>
+
+    <script>
+        try { rhyme } catch (e) { 
+          document.write(`<p><b>ERROR</b>: ../umd/rhyme-lang.min.js doesn't exist. 
+To create it, run the following commands at the top level of the Rhyme repository:</p>
+<pre>
+npm install webpack webpack-cli --save-dev
+./node_modules/.bin/webpack
+</pre>`)
+          throw e }
+        let api = rhyme.api
+        let domParent = document.getElementById("root")
+        let display = x => api.display(x, domParent)
+        let H2 = x => display({"$display": "dom", "type": "h2", children: [x]})
+    </script>
+
+
+    <script type="module">
+        H2("Basic Select")
+
+        let data = [{x:20,y:70},{x:40,y:30},{x:60,y:50},{x:80,y:60},{x:100,y:40}]
+        display({
+            "$display": "select",
+            data: data
+        })
+    </script>
+
+
+    <script type="module">
+        H2("Basic Table")
+
+        let data = {
+          "$display": "table",
+          rows: [0], cols: [1],
+          data: [
+            {region:"Asia",city:"Beijing","population":{"$display":"bar",value:40}},
+            {region:"Asia",city:"Tokyo","population":{"$display":"bar",value:70}},
+          ]
+        }
+        display({
+          "$display": "select",
+          data: {
+            "Data Table": data,
+            "Other Object": {A:1,b:2}
+          }
+        })
+    </script>
+
+
+    <script type="module">
+        function loadWarehouseDataset() {
+          let str = `warehouse,product,model,quantity
+San Jose,iPhone,6s,100
+San Francisco,iPhone,6s,50
+San Jose,iPhone,7,50
+San Francisco,iPhone,7,10
+San Jose,iPhone,X,150
+San Francisco,iPhone,X,200
+San Jose,Samsung,Galaxy S,200
+San Francisco,Samsung,Galaxy S,200
+San Francisco,Samsung,Note 8,100
+San Jose,Samsung,Note 8,150`
+          return new Promise(f => f(parseCSV(str)))
+        }
+
+        loadWarehouseDataset().then(data => {
+          H2("Pivot Tables")
+
+          let udf = {
+            formatUSD: p => "$"+p+".00",
+            formatPercent: p => Math.trunc(p*100) + " %",
+            percent: p => Math.trunc(p*100)
+          }
+          let computeEntry = {
+            "Quantity":       api.sum("data.*.quantity"),
+            '"Percent Total"':  api.apply("udf.formatPercent",api.fdiv(api.sum("data.*.quantity"),api.sum("data.*2.quantity"))),
+            '"Bar Chart"': {
+              "$display": "bar",
+              value: api.apply("udf.percent",api.fdiv(api.sum("data.*.quantity"),api.sum("data.*2.quantity")))
+            }
+          }
+          let query = {
+            "$display": "select",
+            data: {
+              '"Grouped I"': {
+                "$display": "table",
+                rows: 4, cols: 1,
+                template: {
+                  Quantity: {}, '"Bar Chart"':{}, '"Percent Total"': {}
+                },
+                data: { Total: {
+                  props: computeEntry,
+                  children: { "data.*.warehouse": {
+                    props: computeEntry,
+                    children: { "data.*.product": {
+                      props: computeEntry,
+                      children: {
+                        "data.*.model": computeEntry
+                      }
+                    }}
+                  }}
+                }}
+              },
+              '"Grouped II"': {
+                "$display": "table",
+                rows: 3, cols: 1,
+                data: {
+                  "data.*.warehouse": {
+                    "Total": {
+                      '"-"': computeEntry,
+                    },
+                    "data.*.product": {
+                      "Total": computeEntry,
+                      "data.*.model": computeEntry
+                    }
+                  },
+                  "Total": {
+                    '"-"': {
+                      '"-"': computeEntry
+                    }
+                  }
+                }
+              },
+              '"Raw Data"': {
+                "$display": "table",
+                rows: 1, cols: 1,
+                data: { "*":"data.*" }
+              },
+            }
+          }
+
+          let func = api.compile(query)
+          console.log("Pivot Tables: ", func.explain)
+          let res = func({data,udf})
+          api.display(res, domParent)
+        })
+    </script>
+
+    <script type="module">
+        function loadRegionDataset() {
+          return loadCSV("city_populations.csv")
+        }
+        loadRegionDataset().then(data => {
+          H2("Bar Chart Race")
+
+          function order(as) {
+              let idx = as.map((x,i)=>i)
+              return idx.sort((ix,iy) => as[iy]-as[ix]) // descending
+          }
+          let udf = {
+            formatNum: p => new Intl.NumberFormat('en-US', {maximumFractionDigits: 0}).format(p*1000),
+            order: order,
+          }
+          let maxByYear = {
+            "data.*M.year": api.max("data.*M.value")
+          }
+          let item = { 
+            City: "data.*.name", 
+            Population: api.apply("udf.formatNum", "data.*.value"),
+            '""': {
+              "$display": "bar",
+              "value": api.times(api.fdiv("data.*.value", api.get(maxByYear, "data.*.year")), 200)
+            }
+          }
+          function sorted(item, key) {
+            let permutation = api.apply("udf.order", [key])
+            return { "*S": api.get([item], api.get(permutation, "*S")) }
+          }
+          let query = {
+            "$display": "select",
+            data: {
+              '"Largest Cities by Year"': {
+                "$display": "slider",
+                data: {
+                  "data.*.year": {
+                    "$display": "table",
+                    rows: 1, cols: 1,
+                    data: sorted(item, "data.*.value")
+                  }
+                }
+              },
+              '"Raw Data"': {
+                "$display": "table",
+                rows: 1, cols: 0,
+                data: { "*": "data.*" }
+              },
+            }
+          }
+          let func = api.compile(query)
+          console.log("Bar Chart Race: ", func.explain)
+          let res = func({data,udf})
+          api.display(res, domParent)
+        })
+    </script>
+
+
+</body>
+</html>

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Rhyme SVG Examples</title>
+    <!-- <script src="https://unpkg.com/rhyme-lang/umd/rhyme-lang.min.js"></script> -->
+    <script src="../umd/rhyme-lang.min.js"></script>
+    <style type="text/css">
+      body {
+        margin: 40px
+        auto;
+        max-width: 650px;
+        line-height: 1.4;
+        font-size: 16px;
+        font-family: sans-serif;
+        color: #333;
+        padding: 0
+        10px
+      }
+      h1, h2, h3 {
+        line-height: 1.1
+      }
+    </style>
+</head>
+<body>
+    <h1>Rhyme SVG Demos</h1>
+
+    <p>Use the browser developer tools to inspect the source code, and check the console output for query IR and generated code.</p>
+
+
+    <div id="root"></div>
+
+    <script>
+        try { rhyme } catch (e) { 
+          document.write(`<p><b>ERROR</b>: ../umd/rhyme-lang.min.js doesn't exist. 
+To create it, run the following commands at the top level of the Rhyme repository:</p>
+<pre>
+npm install webpack webpack-cli --save-dev
+./node_modules/.bin/webpack
+</pre>`)
+          throw e }
+        let api = rhyme.api
+        let domParent = document.getElementById("root")
+        let display = x => api.display(x, domParent)
+        let H2 = x => display({"$display": "dom", "type": "h2", children: [x]})
+    </script>
+
+
+    <script type="module">
+        H2("SVG Plots")
+
+        let data = [{x:20,y:70},{x:40,y:30},{x:60,y:50},{x:80,y:60},{x:100,y:40}]
+
+        let line = {
+          "$display": "dom", type: '"svg:polyline"',
+          props: { points: api.join(api.plus("data.*.x",api.plus('","',api.plus("data.*.y",'" "')))), stroke: "black", fill:"none" },
+        }
+        let bars = {
+          "$display": "dom", type: '"svg:rect"',
+          props: { width: 16, height: api.minus(100,"data.*.y"), x: api.minus("data.*.x",8), y: "data.*.y", stroke: '"black"', fill: '"none"' },
+        }
+        let points = {
+          "$display": "dom", type: '"svg:ellipse"',
+          props: { rx: 3, ry: 3, cx: "data.*.x", cy: "data.*.y", stroke: '"black"', fill: '"#EEE"' },
+        }
+
+        let query = {
+          "$display": "select",
+          data: {
+            '"All in one"': {
+              "$display": "dom", type: '"svg:svg"',
+              props: { width: '"300px"', height: '"100px"' },
+              children: [bars, line, points]
+            },
+            '"Side by side"': {
+              "$display": "dom", type: "div",
+              children: [{
+                "$display": "dom", type: '"svg:svg"',
+                props: { width: '"120px"', height: '"100px"' },
+                children: api.array(points)
+              },{
+                "$display": "dom", type: '"svg:svg"',
+                props: { width: '"120px"', height: '"100px"' },
+                children: api.array(line)
+              },{
+                "$display": "dom", type: '"svg:svg"',
+                props: { width: '"120px"', height: '"100px"' },
+                children: api.array(bars)
+              }]
+            },
+          }
+        }
+        let func = api.query(query)
+        console.log("SVG Plots:", func.explain)
+        let res = func({data})
+        api.display(res, domParent)
+    </script>
+
+
+    <script type="module">
+        H2("Other SVG Graphics")
+
+        let data = []
+        for (let j = 0; j < 360; j += 20) 
+          data.push(j)
+
+        let query = {
+          "$display": "dom", type: '"svg:svg"',
+          props: { width: 300, height: 200 },
+          children: [{
+            "$display": "dom", type: '"svg:ellipse"',
+            props: { rx: 40, ry: 15, cx: 200, cy: 100,
+              fill: api.plus('"hsl("', api.plus("data.*", '" 90% 50%)"')),
+              '"fill-opacity"': '"70%"',
+              transform: api.plus('"rotate(-"',api.plus("data.*",'" 150 100)"')) },
+          }]
+        }
+        let func = api.query(query)
+        console.log("Other SVG Graphics:", func.explain)
+        let res = func({data})
+        api.display(res, domParent)
+    </script>
+
+
+</body>
+</html>
