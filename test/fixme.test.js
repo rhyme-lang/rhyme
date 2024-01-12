@@ -10,6 +10,9 @@ let data = [
     { region: "Asia", name: "Seoul", value: 22 },
 ]
 
+
+// interaction of array and object construction
+
 test("arrayWithinGrouping", () => {
     // queries
     let q0 = { "data.*.region": {"data.*.name": "data.*.value"} }
@@ -83,3 +86,56 @@ test("arrayWithinGrouping", () => {
 
 })
 
+
+// Treatment of "undefined": we need to decide on the desired
+// behavior.
+//
+// Right now, there are few special cases, so "undefined" can
+// show up easily, e.g. in key and value positions.
+//
+// A sensible alterntive design would be to propagate "undefined"
+// values uniformly as failure, so that they trigger abortive
+// behavior (proper "inner join" semantics). So, rather than
+// inserting "undefined" as a key/val, we would just not insert
+// anything. Of course there still needs to be an operation
+// to "observe" undefined and obtain "outer join" behavior,
+// e.g. "a ?? b" (return b if a is undefined -- and of course
+// b could be undefined as well).
+
+
+test("undefinedVal", () => {
+
+    let data = { A: 10, B: 20 }
+    let index = ["A","B","C"]
+
+    let q = {
+        "index.*": "data.(index.*)"
+    }
+
+    let f = api.compile(q)
+    let res = f({data, index})
+
+    // console.dir(res)
+
+    // actual result:
+    let bug = { A: 10, B: 20, C: undefined }
+})
+
+test("undefinedKey", () => {
+
+    let data = { A: 10, B: 20, C: 30 }
+    let index = [{key:"A"},{},{key:"B"},{key:"B"}]
+
+    let q = {
+        "index.*.key": "count(index.*)"
+    }
+
+    let f = api.compile(q)
+    let res = f({data, index})
+
+    // console.dir(res)
+
+    // actual result:
+    let bug = { A: 1, undefined: 1, B: 2 }
+
+})
