@@ -12,10 +12,10 @@ treb7uchet`
   let udf = {
     splitN: x => x.split("\n"),
     splitB: x => x.split(""),
-    toNum: x => { 
+    toNum: x => {
       let n = Number(x)
-      if (Number.isNaN(n)) 
-        return undefined 
+      if (Number.isNaN(n))
+        return undefined
       else
         return n
     }
@@ -26,15 +26,54 @@ treb7uchet`
     .map("udf.splitN").get("*line")
     .map("udf.splitB").get("*char")
     .map("udf.toNum")
-  let numbers = 
+  let numbers =
     api.plus(api.times(api.first(digits), 10),  api.last(digits))
-  let query = 
+  let query =
     pipe(numbers).group("*line").get("*").sum()
   let func = api.compile(query)
   let res = func({input, udf})
   expect(res).toBe(142)
 })
 
+
+test("day1-part2", () => {
+  let input = `two1nine
+eightwothree
+abcone2threexyz
+xtwone3four
+4nineeightseven2
+zoneight234
+7pqrstsixteen`
+
+let letters = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
+let digitregex = new RegExp(`[0-9]|${letters.join("|")}`, "g")
+
+// utilities to split input and match digit
+let udf = {
+  splitN: x => x.split("\n"),
+  match: x => x.match(digitregex),
+  toNum: x => {
+    let n = Number(x)
+    if (Number.isNaN(n))
+      return letters.indexOf(x) + 1
+    else
+      return n
+  }
+}
+let root = {xxpath:"raw", xxparam: "inp"} // XXX
+let digits =
+  pipe(root).get("input")
+  .map("udf.splitN").get("*line")
+  .map("udf.match").get("*match")
+  .map("udf.toNum")
+let numbers =
+  api.plus(api.times(api.first(digits), 10),  api.last(digits))
+let query =
+  pipe(numbers).group("*line").get("*").sum()
+let func = api.compile(query)
+let res = func({input, udf})
+expect(res).toBe(281)
+})
 
 // 2022
 
@@ -136,7 +175,7 @@ test("day1-C", () => {
   // input | split "\n\n"  | get *chunk
   //       | split "\n"    | get *line  | toNum
   //       | sum | group *chunk | get * | max
-  let query = rh`.input | udf.splitNN | .*chunk 
+  let query = rh`.input | udf.splitNN | .*chunk
                         | udf.splitN  | .*line | udf.toNum
                         | sum | group *chunk | .* | max`
   let func = api.compile(query)
