@@ -75,6 +75,61 @@ let res = func({input, udf})
 expect(res).toBe(281)
 })
 
+test("day2", () => {
+  // used udfs to simulate behaviors of select, all, scan in jq
+  let input = `Game 1: 3 blue, 4 red; 1 red, 2 green, 6 blue; 2 green
+Game 2: 1 blue, 2 green; 3 green, 4 blue, 1 red; 1 green, 1 blue
+Game 3: 8 green, 6 blue, 20 red; 5 blue, 4 red, 13 green; 5 green, 1 red
+Game 4: 1 green, 3 red, 6 blue; 3 green, 6 red; 3 green, 15 blue, 14 red
+Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green`
+
+  let bag = {
+    red: 12,
+    green: 13,
+    blue: 14
+  }
+  
+  let udf = {
+    splitN: x => x.split("\n"),
+    splitColon: x => x.split(":"),
+    scan: x => {
+      // use udf to match regex
+      const re = /(\d+) (red|green|blue)/g
+      return x.match(re)
+    },
+    extractId: x => Number(x.substring(5)),
+    all: x => x.every(v => v) ? 1 : 0,
+    check: x => {
+      // x is expected to be in the form of '<number> <color>'
+      let s = x.trim()
+      let split = s.split(" ")
+      let n = Number(split[0])
+      return n <= bag[split[1]]
+    }
+  }
+
+  let root = {xxpath:"raw", xxparam: "inp"} // XXX
+
+  let lines =
+    pipe(root).get("input")
+    .map("udf.splitN").get("*line")
+    .map("udf.splitColon").get("*part")
+
+  let id = api.apply("udf.extractId", api.first(lines))
+  let isPossible = api.array(api.apply("udf.check", api.get(api.apply("udf.scan", api.last(lines)), "*match")))
+
+  let lineRes = api.times(id, api.apply("udf.all", isPossible))
+
+  let query = 
+    pipe(lineRes).group("*line").get("*").sum()
+
+  let func = api.compile(query)
+
+  let res = func({input, udf})
+
+  expect(res).toBe(8)
+})
+
 // 2022
 
 test("day1-A", () => {
