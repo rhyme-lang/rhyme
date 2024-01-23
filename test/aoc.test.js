@@ -129,7 +129,7 @@ let coordinates = pipe(api.apply(api.apply("udf.getCords", "*row"), matches)).ge
 let numbers = pipe(api.apply("udf.toNum", matches))
 
 // isPart indicate whether the number is a part number, i.e., adjacent to a symbol
-// isPart: coordinates => Some(coord => matrix[coord[0]]?.[coord[1]])
+// isPart: coordinates => coordinates.Some(coord => isSym(matrix[coord[0]]?.[coord[1]]))
 // Some of the generated coordinates maybe invalid, e.g. [-1, -1], need hack for optional chaining ?.
 // !!! api.max is a temporary hack for logic or, should change this after add all, some operator to rhyme
 let isPart = pipe(api.apply(api.apply("udf.optionalChaining", matrix.get(coordinates.get("0"))), coordinates.get("1"))).map("udf.isSym").max()
@@ -138,7 +138,7 @@ let isPart = pipe(api.apply(api.apply("udf.optionalChaining", matrix.get(coordin
 let partNum = pipe(api.times(numbers, isPart))
 
 // NOTE: change to group("*match").group("*row").get("*row").get("*match") will result in repeated generators because of coarse-grained dependencies
-let query = pipe(partNum).group("*match").group("*row").get("*0").get("*1").sum()
+let query = partNum.group("*match").group("*row").get("*0").get("*1").sum()
 let func = api.compile(query)
 let res = func({input, udf})
 expect(res).toBe(4361)
