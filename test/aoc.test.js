@@ -75,6 +75,75 @@ let res = func({input, udf})
 expect(res).toBe(281)
 })
 
+
+test("day3-part1", () => {
+// Compute the sum of all part numbers: the number that are adjacent, even diagonally, to a symbol (*, #, +, $, .etc)
+let input =
+`467..114..
+...*......
+..35..633.
+......#...
+617*......
+.....+.58.
+..592.....
+......755.
+...$.*....
+.664.598..`
+
+// utilities to split input, match digit and get the coordinate of adjacent symbols
+
+let udf = {
+  splitN: x => x.split("\n"),
+  splitB: x => x.split(""),
+  match: x => [...x.matchAll(/\d+/g)],
+  // Get the coordinate of adjacent symbols
+  getAdj: point => {
+    let i = +point[0]
+    let j = +point[1]
+    return [[i-1, j-1], [i-1, j], [i-1, j+1], [i, j-1], [i, j+1], [i+1, j-1], [i+1, j], [i+1, j+1]]
+  },
+  // Get the corrdinates of the current match, i.e. [[row, match.start], ..., [row, match.end]]
+  getCords: row => match => Array.from({length: match[0].length}, (_, i) => [+row, i + match.index]),
+  // !!! Temporary hack for optional chaining, should change this afterwards
+  optionalChaining: o => k => o?.[k],
+  // Check if the current character is a symbol
+  isSym: c => c != null && c !== '.' && Number.isNaN(+c),
+  toNum: x => {
+    let n = Number(x)
+    if (Number.isNaN(n))
+      return undefined
+    else
+      return n
+  }
+}
+let root = {xxpath:"raw", xxparam: "inp"} // XXX
+
+// Temporay matrix of characters, joined in later queries.
+let matrix = pipe(root).get("input").map("udf.splitN").get("*i").map("udf.splitB").get("*j").group("*j").group("*i")
+
+let matches = pipe(root).get("input").map("udf.splitN").get("*row").map("udf.match").get("*match")
+
+// coordinates is element of: *row => match => [[*row, match.start], ..., [*row, match.end]].flatMap(getAdj)
+let coordinates = pipe(api.apply(api.apply("udf.getCords", "*row"), matches)).get("*coord").map("udf.getAdj").get("*adj")
+
+let numbers = pipe(api.apply("udf.toNum", matches))
+
+// isPart indicate whether the number is a part number, i.e., adjacent to a symbol
+// isPart: coordinates => Some(coord => matrix[coord[0]]?.[coord[1]])
+// Some of the generated coordinates maybe invalid, e.g. [-1, -1], need hack for optional chaining ?.
+// !!! api.max is a temporary hack for logic or, should change this after add all, some operator to rhyme
+let isPart = pipe(api.apply(api.apply("udf.optionalChaining", matrix.get(coordinates.get("0"))), coordinates.get("1"))).map("udf.isSym").max()
+
+// !!! api.times is a temporary hack for filtering,should change this after add filtering
+let partNum = pipe(api.times(numbers, isPart))
+
+// NOTE: change to group("*match").group("*row").get("*row").get("*match") will result in repeated generators because of coarse-grained dependencies
+let query = pipe(partNum).group("*match").group("*row").get("*0").get("*1").sum()
+let func = api.compile(query)
+let res = func({input, udf})
+expect(res).toBe(4361)
+})
+
 // 2022
 
 test("day1-A", () => {
