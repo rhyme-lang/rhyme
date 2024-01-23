@@ -1,3 +1,15 @@
+/*
+ * Implementations of "Advent of Code" challenges
+ *
+ * Problem statements: https://adventofcode.com
+ *
+ * Solutions are inspired by existing solutions in:
+ * - JQ: https://github.com/odnoletkov/advent-of-code-jq
+ * - SQL: https://github.com/MaterializeInc/advent-of-code-2023
+ * - Scala: https://scalacenter.github.io/scala-advent-of-code
+ *
+ */
+
 const { api, pipe } = require('../src/rhyme')
 const { rh } = require('../src/parser')
 
