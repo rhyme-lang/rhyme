@@ -92,40 +92,45 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green`
   let udf = {
     splitN: x => x.split("\n"),
     splitColon: x => x.split(":"),
-    scan: x => {
-      // use udf to match regex
-      const re = /(\d+) (red|green|blue)/g
-      return x.match(re)
-    },
-    extractId: x => Number(x.substring(5)),
+    splitSpace: x => x.split(" "),
+    splitSemicolon: x => x.split(";"),
+    splitComma: x => x.split(","),
+    // TODO: try to get rid of all()
     all: x => x.every(v => v) ? 1 : 0,
-    check: x => {
-      // x is expected to be in the form of '<number> <color>'
-      let s = x.trim()
-      let split = s.split(" ")
-      let n = Number(split[0])
-      return n <= bag[split[1]]
-    }
+    isNonNegative: x => x >= 0,
+    toNum: x => Number(x)
   }
+  
+  let lines = rh`input | udf.splitN | *line
+                       | udf.splitColon | *part`
 
-  let root = {xxpath:"raw", xxparam: "inp"} // XXX
+  let id = rh`.input | udf.splitN | .*line
+                     | udf.splitColon | .*part | first
+                     | udf.splitSpace | .*id | last
+                     | udf.toNum`
+  
+  let nums = rh`.input | udf.splitN | .*line
+                       | udf.splitColon | .*part | last
+                       | udf.splitSemicolon | .*hand
+                       | udf.splitComma | .*group
+                       | udf.splitSpace | .1
+                       | udf.toNum`
 
-  let lines =
-    pipe(root).get("input")
-    .map("udf.splitN").get("*line")
-    .map("udf.splitColon").get("*part")
+  let colors = rh`.input | udf.splitN | .*line
+                         | udf.splitColon | .*part | last
+                         | udf.splitSemicolon | .*hand
+                         | udf.splitComma | .*group
+                         | udf.splitSpace | .2`
 
-  let id = api.apply("udf.extractId", api.first(lines))
-  let isPossible = api.array(api.apply("udf.check", api.get(api.apply("udf.scan", api.last(lines)), "*match")))
+  let diff = api.apply("udf.isNonNegative", api.minus(api.get(".bag", colors), nums))
 
-  let lineRes = api.times(id, api.apply("udf.all", isPossible))
+  let lineRes = api.times(id, api.apply("udf.all", api.array(diff)))
 
-  let query = 
-    pipe(lineRes).group("*line").get("*").sum()
+  let query = pipe(lineRes).group("*line").get("*").sum()
 
   let func = api.compile(query)
 
-  let res = func({input, udf})
+  let res = func({input, udf, bag})
 
   expect(res).toBe(8)
 })
