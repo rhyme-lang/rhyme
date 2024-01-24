@@ -32,6 +32,8 @@ exports.createIR = (query) => {
     let allsyms = {}
     //
     let currentGroupPath = []
+    // Do we need to check deps here?
+    let groupKeyEqual = (k1, k2) => k1.txt == k2.txt
     let tmpVarCount = 0
     let extraLoopDeps = {} // for each loop sym, a list of extra dependencies
     let tmpVarWriteRank = {} // for each writable var sym, the number of consecutive write stms
@@ -91,9 +93,9 @@ exports.createIR = (query) => {
     //
     // contract: argument p is a Number or String
     //
-    // refactored to allow parsing other relevant expressions, such 
+    // refactored to allow parsing other relevant expressions, such
     // as data.foo + data.bar or 5 + sum(data.*.val) or ...
-    //    
+    //
     function path0(p) {
         if (typeof (p) == "number" || !Number.isNaN(Number(p)))  // number?
             return expr(p)
@@ -203,7 +205,8 @@ exports.createIR = (query) => {
                 let save = currentGroupPath
                 let deps = []
                 for (let d in rhsdeps) if (isVar(d) && !(d in keydeps)) deps.push(d)
-                let plus = deps.map(ident)
+                // plus may contain existing keys in currentGroupPath
+                let plus = filterKeysFromGroupPath(deps.map(ident))
                 currentGroupPath = [...currentGroupPath, ...plus]
                 let lhs1 = createFreshTempVar(deps)
                 assign(lhs1, "??=", expr("{} //"))
@@ -265,6 +268,9 @@ exports.createIR = (query) => {
     }
     function entireGroupPathIsRelevant(deps) {
         return currentGroupPath.length == relevantGroupPath(deps).length
+    }
+    function filterKeysFromGroupPath(newKeys) {
+      return newKeys.filter(x => !currentGroupPath.some(k => groupKeyEqual(x, k)))
     }
     function canDecorrelateGroupPath(deps) {
         return !entireGroupPathIsRelevant(deps)
