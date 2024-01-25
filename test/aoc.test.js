@@ -100,7 +100,7 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green`
     green: 13,
     blue: 14
   }
-  
+ 
   let udf = {
     splitN: x => x.split("\n"),
     splitColon: x => x.split(":"),
@@ -112,33 +112,28 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green`
     isNonNegative: x => x >= 0,
     toNum: x => Number(x)
   }
-  
-  let lines = rh`input | udf.splitN | *line
-                       | udf.splitColon | *part`
+ 
+  let lines = rh`.input | udf.splitN | .*line
+                        | udf.splitColon`
 
-  let id = rh`.input | udf.splitN | .*line
-                     | udf.splitColon | .*part | first
-                     | udf.splitSpace | .*id | last
-                     | udf.toNum`
-  
-  let nums = rh`.input | udf.splitN | .*line
-                       | udf.splitColon | .*part | last
-                       | udf.splitSemicolon | .*hand
-                       | udf.splitComma | .*group
-                       | udf.splitSpace | .1
+  let id = rh`${lines} | .0
+                       | udf.splitSpace | .*id | last
                        | udf.toNum`
+ 
+  let numAndColor = rh`${lines} | .1
+                                | udf.splitSemicolon | .*hand
+                                | udf.splitComma | .*group
+                                | udf.splitSpace`
+  
+  let num = rh`${numAndColor} | .1 | udf.toNum`
+  let color = rh`${numAndColor} | .2`
 
-  let colors = rh`.input | udf.splitN | .*line
-                         | udf.splitColon | .*part | last
-                         | udf.splitSemicolon | .*hand
-                         | udf.splitComma | .*group
-                         | udf.splitSpace | .2`
+  let isPossible = rh`(.bag | .${color}) - ${num} | udf.isNonNegative`
 
-  let diff = api.apply("udf.isNonNegative", api.minus(api.get(".bag", colors), nums))
+  // TODO: change to [isPossible] after array constructor systax is supported
+  let lineRes = rh`(${api.array(isPossible)} | udf.all) * ${id}`
 
-  let lineRes = api.times(id, api.apply("udf.all", api.array(diff)))
-
-  let query = pipe(lineRes).group("*line").get("*").sum()
+  let query = rh`${lineRes} | group *line | .* | sum`
 
   let func = api.compile(query)
 
