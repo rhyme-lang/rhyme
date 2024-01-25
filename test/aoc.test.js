@@ -87,6 +87,60 @@ let res = func({input, udf})
 expect(res).toBe(281)
 })
 
+test("day2", () => {
+  // used udfs to simulate behaviors of select, all, scan in jq
+  let input = `Game 1: 3 blue, 4 red; 1 red, 2 green, 6 blue; 2 green
+Game 2: 1 blue, 2 green; 3 green, 4 blue, 1 red; 1 green, 1 blue
+Game 3: 8 green, 6 blue, 20 red; 5 blue, 4 red, 13 green; 5 green, 1 red
+Game 4: 1 green, 3 red, 6 blue; 3 green, 6 red; 3 green, 15 blue, 14 red
+Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green`
+
+  let bag = {
+    red: 12,
+    green: 13,
+    blue: 14
+  }
+ 
+  let udf = {
+    splitN: x => x.split("\n"),
+    splitColon: x => x.split(":"),
+    splitSpace: x => x.split(" "),
+    splitSemicolon: x => x.split(";"),
+    splitComma: x => x.split(","),
+    // TODO: try to get rid of all()
+    all: x => x.every(v => v) ? 1 : 0,
+    isNonNegative: x => x >= 0,
+    toNum: x => Number(x)
+  }
+ 
+  let lines = rh`.input | udf.splitN | .*line
+                        | udf.splitColon`
+
+  let id = rh`${lines} | .0
+                       | udf.splitSpace | .*id | last
+                       | udf.toNum`
+ 
+  let numAndColor = rh`${lines} | .1
+                                | udf.splitSemicolon | .*hand
+                                | udf.splitComma | .*group
+                                | udf.splitSpace`
+  
+  let num = rh`${numAndColor} | .1 | udf.toNum`
+  let color = rh`${numAndColor} | .2`
+
+  let isPossible = rh`(.bag | .${color}) - ${num} | udf.isNonNegative`
+
+  // TODO: change to [isPossible] after array constructor systax is supported
+  let lineRes = rh`(${api.array(isPossible)} | udf.all) * ${id}`
+
+  let query = rh`${lineRes} | group *line | .* | sum`
+
+  let func = api.compile(query)
+
+  let res = func({input, udf, bag})
+
+  expect(res).toBe(8)
+})
 
 test("day3-part1", () => {
 // Compute the sum of all part numbers: the number that are adjacent, even diagonally, to a symbol (*, #, +, $, .etc)
