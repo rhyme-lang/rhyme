@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Rhyme React Example</title>
+    <style type="text/css">
+      body {
+        margin: 40px
+        auto;
+        max-width: 650px;
+        line-height: 1.4;
+        font-size: 16px;
+        font-family: sans-serif;
+        color: #333;
+        padding: 0
+        10px
+      }
+      h1, h2, h3 {
+        line-height: 1.1
+      }
+    </style>
+    <!-- <script src="https://unpkg.com/rhyme-lang/umd/rhyme-lang.min.js"></script> -->
+    <script src="../umd/rhyme-lang.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script crossorigin src="https://unpkg.com/babel-standalone@6/babel.js"></script>
+  </head>
+
+  <body>
+    <div id="root"></div>
+
+    <script>
+      try { rhyme } catch (e) { 
+        document.write(`<p><b>ERROR</b>: ../umd/rhyme-lang.min.js doesn't exist. 
+To create it, run the following commands at the top level of the Rhyme repository:</p>
+<pre>
+npm install webpack webpack-cli --save-dev
+./node_modules/.bin/webpack
+</pre>`)
+        throw e 
+      }
+    </script>
+
+    <script type="text/babel">
+
+      // Import Rhyme API
+      let rh = rhyme.api
+
+      // Set up a React root
+      let root = ReactDOM.createRoot(document.getElementById("root"))
+
+      // Define a function to convert plain JSON values to React elements.
+      //
+      // We'll use { $react: "div", props: ..., children: ... } to
+      // express <div> ... </div>. 
+      //
+      // Note (A): this step isn't strictly necessary, as 
+      // React elements themselves are objects of the form
+      // { $$typeof: Symbol(react.element), type: "div", 
+      //   ref: null, props: {children: [...]}}.
+      // However, 'ref' and 'props.children' have to be present, 
+      // so our form is a slight convenience.
+      function reactify(obj) {
+        if (typeof(obj) === "string") return obj
+        if (typeof(obj) === "number") return obj
+        if (obj && "$react" in obj) {
+          let children = []
+          for (let k in obj.children)
+            children.push(reactify(obj.children[k]))
+          return React.createElement(obj["$react"], obj.props, ...children)
+        }
+        return JSON.stringify(obj)
+      }
+
+
+      // Define our blog data
+      let data = [{
+        title: "My first post",
+        body: "Lorem ipsum dolor sit amet"
+      },{
+        title: "My second post",
+        body: "Gallia est omnis divisa in partes tres"
+      }]
+
+
+      // Custom React elements as UDF
+      function Post({title, body}) {
+        return <div><h2>{title}</h2><p>{body}</p></div>
+      }
+
+      let udf = {
+        Post, Fragment: React.Fragment
+      }
+
+
+      // Rhyme query: we construct the equivalent of:
+      //
+      // let Main = props => 
+      //  <Fragment>
+      //    <h1>My Fancy Blog</h1>
+      //    <div><Post title="data.*.title" body="data.*.body"/></div>
+      //  </Fragment>
+      //
+      // Question B: could we take this as actual input?
+
+      let main = rh.compile({
+        '"$react"': "udf.Fragment", 
+        children: [{
+          '"$react"': "h1", children: ['"My Fancy Blog"']
+        },{
+          '"$react"': "div", children: [{
+            '"$react"': "udf.Post", 
+            props: { title: "data.*.title", body: "data.*.body" }
+          }]
+        }]
+      })
+
+      let Main = props => reactify(main(props))
+
+      root.render(<Main data={data} udf={udf}/>)
+
+      // A few possible avenues to go from here:
+      // - try producing React elements directly from Rhyme queries (see (A) above)
+      // - try taking JSX as Rhyme query input (see (B) above)
+      // - provide an alternative API to construct React trees,
+      //   e.g. similar to S-exprs: (Fragment (h1 "My Blog" (div [Post ...])))
+
+      // Note: there is some ambiguity in where elements are collected.
+      // Consider lists of posts and their children:
+      //  <div><h2>data.*.title</h2><p>data.*.body</p></div>
+      // It's not a priori clear if the outer div should be iterated
+      // or the inner h2 and p (or any other enclosing element)
+
+    </script>
+  </body>
+</html>
