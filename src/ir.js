@@ -18,7 +18,7 @@ exports.createIR = (query) => {
     //
     // TODO: support vararg in select/call?
     let select = (a, b) => expr(a.txt + "[" + b.txt + "]", ...a.deps, ...b.deps)
-    let call = (a, b) => expr("" + a.txt + "(" + b.txt + ")", ...a.deps, ...b.deps)
+    let call = (a, ...b) => expr("" + a.txt + "(" + b.map(x=>x.txt).join(",") + ")", ...a.deps, ...b.map(x=>x.deps).flat())
     let binop = (op, a, b) => expr("(" + a.txt + op + b.txt + ")", ...a.deps, ...b.deps)
     let unop = (op, a) => expr(op + "(" + a.txt + ")", ...a.deps)
     //
@@ -131,6 +131,7 @@ exports.createIR = (query) => {
                     return selectUser(subQueryPath, path1(e2))
                 } else if (p.xxpath == "apply") {
                     let [e1, ...es2] = p.xxparam
+                    // XXX: multiple args vs currying?
                     return call(path1(e1), ...es2.map(path1))
                 } else if (p.xxpath == "plus") {
                     let [e1, e2] = p.xxparam
