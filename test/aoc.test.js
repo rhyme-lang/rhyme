@@ -95,9 +95,9 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green`
   let num   = rh`${cube}.1 | udf.toNum`
   let color = rh`${cube}.2`
 
-  let isPossible = rh`udf.isLessOrEqual ${num} bag.${color} | udf.toNum` // TODO: <= syntax
+  let isPossible = rh`udf.isLessOrEqual ${num} bag.${color}` // TODO: x <= y syntax
 
-  let lineRes = rh`min(${isPossible}) * ${game}` // using "min" to express "forall"
+  let lineRes = rh`min(${isPossible} | udf.toNum) * ${game}` // using "min" to express "forall"
 
   let query = rh`${lineRes} | group *line | sum .*`
 
