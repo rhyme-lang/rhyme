@@ -368,6 +368,12 @@ exports.createIR = (query) => {
             assign(lhs1, "??=", expr("0"))
             assign(lhs1, "+=", expr("1", ...rhs.deps))
             return closeTempVar(lhs, lhs1)
+        } else if (p.xxkey == "min") { // min
+            let rhs = path(p.xxparam)
+            let lhs1 = openTempVar(lhs, rhs.deps)
+            assign(lhs1, "??=", expr("Infinity"))
+            assign(lhs1, "=", expr("Math.min(" + lhs1.txt + "," + rhs.txt + ")", ...rhs.deps))
+            return closeTempVar(lhs, lhs1)
         } else if (p.xxkey == "max") { // max
             let rhs = path(p.xxparam)
             let lhs1 = openTempVar(lhs, rhs.deps)
