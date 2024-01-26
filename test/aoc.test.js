@@ -13,40 +13,29 @@
 const { api, pipe } = require('../src/rhyme')
 const { rh } = require('../src/parser')
 
+let udf_stdlib = {
+  split: d => s => s.split(d),
+  toNum: x => (n => Number.isNaN(n) ? undefined : n)(Number(x))
+}
+
+
 // 2023
 
-test("day1", () => {
-    let input = `1abc2
+test("day1-part1", () => {
+  let input = `1abc2
 pqr3stu8vwx
 a1b2c3d4e5f
 treb7uchet`
-  // utilities to split input
-  let udf = {
-    splitN: x => x.split("\n"),
-    splitB: x => x.split(""),
-    toNum: x => {
-      let n = Number(x)
-      if (Number.isNaN(n))
-        return undefined
-      else
-        return n
-    }
-  }
-  let root = {xxpath:"raw", xxparam: "inp"} // XXX
-  let digits =
-    pipe(root).get("input")
-    .map("udf.splitN").get("*line")
-    .map("udf.splitB").get("*char")
-    .map("udf.toNum")
-  let numbers =
-    api.plus(api.times(api.first(digits), 10),  api.last(digits))
-  let query =
-    pipe(numbers).group("*line").get("*").sum()
+  let udf = udf_stdlib
+
+  let digits  = rh`.input | udf.split "\\n" | .*line | udf.split "" | .*char | udf.toNum `
+  let numbers = rh`first(${digits}) * 10 + last(${digits})`
+  let query   = rh`${numbers} | group *line | sum .*`
+
   let func = api.compile(query)
   let res = func({input, udf})
   expect(res).toBe(142)
 })
-
 
 test("day1-part2", () => {
   let input = `two1nine
@@ -57,35 +46,25 @@ xtwone3four
 zoneight234
 7pqrstsixteen`
 
-let letters = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
-let digitregex = new RegExp(`[0-9]|${letters.join("|")}`, "g")
+  let letters = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
+  let digitregex = new RegExp(`[0-9]|${letters.join("|")}`, "g")
 
-// utilities to split input and match digit
-let udf = {
-  splitN: x => x.split("\n"),
-  match: x => x.match(digitregex),
-  toNum: x => {
-    let n = Number(x)
-    if (Number.isNaN(n))
-      return letters.indexOf(x) + 1
-    else
-      return n
+  // utilities to match digits and numbers
+  let udf = {
+    match: x => x.match(digitregex),
+    toNumW: x => udf.toNum(x) ?? letters.indexOf(x) + 1,
+    ...udf_stdlib
   }
-}
-let root = {xxpath:"raw", xxparam: "inp"} // XXX
-let digits =
-  pipe(root).get("input")
-  .map("udf.splitN").get("*line")
-  .map("udf.match").get("*match")
-  .map("udf.toNum")
-let numbers =
-  api.plus(api.times(api.first(digits), 10),  api.last(digits))
-let query =
-  pipe(numbers).group("*line").get("*").sum()
-let func = api.compile(query)
-let res = func({input, udf})
-expect(res).toBe(281)
+
+  let digits  = rh`.input | udf.split "\\n" | .*line | udf.match | .*match | udf.toNumW`
+  let numbers = rh`first(${digits}) * 10 + last(${digits})`
+  let query   = rh`${numbers} | group *line | sum .*`
+
+  let func = api.compile(query)
+  let res = func({input, udf})
+  expect(res).toBe(281)
 })
+
 
 test("day2", () => {
   // used udfs to simulate behaviors of select, all, scan in jq
