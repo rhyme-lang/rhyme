@@ -6,6 +6,9 @@ function ast_ident(a) {
 function ast_raw(a) {
   return { xxpath: "raw", xxparam: a }
 }
+function ast_hole(a) {
+  return { xxpath: "hole", xxparam: a }
+}
 function ast_num(a) {
   return { xxpath: "raw", xxparam: a } // treat as raw for now
 }
@@ -279,7 +282,7 @@ exports.parserImpl = (strings, holes) => {
       next()
       return res
     } else if (peek == "hole") {
-      let res = holes[hole]
+      let res = ast_hole(holes[hole])
       next()
       return res
     } else if (peek == '{') {
@@ -501,6 +504,8 @@ exports.desugar = (p) => {
         return argProvided
       }
       return p
+    } else if (p.xxpath == "hole") {
+      return p.xxparam // do not recurse, already desugared
     } else if (p.xxpath == "pipe") {
       let [e1,e2,...e3s] = p.xxparam
       return transPipe(e2,[e1,...e3s])
