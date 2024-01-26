@@ -410,16 +410,16 @@ exports.desugar = (p) => {
 
   // contract: args are already desugared, p is not
   function transFuncApply(p, args) {
-    // is it a present-stage function, spliced into a hole via ${p} ?
-    if (p instanceof Function)
-      return p(...args)
-
     let save = [argProvided, argUsed]
     argProvided = args[0] // XXX what about the others?
     argUsed = false
     p = trans(p)
     let h = argUsed
     argProvided = save[0]; argUsed = save[1] // [argProvided, argUsed] = save doesn't work??
+
+    // is it a present-stage function, spliced into a hole via ${p} ?
+    if (p instanceof Function)
+      return p(...args)
 
     // is the argument used? i.e. syntax '.foo' --> we have 'arg.foo', just return
     if (h)
