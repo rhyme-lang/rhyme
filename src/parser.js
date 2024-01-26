@@ -324,7 +324,8 @@ exports.parserImpl = (strings, holes) => {
   }
   function loose() {
     let res = exprTight()
-    while (peek == "num" || peek == "str" || peek == "ident" || peek == "*" ||
+    while (peek == "num" || peek == "str" || peek == "hole" ||
+           peek == "ident" || peek == "*" ||
            peek == "." || peek == "(" || peek == "[") {
       res = ast_call(res, exprTight())
     }
