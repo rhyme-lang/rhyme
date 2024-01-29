@@ -1,6 +1,5 @@
 const { api } = require('../src/rhyme')
 
-
 test("statelessGrouping", () => { // this one works
 
     let data = { A: 10, B: 20, C: 30 }
@@ -19,7 +18,7 @@ test("statelessGrouping", () => { // this one works
     expect(res2).toEqual(e)
 })
 
-test("statelessRepeatedGrouping", () => { // this one doesn't!
+test("statelessRepeatedGrouping1", () => { // this one doesn't!
 
     let data = { A: 10, B: 20, C: 30 }
 
@@ -34,15 +33,41 @@ test("statelessRepeatedGrouping", () => { // this one doesn't!
     let e = { A: { A: 10 }, B: { B: 20 }, C: { C: 30 } }
 
     expect(res1).toEqual(e)
-    // expect(res2).toEqual(e)
+    expect(res2).toEqual(e)
 
-    // actual result:
+    // res2 was previously this:
     let bug = {
       A: { A: 10, B: 20, C: 30 },
       B: { A: 10, B: 20, C: 30 },
       C: { A: 10, B: 20, C: 30 }
     }
 })
+
+test("statelessRepeatedGrouping2", () => { // this one doesn't!
+
+    let data = [{ key: "A", value: 10 }, { key: "B", value: 20}, { key: "C", value: 30 }]
+
+    let q1 = { "data.*.key": { "data.*.key": "data.*.value" }}
+    let q2 = api.get({ "foo": { "data.*.key": { "data.*.key": "data.*.value" }}}, "foo")
+
+    let f1 = api.compile(q1)
+    let f2 = api.compile(q2)
+    let res1 = f1({data})
+    let res2 = f2({data})
+
+    let e = { A: { A: 10 }, B: { B: 20 }, C: { C: 30 } }
+
+    expect(res1).toEqual(e)
+    expect(res2).toEqual(e)
+
+    // res2 was previously this:
+    let bug = {
+      A: { A: 10, B: 20, C: 30 },
+      B: { A: 10, B: 20, C: 30 },
+      C: { A: 10, B: 20, C: 30 }
+    }
+})
+
 
 // some sample data for testing
 let data = [
@@ -53,7 +78,6 @@ let data = [
     { region: "Asia", name: "Tokyo", value: 21 },
     { region: "Asia", name: "Seoul", value: 22 },
 ]
-
 
 // interaction of array and object construction
 
@@ -84,7 +108,7 @@ test("arrayWithinGrouping", () => {
         Europe: [{ London: 10, Paris: 11, Berlin: 12}],
         Asia: [{ Beijing: 20, Tokyo: 21, Seoul: 22}]
     }
-    // or perhaps:
+    // or perhaps (this is the current output):
     let e2alt = {
         Europe: [{ London: 10}, {Paris: 11}, {Berlin: 12}],
         Asia: [{ Beijing: 20}, {Tokyo: 21}, {Seoul: 22}]
@@ -100,11 +124,9 @@ test("arrayWithinGrouping", () => {
 
     expect(r0).toEqual(e0)
     expect(r1).toEqual(e1)
-    // expect(r2).toEqual(e2)
+    expect(r2).toEqual(e2alt)
 
-    // console.dir(r2, {depth:9})
-
-    // actual result (wrong):
+    // previous (wrong) result:
     let bug = {
       Europe: [
         {

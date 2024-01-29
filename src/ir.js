@@ -172,6 +172,10 @@ exports.createIR = (query) => {
                 // This means that we'll iterate over all deps(rhs)
                 // that aren't also in deps(lhs).
                 //
+                // NOTE (bugfix): We have to be careful that we consider
+                // only deps(lhs) - deps(current), i.e., we want to
+                // preserve any deps that are already in the current path.
+                //
                 // Step 1: traverse RHS and gather dependencies
                 //
                 let entries = {}
@@ -199,12 +203,16 @@ exports.createIR = (query) => {
                 }
                 //
                 // Step 2: build new object, aggregating individual
-                //         paths and indexed by deps(rhs) - deps(lhs)
+                //         paths and indexed by deps(rhs) - (deps(lhs)-deps(current))
                 //
                 let save = currentGroupPath
+                let curdeps = {}
+                for (let d of currentGroupPath) for (let e of d.deps) curdeps[e] = true
+                let newkeydeps = {}
+                for (let d in keydeps) if (!(d in curdeps)) newkeydeps[d] = true
                 let deps = []
-                for (let d in rhsdeps) if (isVar(d) && !(d in keydeps)) deps.push(d)
-                // plus may contain existing keys in currentGroupPath
+                for (let d in rhsdeps) if (isVar(d) && !(d in newkeydeps)) deps.push(d)
+                // deps may contain existing keys in currentGroupPath
                 let plus = filterKeysFromGroupPath(deps.map(ident))
                 currentGroupPath = [...currentGroupPath, ...plus]
                 let lhs1 = createFreshTempVar(deps)
