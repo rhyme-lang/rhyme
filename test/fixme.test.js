@@ -1,5 +1,49 @@
 const { api } = require('../src/rhyme')
 
+
+test("statelessGrouping", () => { // this one works
+
+    let data = { A: 10, B: 20, C: 30 }
+
+    let q1 = { "*": "data.*" }
+    let q2 = api.get({ "foo": { "*": "data.*" }}, "foo")
+
+    let f1 = api.compile(q1)
+    let f2 = api.compile(q2)
+    let res1 = f1({data})
+    let res2 = f2({data})
+
+    let e = { A: 10, B: 20, C: 30}
+
+    expect(res1).toEqual(e)
+    expect(res2).toEqual(e)
+})
+
+test("statelessRepeatedGrouping", () => { // this one doesn't!
+
+    let data = { A: 10, B: 20, C: 30 }
+
+    let q1 = { "*": { "*": "data.*" }}
+    let q2 = api.get({ "foo": { "*": { "*": "data.*" }}}, "foo")
+
+    let f1 = api.compile(q1)
+    let f2 = api.compile(q2)
+    let res1 = f1({data})
+    let res2 = f2({data})
+
+    let e = { A: { A: 10 }, B: { B: 20 }, C: { C: 30 } }
+
+    expect(res1).toEqual(e)
+    // expect(res2).toEqual(e)
+
+    // actual result:
+    let bug = {
+      A: { A: 10, B: 20, C: 30 },
+      B: { A: 10, B: 20, C: 30 },
+      C: { A: 10, B: 20, C: 30 }
+    }
+})
+
 // some sample data for testing
 let data = [
     { region: "Europe", name: "London", value: 10 },
