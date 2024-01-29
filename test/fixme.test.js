@@ -240,10 +240,11 @@ test("subQueryGrouping", () => {
   // This makes tmp[3][*] all point to the same object (the object referenced by tmp[2])
 
   expect(r0).toEqual(expected)
+  expect(r1).toEqual(expected)
 
   // console.dir(r1)
 
-  // actual result:
+  // previous (wrong) result:
   let bug1 = {
     0: { A: 70, B: 30},
     1: { A: 70, B: 30}
