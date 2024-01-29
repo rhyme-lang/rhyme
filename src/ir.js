@@ -32,8 +32,6 @@ exports.createIR = (query) => {
     let allsyms = {}
     //
     let currentGroupPath = []
-    // Do we need to check deps here?
-    let groupKeyEqual = (k1, k2) => k1.txt == k2.txt
     let tmpVarCount = 0
     let extraLoopDeps = {} // for each loop sym, a list of extra dependencies
     let tmpVarWriteRank = {} // for each writable var sym, the number of consecutive write stms
@@ -268,7 +266,7 @@ exports.createIR = (query) => {
             // some trouble in scheduling)
             // TODO test this again
             // NOTE tried again, seems to work, except it changes order (e.g. out.total)
-            if (!e.deps.length || e.deps.filter(x => deps.indexOf(x) >= 0).length) {
+            if (!e.deps.length || e.deps.some(x => deps.indexOf(x) >= 0)) {
                 out.push(e)
             }
         }
@@ -278,7 +276,8 @@ exports.createIR = (query) => {
         return currentGroupPath.length == relevantGroupPath(deps).length
     }
     function filterKeysFromGroupPath(newKeys) {
-      return newKeys.filter(x => !currentGroupPath.some(k => groupKeyEqual(x, k)))
+        // possible refinement: drop new keys that are *implied* by deps of current path
+        return newKeys.filter(x => !currentGroupPath.some(k => x.txt == k.txt))
     }
     function canDecorrelateGroupPath(deps) {
         return !entireGroupPathIsRelevant(deps)
