@@ -122,7 +122,7 @@ exports.createIR = (query) => {
                     }
                     // TODO: e1 should never be treated as id!
                     // TODO: vararg?
-                    let subQueryPath = subQueryCache[e1] // cache lookup and update
+                    let subQueryPath = subQueryCache[JSON.stringify(e1)] // cache lookup and update
                     if (!subQueryPath) {
                         subQueryPath = path1(e1)
                         let key = JSON.stringify(e1)
