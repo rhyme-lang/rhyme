@@ -107,48 +107,33 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green`
 })
 
 test("day2-part2", () => {
-
   let input = `Game 1: 3 blue, 4 red; 1 red, 2 green, 6 blue; 2 green
 Game 2: 1 blue, 2 green; 3 green, 4 blue, 1 red; 1 green, 1 blue
 Game 3: 8 green, 6 blue, 20 red; 5 blue, 4 red, 13 green; 5 green, 1 red
 Game 4: 1 green, 3 red, 6 blue; 3 green, 6 red; 3 green, 15 blue, 14 red
 Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green`
 
-  let udf = {
-    splitN: x => x.split("\n"),
-    splitColon: x => x.split(":"),
-    splitSpace: x => x.split(" "),
-    splitSemicolon: x => x.split(";"),
-    splitComma: x => x.split(","),
-    isNonNegative: x => x >= 0,
-    toNum: x => Number(x)
-  }
+  let udf = udf_stdlib
 
-  let lines = rh`.input | udf.splitN | .*line
-                        | udf.splitColon | .1`
-
-  let numAndColor = rh`${lines} | udf.splitSemicolon | .*hand
-                                | udf.splitComma | .*group
-                                | udf.splitSpace`
-
-  let num = rh`${numAndColor} | .1 | udf.toNum`
-  let color = rh`${numAndColor} | .2`
+  let line = rh`.input | udf.split "\\n" | .*line
+                       | udf.split ":"`
+ 
+  let cube = rh`${line}.1 | udf.split ";" | .*hand
+                          | udf.split "," | .*group
+                          | udf.split " "`
+  
+  let num   = rh`${cube}.1 | udf.toNum`
+  let color = rh`${cube}.2`
 
   let lineRes = {
     "-": api.keyval(color, api.max(num))
   }
 
-  let query = rh`${lineRes} | group *line`
+  let query = rh`${lineRes} | .red * .green * .blue
+                            | group *line | sum .*`
 
   let func = api.compile(query)
-
   let res = func({input, udf})
-
-  query = rh`.res | .*game | .red * .green * .blue | group *game | .* | sum`
-
-  func = api.compile(query)
-  res = func({res, udf})
-
   expect(res).toBe(2286)
 })
 
