@@ -139,3 +139,47 @@ test("undefinedKey", () => {
     let bug = { A: 1, undefined: 1, B: 2 }
 
 })
+
+test("subQueryGrouping", () => {
+
+  let data = [[{key:"A", val:10}, {key:"A", val:20}, {key:"B", val:30}, {key:"B", val:40}],
+              [{key:"A", val:40}, {key:"A", val:30}, {key:"B", val:20}, {key:"B", val:10}]]
+
+  let q0 = {"*i": {"data.*i.*j.key" : api.sum("data.*i.*j.val")}}
+
+  let q1 = {"*q": api.get(q0, "*q")}
+
+  let f0 = api.compile(q0)
+  let f1 = api.compile(q1)
+
+  let r0 = f0({data})
+  let r1 = f1({data})
+
+  let expected = {
+    0: { A: 30, B: 70},
+    1: { A: 70, B: 30}
+  }
+
+  // r0 and r1 should all be equal to expected, but r1 is not
+  // f1 has the following buggy code snippet:
+  // for (let KEY_star_i in inp['data']) {
+  //    tmp[1][KEY_star_i] ??= {}
+  //    for (let KEY_star_j in inp['data'][KEY_star_i]) {
+  //        ...
+  //        tmp[2][inp['data'][KEY_star_i][KEY_star_j]['key']] = ...
+  //    }
+  //    tmp[3] ??= {} //
+  //    tmp[3][KEY_star_i] = tmp[2]
+  //}
+  // This makes tmp[3][*] all point to the same object (the object referenced by tmp[2])
+
+  expect(r0).toEqual(expected)
+
+  // console.dir(r1)
+
+  // actual result:
+  let bug1 = {
+    0: { A: 70, B: 30},
+    1: { A: 70, B: 30}
+  }
+})
