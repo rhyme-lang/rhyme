@@ -68,6 +68,34 @@ test("statelessRepeatedGrouping2", () => { // this one doesn't!
     }
 })
 
+test("statelessRepeatedGrouping3", () => { // this one doesn't!
+
+    let data = [{ key: "A", value: 10 }, { key: "B", value: 20}, { key: "C", value: 30 }]
+
+    let q1 = { "data.*.key": { "data.*.key": 7 }}
+    let q2 = api.get({ "foo": { "data.*.key": { "data.*.key": 7 }}}, "foo")
+
+    let f1 = api.compile(q1)
+    let f2 = api.compile(q2)
+
+    let res1 = f1({data})
+    let res2 = f2({data})
+
+    let e = { A: { A: 7 }, B: { B: 7 }, C: { C: 7 } }
+
+    expect(res1).toEqual(e)
+    // expect(res2).toEqual(e)
+
+    // console.log(res2)
+
+    // wrong result:
+    let bug = {
+      A: { A: 7, B: 7, C: 7 },
+      B: { A: 7, B: 7, C: 7 },
+      C: { A: 7, B: 7, C: 7 }
+    }
+})
+
 
 // some sample data for testing
 let data = [
