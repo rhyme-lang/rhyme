@@ -206,14 +206,20 @@ exports.createIR = (query) => {
                 //         paths and indexed by deps(rhs) - (deps(lhs)-deps(current))
                 //
                 let save = currentGroupPath
+
                 let curdeps = {}
                 for (let d of currentGroupPath) for (let e of d.deps) curdeps[e] = true
                 let newkeydeps = {}
                 for (let d in keydeps) if (!(d in curdeps)) newkeydeps[d] = true
-                let deps = []
-                for (let d in rhsdeps) if (isVar(d) && !(d in newkeydeps)) deps.push(d)
-                // deps may contain existing keys in currentGroupPath
-                let plus = filterKeysFromGroupPath(deps.map(ident))
+                let newrhsdeps = []
+                for (let d in rhsdeps) if (isVar(d) && !(d in newkeydeps)) newrhsdeps.push(d)
+                // remove overlap with currentGroupPath
+                let plus = filterKeysFromGroupPath(newrhsdeps.map(ident))
+
+                let deps = [] // result deps is union of key and val deps
+                for (let d in rhsdeps) if (isVar(d)) deps.push(d)
+                for (let d in keydeps) if (isVar(d)) deps.push(d)
+
                 currentGroupPath = [...currentGroupPath, ...plus]
                 let lhs1 = createFreshTempVar(deps)
                 assign(lhs1, "??=", expr("{} //"))
@@ -235,6 +241,7 @@ exports.createIR = (query) => {
                     //       This may generate incorrect code, as rhs will be mutated inside loop x.
                     //       but the assignment only copies the reference of rhs.
                     //       As an example, look at test subQueryGrouping in fixme.test.js
+                    // (seems fixed, but leaving note intact for the moment as reminder)
                     assign(ll1, "=", rhs)
                 }
                 currentGroupPath = save
@@ -285,6 +292,7 @@ exports.createIR = (query) => {
     }
     function filterKeysFromGroupPath(newKeys) {
         // possible refinement: drop new keys that are *implied* by deps of current path
+        // (TODO try this, but unlikely to work given current logic in path1)
         return newKeys.filter(x => !currentGroupPath.some(k => x.txt == k.txt))
     }
     function canDecorrelateGroupPath(deps) {

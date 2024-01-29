@@ -1,6 +1,6 @@
 const { api } = require('../src/rhyme')
 
-test("statelessGrouping", () => { // this one works
+test("statelessGrouping", () => {
 
     let data = { A: 10, B: 20, C: 30 }
 
@@ -18,7 +18,7 @@ test("statelessGrouping", () => { // this one works
     expect(res2).toEqual(e)
 })
 
-test("statelessRepeatedGrouping1", () => { // this one doesn't!
+test("statelessRepeatedGrouping1", () => {
 
     let data = { A: 10, B: 20, C: 30 }
 
@@ -43,7 +43,7 @@ test("statelessRepeatedGrouping1", () => { // this one doesn't!
     }
 })
 
-test("statelessRepeatedGrouping2", () => { // this one doesn't!
+test("statelessRepeatedGrouping2", () => {
 
     let data = [{ key: "A", value: 10 }, { key: "B", value: 20}, { key: "C", value: 30 }]
 
@@ -68,7 +68,7 @@ test("statelessRepeatedGrouping2", () => { // this one doesn't!
     }
 })
 
-test("statelessRepeatedGrouping3", () => { // this one doesn't!
+test("statelessRepeatedGrouping3", () => {
 
     let data = [{ key: "A", value: 10 }, { key: "B", value: 20}, { key: "C", value: 30 }]
 
@@ -84,11 +84,9 @@ test("statelessRepeatedGrouping3", () => { // this one doesn't!
     let e = { A: { A: 7 }, B: { B: 7 }, C: { C: 7 } }
 
     expect(res1).toEqual(e)
-    // expect(res2).toEqual(e)
+    expect(res2).toEqual(e)
 
-    // console.log(res2)
-
-    // wrong result:
+    // res2 was previously this:
     let bug = {
       A: { A: 7, B: 7, C: 7 },
       B: { A: 7, B: 7, C: 7 },
