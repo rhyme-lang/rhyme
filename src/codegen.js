@@ -1,4 +1,4 @@
-const { quoteVar, debug, trace, print, inspect} = require("./utils")
+const { quoteVar, debug, trace, print, inspect, error, warn } = require("./utils")
 
 exports.generate = (ir) => {
     let assignmentStms = ir.assignmentStms
@@ -317,9 +317,9 @@ exports.generate = (ir) => {
     }
 
     if (assignmentStms.length) {
-        print("ERROR - couldn't emit the following assignments (most likely due to circular dependencies:")
+        warn("ERROR - couldn't emit the following assignments (most likely due to circular dependencies:")
         for (let e of assignmentStms) {
-            print(e.txt + " ---- " + e.deps)
+            warn(e.txt + " ---- " + e.deps)
         }
     }
     //
