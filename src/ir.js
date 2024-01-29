@@ -222,6 +222,13 @@ exports.createIR = (query) => {
                     let { key, rhs } = entries[k]
                     let ll1 = select(lhs1, key)
                     ll1.root = lhs1.root
+                    // Note: if the subquery rhs is a groupby where both the key and value depends
+                    //       on a generator x, deps will not contain x.
+                    //       As a result, the TempVar to store the subquery (rhs) will not
+                    //       depend on generator x.
+                    //       This may generate incorrect code, as rhs will be mutated inside loop x.
+                    //       but the assignment only copies the reference of rhs.
+                    //       As an example, look at test subQueryGrouping in fixme.test.js
                     assign(ll1, "=", rhs)
                 }
                 currentGroupPath = save
