@@ -125,9 +125,7 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green`
   let num   = rh`${cube}.1 | udf.toNum`
   let color = rh`${cube}.2`
 
-  let lineRes = {
-    "-": api.keyval(color, api.max(num))
-  }
+  let lineRes = rh`max ${num} | group ${color}`
 
   let query = rh`${lineRes} | .red * .green * .blue
                             | group *line | sum .*`
