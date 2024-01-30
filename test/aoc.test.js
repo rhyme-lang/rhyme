@@ -240,7 +240,7 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
   let matchCount = rh`count ${number} | group ${number}
                                       | udf.removeUndef
                                       | udf.isEqual .*freq 2
-                                      | udf.toNum | sum`
+                                      | sum`
 
   let lineRes = rh`${matchCount} - 1 | udf.exp2 | udf.floor`
 
