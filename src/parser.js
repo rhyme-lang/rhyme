@@ -403,7 +403,7 @@ exports.desugar = (p) => {
       return transStateful(p, args[0]) // unpack!
     } else if (p == "group" && args.length < 2) {
       // partial application -- this will later turn into a keyval object
-      return { xxpath: "group", xxparam: args[0].xxparam } 
+      return { xxpath: "group", xxparam: args[0] }
     } else {
       return { xxpath: "apply", xxparam: [{ xxpath: "ident", xxparam: p }, ...args] }
     }
