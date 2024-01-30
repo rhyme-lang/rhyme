@@ -17,6 +17,9 @@ let udf_stdlib = {
   split: d => s => s.split(d),
   toNum: x => (n => Number.isNaN(n) ? undefined : n)(Number(x)),
   isLessOrEqual: (x,y) => x <= y,
+  isEqual: (x,y) => x === y,
+  exp2: x => 2 ** x,
+  floor: x => Math.floor(x)
 }
 
 
@@ -200,6 +203,52 @@ let query = partNum.group("*match").group("*row").get("*0").get("*1").sum()
 let func = api.compile(query)
 let res = func({input, udf})
 expect(res).toBe(4361)
+})
+
+test("day4-part1", () => {
+  let input = `Card 1: 41 48 83 86 17 | 83 86  6 31 17  9 48 53
+Card 2: 13 32 20 16 61 | 61 30 68 82 17 32 24 19
+Card 3:  1 21 53 59 44 | 69 82 63 72 16 21 14  1
+Card 4: 41 92 73 84 69 | 59 84 76 51 58  5 54 83
+Card 5: 87 83 26 28 32 | 88 30 70 12 93 22 82 36
+Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
+
+  let udf = {
+    // udf.toNum1 deals with empty strings after splitting by " ",
+    // otherwise toNum converts "" to 0
+    toNum1: x => x === "" ? undefined : udf.toNum(x),
+    // We want to ignore the undefined key in the freq object
+    removeUndef: o => {
+      delete o[undefined]
+      return o
+    },
+    ...udf_stdlib
+  }
+  
+  let line = rh`.input | udf.split "\\n" | .*line
+                       | udf.split ":" | .1`
+ 
+  // toNum1 could result in undefined values
+  let number = rh`${line} | udf.split " " | .*nums
+                          | udf.toNum1`
+
+  // "count number | group number" groups the count of each number by number
+  // which gives us the frequencies of numbers in an object
+
+  // This would result in an "undefined" key in the object
+  // so we need to remove it
+  let matchCount = rh`count ${number} | group ${number}
+                                      | udf.removeUndef
+                                      | udf.isEqual .*freq 2
+                                      | udf.toNum | sum`
+
+  let lineRes = rh`${matchCount} - 1 | udf.exp2 | udf.floor`
+
+  let query = rh`${lineRes} | group *line | sum .*`
+
+  let func = api.compile(query)
+  let res = func({input, udf})
+  expect(res).toBe(13)
 })
 
 // 2022
