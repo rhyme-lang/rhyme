@@ -125,10 +125,9 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green`
   let num   = rh`${cube}.1 | udf.toNum`
   let color = rh`${cube}.2`
 
-  let lineRes = rh`max ${num} | group ${color}`
+  let lineRes = rh`max ${num} | group ${color} | .red * .green * .blue`
 
-  let query = rh`${lineRes} | .red * .green * .blue
-                            | group *line | sum .*`
+  let query = rh`${lineRes} | group *line | sum .*`
 
   let func = api.compile(query)
   let res = func({input, udf})
