@@ -131,6 +131,9 @@ npm install webpack webpack-cli --save-dev
       //  <div><h2>data.*.title</h2><p>data.*.body</p></div>
       // It's not a priori clear if the outer div should be iterated
       // or the inner h2 and p (or any other enclosing element)
+      //
+      // This can be made explicit by using object syntax with explicit
+      // keys { "*": ... } instead of implicit array collection syntax [...]
 
     </script>
   </body>
