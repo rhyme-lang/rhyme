@@ -18,7 +18,7 @@ let udf_stdlib = {
   toNum: x => (n => Number.isNaN(n) ? undefined : n)(Number(x)),
   isLessOrEqual: (x,y) => x <= y,
   isEqual: (x,y) => x === y,
-  exp2: x => 2 ** x,
+  exp: n => x => n ** x,
   floor: x => Math.floor(x)
 }
 
@@ -216,12 +216,7 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
   let udf = {
     // udf.toNum1 deals with empty strings after splitting by " ",
     // otherwise toNum converts "" to 0
-    toNum1: x => x === "" ? undefined : udf.toNum(x),
-    // We want to ignore the undefined key in the freq object
-    removeUndef: o => {
-      delete o[undefined]
-      return o
-    },
+    getNums: s => s.match(/(\d+)/g),
     ...udf_stdlib
   }
   
@@ -229,20 +224,15 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
                        | udf.split ":" | .1`
  
   // toNum1 could result in undefined values
-  let number = rh`${line} | udf.split " " | .*nums
-                          | udf.toNum1`
+  let number = rh`${line} | udf.getNums | .*num`
 
   // "count number | group number" groups the count of each number by number
   // which gives us the frequencies of numbers in an object
-
-  // This would result in an "undefined" key in the object
-  // so we need to remove it
   let matchCount = rh`count ${number} | group ${number}
-                                      | udf.removeUndef
                                       | udf.isEqual .*freq 2
                                       | sum`
 
-  let lineRes = rh`${matchCount} - 1 | udf.exp2 | udf.floor`
+  let lineRes = rh`${matchCount} - 1 | udf.exp 2 | udf.floor`
 
   let query = rh`${lineRes} | group *line | sum .*`
 
