@@ -103,3 +103,60 @@ test("undefinedKey", () => {
 
 })
 
+
+
+// Using aggregates as keys: the most intuitive semantics
+// would be to use the final value of the aggregate as keys
+// but this is not what's currently happening.
+//
+// Right now, all partial sums show up as keys.
+//
+// Computing this fully incrementally is not trivial and
+// requires moving entries from one key to another.
+
+test("aggregateAsKey", () => {
+
+    let data = [
+        {"A": 1, "B": 10},
+        {"A": 2, "B": 20},
+        {"A": 1, "B": 30},
+    ]
+
+    let q1 = { "data.*.A": { "sum(data.*.B)": true } }
+    let q2 = { "sum(data.*.B)": { "data.*.A": true } }
+
+    let f1 = api.compile(q1)
+    let f2 = api.compile(q2)
+
+    let res1 = f1({data})
+    let res2 = f2({data})
+
+    let e1 = {
+        1: { 40: true },
+        2: { 20: true }
+    }
+
+    let e2 = {
+        40: { 1: true },
+        20: { 2: true }
+    }
+
+    // console.dir(res1)
+    // console.dir(res2)
+
+    // actual result:
+    let bug1 = {
+        1: { 10: true, 40: true },
+        2: { 20: true }
+    }
+
+    let bug2 = {
+        10: { 1: true },
+        30: { 2: true },
+        60: { 1: true }
+    }
+
+    // instead of waiting for the final sum,
+    // partial sums show up in the structure
+
+})
