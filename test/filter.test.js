@@ -1,4 +1,5 @@
 const { api } = require('../src/rhyme')
+const { rh } = require('../src/parser')
 
 // some sample data for testing
 let data = [
@@ -19,27 +20,41 @@ test("simpleFilterTest", () => {
 
 // TODO: filters need a bit more thought
 
-// // can I express something like this:
-// // SELECT Sum(r.A * r.B) FROM R r
-// // WHERE
-// // 0.5 * (SELECT Sum(r1.B) FROM R r1) =
-// // (SELECT Sum(r2.B) FROM R r2 WHERE r2.A = r.A)
-// function correlatedNestedFilter() {
-//     // let data = [
-//     //     {"A": 1, "B": 10},
-//     //     {"A": 2, "B": 20},
-//     //     {"A": 1, "B": 30},
-//     // ]
-//     // let rhsSum = ???
-//     // let lhsSum = ??? // A -> Sum(B)
-//     // // rhsSum -> SUM(A*B)
-    
+// We can express queries like this:
+//
+// SELECT Sum(r.A * r.B) 
+//   FROM R r
+//  WHERE (SELECT Sum(r2.B) FROM R r2 WHERE r2.A = r.A)
+//     >= (SELECT Sum(r1.B) FROM R r1) * 0.5
+//
+test("correlatedNestedFilter", () => {
+    let data = [
+        {"A": 1, "B": 10},
+        {"A": 2, "B": 20},
+        {"A": 1, "B": 30},
+    ]
 
-//     // // let rhsSum = {"data.*.A": api.sum("data.*.B")}
-//     // // let lhsSum = api.sum("data.*.B")
-//     // let query = api.sum(api.times("data.*.A", "data.*.B")) // TODO: how to specify the correlated constraint? -- we need to generate: `if (....)` in the code?
-//     // // let query = api.sum(api.filter(eq, api.get(rhsSum("data.*.A"), api.get(lhsSum), api.times("data.*.A", "data.*.B"))))
-//     // let exec = api.compile(query)
-//     // exec.explain
+    let udf = {
+        isGE: (x, y) => x >= y
+    }
 
-// }
+    let V1 = "1/2 * sum(data.*1.B)" // (10+20+30)/2 = 30
+    let F2 = { "data.*1.A": "sum(data.*1.B)" } // {1: 40, 2: 20}
+
+    let V2 = rh`sum(data.*r.A * data.*r.B * (udf.isGE ${F2}.(data.*r.A) ${V1}))`
+
+    let query = V2
+
+    // DISCUSSION:
+    //
+    // We rely on (A) pre-computing partial sums and indexing by key (V1,F2),
+    // and (B) "multiplying" with a computed condition.
+    //
+    // This still requires two full table scans. Fully incremental versions
+    // would be possible using RPAI indexes (SIGMOD'22).
+
+    let func = api.compile(query)
+    console.dir(func.explain.code)
+    let res = func({data, udf})
+    expect(res).toEqual(40)
+})
