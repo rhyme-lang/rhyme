@@ -230,7 +230,9 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
   // "count number | group number" groups the count of each number by number
   // which gives us the frequencies of numbers in an object
   
-  // We want to look for numbers with frequency = 2
+  // We then to look for numbers with frequency = 2
+  // with the underlying assumption that
+  // each winning number and each number you have is unique
   let matchCount = rh`count ${number} | group ${number}
                                       | udf.isEqual .*freq 2
                                       | sum`
