@@ -214,20 +214,23 @@ Card 5: 87 83 26 28 32 | 88 30 70 12 93 22 82 36
 Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
 
   let udf = {
-    // udf.toNum1 deals with empty strings after splitting by " ",
-    // otherwise toNum converts "" to 0
     getNums: s => s.match(/(\d+)/g),
     ...udf_stdlib
   }
   
   let line = rh`.input | udf.split "\\n" | .*line
-                       | udf.split ":" | .1`
- 
-  // toNum1 could result in undefined values
-  let number = rh`${line} | udf.getNums | .*num`
+                       | udf.split ":" | .1
+                       | udf.split "|"`
+
+  let winNumber = rh`${line}.0 | udf.getNums | .*winNum`
+  let numberYouHave = rh`${line}.1 | udf.getNums | .*numYouHave`
+
+  let number = rh`${api.array(winNumber, numberYouHave)} | .*num`
 
   // "count number | group number" groups the count of each number by number
   // which gives us the frequencies of numbers in an object
+  
+  // We want to look for numbers with frequency = 2
   let matchCount = rh`count ${number} | group ${number}
                                       | udf.isEqual .*freq 2
                                       | sum`
