@@ -1,6 +1,11 @@
 const { api } = require('../src/rhyme')
 const { rh } = require('../src/parser')
 
+let udf = {
+  isLessOrEqual: (x,y) => x <= y,
+  isEqual: (x,y) => x === y
+}
+
 // some sample data for testing
 let data = [
     { key: "A", value: 10 },
@@ -19,7 +24,7 @@ let data = [
 // Pattern 1: partition into auxiliary index
 //
 // This is simple to do, but the downside is that it takes
-// more work: partial results are computed for the entire 
+// more work: partial results are computed for the entire
 // collection, and then many of them discarded.
 // (However if run in a loop, this can be amortized)
 //
@@ -29,6 +34,53 @@ test("simpleFilterTest", () => {
     let expected = 40 // note: no predicate pushdown, we materialize the entire "group by" first
     let res = api.compile(query)({ data })
     expect(res).toEqual(expected)
+
+    let e1 = {"A": 40};
+    let q1 = rh`.data | .* | filter (udf.isEqual .key "A") | sum .value | group "A"`
+    let f1 = api.compile(q1)
+    let r1 = f1({ data, udf })
+    expect(r1).toEqual(e1)
+})
+
+test("basicFilterTest", () => {
+  let q0 = [rh`.data | .* | filter (udf.isLessOrEqual .value 20)`]
+  let e0 = [
+      { key: "A", value: 10 },
+      { key: "B", value: 20 }
+  ]
+  let f0 = api.compile(q0)
+  let r0 = f0({ data, udf })
+  expect(r0).toEqual(e0)
+})
+
+let points = [
+  { x: 0, y: 0, value: 10 },
+  { x: 0, y: 1, value: 20 },
+  { x: 0, y: 2, value: 30 },
+  { x: 1, y: 0, value: 40 },
+  { x: 1, y: 1, value: 50 },
+  { x: 1, y: 2, value: 60 },
+  { x: 2, y: 0, value: 70 },
+  { x: 2, y: 1, value: 80 },
+  { x: 2, y: 2, value: 90 }
+]
+
+test("nestedFilterTest", () => {
+  let q0 = [rh`.points | .* | filter (udf.isLessOrEqual .x 1) | filter (udf.isLessOrEqual 1 .y)`]
+  let e0 = [
+    { x: 0, y: 1, value: 20 },
+    { x: 0, y: 2, value: 30 },
+    { x: 1, y: 1, value: 50 },
+    { x: 1, y: 2, value: 60 }
+  ]
+  let f0 = api.compile(q0)
+  let r0 = f0({ points, udf })
+  expect(r0).toEqual(e0)
+
+  let q1 = rh`.points | .* | filter (udf.isLessOrEqual .x 1) | filter (udf.isLessOrEqual 1 .y) | sum .value`
+  let f1 = api.compile(q1)
+  let r1 = f1({ points, udf })
+  expect(r1).toEqual(160)
 })
 
 test("simpleFilterTest2", () => {
@@ -45,7 +97,7 @@ test("simpleFilterTest2", () => {
 //
 // This is useful e.g. to express queries like this:
 //
-// SELECT Sum(r.A * r.B) 
+// SELECT Sum(r.A * r.B)
 //   FROM R r
 //  WHERE (SELECT Sum(r2.B) FROM R r2 WHERE r2.A = r.A)
 //     >= (SELECT Sum(r1.B) FROM R r1) * 0.5
@@ -105,12 +157,12 @@ test("generatorAsFilter", () => {
     // - there are some issues with dependencies of objects - note that this
     //   is inside a path in a key position (group (filter data.*.key ... ))
     //   so deps of the entire object aren't available yet.
-    
+
     // DISCUSSION: what is the sum of no elements? Should it be 0 or undefined?
     //
     // Here the choice is 0. As a consequence, in the example above, if we
-    // filter the values instead of the keys, we will see an additional 
-    // entry "B": 0 in the result below. 
+    // filter the values instead of the keys, we will see an additional
+    // entry "B": 0 in the result below.
     //
     // The key is passed through, but all the values are filtered out.
 

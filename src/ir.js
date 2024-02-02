@@ -9,7 +9,9 @@ exports.createIR = (query) => {
     let isVar = s => s.startsWith("*") // || s.startsWith("$") || s.startsWith("%")
     //
     // create an expression with code 'txt' and dependency on symbols 'args'
-    let expr = (txt, ...args) => ({ txt, deps: args })
+    let expr = (txt, ...args) => ({ txt, deps: args, preds: [] })
+    // filter the expression with predicates
+    let filterExpr = (txt, deps, preds) => ({ txt, deps: deps, preds: preds })
     //
     let ident = s => isVar(s) ? expr(quoteVar(s), s) : expr("'" + s + "'")
     //
@@ -17,10 +19,11 @@ exports.createIR = (query) => {
     let exprIsVar = e => e.deps.length == 1 && e.txt == quoteVar(e.deps[0])
     //
     // TODO: support vararg in select/call?
-    let select = (a, b) => expr(a.txt + "[" + b.txt + "]", ...a.deps, ...b.deps)
-    let call = (a, ...b) => expr("" + a.txt + "(" + b.map(x=>x.txt).join(",") + ")", ...a.deps, ...b.map(x=>x.deps).flat())
-    let binop = (op, a, b) => expr("(" + a.txt + op + b.txt + ")", ...a.deps, ...b.deps)
-    let unop = (op, a) => expr(op + "(" + a.txt + ")", ...a.deps)
+    let select = (a, b) => filterExpr(a.txt + "[" + b.txt + "]", [...a.deps, ...b.deps], [...a.preds, ...b.preds])
+    let call = (a, ...b) => filterExpr("" + a.txt + "(" + b.map(x=>x.txt).join(",") + ")", [...a.deps, ...b.map(x=>x.deps).flat()], [...a.preds, ...b.map(x => x.preds).flat()])
+    let filter = (pred, e) => filterExpr(e.txt, [...e.deps, ...pred.deps], [...e.preds, pred])
+    let binop = (op, a, b) => filterExpr("(" + a.txt + op + b.txt + ")", [...a.deps, ...b.deps], [...a.preds, ...b.preds])
+    let unop = (op, a) => filterExpr(op + "(" + a.txt + ")", [...a.deps], [...a.preds])
     //
     // path: number, identifier, selection
     //    disambiguate
@@ -49,15 +52,25 @@ exports.createIR = (query) => {
         tmpVarWriteRank = {}
         subQueryCache = {}
     }
+
+    let allPreds = preds => Array.from(new Set(preds.map(x => "("+x.txt+")"))).join(" && ")
     //
     //
-    function assign(lhs, op, rhs) {
-        let e = expr(lhs.txt + " " + op + " " + rhs.txt, ...lhs.deps, ...rhs.deps)
+    function assign(lhs, op, rhs, cond) {
+        let assigntxt = lhs.txt + " " + op + " " + rhs.txt
+        let lhsPreds = []
+        if (cond !== undefined && cond.preds.length) {
+          assigntxt = "if (" + allPreds(cond.preds) + ") " + assigntxt
+        } else {
+          lhsPreds = [...rhs.preds]
+        }
+        let e = expr(assigntxt, ...lhs.deps, ...rhs.deps)
         e.lhs = lhs
         e.op = op
         e.rhs = rhs
         e.writeSym = lhs.root
         e.deps = e.deps.filter(e1 => e1 != e.writeSym) // remove cycles
+        e.preds = lhsPreds
         // update sym to rank dep map
         tmpVarWriteRank[e.writeSym] ??= 1
         e.writeRank = tmpVarWriteRank[e.writeSym]
@@ -68,6 +81,7 @@ exports.createIR = (query) => {
     //
     //
     //
+    // XXX: Do we propagate preds here? Even for generator statement
     function selectUser(a, b) {
         if (exprIsVar(b)) {
             let b1 = b.deps[0]
@@ -157,6 +171,9 @@ exports.createIR = (query) => {
                 } else if (p.xxpath == "mod") {
                     let [e1, e2] = p.xxparam
                     return unop("Math.trunc", binop("%", path1(e1), path1(e2)))
+                } else if (p.xxpath == "filter") {
+                    let [pred, e] = p.xxparam
+                    return filter(path1(pred), path1(e))
                 } else {
                     error("ERROR - unknown path key '" + p.xxpath + "'")
                     return expr("undefined")
@@ -422,25 +439,25 @@ exports.createIR = (query) => {
             let rhs = path(p.xxparam)
             let lhs1 = openTempVar(lhs, rhs.deps)
             assign(lhs1, "??=", expr("0"))
-            assign(lhs1, "+=", rhs)
+            assign(lhs1, "+=", rhs, rhs)
             return closeTempVar(lhs, lhs1)
         } else if (p.xxkey == "count") { // count
             let rhs = path(p.xxparam)
             let lhs1 = openTempVar(lhs, rhs.deps)
             assign(lhs1, "??=", expr("0"))
-            assign(lhs1, "+=", expr("1", ...rhs.deps))
+            assign(lhs1, "+=", expr("1", ...rhs.deps), rhs)
             return closeTempVar(lhs, lhs1)
         } else if (p.xxkey == "min") { // min
             let rhs = path(p.xxparam)
             let lhs1 = openTempVar(lhs, rhs.deps)
             assign(lhs1, "??=", expr("Infinity"))
-            assign(lhs1, "=", expr("Math.min(" + lhs1.txt + "," + rhs.txt + ")", ...rhs.deps))
+            assign(lhs1, "=", expr("Math.min(" + lhs1.txt + "," + rhs.txt + ")", ...rhs.deps), rhs)
             return closeTempVar(lhs, lhs1)
         } else if (p.xxkey == "max") { // max
             let rhs = path(p.xxparam)
             let lhs1 = openTempVar(lhs, rhs.deps)
             assign(lhs1, "??=", expr("-Infinity"))
-            assign(lhs1, "=", expr("Math.max(" + lhs1.txt + "," + rhs.txt + ")", ...rhs.deps))
+            assign(lhs1, "=", expr("Math.max(" + lhs1.txt + "," + rhs.txt + ")", ...rhs.deps), rhs)
             return closeTempVar(lhs, lhs1)
         } else if (p.xxkey == "first") { // first
             let rhs = path(p.xxparam)
@@ -456,7 +473,7 @@ exports.createIR = (query) => {
             let rhs = path(p.xxparam)
             let lhs1 = openTempVar(lhs, rhs.deps)
             assign(lhs1, "??=", expr("''"))
-            assign(lhs1, "+=", rhs)
+            assign(lhs1, "+=", rhs, rhs)
             return closeTempVar(lhs, lhs1)
         } else if (p.xxkey == "array" && p.xxparam.length > 1) { // multi-array
             let rhs = p.xxparam.map(path)
@@ -465,7 +482,7 @@ exports.createIR = (query) => {
             for (let e of rhs) {
                 let lhs1 = createFreshTempVar(e.deps)
                 assign(lhs1, "??=", expr("[]"))
-                assign(lhs1, ".push", expr("(" + e.txt + ")", ...e.deps))
+                assign(lhs1, ".push", expr("(" + e.txt + ")", ...e.deps), e)
                 res1.push(lhs1)
             }
             //
@@ -488,7 +505,7 @@ exports.createIR = (query) => {
             let lhs1 = openTempVar(lhs, rhs.flatMap(x => x.deps))
             assign(lhs1, "??=", expr("[]"))
             for (let e of rhs)
-                assign(lhs1, ".push", expr("(" + e.txt + ")", ...e.deps))
+                assign(lhs1, ".push", expr("(" + e.txt + ")", ...e.deps), e)
             return closeTempVar(lhs, lhs1)
         } else if (p.xxkey) {
             error("ERROR: unknown reducer key '" + p.xxkey + "'")

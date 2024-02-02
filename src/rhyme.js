@@ -94,6 +94,13 @@ api["mod"] = (e1, e2) => ({
   xxpath: "mod",
   xxparam: [e1, e2]
 })
+//
+// filters
+//
+api["filter"] = (pred, e) => ({
+  xxpath: "filter",
+  xxparam: [pred, e]
+})
 // ---------- Fluent API ----------
 let Pipe = {
   sum: function () { return pipe(api.sum(this)) },
@@ -104,6 +111,7 @@ let Pipe = {
   group: function (k) { return pipe(api.group(this, k)) },
   map: function (e) { return pipe(api.apply(e, this)) },
   get: function (e) { return pipe(api.get(this, e)) },
+  filter: function (pred) { return pipe(api.filter(pred, this)) },
 }
 function pipe(e) {
   if (typeof (e) === "string")
