@@ -124,6 +124,14 @@ exports.createIR = (query) => {
                     let subQueryPath = subQueryCache[key] // cache lookup and update
                     if (!subQueryPath) {
                         subQueryPath = path1(e1)
+                        // anytime we have f(x).a we know that f returns a collection,
+                        // hence likely won't be cheap (e.g. string split, array flatten, ...)
+                        // --> CSE it into a temp variable
+                        if (e1.xxpath == "apply") {
+                            let lhs1 = createFreshDirectTempVar(subQueryPath.deps)
+                            assign(lhs1, "=", subQueryPath)
+                            subQueryPath = lhs1
+                        }
                         subQueryCache[key] = subQueryPath
                     }
                     return selectUser(subQueryPath, path1(e2))
@@ -341,6 +349,22 @@ exports.createIR = (query) => {
         for (let e of relevantGroupPath(deps)) {
             assign(lhs1, "??=", expr("{}"))
             lhs1 = select(lhs1, e)
+            lhs1.root = root
+        }
+        return lhs1
+    }
+    function createFreshDirectTempVar(deps) {
+        // this is not a group-by accumulator! create a temp var
+        // that is directly indexed by deps (nothing less, nothing more)
+        // TODO: remove duplicate deps?
+        let lhs1 = select(expr("tmp"), expr("" + (tmpVarCount++)))
+        let root = lhs1.txt
+        lhs1.root = root
+        lhs1.deps = [root]
+        let extra = deps.filter(isVar)
+        for (let e of extra) {
+            assign(lhs1, "??=", expr("{}"))
+            lhs1 = select(lhs1, ident(e))
             lhs1.root = root
         }
         return lhs1
