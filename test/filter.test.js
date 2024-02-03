@@ -98,6 +98,13 @@ test("generatorAsFilter", () => {
     }
     let filter = p => x => rh`udf.andThen (udf.filter (${p} ${x})).*F ${x}`
     let query = rh`sum data.*.value | group (data.*.key | ${filter("udf.eq A")})`
+
+    // NOTE: can we achieve udf.filter more directly using a query
+    // object expresion { ... } ? Almost, but not quite! (TODO)
+    // - we need to deal with (ie prevent) undefined keys in objects
+    // - there are some issues with dependencies of objects - note that this
+    //   is inside a path in a key position (group (filter data.*.key ... ))
+    //   so deps of the entire object aren't available yet.
     
     // DISCUSSION: what is the sum of no elements? Should it be 0 or undefined?
     //
@@ -107,7 +114,7 @@ test("generatorAsFilter", () => {
 
     let expected = { "A": 40 }
     let func = api.compile(query)
-    console.dir(func.explain.code)
+    // console.dir(func.explain.code)
     let res = func({ data, udf })
     expect(res).toEqual(expected)
 })
