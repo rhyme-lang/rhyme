@@ -83,12 +83,12 @@ test("correlatedNestedFilter", () => {
 })
 
 
-// Pattern 3: multiplying with boolean flag
+// Pattern 3: indicator collection
 //
 // Recognizing that 0-element collections also act as filters, we build
 // a struct that contains 0 or 1 entries depending on the desired condition c.
 // When we index into that struct using a generator variable (here: *F),
-// any other expression that depends on *F will be filtered on c.
+// the result (and anything else that depends on *F) will be filtered on c.
 //
 test("generatorAsFilter", () => {
     let udf = {
@@ -111,6 +111,8 @@ test("generatorAsFilter", () => {
     // Here the choice is 0. As a consequence, in the example above, if we
     // filter the values instead of the keys, we will see an additional 
     // entry "B": 0 in the result below. 
+    //
+    // The key is passed through, but all the values are filtered out.
 
     let expected = { "A": 40 }
     let func = api.compile(query)

@@ -362,6 +362,21 @@ exports.createIR = (query) => {
         lhs1.root = root
         lhs1.deps = [root]
         let extra = deps.filter(isVar)
+        // NOTE: as a first approximation, these variables are
+        // well scoped and only depend on a specific set of loop
+        // variables, so it would seem that it's enough to *depend*
+        // on these vars (force placement inside loops) like this:
+        //     lhs1.deps.push(...extra)
+        // This often works but not all the time: sometimes the loop
+        // gets split (see "repeated generators" in output) and in that
+        // case, state from each loop iteration must be preserved
+        // (see AOC day3-part1 -- it still produces correct result,
+        // but fails when replacing tmp[1] with its own let tmp1,
+        // demonstrating the scoping issue more clearly).
+        //
+        // So in the general case (one could try to check and
+        // optimize but loop splitting information is only available
+        // at codegen), we're stuck with this:
         for (let e of extra) {
             assign(lhs1, "??=", expr("{}"))
             lhs1 = select(lhs1, ident(e))
