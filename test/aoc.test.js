@@ -291,6 +291,61 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
   expect(res).toBe(13)
 })
 
+test("day4-part2", () => {
+  let input = `Card 1: 41 48 83 86 17 | 83 86  6 31 17  9 48 53
+Card 2: 13 32 20 16 61 | 61 30 68 82 17 32 24 19
+Card 3:  1 21 53 59 44 | 69 82 63 72 16 21 14  1
+Card 4: 41 92 73 84 69 | 59 84 76 51 58  5 54 83
+Card 5: 87 83 26 28 32 | 88 30 70 12 93 22 82 36
+Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
+
+  let udf = {
+    getNums: s => s.match(/(\d+)/g),
+    // Currently using updateCards to update the count for each card
+    updateCards: (id, count, cards) => {
+      cards[id] ??= 1
+      curr = cards[id]
+      for (let i = 1; i <= count; i++) {
+        cards[id + i] = (cards[id + i] ?? 1) + curr
+      }
+      return cards;
+    },
+    ...udf_stdlib
+  }
+
+  cards = {}
+  
+  let line = rh`.input | udf.split "\\n" | .*line
+                       | udf.split ":"`
+
+  let id = rh`${line}.0 | udf.getNums | .0 | udf.toNum`
+
+  let numbers = rh`${line}.1 | udf.split "|"`
+
+  let winNumber = rh`${numbers}.0 | udf.getNums | .*winNum | udf.toNum`
+  let numberYouHave = rh`${numbers}.1 | udf.getNums | .*numYouHave | udf.toNum`
+
+  let number = rh`${api.array(winNumber, numberYouHave)} | .*num`
+
+  // "count number | group number" groups the count of each number by number
+  // which gives us the frequencies of numbers in an object
+  
+  // We then to look for numbers with frequency = 2
+  // with the underlying assumption that
+  // each winning number and each number you have is unique
+  let matchCount = rh`count ${number} | group ${number}
+                                      | udf.isEqual .*freq 2
+                                      | sum`
+
+  let lineRes = rh`udf.updateCards ${id} ${matchCount} .cards`
+
+  let query = rh`${lineRes} | group *line | .* | last | sum .*card`
+
+  let func = api.compile(query)
+  let res = func({input, udf, cards})
+  expect(res).toBe(30)
+})
+
 // 2022
 
 test("day1-A", () => {
