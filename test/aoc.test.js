@@ -19,7 +19,9 @@ let udf_stdlib = {
   isLessOrEqual: (x,y) => x <= y,
   isEqual: (x,y) => x === y,
   exp: n => x => n ** x,
-  floor: x => Math.floor(x)
+  floor: x => Math.floor(x),
+  int2Char: x => String.fromCharCode(x),
+  matchAll: (regex, flags) => x => [...x.matchAll(new RegExp(regex, flags))]
 }
 
 
@@ -83,18 +85,18 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green`
     green: 13,
     blue: 14
   }
- 
+
   let udf = udf_stdlib
- 
+
   let line = rh`.input | udf.split "\\n" | .*line
                        | udf.split ":"`
 
   let game = rh`${line}.0 | udf.split " " | udf.toNum .1`
- 
+
   let cube = rh`${line}.1 | udf.split ";" | .*hand
                           | udf.split "," | .*group
                           | udf.split " "`
-  
+
   let num   = rh`${cube}.1 | udf.toNum`
   let color = rh`${cube}.2`
 
@@ -120,11 +122,11 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green`
 
   let line = rh`.input | udf.split "\\n" | .*line
                        | udf.split ":"`
- 
+
   let cube = rh`${line}.1 | udf.split ";" | .*hand
                           | udf.split "," | .*group
                           | udf.split " "`
-  
+
   let num   = rh`${cube}.1 | udf.toNum`
   let color = rh`${cube}.2`
 
@@ -205,6 +207,49 @@ let res = func({input, udf})
 expect(res).toBe(4361)
 })
 
+test("day3-part2", () => {
+  // Compute the sum of all part numbers: the number that are adjacent, even diagonally, to a symbol (*, #, +, $, .etc)
+  let input = `467..114..
+...*......
+..35..633.
+......#...
+617*......
+.....+.58.
+..592.....
+......755.
+...$.*....
+.664.598..`
+
+  let udf = {
+    // check whether a symbol and a match is adjacent
+    isAdj: (i, j, line, match) => i >= +line - 1 && i <= +line + 1 && j >= match.index - 1 && j <= match.index + match[0].length,
+    filter: c => c ? { [c]: true } : {},
+    andThen: (a,b) => b, // just to add a as dependency
+    ...udf_stdlib
+  }
+
+  // filter x by the value of p
+  // XXX: need a fresh generator for different filters, otherwise the generated code will be incorrect
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+
+  let syms = rh`.input | udf.split "\\n" | .*i | udf.split "" | .*j`
+  // 42 is *
+  let isStar = rh`udf.isEqual ${syms} (udf.int2Char 42)`
+  let matches = rh`.input | udf.split "\\n" | .*line | udf.matchAll "\\\\d+" "g" | .*match`
+  // Check whether a symbolc at (i, j) is adjacent to a match
+  let isAdj = rh`udf.isAdj *i *j *line ${matches}`
+  // The array of adjacent part numbers for each * symbol, ungrouped
+  let partNumsPerGear_ungrouped = [rh`${matches} | udf.toNum | ${filterBy("*f0", isAdj)} | ${filterBy("*f1", isStar)}`]
+  // The array of adjacent part numbers for each * symbol, grouped by each symbol (gear)
+  let partNumsPerGear = rh`${partNumsPerGear_ungrouped} | group *j | group *i | .*0 | .*1`
+  // We only aggregate over the gears that are adjacent to exactly two part numbers
+  let query = rh`${partNumsPerGear} | ${filterBy("*f2", rh`udf.isEqual ${partNumsPerGear}.length 2`)} | .0 * .1 | sum`
+  let func = api.compile(query)
+  let res = func({input, udf})
+
+  expect(res).toBe(467835)
+})
+
 test("day4-part1", () => {
   let input = `Card 1: 41 48 83 86 17 | 83 86  6 31 17  9 48 53
 Card 2: 13 32 20 16 61 | 61 30 68 82 17 32 24 19
@@ -217,7 +262,7 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
     getNums: s => s.match(/(\d+)/g),
     ...udf_stdlib
   }
-  
+
   let line = rh`.input | udf.split "\\n" | .*line
                        | udf.split ":" | .1
                        | udf.split "|"`
@@ -229,7 +274,7 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
 
   // "count number | group number" groups the count of each number by number
   // which gives us the frequencies of numbers in an object
-  
+
   // We then to look for numbers with frequency = 2
   // with the underlying assumption that
   // each winning number and each number you have is unique
