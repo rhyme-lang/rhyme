@@ -129,7 +129,7 @@ exports.parserImpl = (strings, holes) => {
       } else*/ if (input[pos] == '-' && input[pos+1] == ' ') {
         pos += 2; bullet = true; indent+=2
       } else bullet = false
-        // }      
+        // }
       next() // XXX TODO: treat as whitespace for now ...
     } else if (input[pos] === '\0') {
       pos += 1
@@ -310,7 +310,7 @@ exports.parserImpl = (strings, holes) => {
         //   let rhs = ast_ident(str)
         //   res = ast_get(res, rhs)
         //   next()
-        // } else 
+        // } else
         //   error("ident expected")
       } else if (peek == "(") {
         let rhs = parens(expr)
@@ -404,6 +404,8 @@ exports.desugar = (p) => {
     } else if (p == "group" && args.length < 2) {
       // partial application -- this will later turn into a keyval object
       return { xxpath: "group", xxparam: args[0] }
+    } else if (p == "filter" && args.length < 2) {
+      return { xxpath: "filter", xxparam: args[0] }
     } else {
       return { xxpath: "apply", xxparam: [{ xxpath: "ident", xxparam: p }, ...args] }
     }
@@ -422,7 +424,11 @@ exports.desugar = (p) => {
     if (p instanceof Function)
       return p(...args)
 
-    // is the argument used? i.e. syntax '.foo' --> we have 'arg.foo', just return
+    // The predicate of filter may use the argument (h == true), so we put this check first
+    if (p.xxpath == "filter" && args.length < 2)
+      return { xxpath: "filter", xxparam: [p.xxparam, args[0]] }
+
+      // is the argument used? i.e. syntax '.foo' --> we have 'arg.foo', just return
     if (h)
       return p // XXX apply to remaining args, if any?
 
