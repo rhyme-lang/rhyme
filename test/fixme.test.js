@@ -1,4 +1,5 @@
 const { api } = require('../src/rhyme')
+const { rh } = require('../src/parser')
 
 
 // Nested grouping: this case is challenging because we're
@@ -47,6 +48,36 @@ test("statelessRepeatedGrouping4", () => {
       { key: 'C', data: { A: 10, B: 20, C: 30 } }
     ]
 })
+
+
+// Related
+
+test("asymmetricPartialSum", () => {
+
+    let data = {
+        A: { key: "U", value: 40 },
+        B: { key: "U", value: 20 },
+        C: { key: "V", value: 10 },
+    }
+    let other = {
+        A: { value: 100 },
+        B: { value: 400 },
+        D: { value: 200 },
+    }
+
+    let items = rh`(sum data.*.value) + other.*.value`
+    let query = api.array(items)
+
+    let func = api.compile(query)
+    let res = func({data, other})
+
+    // console.log(res)
+
+    // expect(res).toEqual([140,420]) // {A:140, B:420}
+
+    let bug = [140, 460]
+})
+
 
 
 
