@@ -16,12 +16,14 @@ const { rh } = require('../src/parser')
 let udf_stdlib = {
   split: d => s => s.split(d),
   toNum: x => (n => Number.isNaN(n) ? undefined : n)(Number(x)),
+  isGreaterThan: (x,y) => x > y,
   isLessOrEqual: (x,y) => x <= y,
   isEqual: (x,y) => x === y,
   exp: n => x => n ** x,
   floor: x => Math.floor(x),
   int2Char: x => String.fromCharCode(x),
-  matchAll: (regex, flags) => x => [...x.matchAll(new RegExp(regex, flags))]
+  matchAll: (regex, flags) => x => [...x.matchAll(new RegExp(regex, flags))],
+  logicalAnd: (x,y) => x && y
 }
 
 
@@ -300,30 +302,21 @@ Card 5: 87 83 26 28 32 | 88 30 70 12 93 22 82 36
 Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
 
   let udf = {
-    getNums: s => s.match(/(\d+)/g),
-    // Currently using updateCards to update the count for each card
-    updateCards: (id, count, cards) => {
-      cards[id] ??= 1
-      curr = cards[id]
-      for (let i = 1; i <= count; i++) {
-        cards[id + i] = (cards[id + i] ?? 1) + curr
-      }
-      return cards;
-    },
+    andThen: (a,b) => b, // just to add a as dependency
+    // Currently using incCard to update the count for each card
+    incCard: (cards, n) => cards.count += n,
     ...udf_stdlib
   }
-
-  cards = {}
   
   let line = rh`.input | udf.split "\\n" | .*line
                        | udf.split ":"`
 
-  let id = rh`${line}.0 | udf.getNums | .0 | udf.toNum`
+  let id = rh`${line}.0 | udf.matchAll "\\\\d+" "g" | .0 | udf.toNum`
 
   let numbers = rh`${line}.1 | udf.split "|"`
 
-  let winNumber = rh`${numbers}.0 | udf.getNums | .*winNum | udf.toNum`
-  let numberYouHave = rh`${numbers}.1 | udf.getNums | .*numYouHave | udf.toNum`
+  let winNumber = rh`${numbers}.0 | udf.matchAll "\\\\d+" "g" | .*winNum | udf.toNum`
+  let numberYouHave = rh`${numbers}.1 | udf.matchAll "\\\\d+" "g" | .*numYouHave | udf.toNum`
 
   let number = rh`${api.array(winNumber, numberYouHave)} | .*num`
 
@@ -333,16 +326,31 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
   // We then to look for numbers with frequency = 2
   // with the underlying assumption that
   // each winning number and each number you have is unique
+
   let matchCount = rh`count ${number} | group ${number}
                                       | udf.isEqual .*freq 2
                                       | sum`
 
-  let lineRes = rh`udf.updateCards ${id} ${matchCount} .cards`
+  let lineRes = {
+    "id": id,
+    "match": matchCount,
+    "count": 1
+  }
 
-  let query = rh`${lineRes} | group *line | .* | last | sum .*card`
+  let matchCountObj = rh`${lineRes} | group ${id}`
+
+  // For each line i in the matchCountObject, it will look through the matchCountObject
+  // to find every other line j that satisfies j.id > i.id and j.id <= i.id + i.match.
+  // For each of these lines, it will increament j.count by i.count
+  // udf.andThen here use the first argument as a side effect so that the final result will contain only the count
+
+  let query = rh`${matchCountObj} | .*lineRes
+                                  | udf.andThen (udf.incCard ${matchCountObj}.(${matchCountObj}.*.id) ((udf.logicalAnd (udf.isGreaterThan ${matchCountObj}.*.id .id) (udf.isLessOrEqual ${matchCountObj}.*.id (.id + .match))) * .count)) .count
+                                  | group *lineRes
+                                  | sum .*`
 
   let func = api.compile(query)
-  let res = func({input, udf, cards})
+  let res = func({input, udf})
   expect(res).toBe(30)
 })
 
