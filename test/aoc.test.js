@@ -412,7 +412,6 @@ Distance:  9  40  200`
   let query = rh`${root2Int} - ${root1Int} + 1`
 
   let func = api.compile(query)
-  console.log(func.explain.code)
   let res = func({input, udf})
   expect(res).toBe(71503)
 })
