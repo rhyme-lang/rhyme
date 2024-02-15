@@ -424,6 +424,12 @@ exports.createIR = (query) => {
             assign(lhs1, "??=", expr("0"))
             assign(lhs1, "+=", rhs)
             return closeTempVar(lhs, lhs1)
+        } else if (p.xxkey == "product") { // sum
+            let rhs = path(p.xxparam)
+            let lhs1 = openTempVar(lhs, rhs.deps)
+            assign(lhs1, "??=", expr("1"))
+            assign(lhs1, "*=", rhs)
+            return closeTempVar(lhs, lhs1)
         } else if (p.xxkey == "count") { // count
             let rhs = path(p.xxparam)
             let lhs1 = openTempVar(lhs, rhs.deps)
