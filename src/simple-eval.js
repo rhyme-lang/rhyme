@@ -1,5 +1,31 @@
 const { api, pipe } = require('./rhyme')
 const { rh, parse } = require('./parser')
+const { scc } = require('./scc')
+
+// TODO: missing functionality
+//
+// - objects with multiple entries (merge)
+// - array constructor (collect into array)
+// - other primitives -> abstract over path/stateful op
+// - udfs
+// - &&, ??, non-unifying get -> sufficient to model 
+//    failure, filters, left outer joins, etc?
+//
+// Add tests
+//
+// - nested grouping, partial sums at multiple levels
+// - more corner cases involving var->tmp->var->... closure
+//
+// Questions
+// 
+// - is current way of dealing with transitive closure
+//   of var->tmp->var->... precise enough?
+// - what to do with cycles between assignments?
+// - how do semantics justify smarter code generation:
+//    - destination passing style (accumulate directly
+//      into mutable targets)
+//    - loop fusion: horizontal (independent results)
+//      and vertical (producer/consumer)
 
 
 
@@ -239,11 +265,12 @@ let infer = q => {
   } else if (q.key == "ref") {
     // look up from assignments[q.arg?]
     let e1 = assignments[q.arg]
+    infer(e1)
     q.vars = [...e1.vars]
     // q.gens = [...e1.gens]
     q.tmps = unique([...e1.tmps,q.arg])
     // q.deps = e1.deps
-    q.dims = e1.dims
+    q.dims = [...e1.dims]
   } else if (q.key == "get") {
     let [e1,e2] = q.arg.map(infer)
     if (q.filter !== undefined) { // ref to a filter! lookup deps there?
@@ -251,7 +278,7 @@ let infer = q => {
       // q.gens = unique([...e1.gens, ...e2.gens, q.filter])
       q.tmps = unique([...e1.tmps, ...e2.tmps])
       // q.deps = q.vars // ?
-      q.dims = q.vars // ?
+      q.dims = unique([...e1.dims, ...e2.dims])
     } else if (e2.key == "var") { // filter itself
       q.vars = unique([...e1.vars])
       // q.gens = unique([...e1.gens])
@@ -319,33 +346,43 @@ let inferOut = out => q => {
     // q.out = out; 
     q.real = q.dims
   } else if (q.key == "ref") {
-    let i = q.arg
-    assignments[i].out = out
+    let e1 = assignments[q.arg]
+    e1.out = out
+    inferOut(out)(e1)
     // q.out = out; 
-    q.real = q.dims
+    q.real = e1.real
   } else if (q.key == "get") {
     // q.out = out; 
-    q.real = q.dims
-    q.arg.map(inferOut(out))
+    // q.real = q.dims
+    if (q.filter !== undefined) { // ref to a filter! lookup deps there?
+      inferOut(out)(filters[q.filter])
+    }
+    let [e1,e2] = q.arg.map(inferOut(out))
+    q.real = union(e1.real, e2.real)
   } else if (q.key == "plus") {
     // q.out = out; 
-    q.real = q.dims
-    q.arg.map(inferOut(out))
+    let [e1,e2] = q.arg.map(inferOut(out))
+    q.real = union(e1.real, e2.real)
   } else if (q.key == "times") {
     // q.out = out; 
-    q.real = q.dims
-    q.arg.map(inferOut(out))
+    let [e1,e2] = q.arg.map(inferOut(out))
+    q.real = union(e1.real, e2.real)
   } else if (q.key == "sum") {
     // q.out = out
-    q.real = intersect(out, q.vars) // preserve all vars visible outside
-    let e1 = inferOut(union(q.real,q.arg.dims))(q.arg)
+    let out1 = intersect(out, q.vars) // preserve all vars visible outside
+    let out2 = union(out1,q.arg.dims)
+    let e1 = inferOut(out2)(q.arg)
     q.iter = q.arg.real // iteration space (enough?)
+    q.real = intersect(out, q.arg.real)
+    q.scope ??= diff(q.arg.real, q.real)
   } else if (q.key == "group") {
     // q.out = out
-    q.real = q.dims
     let e1 = inferOut(q.arg[0].dims)(q.arg[0]) // ???
     let e2 = inferOut(out)(q.arg[1])
     q.iter = q.arg[0].real // iteration space (enough?)
+    q.real = q.arg[1].real
+    q.scope ??= diff(q.arg[0].real, q.real)
+    // console.log("GRP",q.arg[1].real, q.real)
   } else {
     console.error("unknown op", q)
   }
@@ -418,12 +455,18 @@ let emitPseudo = (q) => {
   for (let i in assignments) {
     let q = assignments[i]
     buf.push("tmp"+i + " = " + pretty(q))
+    if (q.vars.length > 0) 
+      buf.push("  var: " + q.vars)
     if (q.tmps.length > 0) 
-      buf.push("  " + q.tmps)
+      buf.push("  tmp: " + q.tmps)
     if (q.path.length > 0) 
-      buf.push("  " + q.path.map(pretty))
+      buf.push("  pth: " + q.path.map(pretty))
+    if (q.dims.length > 0)  
+      buf.push("  dim: " + q.dims)
     if (q.real.length > 0)  
-      buf.push("  " + q.real)
+      buf.push("  rel: " + q.real)
+    if (q.scope.length > 0) 
+      buf.push("  scp: " + q.scope)
   }
   buf.push(pretty(q))
   if (q.real.length > 0)  
@@ -507,13 +550,16 @@ let emitFilters = real => buf => {
 }
 
 
-let emitCode = (q) => {
+let emitCode = (q, order) => {
   let buf = []
   buf.push("(inp => k => {")
   buf.push("let tmp = {}")
 
 
-  for (let i in assignments) {
+  for (let is of order) {
+    if (is.length > 1)
+      console.error("cycle")
+    let [i] = is
     let q = assignments[i]
     
     // NOTE: it would be preferable to emit initialization up front (so that sum empty = 0)
@@ -521,8 +567,9 @@ let emitCode = (q) => {
     buf.push("// --- tmp"+i+" ---")
     emitFilters(q.iter)(buf)
 
-    if (q.tmps.some(x => x > i))
-      console.error("wrong order", i, q)
+    // no longer an issue with "order"
+    // if (q.tmps.some(x => x > i))
+    //  console.error("wrong order", i, q)
     if (q.tmps.some(x => x == i))
       console.error("cycle")
 
@@ -552,10 +599,14 @@ let emitCode = (q) => {
 let rt = {}
 
 rt.plus = (x1,x2) => {
+  if (x1 === undefined) return undefined
+  if (x2 === undefined) return undefined
   return Number(x1) + Number(x2)
 }
 
 rt.times = (x1,x2) => {
+  if (x1 === undefined) return undefined
+  if (x2 === undefined) return undefined
   return Number(x1) * Number(x2)
 }
 
@@ -585,6 +636,8 @@ rt.sum = x => ({
 rt.group = (x1,x2) => ({
   init: () => ({}),
   next: s => { 
+    if (x1 === undefined) return s
+    if (x2 === undefined) return s
     s[x1] = x2
     return s
   }
@@ -606,42 +659,151 @@ let compile = q => {
   for (let i in filters) {
     infer(filters[i])
   }
-  for (let i in assignments) {
-    infer(assignments[i])
-  }
+  // for (let i in assignments) {
+    // infer(assignments[i])
+  // }
   infer(q)
 
+  // 4. Top down dependencies, infer output dimension
+  inferOut(q.dims)(q)
+  // for (let i = assignments.length-1; i >= 0; i--) {
+  //   let q = assignments[i]
+  //   inferOut(q.out)(q)
+  // }
 
-  // XXX how do we know we're converged???
-  // We don't want to update 'filters' based
-  // on vars, so a single pass is enough
-  // (no new info from filters)
+
+  let pseudo0 = emitPseudo(q)
+
+
+
+
+
+  // calculate one-step dependencies
+
+  let deps = {
+    var2var: {},
+    var2tmp: {},
+    tmp2var: {},
+    tmp2tmp: {}
+  }
+
+  for (let v in vars) {
+    deps.var2var[v] = {}
+    deps.var2tmp[v] = {}
+  }
+
+  for (let i in assignments) {
+    deps.tmp2var[i] = {}
+    deps.tmp2tmp[i] = {}
+    let q = assignments[i]
+    for (let v of q.real) deps.tmp2var[i][v] = true
+    for (let j of q.tmps) deps.tmp2tmp[i][j] = true
+  }
 
   for (let i in filters) {
     let f = filters[i]
     let v = f.arg[1].arg // var name
-    vars[v].vars.push(...f.vars)
-    vars[v].tmps.push(...f.tmps)
+    for (let w of f.real) deps.var2var[v][w] = true
+    for (let j of f.tmps) deps.var2tmp[v][j] = true
   }
 
-  // TODO but we want to make sure vars and
-  // assignments have full information
-  // -- need to iterate on vars[v].vars/tmps?
 
+  // compute topological order of statements
 
-  // 3b. Run infer again on assignments (XXX convergence?) 
-
-  for (let i in assignments) {
-    infer(assignments[i])
+  // tmp->tmp + tmp->var->tmp
+  let deps2 = {
+    tmp2tmp: {}
   }
+  for (let i in deps.tmp2tmp) {
+    deps2.tmp2tmp[i] = {}
+    for (let j in deps.tmp2tmp[i]) 
+      deps2.tmp2tmp[i][j] = true
+    for (let v in deps.tmp2var[i])
+      for (let j in deps.var2tmp[v]) 
+        deps2.tmp2tmp[i][j] = true
+  }
+
+  let order = scc(Object.keys(deps2.tmp2tmp), x => Object.keys(deps2.tmp2tmp[x])).reverse()
+
+
+// console.log(deps)
+
+
+
+  // calculate explicit transitive closure
+
+  let transdeps = {
+    var2var: {},
+    var2tmp: {},
+    tmp2var: {},
+    tmp2tmp: {}
+  }
+
+  let followVarVar = (i,j) => {
+    if (transdeps.var2var[i][j]) return
+    transdeps.var2var[i][j] = true
+    for (let k in deps.var2var[j]) followVarVar(i,k)
+    for (let k in deps.var2tmp[j]) followVarTmp(i,k)
+  }
+  let followVarTmp = (i,j) => {
+    if (transdeps.var2tmp[i][j]) return
+    transdeps.var2tmp[i][j] = true
+    for (let k in deps.tmp2var[j]) followVarVar(i,k)
+    for (let k in deps.tmp2tmp[j]) followVarTmp(i,k)
+  }
+  let followTmpVar = (i,j) => {
+    if (transdeps.tmp2var[i][j]) return
+    transdeps.tmp2var[i][j] = true
+    for (let k in deps.var2var[j]) followTmpVar(i,k)
+    for (let k in deps.var2tmp[j]) followTmpTmp(i,k)
+  }
+  let followTmpTmp = (i,j) => {
+    if (transdeps.tmp2tmp[i][j]) return
+    transdeps.tmp2tmp[i][j] = true
+    for (let k in deps.tmp2var[j]) followTmpVar(i,k)
+    for (let k in deps.tmp2tmp[j]) followTmpTmp(i,k)
+  }
+
+  for (let i in deps.var2var) {
+    transdeps.var2var[i] ??= {}
+    transdeps.var2tmp[i] ??= {}
+    for (let j in deps.var2var[i]) followVarVar(i,j)
+    for (let j in deps.var2tmp[i]) followVarTmp(i,j)
+  }
+
+  for (let i in deps.tmp2var) {
+    transdeps.tmp2var[i] ??= {}
+    transdeps.tmp2tmp[i] ??= {}
+    for (let j in deps.tmp2var[i]) followTmpVar(i,j)
+    for (let j in deps.tmp2tmp[i]) followTmpTmp(i,j)
+  }
+
+
+  // inject transitive closure info so "infer" will pick it up
+
+  for (let i in deps.var2var) {
+    // console.log(i, transdeps.var2var[i])
+    vars[i].vars = Object.keys(transdeps.var2var[i])
+    vars[i].tmps = Object.keys(transdeps.var2tmp[i])
+  }
+
+
+
+  // 3b. Run infer again on assignments
+  // (convergence? var/tmp is monotonous)
+
+  // for (let [i] of order) {
+  //   infer(assignments[i])
+  // }
   infer(q)
 
 
   // 4. Top down dependencies, infer output dimension
   inferOut(q.dims)(q)
-  for (let i = assignments.length-1; i >= 0; i--) {
-    inferOut(assignments[i].out)(assignments[i])
-  }
+  // for (let i = order.length-1; i >= 0; i--) {
+  //   let q = assignments[order[i]]
+  //   inferOut(q.out)(q)
+  // }
 
 
   // 5a. Pretty print (debug out)
@@ -651,7 +813,7 @@ let compile = q => {
 
   // 5b. Codegen
 
-  let code = emitCode(q)  
+  let code = emitCode(q,order)
 
   let func = eval(code)
 
@@ -661,12 +823,10 @@ let compile = q => {
     return res
   }
 
-  wrap.explain = { ir: {filters, assignments, vars}, pseudo, code }
+  wrap.explain = { ir: {filters, assignments, vars, deps, transdeps, order}, pseudo0, pseudo, code }
   return wrap
 }
 
 
 exports.compile = compile
-
-
 
