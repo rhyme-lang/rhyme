@@ -385,6 +385,38 @@ Distance:  9  40  200`
   expect(res).toBe(288)
 })
 
+test("day6-part2", () => {
+  let input = `Time:      7  15   30
+Distance:  9  40  200`
+
+  let udf = {
+    isInteger: (n) => Number.isInteger(n),
+    ...udf_stdlib
+  }
+
+  let line = rh`.input | udf.split "\\n"`
+
+  let time = rh`${line}.0 | udf.matchAll "\\\\d+" "g" | .*pair 
+                          | sum | udf.toNum`
+  let dist = rh`${line}.1 | udf.matchAll "\\\\d+" "g" | .*pair
+                          | sum | udf.toNum`
+
+  let disc = rh`udf.sqrt (${time} * ${time} - 4 * ${dist})`
+
+  let root1 = rh`${time} / 2 - ${disc} / 2`
+  let root2 = rh`${time} / 2 + ${disc} / 2`
+
+  let root1Int = rh`(udf.ceil ${root1}) + (udf.isInteger ${root1})`
+  let root2Int = rh`(udf.floor ${root2}) - (udf.isInteger ${root2})`
+
+  let query = rh`${root2Int} - ${root1Int} + 1`
+
+  let func = api.compile(query)
+  console.log(func.explain.code)
+  let res = func({input, udf})
+  expect(res).toBe(71503)
+})
+
 // 2022
 
 test("day1-A", () => {
