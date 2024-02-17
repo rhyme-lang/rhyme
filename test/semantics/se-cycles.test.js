@@ -12,11 +12,19 @@ test("testCycles0", () => {
   let query = rh`sum(data.*A) + sum(other.*B.*A)`
 
   let func = compile(query)
-  let res = func({data, other})
+  let res = func({data, other},true)
 
-  // console.log(func.explain.pseudo)
+  // console.log(func.explain.code)
 
-  expect(res).toEqual([320]) // (10 + 100) + (10 + 200)
+  // revised semantics:
+  //
+  // - want this to return 10 + (100 + 200)
+  //
+  // first sum internally reifies over *B
+  // in filtering *A with other.*B.A
+
+
+  expect(res).toEqual(310) // (10 + 100) + (10 + 200)
 })
 
 // *A depends on *B with *B in global scope
@@ -26,14 +34,24 @@ test("testCycles1", () => {
   let query = rh`sum(data.*A) + *B + sum(other.*B.*A)`
 
   let func = compile(query)
-  let res = func({data, other})
+  let res = func({data, other}, true)
 
   // console.log(func.explain.pseudo)
+
+
+  // revised semantics:
+  //
+  // - tricky one!!
+  // - result indexed by *B
+  //    - first sum can't collapse over *B
+  //    - so want result relative to *B
+
+
 
   // 10+20 + 10 + 100+200 = 340
   // 10 + 20 + 300 = 330
 
-  expect(res).toEqual([340, 330])
+  expect(res).toEqual({ 10: 340, 20: 330})
 })
 
 
@@ -88,7 +106,6 @@ test("testCycles2-1", () => {
   // console.log(func.explain.ir.transdeps)
   // console.log(func.explain.pseudo)
   // console.log(func.explain.code)
-  // console.log(res)
 
   expect(res).toEqual([60])
 })
@@ -133,7 +150,7 @@ test("testCycles3-1", () => {
 
 test("testCycles3-2", () => {
   let data = [{ key: "A", val: 10}, { key: "A", val: 30}, {key: "B", val: 20 }]
-  let other = { A: 1 }
+  let other = { A: 1, D: 2 }
   let q1 = { "data.*A.key" : rh`data.*A.val` }
   let query = rh`sum(other.*) + sum(${q1}.*)`
 
@@ -155,15 +172,13 @@ test("testCycles3-2", () => {
 
   // console.log(func.explain.pseudo)
   // console.log(func.explain.code)
+  // if (func.explain.code.includes("pre-gen"))
+    // console.log("!!!")
 
-  let res = func({data, other})
+  let res = func({data, other}, true)
   // console.log(res)
 
-  // XXX Design decision here: other[data.*A.key] does not
-  // count as filter on *A -- it's in its own reification
-  // context (sum)
-
-  expect(res).toEqual([42])
+  expect(res).toEqual(41)
 })
 
 

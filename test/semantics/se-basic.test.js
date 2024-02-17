@@ -54,50 +54,50 @@ test("testScalar0", () => {
   let query = rh`data.*.value`
 
   let func = compile(query)
-  let res = func({data, other})
+  let res = func({data, other}, true)
 
   // console.log(res)
 
-  //expect(res).toEqual({A:40,B:20,C:10})
-  expect(res).toEqual([40,20,10])
+  expect(res).toEqual({A:40,B:20,C:10})
+  // expect(res).toEqual([40,20,10])
 })
 
 test("testScalar1", () => {
   let query = rh`sum data.*.value`
 
   let func = compile(query)
-  let res = func({data, other})
+  let res = func({data, other}, true)
 
   // console.log(res)
 
-  // expect(res).toEqual(70)
-  expect(res).toEqual([70])
+  expect(res).toEqual(70)
+  // expect(res).toEqual([70])
 })
 
 // ----- multiple uses of the same var
 
 test("testZipScalar2", () => {
-  let query = rh`data.*.value + other.*.value` // WRONG!!
+  let query = rh`data.*.value + other.*.value`
 
   let func = compile(query)
-  let res = func({data, other})
+  let res = func({data, other}, true)
 
   // console.log(res)
 
-  // expect(res).toEqual({A:140, B:420})
-  expect(res).toEqual([140,420])
+  expect(res).toEqual({A:140, B:420})
+  // expect(res).toEqual([140,420])
 })
 
 test("testZipScalar3", () => {
   let query = rh`(sum data.*.value) + (sum other.*.value)`
 
   let func = compile(query)
-  let res = func({data, other})
+  let res = func({data, other}, true)
 
   // console.log(res)
 
-  // expect(res).toEqual(560)
-  expect(res).toEqual([560])
+  expect(res).toEqual(560)
+  // expect(res).toEqual([560])
 })
 
 test("testZipScalar4", () => {
@@ -105,12 +105,12 @@ test("testZipScalar4", () => {
   // NONSENSICAL? SHAPE ERROR? -- no, can just take sum of single element...
 
   let func = compile(query)
-  let res = func({data, other})
+  let res = func({data, other}, true)
 
   // console.log(res)
 
-  // expect(res).toEqual({A:140, B:420})
-  expect(res).toEqual([140,420])
+  expect(res).toEqual({A:140, B:420})
+  // expect(res).toEqual([140,420])
 })
 
 // ----- multiple vars
@@ -118,44 +118,44 @@ test("testZipScalar4", () => {
 test("testJoinScalar2", () => {
   let query = rh`data.*A.value + other.*B.value`
   let func = compile(query)
-  let res = func({data, other})
+  let res = func({data, other}, true)
 
   // console.log(res)
 
-  // expect(res).toEqual({
-  //   A: { A: 140, B: 440, D: 240 },
-  //   B: { A: 120, B: 420, D: 220 },
-  //   C: { A: 110, B: 410, D: 210 }
-  // })
-  expect(res).toEqual([
-    140, 440, 240,
-    120, 420, 220,
-    110, 410, 210
-  ])
+  expect(res).toEqual({
+    A: { A: 140, B: 440, D: 240 },
+    B: { A: 120, B: 420, D: 220 },
+    C: { A: 110, B: 410, D: 210 }
+  })
+  // expect(res).toEqual([
+  //   140, 440, 240,
+  //   120, 420, 220,
+  //   110, 410, 210
+  // ])
 })
 
 test("testJoinScalar3", () => {
   let query = rh`(sum data.*A.value) + (sum other.*B.value)`
 
   let func = compile(query)
-  let res = func({data, other})
+  let res = func({data, other}, true)
 
   // console.log(res)
 
-  // expect(res).toEqual(770)
-  expect(res).toEqual([770])
+  expect(res).toEqual(770)
+  // expect(res).toEqual([770])
 })
 
 test("testJoinScalar4", () => {
   let query = rh`(sum data.*A.value) + other.*B.value` 
 
   let func = compile(query)
-  let res = func({data, other})
+  let res = func({data, other}, true)
 
   // console.log(res)
 
-  // expect(res).toEqual({A:170, B:470, D:270})
-  expect(res).toEqual([170, 470, 270])
+  expect(res).toEqual({A:170, B:470, D:270})
+  // expect(res).toEqual([170, 470, 270])
 })
 
 // ----- dependent vars
@@ -164,68 +164,68 @@ test("testNested0", () => {
   let query = rh`nested.*A.*B.value` 
 // debug = true
   let func = compile(query)
-  let res = func({nested, other})
+  let res = func({nested, other}, true)
 
   // console.log(res)
 
-  // expect(res).toEqual({ 
-  //   U: { A: 10, B: 20 }, 
-  //   V: { B: 30, C: 40 }, 
-  //   W: { D: 50, E: 60 } 
-  // })
-  expect(res).toEqual([ 
-    10, 20, 
-    30, 40, 
-    50, 60
-  ])
+  expect(res).toEqual({ 
+    U: { A: 10, B: 20 }, 
+    V: { B: 30, C: 40 }, 
+    W: { D: 50, E: 60 } 
+  })
+  // expect(res).toEqual([ 
+  //   10, 20, 
+  //   30, 40, 
+  //   50, 60
+  // ])
 })
 
 test("testNested1", () => {
   let query = rh`sum nested.*A.*B.value` 
 // debug = true
   let func = compile(query)
-  let res = func({nested, other})
+  let res = func({nested, other}, true)
 
   // console.log(res)
 
-  // expect(res).toEqual(210)
-  expect(res).toEqual([210])
+  expect(res).toEqual(210)
+  // expect(res).toEqual([210])
 })
 
 test("testZipNested2", () => {
   let query = rh`nested.*A.*B.value + other.*B.value` 
 // debug = true
   let func = compile(query)
-  let res = func({nested, other})
+  let res = func({nested, other}, true)
 
   // console.log(res)
 
-  // expect(res).toEqual({ // restrict inner to A,B,D
-  //   U: { A: 110, B: 420 },
-  //   V: { B: 430 },
-  //   W: { D: 250 }
-  // })
-  expect(res).toEqual([ // restrict inner to A,B,D
-    110, 420,
-    430,
-    250
-  ])
+  expect(res).toEqual({ // restrict inner to A,B,D
+    U: { A: 110, B: 420 },
+    V: { B: 430 },
+    W: { D: 250 }
+  })
+  // expect(res).toEqual([ // restrict inner to A,B,D
+  //   110, 420,
+  //   430,
+  //   250
+  // ])
 })
 
 test("testZipNested3", () => {
   let query = rh`nested.*A.*B.value + nestedB.*C.*B.value` // neither *B dominates!
 // debug = true
   let func = compile(query)
-  let res = func({nested, nestedB})
+  let res = func({nested, nestedB}, true)
 
   // console.log(res)
 
-  // expect(res).toEqual({ // result has three levels
-  //   V: { X: { C: 540 }, Y: { C: 640 } }
-  // })
-  expect(res).toEqual([ // result has three levels
-    540, 640
-  ])
+  expect(res).toEqual({ // result has three levels
+    V: { C: { X: 540, Y: 640 } }
+  })
+  // expect(res).toEqual([ // result has three levels
+  //   540, 640
+  // ])
 })
 
 test("testZipNestedRec3", () => {

@@ -88,6 +88,7 @@ let update = obj => path => value => {
   if (value === undefined) return obj
   if (path.length > 0) {
     let [k,...rest] = path
+    obj ??= {}
     obj[k] = update(obj[k] ?? {})(rest)(value)
     return obj
   } else
@@ -257,6 +258,17 @@ let infer = q => {
     /*q.deps = [];*/ q.dims = []
   } else if (q.key == "var") {
     let syms = unique([q.arg, ...vars[q.arg].vars])
+    if (q.out) {
+      // XXX second pass: we may add variables to
+      // dims and real, but only up to the
+      // existing out.
+      // XXX this necessitates dealing with extra vars
+      // added here later. Specifically, we reify 
+      // away the extra vars. Currently this is done
+      // in emitFilters though it would be better
+      // to extract proper assignment statements.
+      syms = intersect(syms, q.out)
+    }
     let tmps = vars[q.arg].tmps
     q.vars = [...syms]; //q.gens = []; 
     q.tmps = [...tmps]
@@ -343,13 +355,12 @@ let inferOut = out => q => {
     // q.out = out; 
     q.real = q.dims
   } else if (q.key == "var") {
-    // q.out = out; 
+    q.out = out; 
     q.real = q.dims
   } else if (q.key == "ref") {
     let e1 = assignments[q.arg]
-    e1.out = out
     inferOut(out)(e1)
-    // q.out = out; 
+    q.out = out; 
     q.real = e1.real
   } else if (q.key == "get") {
     // q.out = out; 
@@ -368,15 +379,15 @@ let inferOut = out => q => {
     let [e1,e2] = q.arg.map(inferOut(out))
     q.real = union(e1.real, e2.real)
   } else if (q.key == "sum") {
-    // q.out = out
-    let out1 = intersect(out, q.vars) // preserve all vars visible outside
+    q.out = out
+    let out1 = out//intersect(out, q.vars) // preserve all vars visible outside
     let out2 = union(out1,q.arg.dims)
     let e1 = inferOut(out2)(q.arg)
     q.iter = q.arg.real // iteration space (enough?)
     q.real = intersect(out, q.arg.real)
     q.scope ??= diff(q.arg.real, q.real)
   } else if (q.key == "group") {
-    // q.out = out
+    q.out = out
     let e1 = inferOut(q.arg[0].dims)(q.arg[0]) // ???
     let e2 = inferOut(out)(q.arg[1])
     q.iter = q.arg[0].real // iteration space (enough?)
@@ -530,23 +541,59 @@ let emitStm = (q) => {
   }
 }
 
-let emitFilters = real => buf => {
+let emitFilters = (real,out=[]) => buf => {
   let vars = {}
   let seen = {}
   for (let v of real) vars[v] = true
   // filters
-  for (let f of filters) {
+  let buf0 = []
+  let buf1 = []
+  for (let i in filters) {
+    let f = filters[i]
     let v1 = f.arg[1].arg
     let g1 = f.arg[0]
     if (vars[v1]) {
       if (!seen[v1]) {
-        buf.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
+        // TODO: check unavailable deps here as well?
+        buf1.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
         seen[v1] = true
       } else {
-        buf.push("if ("+quoteVar(v1)+" in "+codegen(g1)+")")
+        let notseen = g1.vars.filter(x => !seen[x])
+        if (notseen.length == 0) {
+          buf1.push("if ("+quoteVar(v1)+" in "+codegen(g1)+")")
+        } else {
+          // XXX bit of a hack right now: our generator/filter for v1
+          // is dependent on (at least) one other variable v2 that
+          // is not part of the current iteration space. Solution:
+          // run this generator separately and reify into a
+          // datastructure. This needs to happen before the main
+          // loop, hence separate output buffers.
+          //
+          // TODO: it would be much cleaner to extract this into a 
+          // proper assignment statement
+          //
+          console.assert(intersect(notseen, real).length == 0) // We're eliminating
+          // iteration over this variable, so gotta make sure we weren't
+          // planning to iterate over it later in the sequence.
+          // XXX: this is brittle. Much better to start with 'real', and
+          // determine iteration order accordingly.
+          console.assert(notseen.length == 1) // for now only one
+          let [v2] = notseen
+          buf0.push("// pre-gen "+v2)
+          buf0.push("let gen"+i+quoteVar(v2)+" = {}")
+          emitFilters([v2])(buf0)
+          buf0.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
+          buf0.push("  gen"+i+quoteVar(v2)+"["+quoteVar(v1)+"] = true //"+codegen(g1)+"?.["+quoteVar(v1)+"]")
+          // with the aux data structure in pace, we're ready to
+          // proceed with the main loop nest:
+          buf1.push("if ("+quoteVar(v1)+" in gen"+i+quoteVar(v2)+")")
+        }
       }
     }
   }
+  buf.push(...buf0)
+  if (buf0.length > 0) buf.push("// main loop")
+  buf.push(...buf1)
 }
 
 
@@ -565,7 +612,7 @@ let emitCode = (q, order) => {
     // NOTE: it would be preferable to emit initialization up front (so that sum empty = 0)
 
     buf.push("// --- tmp"+i+" ---")
-    emitFilters(q.iter)(buf)
+    emitFilters(q.iter, q.out)(buf)
 
     // no longer an issue with "order"
     // if (q.tmps.some(x => x > i))
@@ -583,7 +630,9 @@ let emitCode = (q, order) => {
 
   buf.push("// --- res ---")
   emitFilters(q.real)(buf)
-  buf.push("k("+codegen(q)+")")
+    let xs = q.real.map(quoteVar)
+    let ys = xs.map(x => ","+x).join("")
+  buf.push("k("+codegen(q)+ys+")")
   buf.push("})")
 
   return buf.join("\n")
@@ -784,7 +833,7 @@ let compile = q => {
   for (let i in deps.var2var) {
     // console.log(i, transdeps.var2var[i])
     vars[i].vars = Object.keys(transdeps.var2var[i])
-    vars[i].tmps = Object.keys(transdeps.var2tmp[i])
+    vars[i].tmps = Object.keys(transdeps.var2tmp[i]).map(Number)
   }
 
 
@@ -806,6 +855,19 @@ let compile = q => {
   // }
 
 
+  // sanity checks
+  // for (let i in assignments) {
+  //   let q = assignments[i]
+  //   let v1 = q.real
+  //   let v2 = Object.keys(transdeps.tmp2var[i])
+  //   let t1 = q.tmps
+  //   let t2 = Object.keys(transdeps.tmp2tmp[i])
+  //   if (!same(v1,v2) || !same(t1,t2)) {
+  //     console.error("MISMATCH",i,{real:v1,closure:v2, tmp:t1, tmptrans:t2})
+  //   }
+  //   // console.assert(same(q.real, Object.keys(transdeps.tmp2var[i])), {a1, a2})
+  // }
+
   // 5a. Pretty print (debug out)
 
   let pseudo = emitPseudo(q)
@@ -817,10 +879,17 @@ let compile = q => {
 
   let func = eval(code)
 
-  let wrap = input => {
-    let res = []
-    func(input)(x => res.push(x))
-    return res
+  let wrap = (input,fullpath) => {
+    if (fullpath) {
+      let res
+      // func(input)((x,...path) => res.push([...path,x]))// update(res)(...path)(x))
+      func(input)((x,...path) => res = update(res)(path)(x))
+      return res
+    } else {
+      let res = []
+      func(input)((x,...path) => res.push(x))
+      return res
+    }
   }
 
   wrap.explain = { ir: {filters, assignments, vars, deps, transdeps, order}, pseudo0, pseudo, code }
