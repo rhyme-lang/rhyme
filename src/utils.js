@@ -1,4 +1,6 @@
 exports.quoteVar = s => "KEY" + s.replaceAll("*", "_star_") // dollar, percent, ...
+// string literal or iterator variable?
+exports.isVar = s => s.startsWith("*") // || s.startsWith("$") || s.startsWith("%")
 
 exports.debug = false // TODO: proper flags
 exports.trace = false // TODO: proper flags

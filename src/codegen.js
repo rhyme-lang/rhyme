@@ -1,4 +1,4 @@
-const { quoteVar, debug, trace, print, inspect, error, warn } = require("./utils")
+const { quoteVar, isVar, debug, trace, print, inspect, error, warn } = require("./utils")
 
 exports.generate = (ir) => {
     let assignmentStms = ir.assignmentStms
@@ -16,11 +16,22 @@ exports.generate = (ir) => {
     //
     let code = []
     let indent = 0
+    let checkpoints = []
     function emit(str) {
         if (str.indexOf("}") == 0) indent--
         code.push("".padEnd(indent * 4, ' ') + str)
         if (str.indexOf("{") >= 0) indent++
         if (str.indexOf("}") > 0) indent--
+    }
+    function save() {
+      checkpoints.push({indent, len : code.length})
+      return checkpoints.length - 1
+    }
+    function revert(handle) {
+      let saved = checkpoints[handle]
+      checkpoints.splice(handle, checkpoints.length - handle)
+      indent = saved.indent
+      code.splice(saved.len, code.length - saved.len)
     }
     emit("inp => {")
     emit("let tmp = {}")
@@ -167,7 +178,16 @@ exports.generate = (ir) => {
             emittedSymsRank[e.writeSym] = e.writeRank + 1
         }
     }
-    function emitGenerators(gntrStms) {
+    function groupGenBySym(gntrStms) {
+        let gensBySym = {}
+        // group generators by symbol
+        for (let e of gntrStms) {
+            if (!gensBySym[e.sym]) gensBySym[e.sym] = []
+            gensBySym[e.sym].push(e)
+        }
+        return gensBySym
+    }
+    function emitGenerators(isEager, gntrStms) {
         // symbol available <=> all its generators are available
         // symbol available ? emit loop here : schedule in inner scope
         //
@@ -229,31 +249,47 @@ exports.generate = (ir) => {
         //    - data.*A.foo.*B.bar ... other.*B.baz.*A.boo
         //
         //
-        let gensBySym = {}
-        // group generators by symbol
-        for (let e of generatorStms) {
-            if (!gensBySym[e.sym]) gensBySym[e.sym] = []
-            gensBySym[e.sym].push(e)
-        }
+        let gensBySym = groupGenBySym(generatorStms)
         function symGensAvailable(s) {
             return gensBySym[s].every(depsAvailable) &&
                 extraDepsAvailable(extraLoopDeps[s])
         }
         // compute generators left for inner scope
         generatorStms = []
-        let availableGenSyms = {} // to prevent nesting unwanted generators
-        for (let s in gensBySym) {
-            if (!symGensAvailable(s))
-                generatorStms.push(...gensBySym[s])
-            else
-                availableGenSyms[s] = true
+        // This set tracks all emitable loops
+        let emitableGenSyms = {} // to prevent nesting unwanted generators
+        if (isEager) {
+            // We emit generators aggressively, we will emit generators to the out-most scope
+            // This may give us partially filled loops
+            for (let s in gensBySym) {
+                if (!symGensAvailable(s))
+                    generatorStms.push(...gensBySym[s])
+                else
+                    emitableGenSyms[s] = true
+            }
+        } else {
+            // If loopInsideLoop[l1][l2], l1 and l2 should be nested
+            // We use this relation to make sure we won't emit two nested loops in parallel
+            // nestedWithEmitable tracks gens that are nested with an emitable loop
+            let nestedWithEmitable = {}
+            for (let s in gensBySym) {
+                if (nestedWithEmitable[s] || !symGensAvailable(s))
+                    generatorStms.push(...gensBySym[s])
+                else {
+                    emitableGenSyms[s] = true
+                    for (let l1 in loopInsideLoop[s]) {
+                      nestedWithEmitable[l1] = true
+                    }
+                }
+            }
         }
-        // emit generators (only available ones)
-        for (let s in availableGenSyms) {
+        // emit generators
+        for (let s in emitableGenSyms) {
             if (!symGensAvailable(s)) continue
             let [e, ...es] = gensBySym[s] // just pick first -- could be more clever!
             // remove gensBySym[s] from generatorStms (we're emitting it now)
             generatorStms = generatorStms.filter(e => e.sym != s)
+            let handle = save()
             // loop header
             emit("for (let " + quoteVar(e.sym) + " in " + e.rhs + ") {")
             // filters
@@ -262,17 +298,24 @@ exports.generate = (ir) => {
             }
             // recurse!
             availableSyms[s] = true
-            emitConvergence()
+            let oldLen = code.length
+            emitConvergence(isEager)
             // XX here: nested loops
             // figure out which statements need nested loops
             // XX done
             delete availableSyms[s]
-            emit("}")
-            emittedLoopSyms[s] = true
-            emitAssignments() // any assignments that became available (temp after loop)
+            if (code.length > oldLen) {
+              emit("}")
+              emittedLoopSyms[s] = true
+              emitAssignments() // any assignments that became available (temp after loop)
+            } else {
+              // We get an empty loop body, reverted to saved state
+              revert(handle)
+            }
         }
     }
-    function emitConvergence() {
+
+    function emitConvergence(isEager) {
         // emit assignments + generator as long as we're making progress
         // (assignments may need multiple calls b/c effect deps)
         let codeLength
@@ -281,12 +324,39 @@ exports.generate = (ir) => {
                 codeLength = code.length
                 emitAssignments()
             } while (codeLength < code.length)
-            emitGenerators()
+            emitGenerators(isEager)
         } while (codeLength < code.length)
     }
-    // XXX
-    emitConvergence()
+    // XXX: First phase code gen
+    // In this pass we want to perform aggressive loop hoisting, we will try to schedule loops to the out-most scope whenever possible
+    // This may result in partially filled loops
+    // Example, if we perform a cartesian product of two loops, the loop nest will not be generated in this phase
+    emitConvergence(true)
 
+    if (assignmentStms.length > 0) {
+      print("WARN - re-emitting generators because assignments remaining")
+      emit("// --- non-eagerly emitting remaining generators ---")
+      availableSyms = {} // We are returning to the top level scope, so need to reset available syms
+      emittedLoopSyms = {}   // loops that have been fully emitted
+      let neededGens = {}
+      assignmentStms.forEach(e => e.deps.filter(isVar).forEach(s => neededGens[s] = true))
+      let gensBySym = groupGenBySym(generatorStmsCopy)
+      generatorStms = []
+      for (let s in gensBySym) {
+          if (neededGens[s])
+            generatorStms.push(...gensBySym[s]) // We only want to re-emit the generators that are still needed by some remaining assignments
+          else
+            emittedLoopSyms[s] = true           // Otherwise, we consider this generator to be fully emitted
+      }
+      // We do not need to modify emittedSymsRank
+
+      // XXX: Second phase code gen
+      // In this pass we want to fully emit all stmts, so no eager hoisting
+      emitConvergence(false)
+    }
+
+    // XXX: code for repeated generators, commented for now
+    /*
     // TODO(supun): hack!! for generators that need to be emitted multiple times
     //              look at test/advanced.js: this is needed when accessing "reified intermediates"
     if (assignmentStms.length > 0) {
@@ -315,6 +385,7 @@ exports.generate = (ir) => {
         }
         assignmentStms = [] // we have emitted all remaining assignments
     }
+    */
 
     if (assignmentStms.length) {
         warn("ERROR - couldn't emit the following assignments (most likely due to circular dependencies:")

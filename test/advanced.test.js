@@ -1,4 +1,5 @@
 const { api } = require('../src/rhyme')
+const { rh } = require('../src/parser')
 
 // some sample data for testing
 let data = [
@@ -90,7 +91,8 @@ test("nestedIterators2", () => {
         "A": { "A": 1, "B": 2},
         "B": { "A": 0.5, "B": 1}
     }
-    let res = api.compile(query)({ data })
+    let exec = api.compile(query)
+    let res = exec({ data })
     expect(res).toEqual(expected)
 })
 
@@ -107,7 +109,8 @@ test("nestedIterators2-explicitlyHoisted", () => {
         "A": { "A": 1, "B": 2 },
         "B": { "A": 0.5, "B": 1 }
     }
-    let res = api.compile(query)({ data })
+    let exec = api.compile(query)
+    let res = exec({ data })
     expect(res).toEqual(expected)
 })
 
@@ -153,4 +156,87 @@ test("nestedIterators3-explicitlyHoisted", () => {
     let exec = api.compile(query)
     let res = exec({ data })
     expect(res).toEqual(expected)
+})
+
+test("cartesianProduct", () => {
+  let data1 = [10, 20]
+  let data2 = [10, 20]
+  let query = [{
+            "data1": "data1.*i",
+            "data2": "data2.*j",
+            sum: "data1.*i + data2.*j",
+            product: "data1.*i * data2.*j"
+        }]
+  let expected = [{"data1":10,"data2":10,"sum":20,"product":100},
+                  {"data1":10,"data2":20,"sum":30,"product":200},
+                  {"data1":20,"data2":10,"sum":30,"product":200},
+                  {"data1":20,"data2":20,"sum":40,"product":400}]
+  let exec = api.compile(query)
+  // XXX: Currently generated code:
+  //inp => {
+  //    let tmp = {}
+  //    tmp[0] ??= {}
+  //    tmp[1] ??= []
+  //    for (let KEY_star_i in inp['data1']) {
+  //        tmp[0][KEY_star_i] ??= {}
+  //    }
+  //    // --- non-eagerly emitting remaining generators ---
+  //    for (let KEY_star_i in inp['data1']) {
+  //        for (let KEY_star_j in inp['data2']) {
+  //            tmp[0][KEY_star_i][KEY_star_j] ??= {} //
+  //            tmp[0][KEY_star_i][KEY_star_j]['data1'] = inp['data1'][KEY_star_i]
+  //            tmp[0][KEY_star_i][KEY_star_j]['data2'] = inp['data2'][KEY_star_j]
+  //            tmp[0][KEY_star_i][KEY_star_j]['sum'] = (inp['data1'][KEY_star_i]+inp['data2'][KEY_star_j])
+  //            tmp[0][KEY_star_i][KEY_star_j]['product'] = (inp['data1'][KEY_star_i]*inp['data2'][KEY_star_j])
+  //            tmp[1] .push (tmp[0][KEY_star_i][KEY_star_j])
+  //        }
+  //    }
+  //    return tmp[1]
+  //}
+
+  // XXX: Previously generated code (repeated generators not fused)
+  //inp => {
+  //    let tmp = {}
+  //    tmp[0] ??= {}
+  //    tmp[1] ??= []
+  //    for (let KEY_star_i in inp['data1']) {
+  //        tmp[0][KEY_star_i] ??= {}
+  //    }
+  //    for (let KEY_star_j in inp['data2']) {
+  //    }
+  //    // --- repeated generators ---
+  //    for (let KEY_star_i in inp['data1']) {
+  //        for (let KEY_star_j in inp['data2']) {
+  //            tmp[0][KEY_star_i][KEY_star_j] ??= {} //
+  //        }
+  //    }
+  //    for (let KEY_star_i in inp['data1']) {
+  //        for (let KEY_star_j in inp['data2']) {
+  //            tmp[0][KEY_star_i][KEY_star_j]['data1'] = inp['data1'][KEY_star_i]
+  //        }
+  //    }
+  //    for (let KEY_star_i in inp['data1']) {
+  //        for (let KEY_star_j in inp['data2']) {
+  //            tmp[0][KEY_star_i][KEY_star_j]['data2'] = inp['data2'][KEY_star_j]
+  //        }
+  //    }
+  //    for (let KEY_star_i in inp['data1']) {
+  //        for (let KEY_star_j in inp['data2']) {
+  //            tmp[0][KEY_star_i][KEY_star_j]['sum'] = (inp['data1'][KEY_star_i]+inp['data2'][KEY_star_j])
+  //        }
+  //    }
+  //    for (let KEY_star_i in inp['data1']) {
+  //        for (let KEY_star_j in inp['data2']) {
+  //            tmp[0][KEY_star_i][KEY_star_j]['product'] = (inp['data1'][KEY_star_i]*inp['data2'][KEY_star_j])
+  //        }
+  //    }
+  //    for (let KEY_star_i in inp['data1']) {
+  //        for (let KEY_star_j in inp['data2']) {
+  //            tmp[1] .push (tmp[0][KEY_star_i][KEY_star_j])
+  //        }
+  //    }
+  //    return tmp[1]
+  //}
+  let res = exec({ data1, data2 })
+  expect(res).toEqual(expected)
 })
