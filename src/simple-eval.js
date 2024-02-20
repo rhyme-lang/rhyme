@@ -418,7 +418,7 @@ let infer = q => {
 //      (for stms only)
 //
 
-let inferOut = out => q => {
+let inferBwd = out => q => {
   if (q.key == "input") {
     // q.out = out; 
     q.real = q.dims
@@ -434,37 +434,37 @@ let inferOut = out => q => {
     q.real = syms // q.dims
   } else if (q.key == "ref") {
     let e1 = assignments[q.arg]
-    inferOut(out)(e1)
+    inferBwd(out)(e1)
     q.out = out; 
     q.real = e1.real
   } else if (q.key == "get") {
     // q.out = out; 
     // q.real = q.dims
     if (q.filter !== undefined) { // ref to a filter! lookup deps there?
-      inferOut(out)(filters[q.filter])
+      inferBwd(out)(filters[q.filter])
     }
-    let [e1,e2] = q.arg.map(inferOut(out))
+    let [e1,e2] = q.arg.map(inferBwd(out))
     q.real = union(e1.real, e2.real)
   } else if (q.key == "plus") {
     // q.out = out; 
-    let [e1,e2] = q.arg.map(inferOut(out))
+    let [e1,e2] = q.arg.map(inferBwd(out))
     q.real = union(e1.real, e2.real)
   } else if (q.key == "times") {
     // q.out = out; 
-    let [e1,e2] = q.arg.map(inferOut(out))
+    let [e1,e2] = q.arg.map(inferBwd(out))
     q.real = union(e1.real, e2.real)
   } else if (q.key == "sum") {
     q.out = out
     let out1 = out//intersect(out, q.vars) // preserve all vars visible outside
     let out2 = union(out1,q.arg.dims)
-    let e1 = inferOut(out2)(q.arg)
+    let e1 = inferBwd(out2)(q.arg)
     q.iter = q.arg.real // iteration space (enough?)
     q.real = intersect(out, q.arg.real)
     q.scope ??= diff(q.arg.real, q.real)
   } else if (q.key == "group") {
     q.out = out
-    let e1 = inferOut(q.arg[0].dims)(q.arg[0]) // ???
-    let e2 = inferOut(out)(q.arg[1])
+    let e1 = inferBwd(q.arg[0].dims)(q.arg[0]) // ???
+    let e2 = inferBwd(out)(q.arg[1])
     q.iter = q.arg[0].real // iteration space (enough?)
     q.real = q.arg[1].real
     q.scope ??= diff(q.arg[0].real, q.real)
@@ -796,26 +796,13 @@ let compile = (q,flag) => {
   for (let i in filters) {
     infer(filters[i])
   }
-  // for (let i in assignments) {
-    // infer(assignments[i])
-  // }
-  infer(q)
-
-  // 4. Top down dependencies, infer output dimension
-  // inferOut(q.dims)(q)
-  // for (let i = assignments.length-1; i >= 0; i--) {
-  //   let q = assignments[i]
-  //   inferOut(q.out)(q)
-  // }
+  infer(q) // goes into assignments but not filters
 
 
   let pseudo0 = emitPseudo(q)
 
 
-
-
-
-  // calculate one-step dependencies
+  // calculate one-step dependencies between vars/tmps
 
   let deps = {
     var2var: {},
@@ -861,10 +848,6 @@ let compile = (q,flag) => {
   }
 
   let order = scc(Object.keys(deps2.tmp2tmp), x => Object.keys(deps2.tmp2tmp[x])).reverse()
-
-
-// console.log(deps)
-
 
 
   // calculate explicit transitive closure
@@ -925,22 +908,8 @@ let compile = (q,flag) => {
   }
 
 
-
-  // 3b. Run infer again on assignments
-  // (convergence? var/tmp is monotonous)
-
-  // for (let [i] of order) {
-  //   infer(assignments[i])
-  // }
-  // infer(q)
-
-
-  // 4. Top down dependencies, infer output dimension
-  inferOut(q.dims)(q)
-  // for (let i = order.length-1; i >= 0; i--) {
-  //   let q = assignments[order[i]]
-  //   inferOut(q.out)(q)
-  // }
+  // 4. Backward pass to infer output dimensions
+  inferBwd(q.dims)(q)
 
 
   // sanity checks
