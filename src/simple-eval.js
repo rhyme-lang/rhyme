@@ -239,6 +239,88 @@ let extract = q => {
 
 
 //
+// XXX. Denotational: 
+//    - try to make "infer" compositional!
+//    - k: dims -> out, i.e. minimum we can produce -> what is observed
+
+let deno = q => k => {
+  if (q.key == "input") {
+    let {out} = k({vars:[],dims:[]})
+    q.real = []
+    return pretty(q)
+  } else if (q.key == "const") {
+    let {out} = k({vars:[],dims:[]})
+    q.real = []
+    return pretty(q)
+  } else if (q.key == "var") {
+    let {out} = k({vars:[q.arg],dims:[q.arg]})
+    q.real = [q.arg]
+    return pretty(q)
+  } else if (q.key == "get") {
+    q.filter = 1
+    let [e1,e2] = q.arg
+    let r1 = deno(e1)(v1 => {
+      let r2 = deno(e2)(v2 => {
+        let {out} = k({
+          vars: union(v1.vars,v2.vars),
+          dims: union(v1.dims,v2.dims)
+        })
+        q.out = out
+        return {out:q.out} // for v2
+      })
+      return {out:q.out} // for v2
+    })
+    q.real = union(e1.real, e2.real)
+    return pretty(q)
+  } else if (q.key == "plus") {
+    let [e1,e2] = q.arg
+    let r1 = deno(e1)(v1 => {
+      let r2 = deno(e2)(v2 => {
+        let {out} = k({
+          vars: union(v1.vars,v2.vars),
+          dims: union(v1.dims,v2.dims)
+        })
+        q.out = out
+        return {out:q.out} // for v2
+      })
+      return {out:q.out} // for v2
+    })
+    q.real = union(e1.real, e2.real)
+    return pretty(q)
+/*  } else if (q.key == "times") {
+    let [e1,e2] = q.arg.map(extract)
+    return { arg: [e1,e2], ...q }*/
+  } else if (q.key == "sum") {
+    let e1 = q.arg
+    deno(e1)(v1 => {
+      let {out} = k({
+        vars: v1.vars,
+        dims: []
+      })
+      q.out = out
+      return {out:union(q.out,v1.dims)}
+    })
+    q.real = intersect(q.out,e1.real)
+    console.log("SUM", ""+e1.real+"->"+q.real + " / "+q.out , " --- ", pretty(q))
+    return pretty(q)
+/*  } else if (q.key == "group") {
+    let e1 = extract(q.arg[0])
+    let save = path
+    path = [...path,e1]
+    let e2 = extract(q.arg[1])
+    path = save
+    let x = assignments.length
+    assignments.push({ ...q, arg: [e1,e2], path, vars:[], dims:[], tmps: [] })
+    return { key: "ref", arg: x }*/
+  } else {
+    console.error("unknown op", q)
+  }
+}
+
+
+
+
+//
 // 3. Infer dependencies bottom up: 
 //    - vars: variables used
 //    - dims: minimum set of variables in output (not removed through reductions)
@@ -695,11 +777,24 @@ rt.group = (x1,x2) => ({
 
 
 
-let compile = q => {
+let compile = (q,flag) => {
   reset()
 
   // 1. Preprocess
   q = preproc(q)
+
+  if (flag) {
+    console.log(q)
+    let q0 = JSON.parse(JSON.stringify(q))
+    let q1 = deno(q0)(x => {
+      let y = { out: x.dims }
+      console.log("K:", x, "->", y)
+      return y
+    })
+    console.log("RES:",q1)
+  }
+
+
 
   // 2. Extract
   q = extract(q)
