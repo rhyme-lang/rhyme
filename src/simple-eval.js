@@ -339,19 +339,8 @@ let infer = q => {
     q.tmps = []
     /*q.deps = [];*/ q.dims = []
   } else if (q.key == "var") {
-    let syms = unique([q.arg, ...vars[q.arg].vars])
-    if (q.out) {
-      // XXX second pass: we may add variables to
-      // dims and real, but only up to the
-      // existing out.
-      // XXX this necessitates dealing with extra vars
-      // added here later. Specifically, we reify 
-      // away the extra vars. Currently this is done
-      // in emitFilters though it would be better
-      // to extract proper assignment statements.
-      syms = intersect(syms, q.out)
-    }
-    let tmps = vars[q.arg].tmps
+    let syms = [q.arg] 
+    let tmps = [] //vars[q.arg].tmps
     q.vars = [...syms]; //q.gens = []; 
     q.tmps = [...tmps]
     /*q.deps = [...syms];*/ 
@@ -438,7 +427,11 @@ let inferOut = out => q => {
     q.real = q.dims
   } else if (q.key == "var") {
     q.out = out; 
-    q.real = q.dims
+    // we have transitive information -- include 
+    // vars[q.arg] if visible in out
+    let syms = unique([q.arg, ...vars[q.arg].vars])
+    syms = intersect(syms, q.out)
+    q.real = syms // q.dims
   } else if (q.key == "ref") {
     let e1 = assignments[q.arg]
     inferOut(out)(e1)
@@ -556,13 +549,13 @@ let emitPseudo = (q) => {
       buf.push("  pth: " + q.path.map(pretty))
     if (q.dims.length > 0)  
       buf.push("  dim: " + q.dims)
-    if (q.real.length > 0)  
+    if (q.real?.length > 0)  
       buf.push("  rel: " + q.real)
-    if (q.scope.length > 0) 
+    if (q.scope?.length > 0) 
       buf.push("  scp: " + q.scope)
   }
   buf.push(pretty(q))
-  if (q.real.length > 0)  
+  if (q.real?.length > 0)  
     buf.push("  " + q.real)
   return buf.join("\n")
 }
@@ -809,7 +802,7 @@ let compile = (q,flag) => {
   infer(q)
 
   // 4. Top down dependencies, infer output dimension
-  inferOut(q.dims)(q)
+  // inferOut(q.dims)(q)
   // for (let i = assignments.length-1; i >= 0; i--) {
   //   let q = assignments[i]
   //   inferOut(q.out)(q)
@@ -840,14 +833,14 @@ let compile = (q,flag) => {
     deps.tmp2var[i] = {}
     deps.tmp2tmp[i] = {}
     let q = assignments[i]
-    for (let v of q.real) deps.tmp2var[i][v] = true
+    for (let v of q.vars) deps.tmp2var[i][v] = true
     for (let j of q.tmps) deps.tmp2tmp[i][j] = true
   }
 
   for (let i in filters) {
     let f = filters[i]
     let v = f.arg[1].arg // var name
-    for (let w of f.real) deps.var2var[v][w] = true
+    for (let w of f.vars) deps.var2var[v][w] = true
     for (let j of f.tmps) deps.var2tmp[v][j] = true
   }
 
@@ -939,7 +932,7 @@ let compile = (q,flag) => {
   // for (let [i] of order) {
   //   infer(assignments[i])
   // }
-  infer(q)
+  // infer(q)
 
 
   // 4. Top down dependencies, infer output dimension
