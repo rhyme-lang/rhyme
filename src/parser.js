@@ -388,6 +388,7 @@ exports.desugar = (p) => {
 
   let primStateful = {
     "sum":   true,
+    "product": true,
     "count": true,
     "max":   true,
     "min":   true,

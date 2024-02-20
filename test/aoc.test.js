@@ -20,7 +20,9 @@ let udf_stdlib = {
   isLessOrEqual: (x,y) => x <= y,
   isEqual: (x,y) => x === y,
   exp: n => x => n ** x,
+  sqrt: n => Math.sqrt(n),
   floor: x => Math.floor(x),
+  ceil: x => Math.ceil(x),
   int2Char: x => String.fromCharCode(x),
   matchAll: (regex, flags) => x => [...x.matchAll(new RegExp(regex, flags))],
   logicalAnd: (x,y) => x && y
@@ -352,6 +354,66 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
   let func = api.compile(query)
   let res = func({input, udf})
   expect(res).toBe(30)
+})
+
+test("day6-part1", () => {
+  let input = `Time:      7  15   30
+Distance:  9  40  200`
+
+  let udf = {
+    isInteger: (n) => Number.isInteger(n),
+    ...udf_stdlib
+  }
+
+  let line = rh`.input | udf.split "\\n"`
+
+  let time = rh`${line}.0 | udf.matchAll "\\\\d+" "g" | .*pair | udf.toNum`
+  let dist = rh`${line}.1 | udf.matchAll "\\\\d+" "g" | .*pair | udf.toNum`
+
+  let disc = rh`udf.sqrt (${time} * ${time} - 4 * ${dist})`
+
+  let root1 = rh`${time} / 2 - ${disc} / 2`
+  let root2 = rh`${time} / 2 + ${disc} / 2`
+
+  let root1Int = rh`(udf.ceil ${root1}) + (udf.isInteger ${root1})`
+  let root2Int = rh`(udf.floor ${root2}) - (udf.isInteger ${root2})`
+
+  let query = rh`${root2Int} - ${root1Int} + 1 | group *pair | product .*`
+
+  let func = api.compile(query)
+  let res = func({input, udf})
+  expect(res).toBe(288)
+})
+
+test("day6-part2", () => {
+  let input = `Time:      7  15   30
+Distance:  9  40  200`
+
+  let udf = {
+    isInteger: (n) => Number.isInteger(n),
+    ...udf_stdlib
+  }
+
+  let line = rh`.input | udf.split "\\n"`
+
+  let time = rh`${line}.0 | udf.matchAll "\\\\d+" "g" | .*pair 
+                          | sum | udf.toNum`
+  let dist = rh`${line}.1 | udf.matchAll "\\\\d+" "g" | .*pair
+                          | sum | udf.toNum`
+
+  let disc = rh`udf.sqrt (${time} * ${time} - 4 * ${dist})`
+
+  let root1 = rh`${time} / 2 - ${disc} / 2`
+  let root2 = rh`${time} / 2 + ${disc} / 2`
+
+  let root1Int = rh`(udf.ceil ${root1}) + (udf.isInteger ${root1})`
+  let root2Int = rh`(udf.floor ${root2}) - (udf.isInteger ${root2})`
+
+  let query = rh`${root2Int} - ${root1Int} + 1`
+
+  let func = api.compile(query)
+  let res = func({input, udf})
+  expect(res).toBe(71503)
 })
 
 // 2022
