@@ -175,6 +175,11 @@ let preproc = q => {
   } else if (q.xxkey == "sum") {
     let e1 = preproc(q.xxparam)
     return { key: "sum", arg: e1 }
+  } else if (q.xxpath == "apply") {
+    let [e1,...es2] = q.xxparam.map(preproc)
+    console.assert(e1.key == "const", e1.key)
+    // if 'update .. ident ..', convert ident to input ref?
+    return { key: e1.arg, arg: es2 }
   } else if (typeof(q) === "object" && !q.xxpath && !q.xxkey) {
     console.assert(Object.keys(q).length == 1)
     let k = Object.keys(q)[0]
