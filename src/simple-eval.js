@@ -788,9 +788,10 @@ rt.update = (root,...path) => (fold) => {
 }
 
 rt.sum = x => ({
-  init: () => 0,
+  init: () => undefined, // XXX want 0 to start?
   next: s => {
     if (x === undefined) return s
+    if (s === undefined) return x
     return s + x
   }
 })
