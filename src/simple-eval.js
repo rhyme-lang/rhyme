@@ -162,47 +162,51 @@ let isVar = s => s.startsWith("*")
 let preproc = q => {
   if (q.xxpath == "raw") {
     if (q.xxparam == "inp") return { key: "input" }
-    else return { key: "const", arg: q.xxparam }
+    else return { key: "const", op: q.xxparam }
   } else if (q.xxpath == "ident") {
     if (q.xxparam == "*") console.error("cannot support free-standing *")
-    else if (isVar(q.xxparam)) return { key: "var", arg: q.xxparam }
-    else return { key: "const", arg: q.xxparam }
+    else if (isVar(q.xxparam)) return { key: "var", op: q.xxparam }
+    else return { key: "const", op: q.xxparam }
   } else if (q.xxpath == "get") {
-    let e1 = preproc(q.xxparam[0])
+    let e1 = preproc(q.xxparam[0]) 
     // XXX special case for literal "*": do this here or better in extract?
     let e2
     if (q.xxparam[1].xxpath == "ident" && q.xxparam[1].xxparam == "*") {
       let str = JSON.stringify(e1)
       let key = prefixes.indexOf(str)
       if (key < 0) { key = prefixes.length; prefixes.push(str) }
-      e2 = { key: "var", arg: "*_DEFAULT_"+key }
+      e2 = { key: "var", op: "*_DEFAULT_"+key }
     } else
       e2 = preproc(q.xxparam[1])
     return { key: "get", arg: [e1,e2] }
-  } else if (q.xxpath == "plus") {
-    let [e1,e2] = q.xxparam.map(preproc)
-    return { key: "plus", arg: [e1,e2] }
-  } else if (q.xxpath == "times") {
-    let [e1,e2] = q.xxparam.map(preproc)
-    return { key: "times", arg: [e1,e2] }
-  } else if (q.xxkey == "sum") {
-    let e1 = preproc(q.xxparam)
-    return { key: "sum", arg: e1 }
   } else if (q.xxpath == "apply") {
-    let [e1,...es2] = q.xxparam.map(preproc)
-    console.assert(e1.key == "const", e1.key)
-    // if 'update .. ident ..', convert ident to input ref?
-    return { key: e1.arg, arg: es2 }
+    let [q1,...qs2] = q.xxparam
+    let e1 = preproc(q1)
+    if (e1.key == "const") // built-in op
+      return preproc({...q, xxpath:e1.op, xxparam:qs2})
+    else // udf apply
+      return { key: "apply", arg: [e1,...qs2.map(preproc)] }
   } else if (typeof(q) === "object" && !q.xxpath && !q.xxkey) {
-    console.assert(Object.keys(q).length == 1)
+    console.assert(Object.keys(q).length == 1) // TODO
     let k = Object.keys(q)[0]
     let v = q[k]
     let e1 = preproc(parse(k))
     let e2 = preproc(v)
     let q1 = { key: "group", arg: [e1,e2] }
     return q1
-  } else {
+  } else if (q.xxpath || q.xxkey) {
+    // if 'update .. ident ..', convert ident to input ref?
+    let op = q.xxpath || q.xxkey
+    let es2 = q.xxpath ? q.xxparam.map(preproc) : [preproc(q.xxparam)]
+    if (op in runtime.special)
+      return { key: op, arg: es2 }
+    else if (op in runtime.pure)
+      return { key: "pure", op: op, arg: es2 }
+    else if (op in runtime.stateful)
+      return { key: "stateful", op: op, arg: es2 }
     console.error("unknown op", q)
+  } else {
+    console.error("malformed op", q)
   }
 }
 
@@ -219,7 +223,7 @@ let extract = q => {
   } else if (q.key == "const") {
     return q
   } else if (q.key == "var") {
-    vars[q.arg] ??= { vars: [], tmps: [] }
+    vars[q.op] ??= { vars: [], tmps: [] }
     return q
   } else if (q.key == "get") {
     let [e1,e2] = q.arg.map(extract)
@@ -230,17 +234,14 @@ let extract = q => {
       filters.push(q1) // deep copy...
     }
     return { ...q, arg: [e1,e2]}
-  } else if (q.key == "plus") {
-    let [e1,e2] = q.arg.map(extract)
-    return { ...q, arg: [e1,e2] }
-  } else if (q.key == "times") {
-    let [e1,e2] = q.arg.map(extract)
-    return { arg: [e1,e2], ...q }
-  } else if (q.key == "sum") {
-    let e1 = extract(q.arg)
+  } else if (q.key == "pure") {
+    let es = q.arg.map(extract)
+    return { ...q, arg: es }
+  } else if (q.key == "stateful") {
+    let es = q.arg.map(extract)
     let x = assignments.length
-    assignments.push({ ...q, arg: e1, path, vars:[], dims:[], tmps: [] }) // cycles?
-    return { key: "ref", arg: x }
+    assignments.push({ ...q, arg: es, path, vars:[], dims:[], tmps: [] }) // cycles?
+    return { key: "ref", op: x }
   } else if (q.key == "group") {
     let e1 = extract(q.arg[0])
     let save = path
@@ -249,7 +250,7 @@ let extract = q => {
     path = save
     let x = assignments.length
     assignments.push({ ...q, arg: [e1,e2], path, vars:[], dims:[], tmps: [] })
-    return { key: "ref", arg: x }
+    return { key: "ref", op: x }
   } else if (q.key == "update") {
     let e0 = extract(q.arg[0])
     let e1 = extract(q.arg[1])
@@ -259,7 +260,7 @@ let extract = q => {
     path = save
     let x = assignments.length
     assignments.push({ ...q, arg: [e0, e1,e2], path, vars:[], dims:[], tmps: [] })
-    return { key: "ref", arg: x }
+    return { key: "ref", op: x }
   } else {
     console.error("unknown op", q)
   }
@@ -281,8 +282,8 @@ let deno = q => k => {
     q.real = []
     return pretty(q)
   } else if (q.key == "var") {
-    let {out} = k({vars:[q.arg],dims:[q.arg]})
-    q.real = [q.arg]
+    let {out} = k({vars:[q.op],dims:[q.op]})
+    q.real = [q.op]
     return pretty(q)
   } else if (q.key == "get") {
     q.filter = 1
@@ -300,9 +301,10 @@ let deno = q => k => {
     })
     q.real = union(e1.real, e2.real)
     return pretty(q)
-  } else if (q.key == "plus") {
+  } else if (q.key == "pure") {
+    console.assert(q.arg.length == 2)
     let [e1,e2] = q.arg
-    let r1 = deno(e1)(v1 => {
+    let r1 = deno(e1)(v1 => { // todo: support multiple?
       let r2 = deno(e2)(v2 => {
         let {out} = k({
           vars: union(v1.vars,v2.vars),
@@ -315,11 +317,9 @@ let deno = q => k => {
     })
     q.real = union(e1.real, e2.real)
     return pretty(q)
-/*  } else if (q.key == "times") {
-    let [e1,e2] = q.arg.map(extract)
-    return { arg: [e1,e2], ...q }*/
-  } else if (q.key == "sum") {
-    let e1 = q.arg
+  } else if (q.key == "stateful") {
+    console.assert(q.arg.length == 1)
+    let [e1] = q.arg
     deno(e1)(v1 => {
       let {out} = k({
         vars: v1.vars,
@@ -367,19 +367,19 @@ let infer = q => {
     q.tmps = []
     /*q.deps = [];*/ q.dims = []
   } else if (q.key == "var") {
-    let syms = [q.arg] 
-    let tmps = [] //vars[q.arg].tmps
+    let syms = [q.op] 
+    let tmps = [] //vars[q.op].tmps
     q.vars = [...syms]; //q.gens = []; 
     q.tmps = [...tmps]
     /*q.deps = [...syms];*/ 
     q.dims = [...syms]
   } else if (q.key == "ref") {
-    // look up from assignments[q.arg?]
-    let e1 = assignments[q.arg]
+    // look up from assignments[q.op?]
+    let e1 = assignments[q.op]
     infer(e1)
     q.vars = [...e1.vars]
     // q.gens = [...e1.gens]
-    q.tmps = unique([...e1.tmps,q.arg])
+    q.tmps = unique([...e1.tmps,q.op])
     // q.deps = e1.deps
     q.dims = [...e1.dims]
   } else if (q.key == "get") {
@@ -403,22 +403,15 @@ let infer = q => {
       // q.deps = unique([...e1.deps, ...e2.deps])
       q.dims = unique([...e1.dims, ...e2.dims])
     }
-  } else if (q.key == "plus") {
+  } else if (q.key == "pure") {
     let [e1,e2] = q.arg.map(infer)
     q.vars = unique([...e1.vars, ...e2.vars])
     // q.gens = unique([...e1.gens, ...e2.gens])
     q.tmps = unique([...e1.tmps, ...e2.tmps])
     // q.deps = unique([...e1.deps, ...e2.deps])
     q.dims = unique([...e1.dims, ...e2.dims])
-  } else if (q.key == "times") {
-    let [e1,e2] = q.arg.map(infer)
-    q.vars = unique([...e1.vars, ...e2.vars])
-    // q.gens = unique([...e1.gens, ...e2.gens])
-    q.tmps = unique([...e1.tmps, ...e2.tmps])
-    // q.deps = unique([...e1.deps, ...e2.deps])
-    q.dims = unique([...e1.dims, ...e2.dims])
-  } else if (q.key == "sum") {
-    let e1 = infer(q.arg)
+  } else if (q.key == "stateful") {
+    let [e1] = q.arg.map(infer)
     q.vars = e1.vars
     // q.gens = e1.gens
     q.tmps = e1.tmps
@@ -463,12 +456,12 @@ let inferBwd = out => q => {
   } else if (q.key == "var") {
     q.out = out; 
     // we have transitive information -- include 
-    // vars[q.arg] if visible in out
-    let syms = unique([q.arg, ...vars[q.arg].vars])
+    // vars[q.op] if visible in out
+    let syms = unique([q.op, ...vars[q.op].vars])
     syms = intersect(syms, q.out)
     q.real = syms // q.dims
   } else if (q.key == "ref") {
-    let e1 = assignments[q.arg]
+    let e1 = assignments[q.op]
     inferBwd(out)(e1)
     q.out = out; 
     q.real = e1.real
@@ -480,22 +473,18 @@ let inferBwd = out => q => {
     }
     let [e1,e2] = q.arg.map(inferBwd(out))
     q.real = union(e1.real, e2.real)
-  } else if (q.key == "plus") {
+  } else if (q.key == "pure") {
     // q.out = out; 
     let [e1,e2] = q.arg.map(inferBwd(out))
     q.real = union(e1.real, e2.real)
-  } else if (q.key == "times") {
-    // q.out = out; 
-    let [e1,e2] = q.arg.map(inferBwd(out))
-    q.real = union(e1.real, e2.real)
-  } else if (q.key == "sum") {
+  } else if (q.key == "stateful") {
     q.out = out
     let out1 = out//intersect(out, q.vars) // preserve all vars visible outside
-    let out2 = union(out1,q.arg.dims)
-    let e1 = inferBwd(out2)(q.arg)
-    q.iter = q.arg.real // iteration space (enough?)
-    q.real = intersect(out, q.arg.real)
-    q.scope ??= diff(q.arg.real, q.real)
+    let out2 = union(out1,q.arg[0].dims)
+    let [e1] = q.arg.map(inferBwd(out2))
+    q.iter = e1.real // iteration space (enough?)
+    q.real = intersect(out, e1.real)
+    q.scope ??= diff(e1.real, q.real)
   } else if (q.key == "group") {
     q.out = out
     let e1 = inferBwd(q.arg[0].dims)(q.arg[0]) // ???
@@ -534,12 +523,12 @@ let pretty = q => {
   if (q.key == "input") {
     return "inp"
   } else if (q.key == "const") {
-    return ""+q.arg
+    return ""+q.op
   } else if (q.key == "var") {
-    return q.arg
+    return q.op
   } else if (q.key == "ref") {
-    let e1 = assignments[q.arg]
-    return "tmp"+q.arg//+e1.path.map(pretty).map(quoteIndex)
+    let e1 = assignments[q.op]
+    return "tmp"+q.op//+e1.path.map(pretty).map(quoteIndex)
   } else if (q.key == "get") {
     let [e1,e2] = q.arg.map(pretty)
     if (e1 == "inp") return e2
@@ -548,15 +537,12 @@ let pretty = q => {
         return e2 + " <- " + e1
     }
     return e1+"["+e2+"]"
-  } else if (q.key == "plus") {
+  } else if (q.key == "pure") {
     let [e1,e2] = q.arg.map(pretty)
-    return e1 + " + " + e2
-  } else if (q.key == "times") {
-    let [e1,e2] = q.arg.map(pretty)
-    return e1 + " * " + e2
-  } else if (q.key == "sum") {
-    let e1 = pretty(q.arg)
-    return "sum("+e1+")"
+    return e1 + " " + q.op + " " + e2
+  } else if (q.key == "stateful") {
+    let [e1] = q.arg.map(pretty)
+    return q.op+"("+e1+")"
   } else if (q.key == "group") {
     let [e1,e2] = q.arg.map(pretty)
     return "{ "+ e1 + ": " + e2 + " }"
@@ -627,22 +613,19 @@ let codegen = q => {
   if (q.key == "input") {
     return "inp"
   } else if (q.key == "const") {
-    return "'"+q.arg+"'"
+    return "'"+q.op+"'"
   } else if (q.key == "var") {
-    return quoteVar(q.arg)
+    return quoteVar(q.op)
   } else if (q.key == "ref") {
-    let q1 = assignments[q.arg]
-    let xs = [String(q.arg),...q1.path.map(codegen),...q1.real]
+    let q1 = assignments[q.op]
+    let xs = [String(q.op),...q1.path.map(codegen),...q1.real]
     return quoteIndexVars("tmp", xs)
   } else if (q.key == "get") {
     let [e1,e2] = q.arg.map(codegen)
     return e1+quoteIndex(e2)
-  } else if (q.key == "plus") {
+  } else if (q.key == "pure") {
     let [e1,e2] = q.arg.map(codegen)
-    return "rt.pure.plus("+e1+", "+e2+")"
-  } else if (q.key == "times") {
-    let [e1,e2] = q.arg.map(codegen)
-    return "rt.pure.times("+e1+", "+e2+")"
+    return "rt.pure."+q.op+"("+e1+", "+e2+")"
   } else {
     console.error("unknown op", q)
   }
@@ -650,10 +633,10 @@ let codegen = q => {
 
 
 let emitStm = (q) => {
-  if (q.key == "sum") {    
-    let e1 = codegen(q.arg)
+  if (q.key == "stateful") {    
+    let [e1] = q.arg.map(codegen)
     // return lhs+" += "+e1
-    return "rt.stateful.sum("+e1+")"
+    return "rt.stateful."+q.op+"("+e1+")"
   } else if (q.key == "group") {
     let [e1,e2] = q.arg.map(codegen)
     // return lhs+"["+e1+"] = "+e2
@@ -676,7 +659,7 @@ let emitFilters = (real,out=[]) => buf => {
   let buf1 = []
   for (let i in filters) {
     let f = filters[i]
-    let v1 = f.arg[1].arg
+    let v1 = f.arg[1].op
     let g1 = f.arg[0]
     if (vars[v1]) {
       if (!seen[v1]) {
@@ -830,7 +813,7 @@ let compile = (q,flag) => {
 
   for (let i in filters) {
     let f = filters[i]
-    let v = f.arg[1].arg // var name
+    let v = f.arg[1].op // var name
     for (let w of f.vars) deps.var2var[v][w] = true
     for (let j of f.tmps) deps.var2tmp[v][j] = true
   }
@@ -937,6 +920,8 @@ let compile = (q,flag) => {
   // 5b. Codegen
 
   let code = emitCode(q,order)
+
+  // console.log(code)
 
   let rt = runtime // make available in scope for generated code
   let func = eval(code)

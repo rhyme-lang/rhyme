@@ -25,14 +25,25 @@ function ast_arg() {
   return ast_raw("_ARG_")
 }
 let binop_table = {
-  "|": "pipe",
+  "|" : "pipe",
+  "&" : "and",   // low prec, could give it some other grouping semantics
 
-  "+": "plus",
-  "-": "minus",
-  "*": "times",
-  "/": "fdiv",  // float div by default
-  "//": "div", // integer division
-  "%": "mod",
+  "||":  "orElse",
+  "&&":  "andAlso",
+
+  "<" :  "lessThan",
+  "<=":  "lessThanOrEqual",
+  ">" :  "greaterThan",
+  ">=":  "greaterThanOrEqual",
+  "==":  "equal",
+  "!=":  "notEqual",
+
+  "+" : "plus",
+  "-" : "minus",
+  "*" : "times",
+  "/" : "fdiv",  // float div by default
+  "//": "div",   // integer division
+  "%" : "mod",
 }
 function ast_binop(op, a,b) {
   let op1 = binop_table[op] ?? op
@@ -65,7 +76,7 @@ exports.parserImpl = (strings, holes) => {
   let hole = -1
 
   // ----- Lexer -----
-  let opchars = '+-*/%<>=!|&?'
+  let opchars = '+-*/%<>=!?|&^~'
   let optable = {}
   for (let c of opchars) optable[c] = 1
 
@@ -213,6 +224,9 @@ exports.parserImpl = (strings, holes) => {
   // precedence: higher binds tighter
   let prec = {
     '|' :  40,
+    '&' :  50,
+    '||':  70,
+    '&&':  80,
     '<' :  90,
     '<=':  90,
     '>' :  90,
@@ -223,11 +237,15 @@ exports.parserImpl = (strings, holes) => {
     '-' : 100,
     '*' : 200,
     '/' : 200,
+    '//': 200,
     '%' : 200,
   }
   // associativity: 1 for left, 0 for right
   let assoc = {
     '|' : 1,
+    '&' : 1,
+    '||': 1,
+    '&&': 1,
     '=' : 0,
     '<' : 1,
     '<=': 1,
@@ -239,6 +257,7 @@ exports.parserImpl = (strings, holes) => {
     '-' : 1,
     '*' : 1,
     '/' : 1,
+    '//': 1,
     '%' : 1,
   }
 
