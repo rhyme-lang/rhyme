@@ -237,6 +237,16 @@ let extract = q => {
     let x = assignments.length
     assignments.push({ ...q, arg: [e1,e2], path, vars:[], dims:[], tmps: [] })
     return { key: "ref", arg: x }
+  } else if (q.key == "update") {
+    let e0 = extract(q.arg[0])
+    let e1 = extract(q.arg[1])
+    let save = path
+    path = [...path,e1]
+    let e2 = extract(q.arg[2])
+    path = save
+    let x = assignments.length
+    assignments.push({ ...q, arg: [e0, e1,e2], path, vars:[], dims:[], tmps: [] })
+    return { key: "ref", arg: x }
   } else {
     console.error("unknown op", q)
   }
@@ -408,6 +418,13 @@ let infer = q => {
     q.tmps = unique([...e1.tmps, ...e2.tmps])
     // q.deps = unique([...e1.deps, ...e2.deps])
     q.dims = unique([/*...e1.dims,*/ ...e2.dims])
+  } else if (q.key == "update") {
+    let [e0,e1,e2] = q.arg.map(infer)
+    q.vars = unique([...e0.vars, ...e1.vars, ...e2.vars])
+    // q.gens = unique([...e1.gens, ...e2.gens])
+    q.tmps = unique([...e0.tmps, ...e1.tmps, ...e2.tmps])
+    // q.deps = unique([...e1.deps, ...e2.deps])
+    q.dims = unique([ /*...e1.dims,*/ ...e2.dims])
   } else {
     console.error("unknown op", q)
   }
@@ -474,6 +491,15 @@ let inferBwd = out => q => {
     q.real = q.arg[1].real
     q.scope ??= diff(q.arg[0].real, q.real)
     // console.log("GRP",q.arg[1].real, q.real)
+  } else if (q.key == "update") {
+    q.out = out
+    let e0 = inferBwd(out)(q.arg[0]) // ???  !!!!
+    let e1 = inferBwd(q.arg[1].dims)(q.arg[1]) // ???
+    let e2 = inferBwd(out)(q.arg[2])
+    q.iter = q.arg[1].real // iteration space (enough?)
+    q.real = q.arg[2].real
+    q.scope ??= diff(q.arg[1].real, q.real)
+    // console.log("GRP",q.arg[1].real, q.real)
   } else {
     console.error("unknown op", q)
   }
@@ -521,6 +547,9 @@ let pretty = q => {
   } else if (q.key == "group") {
     let [e1,e2] = q.arg.map(pretty)
     return "{ "+ e1 + ": " + e2 + " }"
+  } else if (q.key == "update") {
+    let [e0,e1,e2] = q.arg.map(pretty)
+    return e0+ "{ "+ e1 + ": " + e2 + " }"
   } else {
     console.error("unknown op", q)
   }
@@ -616,6 +645,10 @@ let emitStm = (q) => {
     let [e1,e2] = q.arg.map(codegen)
     // return lhs+"["+e1+"] = "+e2
     return "rt.group("+e1+", "+e2+")"
+  } else if (q.key == "update") {
+    let [e0,e1,e2] = q.arg.map(codegen)
+    // return lhs+"["+e1+"] = "+e2
+    return "rt.updateReducer("+e0+", "+e1+", "+e2+")"
   } else {
     console.error("unknown op", q)
   }
@@ -772,6 +805,15 @@ rt.group = (x1,x2) => ({
   }
 })
 
+rt.updateReducer = (x0,x1,x2) => ({
+  init: () => ({...x0}),
+  next: s => { 
+    if (x1 === undefined) return s
+    if (x2 === undefined) return s
+    s[x1] = x2
+    return s
+  }
+})
 
 
 
