@@ -1,6 +1,7 @@
 const { api, pipe } = require('./rhyme')
 const { rh, parse } = require('./parser')
 const { scc } = require('./scc')
+const { runtime } = require('./simple-runtime')
 
 // TODO: missing functionality
 //
@@ -638,10 +639,10 @@ let codegen = q => {
     return e1+quoteIndex(e2)
   } else if (q.key == "plus") {
     let [e1,e2] = q.arg.map(codegen)
-    return "rt.plus("+e1+", "+e2+")"
+    return "rt.pure.plus("+e1+", "+e2+")"
   } else if (q.key == "times") {
     let [e1,e2] = q.arg.map(codegen)
-    return "rt.times("+e1+", "+e2+")"
+    return "rt.pure.times("+e1+", "+e2+")"
   } else {
     console.error("unknown op", q)
   }
@@ -652,15 +653,15 @@ let emitStm = (q) => {
   if (q.key == "sum") {    
     let e1 = codegen(q.arg)
     // return lhs+" += "+e1
-    return "rt.sum("+e1+")"
+    return "rt.stateful.sum("+e1+")"
   } else if (q.key == "group") {
     let [e1,e2] = q.arg.map(codegen)
     // return lhs+"["+e1+"] = "+e2
-    return "rt.group("+e1+", "+e2+")"
+    return "rt.stateful.group("+e1+", "+e2+")"
   } else if (q.key == "update") {
     let [e0,e1,e2] = q.arg.map(codegen)
     // return lhs+"["+e1+"] = "+e2
-    return "rt.updateReducer("+e0+", "+e1+", "+e2+")"
+    return "rt.stateful.update("+e0+", "+e1+", "+e2+")"
   } else {
     console.error("unknown op", q)
   }
@@ -768,65 +769,7 @@ let emitCode = (q, order) => {
 
 
 
-// runtime support
 
-let rt = {}
-
-rt.plus = (x1,x2) => {
-  if (x1 === undefined) return undefined
-  if (x2 === undefined) return undefined
-  return Number(x1) + Number(x2)
-}
-
-rt.times = (x1,x2) => {
-  if (x1 === undefined) return undefined
-  if (x2 === undefined) return undefined
-  return Number(x1) * Number(x2)
-}
-
-rt.update = (root,...path) => (fold) => {
-  let obj = root
-  let c = 0
-  for (let ix of path.slice(0,path.length-1)) {
-    if (ix === undefined) return
-    obj[ix] ??= {}
-    obj = obj[ix]
-  }
-
-  let ix = path[path.length-1]
-  obj[ix] ??= fold.init()
-
-  obj[ix] = fold.next(obj[ix])
-}
-
-rt.sum = x => ({
-  init: () => undefined, // XXX want 0 to start?
-  next: s => {
-    if (x === undefined) return s
-    if (s === undefined) return x
-    return s + x
-  }
-})
-
-rt.group = (x1,x2) => ({
-  init: () => ({}),
-  next: s => { 
-    if (x1 === undefined) return s
-    if (x2 === undefined) return s
-    s[x1] = x2
-    return s
-  }
-})
-
-rt.updateReducer = (x0,x1,x2) => ({
-  init: () => ({...x0}),
-  next: s => { 
-    if (x1 === undefined) return s
-    if (x2 === undefined) return s
-    s[x1] = x2
-    return s
-  }
-})
 
 
 
@@ -995,6 +938,7 @@ let compile = (q,flag) => {
 
   let code = emitCode(q,order)
 
+  let rt = runtime // make available in scope for generated code
   let func = eval(code)
 
   let wrap = (input,fullpath) => {
