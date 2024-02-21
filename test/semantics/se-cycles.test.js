@@ -118,7 +118,7 @@ test("testCycles3-0", () => {
   let data = [{ key: "A", val: 10}, { key: "A", val: 30}, {key: "B", val: 20 }]
   let other = { A: 1 }
   let q1 = { "data.*A.key" : rh`sum data.*A.val` }
-  let query = rh`(other.*) + (${q1}.*)`
+  let query = rh`(other.*B) + (${q1}.*B)`
 
   let func = compile(query)
 
@@ -136,7 +136,7 @@ test("testCycles3-1", () => {
   let data = [{ key: "A", val: 10}, { key: "A", val: 30}, {key: "B", val: 20 }]
   let other = { A: 1 }
   let q1 = { "data.*A.key" : rh`data.*A.val` }
-  let query = rh`(other.*) + (${q1}.*)`
+  let query = rh`(other.*B) + (${q1}.*B)`
 
   // Here the groupby does not eliminate *A, so 
   // other.* produces multiple values
@@ -152,7 +152,7 @@ test("testCycles3-2", () => {
   let data = [{ key: "A", val: 10}, { key: "A", val: 30}, {key: "B", val: 20 }]
   let other = { A: 1, D: 2 }
   let q1 = { "data.*A.key" : rh`data.*A.val` }
-  let query = rh`sum(other.*) + sum(${q1}.*)`
+  let query = rh`sum(other.*B) + sum(${q1}.*B)`
 
   // NOTE: this case relies on reordering (topological sort)
 

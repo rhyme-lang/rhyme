@@ -77,7 +77,7 @@ test("testScalar1", () => {
 // ----- multiple uses of the same var
 
 test("testZipScalar2", () => {
-  let query = rh`data.*.value + other.*.value`
+  let query = rh`data.*A.value + other.*A.value`
 
   let func = compile(query)
   let res = func({data, other}, true)
@@ -89,7 +89,7 @@ test("testZipScalar2", () => {
 })
 
 test("testZipScalar3", () => {
-  let query = rh`(sum data.*.value) + (sum other.*.value)`
+  let query = rh`(sum data.*A.value) + (sum other.*A.value)`
 
   let func = compile(query)
   let res = func({data, other}, true)
@@ -101,7 +101,7 @@ test("testZipScalar3", () => {
 })
 
 test("testZipScalar4", () => {
-  let query = rh`(sum data.*.value) + other.*.value` 
+  let query = rh`(sum data.*A.value) + other.*A.value` 
   // NONSENSICAL? SHAPE ERROR? -- no, can just take sum of single element...
 
   let func = compile(query)
@@ -259,8 +259,6 @@ test("testGroup0", () => {
 
   let func = compile(query)
   let res = func({data, other})
-
-  // console.log(res)
 
 /* plausible:
 

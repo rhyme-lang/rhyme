@@ -133,6 +133,7 @@ let join = (obj1, obj2) => (schema1, schema2, schema3) => func => {
 
 
 
+let prefixes
 let path
 
 let vars
@@ -140,6 +141,7 @@ let filters
 let assignments
 
 let reset = () => {
+  prefixes = []
   path = []
 
   vars = {}
@@ -161,10 +163,20 @@ let preproc = q => {
     if (q.xxparam == "inp") return { key: "input" }
     else return { key: "const", arg: q.xxparam }
   } else if (q.xxpath == "ident") {
-    if (isVar(q.xxparam)) return { key: "var", arg: q.xxparam }
+    if (q.xxparam == "*") console.error("cannot support free-standing *")
+    else if (isVar(q.xxparam)) return { key: "var", arg: q.xxparam }
     else return { key: "const", arg: q.xxparam }
   } else if (q.xxpath == "get") {
-    let [e1,e2] = q.xxparam.map(preproc)
+    let e1 = preproc(q.xxparam[0])
+    // XXX special case for literal "*": do this here or better in extract?
+    let e2
+    if (q.xxparam[1].xxpath == "ident" && q.xxparam[1].xxparam == "*") {
+      let str = JSON.stringify(e1)
+      let key = prefixes.indexOf(str)
+      if (key < 0) { key = prefixes.length; prefixes.push(str) }
+      e2 = { key: "var", arg: "*_DEFAULT_"+key }
+    } else
+      e2 = preproc(q.xxparam[1])
     return { key: "get", arg: [e1,e2] }
   } else if (q.xxpath == "plus") {
     let [e1,e2] = q.xxparam.map(preproc)
@@ -823,6 +835,7 @@ let compile = (q,flag) => {
 
   // 1. Preprocess
   q = preproc(q)
+  let src = q
 
   if (flag) {
     console.log(q)
@@ -997,7 +1010,11 @@ let compile = (q,flag) => {
     }
   }
 
-  wrap.explain = { ir: {filters, assignments, vars, deps, transdeps, order}, pseudo0, pseudo, code }
+  wrap.explain = { 
+    src,
+    ir: {filters, assignments, vars, deps, transdeps, order}, 
+    pseudo0, pseudo, code 
+  }
   return wrap
 }
 
