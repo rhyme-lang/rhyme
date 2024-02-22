@@ -502,6 +502,58 @@ Distance:  9  40  200`
   expect(res).toBe(71503)
 })
 
+
+test("aoc-day8-part1", () => {
+  let input = `LLR
+
+AAA = (BBB, BBB)
+BBB = (AAA, ZZZ)
+ZZZ = (ZZZ, ZZZ)`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    andThen: (a,b) => b, // just to add a as dependency
+    isRule: s => s.search("=") != -1,
+    updateState: (state, newState) => state.state = newState,
+    ...udf_stdlib
+  }
+
+  let line = rh`.input | udf.split "\\n"`
+  let instructions = rh`${line}.0 | udf.split ""`
+
+  let filter = p => x => rh`udf.andThen (udf.filter (${p})).*f ${x}`
+
+  let ruleElems = rh`${line} | .*line | udf.matchAll "[A-Z]{3}" "g"`
+  let isRule = rh`${line} | .*line | udf.isRule`
+
+  let ruleElemsFiltered = rh`${ruleElems} | ${filter(isRule)}`
+
+  let node = {
+    L: rh`${ruleElemsFiltered}.1.0`,
+    R: rh`${ruleElemsFiltered}.2.0`
+  }
+
+  let rules = rh`${node} | group ${ruleElemsFiltered}.0`
+
+  // After we have the rules object
+  // use a generator to traverse through instruction
+
+  let currentState = rh`.state`
+
+  let query = rh`${instructions} | udf.updateState ${currentState} ${rules}.(${currentState}.state).(.*inst)
+                                 | count .*inst`
+
+  let func = api.compile(query)
+  let state = {
+    state: "AAA"
+  }
+  let res = 0
+  while (state.state != "ZZZ") {
+    res += func({input, udf, state})
+  }
+  expect(res).toBe(6)
+})
+
 // 2022
 
 test("day1-A", () => {
