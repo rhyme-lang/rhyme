@@ -186,14 +186,17 @@ let preproc = q => {
       return preproc({...q, xxpath:e1.op, xxparam:qs2})
     else // udf apply
       return { key: "apply", arg: [e1,...qs2.map(preproc)] }
+  } else if (q instanceof Array) {
+    console.assert(q.length == 1) // TODO
+    return { key: "stateful", op: "array", arg: q.map(preproc) }
   } else if (typeof(q) === "object" && !q.xxpath && !q.xxkey) {
     console.assert(Object.keys(q).length == 1) // TODO
     let k = Object.keys(q)[0]
     let v = q[k]
     let e1 = preproc(parse(k))
     let e2 = preproc(v)
-    let q1 = { key: "group", arg: [e1,e2] }
-    return q1
+    // return { key: "group", arg: [e1,{key:"stateful", op: "last", mode: "reluctant", arg:[e2]}] }
+    return { key: "group", arg: [e1,e2] }
   } else if (q.xxpath || q.xxkey) {
     // if 'update .. ident ..', convert ident to input ref?
     let op = q.xxpath || q.xxkey
@@ -211,11 +214,19 @@ let preproc = q => {
 }
 
 
+
 //
 // 2. Extract: 
 //    - all data.*A operations into 'filters'
 //    - sum, group operations into 'assignments'
 //
+
+let extractFlex = q => {
+  if (q.key == "stateful" || q.key == "group" || q.key == "update")
+    return extract(q)
+  else
+    return extract({ key:"stateful", op: "single", mode: "reluctant", arg:[q] })
+}
 
 let extract = q => {
   if (q.key == "input") {
@@ -246,7 +257,7 @@ let extract = q => {
     let e1 = extract(q.arg[0])
     let save = path
     path = [...path,e1]
-    let e2 = extract(q.arg[1])
+    let e2 = extractFlex(q.arg[1])
     path = save
     let x = assignments.length
     assignments.push({ ...q, arg: [e1,e2], path, vars:[], dims:[], tmps: [] })
@@ -256,7 +267,7 @@ let extract = q => {
     let e1 = extract(q.arg[1])
     let save = path
     path = [...path,e1]
-    let e2 = extract(q.arg[2])
+    let e2 = extractFlex(q.arg[2])
     path = save
     let x = assignments.length
     assignments.push({ ...q, arg: [e0, e1,e2], path, vars:[], dims:[], tmps: [] })
@@ -285,23 +296,7 @@ let deno = q => k => {
     let {out} = k({vars:[q.op],dims:[q.op]})
     q.real = [q.op]
     return pretty(q)
-  } else if (q.key == "get") {
-    q.filter = 1
-    let [e1,e2] = q.arg
-    let r1 = deno(e1)(v1 => {
-      let r2 = deno(e2)(v2 => {
-        let {out} = k({
-          vars: union(v1.vars,v2.vars),
-          dims: union(v1.dims,v2.dims)
-        })
-        q.out = out
-        return {out:q.out} // for v2
-      })
-      return {out:q.out} // for v2
-    })
-    q.real = union(e1.real, e2.real)
-    return pretty(q)
-  } else if (q.key == "pure") {
+  } else if (q.key == "get" || q.key == "pure") {
     console.assert(q.arg.length == 2)
     let [e1,e2] = q.arg
     let r1 = deno(e1)(v1 => { // todo: support multiple?
@@ -361,17 +356,19 @@ let infer = q => {
   if (q.key == "input") {
     q.vars = []; //q.gens = []; 
     q.tmps = []
-    /*q.deps = [];*/ q.dims = []
+    q.mind = [] 
+    q.dims = []
   } else if (q.key == "const") {
     q.vars = []; //q.gens = []; 
     q.tmps = []
-    /*q.deps = [];*/ q.dims = []
+    q.mind = []
+    q.dims = []
   } else if (q.key == "var") {
     let syms = [q.op] 
     let tmps = [] //vars[q.op].tmps
     q.vars = [...syms]; //q.gens = []; 
     q.tmps = [...tmps]
-    /*q.deps = [...syms];*/ 
+    q.mind = [...syms]
     q.dims = [...syms]
   } else if (q.key == "ref") {
     // look up from assignments[q.op?]
@@ -381,6 +378,7 @@ let infer = q => {
     // q.gens = [...e1.gens]
     q.tmps = unique([...e1.tmps,q.op])
     // q.deps = e1.deps
+    q.mind = [...e1.mind]
     q.dims = [...e1.dims]
   } else if (q.key == "get") {
     let [e1,e2] = q.arg.map(infer)
@@ -389,18 +387,21 @@ let infer = q => {
       // q.gens = unique([...e1.gens, ...e2.gens, q.filter])
       q.tmps = unique([...e1.tmps, ...e2.tmps])
       // q.deps = q.vars // ?
+      q.mind = unique([...e1.mind, ...e2.mind])
       q.dims = unique([...e1.dims, ...e2.dims])
     } else if (e2.key == "var") { // filter itself
       q.vars = unique([...e1.vars])
       // q.gens = unique([...e1.gens])
       q.tmps = unique([...e1.tmps])
       // q.deps = unique([...e1.deps])
+      q.mind = unique([...e1.mind])
       q.dims = unique([...e1.dims])
     } else { // not a var
       q.vars = unique([...e1.vars, ...e2.vars])
       // q.gens = unique([...e1.gens, ...e2.gens])
       q.tmps = unique([...e1.tmps, ...e2.tmps])
       // q.deps = unique([...e1.deps, ...e2.deps])
+      q.mind = unique([...e1.mind, ...e2.mind])
       q.dims = unique([...e1.dims, ...e2.dims])
     }
   } else if (q.key == "pure") {
@@ -409,6 +410,7 @@ let infer = q => {
     // q.gens = unique([...e1.gens, ...e2.gens])
     q.tmps = unique([...e1.tmps, ...e2.tmps])
     // q.deps = unique([...e1.deps, ...e2.deps])
+    q.mind = unique([...e1.mind, ...e2.mind])
     q.dims = unique([...e1.dims, ...e2.dims])
   } else if (q.key == "stateful") {
     let [e1] = q.arg.map(infer)
@@ -416,13 +418,19 @@ let infer = q => {
     // q.gens = e1.gens
     q.tmps = e1.tmps
     // q.deps = e1.deps
-    q.dims = [] // can always reduce to one elem
+    q.mind = []
+    if (q.mode == "reluctant") { //console.log("!!!")
+      q.dims = e1.dims
+    } else {
+      q.dims = [] // can always reduce to one elem
+    }
   } else if (q.key == "group") {
     let [e1,e2] = q.arg.map(infer)
     q.vars = unique([...e1.vars, ...e2.vars])
     // q.gens = unique([...e1.gens, ...e2.gens])
     q.tmps = unique([...e1.tmps, ...e2.tmps])
     // q.deps = unique([...e1.deps, ...e2.deps])
+    q.mind = unique([/*...e1.mind,*/ ...e2.mind])
     q.dims = unique([/*...e1.dims,*/ ...e2.dims])
   } else if (q.key == "update") {
     let [e0,e1,e2] = q.arg.map(infer)
@@ -430,11 +438,13 @@ let infer = q => {
     // q.gens = unique([...e1.gens, ...e2.gens])
     q.tmps = unique([...e0.tmps, ...e1.tmps, ...e2.tmps])
     // q.deps = unique([...e1.deps, ...e2.deps])
+    q.mind = unique([ /*...e1.mind,*/ ...e2.mind])
     q.dims = unique([ /*...e1.dims,*/ ...e2.dims])
   } else {
     console.error("unknown op", q)
   }
   //console.assert(subset(q.dims, q.deps))
+  console.assert(subset(q.mind, q.dims))
   console.assert(subset(q.dims, q.vars))
   return q
 }
@@ -479,34 +489,42 @@ let inferBwd = out => q => {
     q.real = union(e1.real, e2.real)
   } else if (q.key == "stateful") {
     q.out = out
-    let out1 = out//intersect(out, q.vars) // preserve all vars visible outside
-    let out2 = union(out1,q.arg[0].dims)
-    let [e1] = q.arg.map(inferBwd(out2))
-    q.iter = e1.real // iteration space (enough?)
+    let out1 = union(out,q.arg[0].dims) // mind vs dim?
+    if (q.mode == "reluctant")
+      out1 = union(out,q.arg[0].mind) // mind vs dim?
+    let [e1] = q.arg.map(inferBwd(out1))
+    // q.iter = e1.real // iteration space (enough?)
+    q.iter = unique([...e1.real, ...q.path.flatMap(x => x.vars)])
     q.real = intersect(out, e1.real)
-    q.scope ??= diff(e1.real, q.real)
+    // console.log("SUM", q.path, out, q.iter, q.real)
+    // q.scope ??= diff(e1.real, q.real)
   } else if (q.key == "group") {
     q.out = out
     let e1 = inferBwd(q.arg[0].dims)(q.arg[0]) // ???
+    // let out1 = union(out,q.arg[0].dims)
     let e2 = inferBwd(out)(q.arg[1])
-    q.iter = q.arg[0].real // iteration space (enough?)
-    q.real = q.arg[1].real
-    q.scope ??= diff(q.arg[0].real, q.real)
+    // q.iter = e1.real // iteration space (enough?)
+    q.iter = unique([...e1.real, ...q.path.flatMap(x => x.vars)])
+    q.real = e2.real
+    // q.scope ??= diff(q.arg[0].real, q.real)
     // console.log("GRP",q.arg[1].real, q.real)
   } else if (q.key == "update") {
     q.out = out
     let e0 = inferBwd(out)(q.arg[0]) // ???  !!!!
     let e1 = inferBwd(q.arg[1].dims)(q.arg[1]) // ???
     let e2 = inferBwd(out)(q.arg[2])
-    q.iter = q.arg[1].real // iteration space (enough?)
-    q.real = q.arg[2].real
-    q.scope ??= diff(q.arg[1].real, q.real)
+    // q.iter = e1.real // iteration space (enough?)
+    q.iter = unique([...e1.real, ...q.path.flatMap(x => x.vars)])
+    q.real = e2.real
+    // q.scope ??= diff(q.arg[1].real, q.real)
     // console.log("GRP",q.arg[1].real, q.real)
   } else {
     console.error("unknown op", q)
   }
   console.assert(subset(q.dims, q.vars))
-  console.assert(subset(q.dims, q.real))
+  console.assert(subset(q.mind, q.real)) // can happen for lazy 'last'
+  // if (q.mode != "reluctant")
+    // console.assert(subset(q.dims, q.real)) // can happen for lazy 'last'
   if (q.iter)
     console.assert(subset(q.real, q.iter))
   // console.assert(subset(q.dims, q.deps))
@@ -580,8 +598,12 @@ let emitPseudo = (q) => {
       buf.push("  tmp: " + q.tmps)
     if (q.path.length > 0) 
       buf.push("  pth: " + q.path.map(pretty))
+    if (q.mind.length > 0)  
+      buf.push("  min: " + q.mind)
     if (q.dims.length > 0)  
       buf.push("  dim: " + q.dims)
+    if (q.out && q.out.length > 0)  
+      buf.push("  out: " + q.out)
     if (q.real?.length > 0)  
       buf.push("  rel: " + q.real)
     if (q.scope?.length > 0) 
@@ -756,7 +778,11 @@ let emitCode = (q, order) => {
 
 
 
-let compile = (q,flag) => {
+let compile = (q,{
+  flag = false, 
+  singleResult = false
+}={}) => {
+
   reset()
 
   // 1. Preprocess
@@ -774,6 +800,9 @@ let compile = (q,flag) => {
     console.log("RES:",q1)
   }
 
+
+  // if (singleResult)
+    // q = smartlast(q)
 
 
   // 2. Extract
@@ -896,7 +925,12 @@ let compile = (q,flag) => {
 
 
   // 4. Backward pass to infer output dimensions
-  inferBwd(q.dims)(q)
+  if (singleResult) {
+    console.assert(q.mind.length == 0)
+    inferBwd(q.mind)(q)
+  } else
+    inferBwd(q.dims)(q)
+
 
 
   // sanity checks

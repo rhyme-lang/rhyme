@@ -59,13 +59,32 @@ rt.stateful.sum = x => ({
   }
 })
 
+rt.stateful.first = x => ({
+  init: () => undefined,
+  next: s => {
+    if (x === undefined) return s
+    if (s === undefined) return x
+    return s
+  }
+})
+
 rt.stateful.last = x => ({
-  init: () => undefined, // XXX want 0 to start?
+  init: () => undefined,
   next: s => {
     if (x === undefined) return s
     return x
   }
 })
+
+rt.stateful.single = x => ({ // error if more than one
+  init: () => undefined, 
+  next: s => {
+    if (x === undefined) return s
+    if (s === undefined) return x
+    throw new Error("single value expected but got two: "+s+", "+x)
+  }
+})
+
 
 rt.stateful.array = x => ({
   init: () => [], // XXX want 0 to start?
@@ -75,6 +94,11 @@ rt.stateful.array = x => ({
     return s
   }
 })
+
+// sum, count, min, max, 
+// first, last, single, unique
+// array
+
 
 // these are dealt with somewhat specially
 rt.stateful.group = (x1,x2) => ({
