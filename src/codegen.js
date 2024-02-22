@@ -290,6 +290,11 @@ exports.generate = (ir) => {
             // remove gensBySym[s] from generatorStms (we're emitting it now)
             generatorStms = generatorStms.filter(e => e.sym != s)
             let handle = save()
+            // Sinve we may have partially filled loops
+            // A loop may be emitted multiple times, we want to set emittedLoopSyms[s] = false
+            // When we open a loop. This is used to maintain tmpAfterLoop and loopAfterLoop
+            let emittedLoopSymCopy = emittedLoopSyms[s]
+            emittedLoopSyms[s] = false
             // loop header
             emit("for (let " + quoteVar(e.sym) + " in " + e.rhs + ") {")
             // filters
@@ -299,6 +304,8 @@ exports.generate = (ir) => {
             // recurse!
             availableSyms[s] = true
             let oldLen = code.length
+            // If isEager = false, inside emitConvergence, we will still first try eager mode loop generation
+            // We only switch to non-eager mode when we can not make progress
             emitConvergence(isEager)
             // XX here: nested loops
             // figure out which statements need nested loops
@@ -311,6 +318,8 @@ exports.generate = (ir) => {
             } else {
               // We get an empty loop body, reverted to saved state
               revert(handle)
+              emittedLoopSyms[s] = emittedLoopSymCopy
+              /// XXX: should we push gensBySym[s] back to generatorStms?
             }
         }
     }
@@ -319,13 +328,30 @@ exports.generate = (ir) => {
         // emit assignments + generator as long as we're making progress
         // (assignments may need multiple calls b/c effect deps)
         let codeLength
+        let gntrStmsCopy
         do {
+            gntrStmsCopy = [...generatorStms]
             do {
-                codeLength = code.length
-                emitAssignments()
-            } while (codeLength < code.length)
-            emitGenerators(isEager)
-        } while (codeLength < code.length)
+                do {
+                    codeLength = code.length
+                    emitAssignments()
+                } while (codeLength < code.length && assignmentStms.length > 0)
+                emitGenerators(true)
+            } while (codeLength < code.length && assignmentStms.length > 0)
+
+            // XXX: what is the complexity of this algorithm if we run it in non eager mode?
+            if (!isEager && assignmentStms.length > 0) {
+                let neededGens = {}
+                assignmentStms.forEach(e => e.deps.filter(isVar).forEach(s => neededGens[s] = true))
+                let gensBySym = groupGenBySym(gntrStmsCopy)
+                generatorStms = []
+                for (let s in gensBySym) {
+                    if (neededGens[s])
+                      generatorStms.push(...gensBySym[s]) // We only want to re-emit the generators that are still needed by some remaining assignments
+                }
+                emitGenerators(false)
+            }
+        } while (!isEager && codeLength < code.length && assignmentStms.length > 0)
     }
     // XXX: First phase code gen
     // In this pass we want to perform aggressive loop hoisting, we will try to schedule loops to the out-most scope whenever possible
@@ -333,25 +359,13 @@ exports.generate = (ir) => {
     // Example, if we perform a cartesian product of two loops, the loop nest will not be generated in this phase
     emitConvergence(true)
 
+
     if (assignmentStms.length > 0) {
+      // XXX: Second phase code gen
+      // In this pass we want to fully emit all stmts, but we will try eager hoisting at each inner scope
       print("WARN - re-emitting generators because assignments remaining")
       emit("// --- non-eagerly emitting remaining generators ---")
-      availableSyms = {} // We are returning to the top level scope, so need to reset available syms
-      emittedLoopSyms = {}   // loops that have been fully emitted
-      let neededGens = {}
-      assignmentStms.forEach(e => e.deps.filter(isVar).forEach(s => neededGens[s] = true))
-      let gensBySym = groupGenBySym(generatorStmsCopy)
-      generatorStms = []
-      for (let s in gensBySym) {
-          if (neededGens[s])
-            generatorStms.push(...gensBySym[s]) // We only want to re-emit the generators that are still needed by some remaining assignments
-          else
-            emittedLoopSyms[s] = true           // Otherwise, we consider this generator to be fully emitted
-      }
-      // We do not need to modify emittedSymsRank
-
-      // XXX: Second phase code gen
-      // In this pass we want to fully emit all stmts, so no eager hoisting
+      generatorStms = [...generatorStmsCopy]
       emitConvergence(false)
     }
 
