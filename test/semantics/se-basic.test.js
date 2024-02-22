@@ -296,5 +296,18 @@ test("testGroup1", () => {
 })
 
 
+test("testGroup2", () => {
+  let query = {"data.*.key": rh`sum(data.*B.value)`}
+
+  let func = compile(query)
+  let res = func({data, other}, true)
+
+/* uncorrelated -- test decorrelation */
+
+  expect(res).toEqual({
+    U: 70, V: 70
+  })
+})
+
 
 

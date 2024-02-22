@@ -2,6 +2,8 @@ const codegen = require('./codegen')
 const ir = require('./ir')
 const graphics = require('./graphics')
 
+const { compile } = require('../src/simple-eval')
+
 // ---------- API ----------
 //
 //
@@ -135,7 +137,17 @@ api["exec"] = (query, data) => {
 // }
 api["query"] = api["compile"] = (query) => {
     let rep = ir.createIR(query)
-    return codegen.generate(rep)
+    let c1 = codegen.generate(rep)
+    let c2 = compile(query, {singleResult:true})
+    let wrapper = (x) => {
+        let res1 = c1(x)
+        let res2 = c2(x, true)
+        expect(res2).toEqual(res1)
+        return res2
+    }
+    wrapper.explain = c1.explain
+    wrapper.explain2 = c2.explain
+    return wrapper
 }
 
 // displaying graphics/visualizations in the browser

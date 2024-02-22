@@ -160,6 +160,15 @@ let reset = () => {
 let isVar = s => s.startsWith("*")
 
 let preproc = q => {
+  if (typeof (q) === "number" || !Number.isNaN(Number(q)))  // number?
+    return { key: "const", op: Number(q) }
+  if (typeof q === "string") {
+    if (q == "-" || q == "$display")
+      return { key: "const", op: q }
+    else
+      return preproc(parse(q))
+  }
+
   if (q.xxpath == "raw") {
     if (q.xxparam == "inp") return { key: "input" }
     else return { key: "const", op: q.xxparam }
@@ -185,22 +194,34 @@ let preproc = q => {
     if (e1.key == "const") // built-in op
       return preproc({...q, xxpath:e1.op, xxparam:qs2})
     else // udf apply
-      return { key: "apply", arg: [e1,...qs2.map(preproc)] }
+      return { key: "pure", op: "apply", arg: [e1,...qs2.map(preproc)] }
   } else if (q instanceof Array) {
-    console.assert(q.length == 1) // TODO
-    return { key: "stateful", op: "array", arg: q.map(preproc) }
+    // XXX what about xxkey == "Array" ?
+    if (q.length == 1)
+      return { key: "stateful", op: "array", arg: q.map(preproc) }
+    else
+      return { key: "pure", op: "flatten", arg: q.map(x => preproc([x])) }
   } else if (typeof(q) === "object" && !q.xxpath && !q.xxkey) {
-    console.assert(Object.keys(q).length == 1) // TODO
-    let k = Object.keys(q)[0]
-    let v = q[k]
-    let e1 = preproc(parse(k))
-    let e2 = preproc(v)
+    //console.assert(Object.keys(q).length == 1) // TODO
+    let res
+    for (let k of Object.keys(q)) {
+      let v = q[k]
+      let e1 = preproc(k)
+      let e2 = preproc(v)
+      if (e2.key == "merge" || e2.key == "keyval") { // TODO: flatten
+        e1 = e2.arg[0]
+        e2 = e2.arg[1]
+      }
+      if (!res) res = { key: "group", arg: [e1,e2] }
+      else res = { key: "update", arg: [res,e1,e2] }
+    }
     // return { key: "group", arg: [e1,{key:"stateful", op: "last", mode: "reluctant", arg:[e2]}] }
-    return { key: "group", arg: [e1,e2] }
+    return res
   } else if (q.xxpath || q.xxkey) {
     // if 'update .. ident ..', convert ident to input ref?
     let op = q.xxpath || q.xxkey
-    let es2 = q.xxpath ? q.xxparam.map(preproc) : [preproc(q.xxparam)]
+    let array = q.xxpath || op == "merge" || op == "keyval" || op == "flatten" || op == "array"
+    let es2 = array ? q.xxparam.map(preproc) : [preproc(q.xxparam)]
     if (op in runtime.special)
       return { key: op, arg: es2 }
     else if (op in runtime.pure)
@@ -346,9 +367,8 @@ let deno = q => k => {
 //
 // 3. Infer dependencies bottom up: 
 //    - vars: variables used
-//    - dims: minimum set of variables in output (not removed through reductions)
-//
-// Run in a fixpoint as var->var dependencies grow
+//    - mind: minimum set of variables in output (not removed through reductions)
+//    - dims: desired set of variables in output
 //
 
 let infer = q => {
@@ -374,9 +394,11 @@ let infer = q => {
     // look up from assignments[q.op?]
     let e1 = assignments[q.op]
     infer(e1)
-    q.vars = [...e1.vars]
+    q.vars = unique([...e1.vars])
+    // q.vars = unique([...e1.vars,...e1.path.flatMap(x => x.vars)])
     // q.gens = [...e1.gens]
     q.tmps = unique([...e1.tmps,q.op])
+    // q.tmps = unique([...e1.tmps,q.op,...e1.path.flatMap(x => x.tmps)])
     // q.deps = e1.deps
     q.mind = [...e1.mind]
     q.dims = [...e1.dims]
@@ -405,19 +427,22 @@ let infer = q => {
       q.dims = unique([...e1.dims, ...e2.dims])
     }
   } else if (q.key == "pure") {
-    let [e1,e2] = q.arg.map(infer)
-    q.vars = unique([...e1.vars, ...e2.vars])
-    // q.gens = unique([...e1.gens, ...e2.gens])
-    q.tmps = unique([...e1.tmps, ...e2.tmps])
-    // q.deps = unique([...e1.deps, ...e2.deps])
-    q.mind = unique([...e1.mind, ...e2.mind])
-    q.dims = unique([...e1.dims, ...e2.dims])
+    let es = q.arg.map(infer)
+    q.vars = unique(es.flatMap(x => x.vars))
+    q.tmps = unique(es.flatMap(x => x.tmps))
+    q.mind = unique(es.flatMap(x => x.mind))
+    q.dims = unique(es.flatMap(x => x.dims))
   } else if (q.key == "stateful") {
     let [e1] = q.arg.map(infer)
     q.vars = e1.vars
     // q.gens = e1.gens
     q.tmps = e1.tmps
     // q.deps = e1.deps
+    // decorrelate -- important for correctness!
+    q.path.map(infer)
+    q.path = q.path.filter(x => intersect(x.vars,q.vars).length > 0)
+    q.tmps = unique([...q.tmps,...q.path.flatMap(x => x.tmps)])
+    //
     q.mind = []
     if (q.mode == "reluctant") { //console.log("!!!")
       q.dims = e1.dims
@@ -485,8 +510,8 @@ let inferBwd = out => q => {
     q.real = union(e1.real, e2.real)
   } else if (q.key == "pure") {
     // q.out = out; 
-    let [e1,e2] = q.arg.map(inferBwd(out))
-    q.real = union(e1.real, e2.real)
+    let es = q.arg.map(inferBwd(out))
+    q.real = unique(es.flatMap(x => x.real))
   } else if (q.key == "stateful") {
     q.out = out
     let out1 = union(out,q.arg[0].dims) // mind vs dim?
@@ -494,7 +519,7 @@ let inferBwd = out => q => {
       out1 = union(out,q.arg[0].mind) // mind vs dim?
     let [e1] = q.arg.map(inferBwd(out1))
     // q.iter = e1.real // iteration space (enough?)
-    q.iter = unique([...e1.real, ...q.path.flatMap(x => x.vars)])
+    q.iter = unique([...e1.real, ...q.path.flatMap(x => x.real)])
     q.real = intersect(out, e1.real)
     // console.log("SUM", q.path, out, q.iter, q.real)
     // q.scope ??= diff(e1.real, q.real)
@@ -504,7 +529,7 @@ let inferBwd = out => q => {
     // let out1 = union(out,q.arg[0].dims)
     let e2 = inferBwd(out)(q.arg[1])
     // q.iter = e1.real // iteration space (enough?)
-    q.iter = unique([...e1.real, ...q.path.flatMap(x => x.vars)])
+    q.iter = unique([...e1.real, ...e2.real, ...q.path.flatMap(x => x.real)])
     q.real = e2.real
     // q.scope ??= diff(q.arg[0].real, q.real)
     // console.log("GRP",q.arg[1].real, q.real)
@@ -514,7 +539,7 @@ let inferBwd = out => q => {
     let e1 = inferBwd(q.arg[1].dims)(q.arg[1]) // ???
     let e2 = inferBwd(out)(q.arg[2])
     // q.iter = e1.real // iteration space (enough?)
-    q.iter = unique([...e1.real, ...q.path.flatMap(x => x.vars)])
+    q.iter = unique([...e1.real, ...e2.real, ...q.path.flatMap(x => x.real)])
     q.real = e2.real
     // q.scope ??= diff(q.arg[1].real, q.real)
     // console.log("GRP",q.arg[1].real, q.real)
@@ -522,7 +547,7 @@ let inferBwd = out => q => {
     console.error("unknown op", q)
   }
   console.assert(subset(q.dims, q.vars))
-  console.assert(subset(q.mind, q.real)) // can happen for lazy 'last'
+  console.assert(subset(q.mind, q.real), "mind < real") // can happen for lazy 'last'
   // if (q.mode != "reluctant")
     // console.assert(subset(q.dims, q.real)) // can happen for lazy 'last'
   if (q.iter)
@@ -556,8 +581,8 @@ let pretty = q => {
     }
     return e1+"["+e2+"]"
   } else if (q.key == "pure") {
-    let [e1,e2] = q.arg.map(pretty)
-    return e1 + " " + q.op + " " + e2
+    let es = q.arg.map(pretty)
+    return q.op + "(" + es.join(", ") + ")"
   } else if (q.key == "stateful") {
     let [e1] = q.arg.map(pretty)
     return q.op+"("+e1+")"
@@ -608,6 +633,8 @@ let emitPseudo = (q) => {
       buf.push("  rel: " + q.real)
     if (q.scope?.length > 0) 
       buf.push("  scp: " + q.scope)
+    if (q.iter?.length > 0) 
+      buf.push("  itr: " + q.iter)
   }
   buf.push(pretty(q))
   if (q.real?.length > 0)  
@@ -635,7 +662,10 @@ let codegen = q => {
   if (q.key == "input") {
     return "inp"
   } else if (q.key == "const") {
-    return "'"+q.op+"'"
+    if (typeof q.op === "string")
+      return "'"+q.op+"'"
+    else
+      return String(q.op)
   } else if (q.key == "var") {
     return quoteVar(q.op)
   } else if (q.key == "ref") {
@@ -646,8 +676,8 @@ let codegen = q => {
     let [e1,e2] = q.arg.map(codegen)
     return e1+quoteIndex(e2)
   } else if (q.key == "pure") {
-    let [e1,e2] = q.arg.map(codegen)
-    return "rt.pure."+q.op+"("+e1+", "+e2+")"
+    let es = q.arg.map(codegen)
+    return "rt.pure."+q.op+"("+es.join(",")+")"
   } else {
     console.error("unknown op", q)
   }
@@ -672,7 +702,7 @@ let emitStm = (q) => {
   }
 }
 
-let emitFilters = (real,out=[]) => buf => {
+let emitFilters = (real) => buf => {
   let vars = {}
   let seen = {}
   for (let v of real) vars[v] = true
@@ -684,32 +714,31 @@ let emitFilters = (real,out=[]) => buf => {
     let v1 = f.arg[1].op
     let g1 = f.arg[0]
     if (vars[v1]) {
-      if (!seen[v1]) {
-        // TODO: check unavailable deps here as well?
-        buf1.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
-        seen[v1] = true
-      } else {
-        let notseen = g1.vars.filter(x => !seen[x])
-        if (notseen.length == 0) {
-          buf1.push("if ("+quoteVar(v1)+" in "+codegen(g1)+")")
+      let notseen = g1.vars.filter(x => !seen[x]) // unavailable deps?
+      if (notseen.length == 0) { // ok, just emit current
+        if (!seen[v1]) {
+          buf1.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
         } else {
-          // XXX bit of a hack right now: our generator/filter for v1
-          // is dependent on (at least) one other variable v2 that
-          // is not part of the current iteration space. Solution:
-          // run this generator separately and reify into a
-          // datastructure. This needs to happen before the main
-          // loop, hence separate output buffers.
-          //
-          // TODO: it would be much cleaner to extract this into a 
-          // proper assignment statement
-          //
-          console.assert(intersect(notseen, real).length == 0) // We're eliminating
-          // iteration over this variable, so gotta make sure we weren't
-          // planning to iterate over it later in the sequence.
-          // XXX: this is brittle. Much better to start with 'real', and
-          // determine iteration order accordingly.
-          console.assert(notseen.length == 1) // for now only one
-          let [v2] = notseen
+          buf1.push("if ("+quoteVar(v1)+" in "+codegen(g1)+")")
+        }
+      } else {
+        // XXX bit of a hack right now: our generator/filter for v1
+        // is dependent on (at least) one other variable v2 that
+        // is not part of the current iteration space. Solution:
+        // run this generator separately and reify into a
+        // datastructure. This needs to happen before the main
+        // loop, hence separate output buffers.
+        //
+        // TODO: it would be much cleaner to extract this into a 
+        // proper assignment statement
+        //
+        console.assert(intersect(notseen, real).length == 0) // We're eliminating
+        // iteration over this variable, so gotta make sure we weren't
+        // planning to iterate over it later in the sequence.
+        // XXX: this is brittle. Much better to start with 'real', and
+        // determine iteration order accordingly.
+
+        for (let v2 of notseen) {
           buf0.push("// pre-gen "+v2)
           buf0.push("let gen"+i+quoteVar(v2)+" = {}")
           emitFilters([v2])(buf0)
@@ -717,9 +746,14 @@ let emitFilters = (real,out=[]) => buf => {
           buf0.push("  gen"+i+quoteVar(v2)+"["+quoteVar(v1)+"] = true //"+codegen(g1)+"?.["+quoteVar(v1)+"]")
           // with the aux data structure in pace, we're ready to
           // proceed with the main loop nest:
-          buf1.push("if ("+quoteVar(v1)+" in gen"+i+quoteVar(v2)+")")
+          if (!seen[v1])
+            buf1.push("for (let "+quoteVar(v1)+" in gen"+i+quoteVar(v2)+")")
+          else
+            buf1.push("if ("+quoteVar(v1)+" in gen"+i+quoteVar(v2)+")")
+          seen[v1] = true
         }
       }
+      seen[v1] = true
     }
   }
   buf.push(...buf0)
@@ -743,7 +777,8 @@ let emitCode = (q, order) => {
     // NOTE: it would be preferable to emit initialization up front (so that sum empty = 0)
 
     buf.push("// --- tmp"+i+" ---")
-    emitFilters(q.iter, q.out)(buf)
+    buf.push("{")
+    emitFilters(q.iter)(buf)
 
     // no longer an issue with "order"
     // if (q.tmps.some(x => x > i))
@@ -754,9 +789,9 @@ let emitCode = (q, order) => {
     let xs = [i,...q.path.map(codegen),...q.real.map(quoteVar)]
     let ys = xs.map(x => ","+x).join("")
 
-    buf.push("  rt.update(tmp"+ys+")("+ emitStm(q) + ")")
+    buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStm(q) + ")")
 
-    // buf.push("}")
+    buf.push("}")
   }
 
   buf.push("// --- res ---")
@@ -865,6 +900,7 @@ let compile = (q,{
 
   let order = scc(Object.keys(deps2.tmp2tmp), x => Object.keys(deps2.tmp2tmp[x])).reverse()
 
+  // order = [[0],[1],[2],[3],[4]]
 
   // calculate explicit transitive closure
 

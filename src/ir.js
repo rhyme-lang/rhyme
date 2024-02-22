@@ -484,7 +484,7 @@ exports.createIR = (query) => {
             //
             // In essence, this is a sorting problem (order by rank in outer array).
             // How do we want to implement sorting in general?
-            // - separate sortin pass at the end
+            // - separate sorting pass at the end
             // - return a sorted tree that iterates in the right order
             //
             assign(lhs2, "=", expr("[" + res1.map(x => x.txt).join(",") + "].flat()", ...res1.flatMap(x => x.deps)))

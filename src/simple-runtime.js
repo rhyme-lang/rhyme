@@ -14,7 +14,7 @@ rt.stateful = {}
 rt.special.get = true
 rt.special.group = true
 rt.special.update = true
-
+rt.special.merge = rt.special.keyval = true
 
 // pure operations
 
@@ -33,10 +33,43 @@ rt.pure.plus = (x1,x2) => {
   return Number(x1) + Number(x2)
 }
 
+rt.pure.minus = (x1,x2) => {
+  if (x1 === undefined) return undefined
+  if (x2 === undefined) return undefined
+  return Number(x1) + Number(x2)
+}
+
 rt.pure.times = (x1,x2) => {
   if (x1 === undefined) return undefined
   if (x2 === undefined) return undefined
   return Number(x1) * Number(x2)
+}
+
+rt.pure.fdiv = (x1,x2) => {
+  if (x1 === undefined) return undefined
+  if (x2 === undefined) return undefined
+  return Number(x1) / Number(x2)
+}
+
+rt.pure.div = (x1,x2) => {
+  if (x1 === undefined) return undefined
+  if (x2 === undefined) return undefined
+  return Math.trunc(Number(x1) / Number(x2))
+}
+
+rt.pure.apply = (x1,x2) => {
+  if (x1 === undefined) return undefined
+  return x1(x2)
+}
+
+rt.pure.join = (x1) => { // string join
+  if (x1 === undefined) return undefined
+  return x1.join()
+}
+
+rt.pure.flatten = (...x1) => { // array flatten
+  if (x1 === undefined) return undefined
+  return x1.flat()
 }
 
 
@@ -56,6 +89,42 @@ rt.stateful.sum = x => ({
     if (x === undefined) return s
     if (s === undefined) return x
     return s + x
+  }
+})
+
+rt.stateful.product = x => ({
+  init: () => undefined, // XXX want 0 to start?
+  next: s => {
+    if (x === undefined) return s
+    if (s === undefined) return x
+    return s * x
+  }
+})
+
+rt.stateful.count = x => ({
+  init: () => undefined, // XXX want 0 to start?
+  next: s => {
+    if (x === undefined) return s
+    if (s === undefined) return 1
+    return s + 1
+  }
+})
+
+rt.stateful.min = x => ({
+  init: () => undefined, 
+  next: s => {
+    if (x === undefined) return s
+    if (s === undefined) return x
+    return s <= x ? s : x
+  }
+})
+
+rt.stateful.max = x => ({
+  init: () => undefined, 
+  next: s => {
+    if (x === undefined) return s
+    if (s === undefined) return x
+    return s >= x ? s : x
   }
 })
 
@@ -81,19 +150,23 @@ rt.stateful.single = x => ({ // error if more than one
   next: s => {
     if (x === undefined) return s
     if (s === undefined) return x
-    throw new Error("single value expected but got two: "+s+", "+x)
+    // throw new Error("single value expected but got two: "+s+", "+x)
+    console.error("single value expected but got two: "+s+", "+x)
+    return s
   }
 })
 
 
 rt.stateful.array = x => ({
-  init: () => [], // XXX want 0 to start?
+  init: () => [], 
   next: s => {
     if (x === undefined) return s
     s.push(x)
     return s
   }
 })
+
+
 
 // sum, count, min, max, 
 // first, last, single, unique

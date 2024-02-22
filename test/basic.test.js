@@ -104,7 +104,10 @@ test("groupByAverageTest", () => {
         total: api.sum("data.*.value"),
         "data.*.key": avg("data.*.value"),
     }
-    let res = api.compile(query)({ data })
+    let func = api.compile(query)
+    console.log(func.explain2.pseudo)
+    console.log(func.explain2.code)
+    let res = func({ data })
     let expected = { "total": 60, "A": 20, "B": 20 }
     expect(res).toEqual(expected)
 })
@@ -136,7 +139,8 @@ test("groupByRelativeSum", () => {
         total: api.sum("data.*.value"),
         "data.*.key": api.fdiv(api.sum("data.*.value"), api.sum("data.*B.value"))
     }
-    let res = api.compile(query)({ data })
+    let func = api.compile(query)
+    let res = func({ data })
     let expected = { "total": 60, "A": 0.6666666666666666, "B": 0.3333333333333333 }
     expect(res).toEqual(expected)
 })
@@ -168,16 +172,38 @@ test("nestedGroupAggregateTest", () => {
     expect(res).toEqual(expected)
 })
 
-test("joinSimpleTest", () => {
+test("joinSimpleTest1", () => {
     let q1 = {
-        "other.*O.country": "other.*O.region"
+        "other.*O.country": "last(other.*O.region)"
+    }
+    let query = {
+        "data.*.city": {
+            country: "data.*.country",
+            region: api.get(q1,"data.*.country")
+        }
+    }
+    let func = api.compile(query)
+    let res = func({ data: countryData, other: regionData })
+    let expected = {
+        "Beijing": { country: "China", region: "Asia" },
+        "Paris": { country: "France", region: "Europe" },
+        "London": { country: "UK", region: "Europe" },
+        "Tokyo": { country: "Japan", region: "Asia" }
+    }
+    expect(res).toEqual(expected)
+})
+
+test("joinSimpleTest2", () => {
+    let q1 = {
+        "other.*O.country": "last(other.*O.region)"
     }
     let query = {
         "-": api.merge(api.get(q1, "data.*.country"), {
             "data.*.city": api.sum("data.*.population")
         }),
     }
-    let res = api.compile(query)({ data: countryData, other: regionData })
+    let func = api.compile(query)
+    let res = func({ data: countryData, other: regionData })
     let expected = {
         "Asia": {
             "Tokyo": 30,
@@ -231,7 +257,8 @@ test("udfTest", () => {
         item: "data.*.item",
         price: api.apply("udf.formatDollar", "data.*.price")
     }]
-    let res = api.compile(query)({ data, udf })
+    let func = api.compile(query)
+    let res = func({ data, udf })
     let expected = [{ item: "iPhone", price: "$1200.00" }, { item: "Galaxy", price: "$800.00" }]
     expect(res).toEqual(expected)
 })
@@ -300,7 +327,8 @@ test("arrayTest6Flatten", () => {
     let query0 = { "data.*.key": {v1:["data.*.value"], v2:["data.*.value"]} }
     let query = { "*k": [api.get(api.get(api.get(query0,"*k"), "*A"), "*B")] }
     let func = api.compile(query)
-    // console.dir(func.explain)
+    // console.log(func.explain2.pseudo)
+    // console.log(func.explain2.code)
     let res = func({ data })
     let expected = {
       "A": [10, 30, 10,30],
@@ -313,8 +341,6 @@ test("arrayTest7Eta", () => {
     let query = { "*k": api.get(query0,"*k") }
     let func0 = api.compile(query0)
     let func = api.compile(query)
-    // console.dir(func0.explain)
-    // console.dir(func.explain)
     let res = func({ data })
     let expected = {
       "A": [10, 30],
