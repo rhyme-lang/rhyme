@@ -105,8 +105,6 @@ test("groupByAverageTest", () => {
         "data.*.key": avg("data.*.value"),
     }
     let func = api.compile(query)
-    console.log(func.explain2.pseudo)
-    console.log(func.explain2.code)
     let res = func({ data })
     let expected = { "total": 60, "A": 20, "B": 20 }
     expect(res).toEqual(expected)
@@ -327,8 +325,6 @@ test("arrayTest6Flatten", () => {
     let query0 = { "data.*.key": {v1:["data.*.value"], v2:["data.*.value"]} }
     let query = { "*k": [api.get(api.get(api.get(query0,"*k"), "*A"), "*B")] }
     let func = api.compile(query)
-    // console.log(func.explain2.pseudo)
-    // console.log(func.explain2.code)
     let res = func({ data })
     let expected = {
       "A": [10, 30, 10,30],

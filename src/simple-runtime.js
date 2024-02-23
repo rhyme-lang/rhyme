@@ -145,13 +145,16 @@ rt.stateful.last = x => ({
   }
 })
 
-rt.stateful.single = x => ({ // error if more than one
+rt.stateful.single = x => ({ // error if more than one (XXX can't really do that...)
   init: () => undefined, 
   next: s => {
     if (x === undefined) return s
     if (s === undefined) return x
     // throw new Error("single value expected but got two: "+s+", "+x)
-    console.error("single value expected but got two: "+s+", "+x)
+    // see groupByAverageTest, current codegen is set up to produce
+    // the same value repeatedly in a grouped context
+    if (JSON.stringify(s) !== JSON.stringify(x))
+      console.error("single value expected but got two: "+s+", "+x)
     return s
   }
 })

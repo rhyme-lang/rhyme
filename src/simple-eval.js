@@ -438,6 +438,7 @@ let infer = q => {
     // q.gens = e1.gens
     q.tmps = e1.tmps
     // q.deps = e1.deps
+    //
     // decorrelate -- important for correctness!
     q.path.map(infer)
     q.path = q.path.filter(x => intersect(x.vars,q.vars).length > 0)
@@ -454,6 +455,12 @@ let infer = q => {
     q.vars = unique([...e1.vars, ...e2.vars])
     // q.gens = unique([...e1.gens, ...e2.gens])
     q.tmps = unique([...e1.tmps, ...e2.tmps])
+    //
+    // decorrelate -- important for correctness!
+    q.path.map(infer)
+    q.path = q.path.filter(x => intersect(x.vars,q.vars).length > 0)
+    q.tmps = unique([...q.tmps,...q.path.flatMap(x => x.tmps)])
+    //
     // q.deps = unique([...e1.deps, ...e2.deps])
     q.mind = unique([/*...e1.mind,*/ ...e2.mind])
     q.dims = unique([/*...e1.dims,*/ ...e2.dims])
@@ -462,6 +469,12 @@ let infer = q => {
     q.vars = unique([...e0.vars, ...e1.vars, ...e2.vars])
     // q.gens = unique([...e1.gens, ...e2.gens])
     q.tmps = unique([...e0.tmps, ...e1.tmps, ...e2.tmps])
+    //
+    // decorrelate -- important for correctness!
+    q.path.map(infer)
+    q.path = q.path.filter(x => intersect(x.vars,q.vars).length > 0)
+    q.tmps = unique([...q.tmps,...q.path.flatMap(x => x.tmps)])
+    //
     // q.deps = unique([...e1.deps, ...e2.deps])
     q.mind = unique([ /*...e1.mind,*/ ...e2.mind])
     q.dims = unique([ /*...e1.dims,*/ ...e2.dims])
