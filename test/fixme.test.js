@@ -27,7 +27,8 @@ test("statelessRepeatedGrouping4", () => {
     let f2 = api.compile(q2)
 
     let res1 = f1({data})
-    let res2 = f2({data})
+    let res2 = f2.c1({data})
+    let res2_new = f2.c2({data}, true)
 
     let e = [
       { key: 'A', data: { A: 10 } },
@@ -47,6 +48,9 @@ test("statelessRepeatedGrouping4", () => {
       { key: 'B', data: { A: 10, B: 20, C: 30 } },
       { key: 'C', data: { A: 10, B: 20, C: 30 } }
     ]
+
+    expect(res2).toEqual(bug)
+    expect(res2_new).toEqual(e)
 })
 
 
@@ -65,17 +69,21 @@ test("asymmetricPartialSum", () => {
         D: { value: 200 },
     }
 
-    let items = rh`(sum data.*.value) + other.*.value`
+    let items = rh`(sum data.*A.value) + other.*A.value`
     let query = api.array(items)
 
     let func = api.compile(query)
-    let res = func({data, other})
+    let res = func.c1({data, other})
+    let res_new = func.c2({data, other}, true)
 
     // console.log(res)
 
     // expect(res).toEqual([140,420]) // {A:140, B:420}
 
     let bug = [140, 460]
+
+    expect(res).toEqual(bug)
+    expect(res_new).toEqual([140, 420])
 })
 
 
@@ -107,12 +115,16 @@ test("undefinedVal", () => {
     }
 
     let f = api.compile(q)
-    let res = f({data, index})
+    let res = f.c1({data, index})
+    let res_new = f.c2({data, index}, true)
 
     // console.dir(res)
 
     // actual result:
     let bug = { A: 10, B: 20, C: undefined }
+
+    expect(res).toEqual(bug)
+    expect(res_new).toEqual({ A: 10, B: 20})
 })
 
 test("undefinedKey", () => {
@@ -125,13 +137,16 @@ test("undefinedKey", () => {
     }
 
     let f = api.compile(q)
-    let res = f({data, index})
+    let res = f.c1({data, index})
+    let res_new = f.c2({data, index}, true)
 
     // console.dir(res)
 
     // actual result:
     let bug = { A: 1, undefined: 1, B: 2 }
 
+    expect(res).toEqual(bug)
+    expect(res_new).toEqual({ A: 1, B: 2})
 })
 
 
@@ -159,8 +174,10 @@ test("aggregateAsKey", () => {
     let f1 = api.compile(q1)
     let f2 = api.compile(q2)
 
-    let res1 = f1({data})
-    let res2 = f2({data})
+    let res1 = f1.c1({data})
+    let res2 = f2.c1({data})
+    let res1_new = f1.c2({data}, true)
+    let res2_new = f2.c2({data}, true)
 
     let e1 = {
         1: { 40: true },
@@ -172,22 +189,31 @@ test("aggregateAsKey", () => {
         20: { 2: true }
     }
 
+    let e2_alt = {
+        60: { 1: true, 2: true }, // XXX is this the right one?
+    }
+
+
     // console.dir(res1)
     // console.dir(res2)
 
     // actual result:
     let bug1 = {
-        1: { 10: true, 40: true },
-        2: { 20: true }
+        1: { 10: "true", 40: "true" },
+        2: { 20: "true" }
     }
 
     let bug2 = {
-        10: { 1: true },
-        30: { 2: true },
-        60: { 1: true }
+        10: { 1: "true" },
+        30: { 2: "true" },
+        60: { 1: "true" }
     }
 
     // instead of waiting for the final sum,
     // partial sums show up in the structure
 
+    expect(res1).toEqual(bug1)
+    expect(res2).toEqual(bug2)
+    expect(res1_new).toEqual(e1)
+    expect(res2_new).toEqual(e2_alt)
 })
