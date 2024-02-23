@@ -143,6 +143,9 @@ test("testCycles3-1", () => {
 
   let func = compile(query)
 
+  // console.log(func.explain.pseudo)
+  // console.log(func.explain.code)
+
   let res = func({data, other})
 
   expect(res).toEqual([11,31])
@@ -158,22 +161,15 @@ test("testCycles3-2", () => {
 
   // What's going on? The groupby does not have a sum so it
   // produces a mapping *A -> key -> val. Thus, "other.*"
-  // is a mapping indexed by *A. Thus, * depends on *A, so "sum(other.*)" must 
-  // run last.
+  // is a mapping indexed by *A. Thus, * depends on *A, so 
+  // "sum(other.*)" must run last.
+
+  // Also exercises "pre-gen" logic for *A, when iterating over *B
 
   let func = compile(query)
 
-  // console.log(func.explain.ir.order)
-  // console.log(func.explain.ir.deps)
-  // console.log(func.explain.ir.transdeps)
   // console.log(func.explain.pseudo)
   // console.log(func.explain.code)
-
-
-  // console.log(func.explain.pseudo)
-  // console.log(func.explain.code)
-  // if (func.explain.code.includes("pre-gen"))
-    // console.log("!!!")
 
   let res = func({data, other}, true)
   // console.log(res)

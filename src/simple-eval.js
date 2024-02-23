@@ -515,11 +515,11 @@ let infer = q => {
 let inferBwd = out => q => {
   if (q.key == "input") {
     q.out = out; 
-    // q.iter = []
+    q.free = []
     q.real = []
   } else if (q.key == "const") {
     q.out = out; 
-    // q.iter = []
+    q.free = []
     q.real = []
   } else if (q.key == "var") {
     q.out = out; 
@@ -528,13 +528,13 @@ let inferBwd = out => q => {
     let syms = unique([q.op, ...vars[q.op].vars])
     syms = intersect(syms, q.out)
     q.real = syms // q.dims
-    // q.iter = [q.op]
+    q.free = [q.op]
   } else if (q.key == "ref") {
     let e1 = assignments[q.op]
     inferBwd(out)(e1)
     q.out = out; 
     q.real = e1.real
-    // q.iter = unique([...e1.real, ...e1.path.flatMap(x => x.iter)])
+    q.free = unique([...e1.real, ...e1.path.flatMap(x => x.free)])
   } else if (q.key == "get") {
     // q.out = out; 
     // q.real = q.dims
@@ -543,12 +543,12 @@ let inferBwd = out => q => {
     }
     let [e1,e2] = q.arg.map(inferBwd(out))
     q.real = union(e1.real, e2.real)
-    // q.iter = union(e1.iter, e2.iter)
+    q.free = union(e1.free, e2.free)
   } else if (q.key == "pure") {
     // q.out = out; 
     let es = q.arg.map(inferBwd(out))
     q.real = unique(es.flatMap(x => x.real))
-    // q.iter = unique(es.flatMap(x => x.iter))
+    q.free = unique(es.flatMap(x => x.free))
   } else if (q.key == "stateful") {
     q.out = out
     let out1 = union(out,q.arg[0].dims) // mind vs dim?
@@ -559,6 +559,7 @@ let inferBwd = out => q => {
     q.path = q.path.filter(x => intersect(x.real,q.vars).length > 0)
     q.iter = unique([...e1.real, ...q.path.flatMap(x => x.real)])
     q.real = intersect(out, e1.real)
+    q.free = unique([...q.real,...e1.free, ...q.path.flatMap(x => x.free)])
     // console.log("SUM", q.path, out, q.iter, q.real)
     // q.scope ??= diff(e1.real, q.real)
   } else if (q.key == "group") {
@@ -570,6 +571,7 @@ let inferBwd = out => q => {
     q.path = q.path.filter(x => intersect(x.real,q.vars).length > 0)
     q.iter = unique([...e1.real, ...e2.real, ...q.path.flatMap(x => x.real)])
     q.real = e2.real
+    q.free = unique([...q.real,...e1.free, ...e2.free, ...q.path.flatMap(x => x.free)])
     // q.scope ??= diff(q.arg[0].real, q.real)
     // console.log("GRP",q.arg[1].real, q.real)
   } else if (q.key == "update") {
@@ -581,6 +583,7 @@ let inferBwd = out => q => {
     q.path = q.path.filter(x => intersect(x.real,q.vars).length > 0)
     q.iter = unique([...e1.real, ...e2.real, ...q.path.flatMap(x => x.real)])
     q.real = e2.real
+    q.free = unique([...q.real,...e1.free, ...e2.free, ...q.path.flatMap(x => x.free)])
     // q.scope ??= diff(q.arg[1].real, q.real)
     // console.log("GRP",q.arg[1].real, q.real)
   } else {
@@ -592,6 +595,11 @@ let inferBwd = out => q => {
     // console.assert(subset(q.dims, q.real)) // can happen for lazy 'last'
   if (q.iter)
     console.assert(subset(q.real, q.iter))
+  if (q.key == "stateful" || q.key =="group" || q.key == "update") {
+    console.assert(subset(q.real, q.free), q.real+ "/"+ q.free)
+    console.assert(same(q.iter, q.free), q.iter+ "/"+ q.free)
+  }
+
   // console.assert(subset(q.dims, q.deps))
   // console.assert(subset(q.dims, q.real))
   // console.assert(subset(q.real, q.out))
@@ -672,10 +680,10 @@ let emitPseudo = (q) => {
       buf.push("  dim: " + q.dims)
     if (q.out && q.out.length > 0)  
       buf.push("  out: " + q.out)
-    if (q.scope?.length > 0) 
-      buf.push("  scp: " + q.scope)
     if (q.iter?.length > 0) 
       buf.push("  itr: " + q.iter)
+    if (q.free?.length > 0) 
+      buf.push("  fre: " + q.free)
   }
   buf.push(pretty(q))
   if (q.real?.length > 0)  
@@ -758,7 +766,7 @@ let emitFilters = (real) => buf => {
     let v1 = f.arg[1].op
     let g1 = f.arg[0]
     if (vars[v1]) {
-      let notseen = g1.vars.filter(x => !seen[x]) // unavailable deps?
+      let notseen = g1.free.filter(x => !seen[x]) // unavailable deps?
       if (notseen.length == 0) { // ok, just emit current
         if (!seen[v1]) {
           buf1.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
@@ -787,7 +795,7 @@ let emitFilters = (real) => buf => {
               buf0.indexOf("let gen"+i+quoteVar(v2)+" = {}") < 0) {
             buf0.push("// pre-gen "+v2)
             buf0.push("let gen"+i+quoteVar(v2)+" = {}")
-            emitFilters(g1.vars)(buf0) // XXX: need all of vars?
+            emitFilters(g1.free)(buf0)
             buf0.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
             buf0.push("  gen"+i+quoteVar(v2)+"["+quoteVar(v1)+"] = true //"+codegen(g1)+"?.["+quoteVar(v1)+"]")
             // with the aux data structure in place, we're ready to
@@ -827,7 +835,7 @@ let emitCode = (q, order) => {
 
     buf.push("// --- tmp"+i+" ---")
     // buf.push("{")
-    emitFilters(q.iter)(buf)
+    emitFilters(q.free)(buf)
 
     // no longer an issue with "order"
     // if (q.tmps.some(x => x > i))
