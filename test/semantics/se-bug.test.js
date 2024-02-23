@@ -62,7 +62,7 @@ test("groupTest2", () => { // BUG!!!
     let res = func({ data }, true)
     let expected = { "total": 60, "A": 40, "B": 20 }
     let bug = { "total": 60, "A": 80, "B": 20 }
-    expect(res).toEqual(bug)
+    expect(res).toEqual(expected)
 })
 
 test("groupTest3", () => { // BUG!!!
@@ -78,5 +78,61 @@ test("groupTest3", () => { // BUG!!!
     let res = func({ data }, true)
     let expected = { "total": 60, "A": [[10,30]], "B": [[20]] }
     let bug = { "total": 60, "A": [[10,30],[10,30]], "B": [[20]] }
+    expect(res).toEqual(expected)
+})
+
+// These simple cases above are fixed by considering if
+// sum(q) actually does any dimensionality reduction.
+// If not, codgen makes the sum acts as a no-op.
+
+// Now what about cases where we're removing *some* 
+// variables, but not all.
+
+
+let data3 = [
+    { key: "A", sub: [110, 120] }, // 230
+    { key: "A", sub: [330] },
+    { key: "B", sub: [200] },
+]
+
+
+test("groupTestNested1", () => {
+    let query = {
+        "total": api.sum(api.sum("data3.*.sub.*B")),
+        "data3.*.key": {
+          "subtotal": rh`sum (udf.guard *B (sum data3.*.sub.*B))`,
+          "items": rh`array (udf.guard *B (array data3.*.sub.*B))`
+        }
+    }
+    let func = compile(query)
+
+    console.log(func.explain.pseudo)
+    console.log(func.explain.code)
+
+    let res = func({ data3, udf: {guard: (x,y) => y }}, true)
+    let expected = { 
+      "total": 760, 
+      "A": {
+        "subtotal": 560, 
+        items: [[110, 120, 330]],
+      },
+      "B": {
+        "subtotal": 200, 
+        items: [[200]],
+      }
+    }
+    let bug = { 
+      "total": 760, 
+      "A": {
+        "subtotal": 1000,  // extra 110+330 !!!
+        items: [[110, 330], [120], [110, 330]], // extra 110, 330 !!!
+      },
+      "B": {
+        "subtotal": 200, 
+        items: [[200]],
+      }
+    }
     expect(res).toEqual(bug)
 })
+
+

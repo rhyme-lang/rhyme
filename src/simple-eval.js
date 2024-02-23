@@ -736,8 +736,9 @@ let codegen = q => {
 let emitStm = (q) => {
   if (q.key == "stateful") {    
     let [e1] = q.arg.map(codegen)
+    let extra = diff(q.arg[0].real, q.real)
     // return lhs+" += "+e1
-    return "rt.stateful."+q.op+"("+e1+")"
+    return "rt.stateful."+q.op+"("+e1+","+extra.length+")"
   } else if (q.key == "group") {
     let [e1,e2] = q.arg.map(codegen)
     // return lhs+"["+e1+"] = "+e2

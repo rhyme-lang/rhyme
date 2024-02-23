@@ -83,9 +83,10 @@ rt.pure.flatten = (...x1) => { // array flatten
 //   may be either 'undefined' or some other default
 
 
-rt.stateful.sum = x => ({
+rt.stateful.sum = (x,extra) => ({
   init: () => undefined, // XXX want 0 to start?
   next: s => {
+    if (!extra) return x // FIXME partial solution to double-sum bug
     if (x === undefined) return s
     if (s === undefined) return x
     return s + x
@@ -160,9 +161,10 @@ rt.stateful.single = x => ({ // error if more than one (XXX can't really do that
 })
 
 
-rt.stateful.array = x => ({
+rt.stateful.array = (x,extra) => ({
   init: () => [], 
   next: s => {
+    if (!extra) return [x]  // FIXME partial solution to double-sum bug
     if (x === undefined) return s
     s.push(x)
     return s
