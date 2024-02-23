@@ -35,6 +35,7 @@ function sorted(as) {
     // XXX: needs to be a fresh sym? not quite, should be specific
     // enough so that sorted(as) can be CSE'd for repeated as
     // (but what about context -- i.e. one in group, other total?)
+    // XXX: should work with modified semantics of *!
 }
 
 
@@ -51,16 +52,18 @@ test("plainSortTest1", () => {
 test("plainSortTest2", () => {
     let query = [rh`countryData.${sorted("countryData.*.population")}.city`]
 
-    let res = api.compile(query)({ countryData, udf })
+    let func = api.compile(query)
+    let res = func({ countryData, udf })
     let expected = ["Paris", "London", "Beijing", "Tokyo"]
     expect(res).toEqual(expected)
 })
 
-test("plainSortTest2", () => {
+test("plainSortTest3", () => {
     let sp = sorted("countryData.*.population")
     let query = api.group(rh`countryData.${sp}.population`, rh`countryData.${sp}.city`)
 
-    let res = api.compile(query)({ countryData, udf })
+    let func = api.compile(query)
+    let res = func({ countryData, udf })
     let expected = [["Paris",10], ["London",10], ["Beijing",20], ["Tokyo",30]]
     expect(Object.entries(res)).toEqual(expected) // order matters!
 })

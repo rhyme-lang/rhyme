@@ -145,6 +145,8 @@ api["query"] = api["compile"] = (query) => {
         expect(res2).toEqual(res1)
         return res2
     }
+    wrapper.c1 = c1
+    wrapper.c2 = c2
     wrapper.explain = c1.explain
     wrapper.explain2 = c2.explain
     return wrapper

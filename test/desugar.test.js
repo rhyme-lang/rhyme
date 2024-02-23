@@ -151,7 +151,7 @@ test("letTest1", () => {
 
   let q0 = rh`7`
   let q1 = rh`let x 7 x`
-  
+
   expect(q1).toEqual(q0)
 
   let q1d = desugar(q1)

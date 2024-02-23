@@ -36,7 +36,7 @@ rt.pure.plus = (x1,x2) => {
 rt.pure.minus = (x1,x2) => {
   if (x1 === undefined) return undefined
   if (x2 === undefined) return undefined
-  return Number(x1) + Number(x2)
+  return Number(x1) - Number(x2)
 }
 
 rt.pure.times = (x1,x2) => {
@@ -57,9 +57,9 @@ rt.pure.div = (x1,x2) => {
   return Math.trunc(Number(x1) / Number(x2))
 }
 
-rt.pure.apply = (x1,x2) => {
+rt.pure.apply = (x1,...x2) => {
   if (x1 === undefined) return undefined
-  return x1(x2)
+  return x1(...x2)
 }
 
 rt.pure.join = (x1) => { // string join

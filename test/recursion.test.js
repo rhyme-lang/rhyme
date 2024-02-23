@@ -8,7 +8,28 @@ let data = [
     { key: "A", value: 30 }
 ]
 
-test("fact", () => {
+test("fact1", () => {
+
+    // n * fact(n-1)
+
+    let arg = n => ({ data: { n }, udf: ".udf"})
+    let query = rh`data.n * (udf.func ${arg("data.n - 1")})`
+
+    let func = api.compile(query)
+    let f2 = x => x.data.n ? func(x) : 1 // external stopping condition
+
+    let input = {
+        data: { n: 4 },
+        udf: { func: f2 }
+    }
+
+    let res = func(input)
+
+    expect(res).toEqual(24)
+})
+
+
+test("fact2", () => {
 
     // use && and || to guard effects:
 
@@ -28,11 +49,10 @@ test("fact", () => {
 
     let input = {
         data: { n: 4 },
-        udf: { func: func }
+        udf: { func: f2, ...udf }
     }
 
-
-    let res = func({data: {n: 4}, udf: {func:f2, ...udf}})
+    let res = func(input)
 
     expect(res).toEqual(24)
 })

@@ -176,6 +176,7 @@ let preproc = q => {
 
   if (q.xxpath == "raw") {
     if (q.xxparam == "inp") return { key: "input" }
+    else if (!Number.isNaN(Number(q.xxparam))) return { key: "const", op: Number(q.xxparam) }
     else return { key: "const", op: q.xxparam }
   } else if (q.xxpath == "ident") {
     if (q.xxparam == "*") console.error("cannot support free-standing *")
@@ -540,6 +541,7 @@ let inferBwd = out => q => {
       out1 = union(out,q.arg[0].mind) // mind vs dim?
     let [e1] = q.arg.map(inferBwd(out1))
     // q.iter = e1.real // iteration space (enough?)
+    q.path = q.path.filter(x => intersect(x.real,q.vars).length > 0)
     q.iter = unique([...e1.real, ...q.path.flatMap(x => x.real)])
     q.real = intersect(out, e1.real)
     // console.log("SUM", q.path, out, q.iter, q.real)
@@ -638,20 +640,21 @@ let emitPseudo = (q) => {
   for (let i in assignments) {
     let q = assignments[i]
     buf.push("tmp"+i + " = " + pretty(q))
+    if (q.real?.length > 0)
+      buf.push("  rel: " + q.real)
+    if (q.path.length > 0) 
+      buf.push("  pth: " + q.path.map(pretty))
+    // buf.push("  = " + pretty(q))
     if (q.vars.length > 0) 
       buf.push("  var: " + q.vars)
     if (q.tmps.length > 0) 
       buf.push("  tmp: " + q.tmps)
-    if (q.path.length > 0) 
-      buf.push("  pth: " + q.path.map(pretty))
     if (q.mind.length > 0)  
       buf.push("  min: " + q.mind)
     if (q.dims.length > 0)  
       buf.push("  dim: " + q.dims)
     if (q.out && q.out.length > 0)  
       buf.push("  out: " + q.out)
-    if (q.real?.length > 0)  
-      buf.push("  rel: " + q.real)
     if (q.scope?.length > 0) 
       buf.push("  scp: " + q.scope)
     if (q.iter?.length > 0) 
