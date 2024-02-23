@@ -20,7 +20,8 @@ test("decorrelation1", () => {
         "A": { "my_total": 40, "full_total": 60 },
         "B": { "my_total": 20, "full_total": 60 }
     }
-    let res = api.compile(query)({ data })
+    let func = api.compile(query)
+    let res = func({ data })
     expect(res).toEqual(expected)
 })
 

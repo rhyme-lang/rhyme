@@ -295,7 +295,11 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
 
   let query = rh`${lineRes} | group *line | sum .*`
 
+  // let query = {"*line": lineRes}
+
   let func = api.compile(query)
+  // console.log(func.explain2.pseudo)
+  // console.log(func.explain2.code)
   let res = func({input, udf})
   expect(res).toBe(13)
 })
@@ -355,9 +359,9 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
                                   | udf.andThen (udf.incCard ${matchCountObj}.(${matchCountObj}.*.id) ((udf.logicalAnd (udf.isGreaterThan ${matchCountObj}.*.id .id) (udf.isLessOrEqual ${matchCountObj}.*.id (.id + .match))) * .count)) .count
                                   | group *lineRes
                                   | sum .*`
-
+  
   let func = api.compile(query)
-  let res = func({input, udf})
+  let res = func.c1({input, udf})
   expect(res).toBe(30)
 })
 

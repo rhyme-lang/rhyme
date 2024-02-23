@@ -206,6 +206,8 @@ let preproc = q => {
       return preproc({...q, xxpath:e1.op, xxparam:qs2})
     else // udf apply
       return { key: "pure", op: "apply", arg: [e1,...qs2.map(preproc)] }
+  } else if (q.xxkey == "array") {
+    return preproc(q.xxparam)
   } else if (q instanceof Array) {
     // XXX what about xxkey == "Array" ?
     if (q.length == 1)
@@ -271,10 +273,15 @@ let extract = q => {
   } else if (q.key == "get") {
     let [e1,e2] = q.arg.map(extract)
     if (e2.key == "var") {
-      let q1 = JSON.parse(JSON.stringify({ ...q, arg: [e1,e2] }))
-      let ix = filters.length
+      // cse -- could take care of unique "*" here as well
+      let str = JSON.stringify({ ...q, arg: [e1,e2] })
+      let ix = filters.map(x => JSON.stringify(x)).indexOf(str)
+      if (ix < 0) {
+        ix = filters.length
+        let q1 = JSON.parse(str)
+        filters.push(q1) // deep copy...
+      }
       q.filter = ix
-      filters.push(q1) // deep copy...
     }
     return { ...q, arg: [e1,e2]}
   } else if (q.key == "pure") {
@@ -507,11 +514,13 @@ let infer = q => {
 
 let inferBwd = out => q => {
   if (q.key == "input") {
-    // q.out = out; 
-    q.real = q.dims
+    q.out = out; 
+    // q.iter = []
+    q.real = []
   } else if (q.key == "const") {
-    // q.out = out; 
-    q.real = q.dims
+    q.out = out; 
+    // q.iter = []
+    q.real = []
   } else if (q.key == "var") {
     q.out = out; 
     // we have transitive information -- include 
@@ -519,11 +528,13 @@ let inferBwd = out => q => {
     let syms = unique([q.op, ...vars[q.op].vars])
     syms = intersect(syms, q.out)
     q.real = syms // q.dims
+    // q.iter = [q.op]
   } else if (q.key == "ref") {
     let e1 = assignments[q.op]
     inferBwd(out)(e1)
     q.out = out; 
     q.real = e1.real
+    // q.iter = unique([...e1.real, ...e1.path.flatMap(x => x.iter)])
   } else if (q.key == "get") {
     // q.out = out; 
     // q.real = q.dims
@@ -532,10 +543,12 @@ let inferBwd = out => q => {
     }
     let [e1,e2] = q.arg.map(inferBwd(out))
     q.real = union(e1.real, e2.real)
+    // q.iter = union(e1.iter, e2.iter)
   } else if (q.key == "pure") {
     // q.out = out; 
     let es = q.arg.map(inferBwd(out))
     q.real = unique(es.flatMap(x => x.real))
+    // q.iter = unique(es.flatMap(x => x.iter))
   } else if (q.key == "stateful") {
     q.out = out
     let out1 = union(out,q.arg[0].dims) // mind vs dim?
@@ -554,6 +567,7 @@ let inferBwd = out => q => {
     // let out1 = union(out,q.arg[0].dims)
     let e2 = inferBwd(out)(q.arg[1])
     // q.iter = e1.real // iteration space (enough?)
+    q.path = q.path.filter(x => intersect(x.real,q.vars).length > 0)
     q.iter = unique([...e1.real, ...e2.real, ...q.path.flatMap(x => x.real)])
     q.real = e2.real
     // q.scope ??= diff(q.arg[0].real, q.real)
@@ -564,6 +578,7 @@ let inferBwd = out => q => {
     let e1 = inferBwd(q.arg[1].dims)(q.arg[1]) // ???
     let e2 = inferBwd(out)(q.arg[2])
     // q.iter = e1.real // iteration space (enough?)
+    q.path = q.path.filter(x => intersect(x.real,q.vars).length > 0)
     q.iter = unique([...e1.real, ...e2.real, ...q.path.flatMap(x => x.real)])
     q.real = e2.real
     // q.scope ??= diff(q.arg[1].real, q.real)
@@ -731,6 +746,7 @@ let emitStm = (q) => {
 let emitFilters = (real) => buf => {
   let vv = vars 
   {
+  let watermark = buf.length
   let vars = {}
   let seen = {}
   for (let v of real) vars[v] = true
@@ -771,7 +787,7 @@ let emitFilters = (real) => buf => {
               buf0.indexOf("let gen"+i+quoteVar(v2)+" = {}") < 0) {
             buf0.push("// pre-gen "+v2)
             buf0.push("let gen"+i+quoteVar(v2)+" = {}")
-            emitFilters(g1.real)(buf0)
+            emitFilters(g1.vars)(buf0) // XXX: need all of vars?
             buf0.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
             buf0.push("  gen"+i+quoteVar(v2)+"["+quoteVar(v1)+"] = true //"+codegen(g1)+"?.["+quoteVar(v1)+"]")
             // with the aux data structure in place, we're ready to
@@ -790,7 +806,7 @@ let emitFilters = (real) => buf => {
     }
   }
   //buf.push(...buf0)
-  // if (buf0.length > 0) buf.push("// main loop")
+  if (buf.length > watermark) buf.push("// main loop")
   buf.push(...buf1)}
 }
 
