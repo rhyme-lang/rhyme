@@ -623,7 +623,7 @@ let emitPseudo = (q) => {
   let hi = buf.length
   for (let v in vars) {
     if (vars[v].vars.length > 0 || vars[v].tmps.length > 0)
-      buf.push(v + " -> " + vars[v].vars + vars[v].tmps)
+      buf.push(v + " -> " + vars[v].vars +"  "+ vars[v].tmps)
   }
   if (buf.length > hi)
     buf.push("")
@@ -716,6 +716,8 @@ let emitStm = (q) => {
 }
 
 let emitFilters = (real) => buf => {
+  let vv = vars 
+  {
   let vars = {}
   let seen = {}
   for (let v of real) vars[v] = true
@@ -752,13 +754,17 @@ let emitFilters = (real) => buf => {
         // determine iteration order accordingly.
 
         for (let v2 of notseen) {
-          buf0.push("// pre-gen "+v2)
-          buf0.push("let gen"+i+quoteVar(v2)+" = {}")
-          emitFilters([v2])(buf0)
-          buf0.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
-          buf0.push("  gen"+i+quoteVar(v2)+"["+quoteVar(v1)+"] = true //"+codegen(g1)+"?.["+quoteVar(v1)+"]")
-          // with the aux data structure in pace, we're ready to
-          // proceed with the main loop nest:
+          if (buf.indexOf("let gen"+i+quoteVar(v2)+" = {}") < 0) {
+            buf0.push("// pre-gen "+v2)
+            buf0.push("let gen"+i+quoteVar(v2)+" = {}")
+            emitFilters(g1.real)(buf0)
+            buf0.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
+            buf0.push("  gen"+i+quoteVar(v2)+"["+quoteVar(v1)+"] = true //"+codegen(g1)+"?.["+quoteVar(v1)+"]")
+            // with the aux data structure in place, we're ready to
+            // proceed with the main loop nest:
+          } else
+            buf0.push("// skip gen"+i+quoteVar(v2))
+
           if (!seen[v1])
             buf1.push("for (let "+quoteVar(v1)+" in gen"+i+quoteVar(v2)+")")
           else
@@ -771,7 +777,7 @@ let emitFilters = (real) => buf => {
   }
   buf.push(...buf0)
   if (buf0.length > 0) buf.push("// main loop")
-  buf.push(...buf1)
+  buf.push(...buf1)}
 }
 
 
@@ -790,7 +796,7 @@ let emitCode = (q, order) => {
     // NOTE: it would be preferable to emit initialization up front (so that sum empty = 0)
 
     buf.push("// --- tmp"+i+" ---")
-    buf.push("{")
+    // buf.push("{")
     emitFilters(q.iter)(buf)
 
     // no longer an issue with "order"
@@ -804,7 +810,7 @@ let emitCode = (q, order) => {
 
     buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStm(q) + ")")
 
-    buf.push("}")
+    // buf.push("}")
   }
 
   buf.push("// --- res ---")
