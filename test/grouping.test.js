@@ -5,8 +5,8 @@ test("statelessGrouping", () => {
 
     let data = { A: 10, B: 20, C: 30 }
 
-    let q1 = { "*": "data.*" }
-    let q2 = api.get({ "foo": { "*": "data.*" }}, "foo")
+    let q1 = { "*A": "data.*A" }
+    let q2 = api.get({ "foo": { "*A": "data.*A" }}, "foo")
 
     let f1 = api.compile(q1)
     let f2 = api.compile(q2)
@@ -23,8 +23,8 @@ test("statelessRepeatedGrouping1", () => {
 
     let data = { A: 10, B: 20, C: 30 }
 
-    let q1 = { "*": { "*": "data.*" }}
-    let q2 = api.get({ "foo": { "*": { "*": "data.*" }}}, "foo")
+    let q1 = { "*A": { "*A": "data.*A" }}
+    let q2 = api.get({ "foo": { "*A": { "*A": "data.*A" }}}, "foo")
 
     let f1 = api.compile(q1)
     let f2 = api.compile(q2)

@@ -70,8 +70,6 @@ test("batchedMatmul", () => {
     // einsum: ijk,ikl->ijl
     let query = {"*i": {"*j": {"*l": api.sum(api.times("A.*i.*j.*k", "B.*i.*k.*l")) }}}
     let func = api.compile(query)
-    console.log(func.explain2.pseudo)
-    console.log(func.explain2.code)
     let res = func({ A: batchedMatA, B: batchedMatB })
     let expected = {0: {0: {0: 9, 1: 12, 2: 15}, 1: {0: 19, 1: 26, 2: 33}}, 1: {0: {0: 95, 1: 106, 2: 117}, 1: {0: 129, 1: 144, 2: 159}}}
     expect(res).toEqual(expected)

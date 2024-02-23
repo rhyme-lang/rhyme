@@ -16,12 +16,12 @@ test("statelessRepeatedGrouping4", () => {
 
     let data = [{ key: "A", value: 10 }, { key: "B", value: 20}, { key: "C", value: 30 }]
 
-    let q1 = { "*": {
-        key: "data.*.key",
-        data: { "data.*.key": "data.*.value" }}}
+    let q1 = { "*A": {
+        key: "data.*A.key",
+        data: { "data.*A.key": "data.*A.value" }}}
     let q2 = [{
-        key: "data.*.key", // use "*" in sibling fields!
-        data: { "data.*.key": "data.*.value" }}]
+        key: "data.*A.key", // use "*" in sibling fields!
+        data: { "data.*A.key": "data.*A.value" }}]
 
     let f1 = api.compile(q1)
     let f2 = api.compile(q2)

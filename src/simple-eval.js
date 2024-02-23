@@ -169,6 +169,11 @@ let preproc = q => {
       return preproc(parse(q))
   }
 
+  if (q === undefined) {
+    console.error("why undefined?")
+    return q
+  }
+
   if (q.xxpath == "raw") {
     if (q.xxparam == "inp") return { key: "input" }
     else return { key: "const", op: q.xxparam }
@@ -180,7 +185,10 @@ let preproc = q => {
     let e1 = preproc(q.xxparam[0]) 
     // XXX special case for literal "*": do this here or better in extract?
     let e2
-    if (q.xxparam[1].xxpath == "ident" && q.xxparam[1].xxparam == "*") {
+    if (q.xxparam[1] === undefined) {
+      e2 = e1
+      e1 = { key: "input" }
+    } else if (q.xxparam[1] == "*" || q.xxparam[1].xxpath == "ident" && q.xxparam[1].xxparam == "*") {
       let str = JSON.stringify(e1)
       let key = prefixes.indexOf(str)
       if (key < 0) { key = prefixes.length; prefixes.push(str) }
@@ -722,7 +730,7 @@ let emitFilters = (real) => buf => {
   let seen = {}
   for (let v of real) vars[v] = true
   // filters
-  let buf0 = []
+  let buf0 = buf
   let buf1 = []
   for (let i in filters) {
     let f = filters[i]
@@ -754,7 +762,8 @@ let emitFilters = (real) => buf => {
         // determine iteration order accordingly.
 
         for (let v2 of notseen) {
-          if (buf.indexOf("let gen"+i+quoteVar(v2)+" = {}") < 0) {
+          if (buf.indexOf("let gen"+i+quoteVar(v2)+" = {}") < 0 &&
+              buf0.indexOf("let gen"+i+quoteVar(v2)+" = {}") < 0) {
             buf0.push("// pre-gen "+v2)
             buf0.push("let gen"+i+quoteVar(v2)+" = {}")
             emitFilters(g1.real)(buf0)
@@ -775,8 +784,8 @@ let emitFilters = (real) => buf => {
       seen[v1] = true
     }
   }
-  buf.push(...buf0)
-  if (buf0.length > 0) buf.push("// main loop")
+  //buf.push(...buf0)
+  // if (buf0.length > 0) buf.push("// main loop")
   buf.push(...buf1)}
 }
 
