@@ -139,6 +139,19 @@ test("groupTestNested2_encoding", () => {
 
     let q1 = rh`udf.guard *K (array (udf.guard *B (array ${q0}.*K.*.sub.*B)) | group items)`
 
+    // NOTE: it's convenient to replace 'data' with 'q0.*K' in
+    //   data.*.sub.*B --> q0.*K.*.sub.*B
+    // but not striclty required -- we could also do something
+    // like (q0.*K.*C) && (data.*C.sub.*B), i.e decouple data
+    // access from key filtering.
+    //
+    // Ultimately it's a choice between indexing each variable
+    // (i.e. *A) via *K (so all the filter together) or indexing
+    // each generator (i.e. data.*A).
+    //
+    // It seems reasonable to treat all generators in a 
+    // contextual way, subject to a path filter
+
     let func = compile(q1)
     let res = func({ data3, udf: {guard: (x,y) => y }}, true)
 
