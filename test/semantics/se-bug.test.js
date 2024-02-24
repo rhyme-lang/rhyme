@@ -136,3 +136,36 @@ test("groupTestNested1", () => {
 })
 
 
+test("groupTestNested2_encoding", () => {
+    let q0 = {"data3.*A.key": { "*A": "data3.*A" }}
+
+    let q1 = rh`udf.guard *K (array (udf.guard *B (array ${q0}.*K.*.sub.*B)) | group items)`
+
+    let func = compile(q1)
+    let res = func({ data3, udf: {guard: (x,y) => y }}, true)
+
+    let expected = { 
+      // "total": 760, 
+      "A": {
+        // "subtotal": 560, 
+        items: [[110, 330], [120]],
+      },
+      "B": {
+        // "subtotal": 200, 
+        items: [[200]],
+      }
+    }
+    let bug = { 
+      // "total": 760, 
+      "A": {
+        // "subtotal": 1000,  // extra 110+330 !!!
+        items: [[110, 330], [120], [110, 330]], // extra 110, 330 !!!
+      },
+      "B": {
+        // "subtotal": 200, 
+        items: [[200]],
+      }
+    }
+    expect(res).toEqual(expected)
+})
+
