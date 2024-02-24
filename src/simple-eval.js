@@ -737,6 +737,9 @@ let emitStm = (q) => {
   if (q.key == "stateful") {    
     let [e1] = q.arg.map(codegen)
     let extra = diff(q.arg[0].real, q.real)
+    if (extra.length && q.real.length > 0) {
+      // console.error("DOUBLE-SUM-PROBLEM "+q.op)
+    }
     // return lhs+" += "+e1
     return "rt.stateful."+q.op+"("+e1+","+extra.length+")"
   } else if (q.key == "group") {
@@ -752,12 +755,13 @@ let emitStm = (q) => {
   }
 }
 
-let emitFilters = (real) => buf => {
+let emitFilters = (real, negative) => buf => {
   let vv = vars 
   {
   let watermark = buf.length
   let vars = {}
   let seen = {}
+  if (negative) for (let v of negative) seen[v] = true
   for (let v of real) vars[v] = true
   // filters
   let buf0 = buf
@@ -835,8 +839,46 @@ let emitCode = (q, order) => {
     // NOTE: it would be preferable to emit initialization up front (so that sum empty = 0)
 
     buf.push("// --- tmp"+i+" ---")
-    // buf.push("{")
-    emitFilters(q.free)(buf)
+
+
+    let fv = q.free
+    let fvNeg = []
+    let xxx = false
+
+    // HACKISH -- and kinda specific to "groupTestNested1"
+
+    // XXXX DOUBLE-SUM PROBLEM
+    if (q.key == "stateful" && q.path.length == 1) { // XXX only 1 for now
+      let [p] = q.path
+      let str = JSON.stringify(p)
+      let found = []
+      for (let i of q.tmps) {
+        if (assignments[i].path.map(x => JSON.stringify(x)).includes(str))
+          found.push(i)
+      }
+      if (found.length > 0) {
+        buf.push("// == SHARED PATH == "+pretty(p)+"  -->  "+p.vars)
+        // console.log("SHSH ", p.vars, q.real, q.arg[0].real)
+
+        if (intersect(p.vars, q.arg[0].real).length == 0) { // CAREFUL
+
+        fv = fv.filter(v => !p.vars.includes(v))
+        let [vv] = p.vars
+        // build temp structure
+        let k = buf.length
+        buf.push("let temp"+k+" = {}")
+        emitFilters([vv])(buf)
+        buf.push("{ temp"+k+"["+codegen(p)+"] = {}; temp"+k+"["+codegen(p)+"]["+quoteVar(vv)+"] = true; }")
+        buf.push("// ?")
+        buf.push("for (let K in temp"+k+") {")
+        buf.push("for (let "+quoteVar(vv)+" in temp"+k+"[K]) {") // only one entry!!
+        // buf.push("for (let "+quoteVar(vv)+" of [1,2,3])")
+        xxx = true
+        }
+      }
+    }
+
+    emitFilters(fv)(buf)
 
     // no longer an issue with "order"
     // if (q.tmps.some(x => x > i))
@@ -848,6 +890,8 @@ let emitCode = (q, order) => {
     let ys = xs.map(x => ","+x).join("")
 
     buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStm(q) + ")")
+
+    if (xxx) buf.push("}}")
 
     // buf.push("}")
   }

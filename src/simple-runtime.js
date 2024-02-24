@@ -146,11 +146,12 @@ rt.stateful.last = x => ({
   }
 })
 
-rt.stateful.single = x => ({ // error if more than one (XXX can't really do that...)
+rt.stateful.single = (x,extra) => ({ // error if more than one (XXX can't really do that...)
   init: () => undefined, 
   next: s => {
     if (x === undefined) return s
     if (s === undefined) return x
+    if (!extra) return x  // FIXME partial solution to double-sum bug
     // throw new Error("single value expected but got two: "+s+", "+x)
     // see groupByAverageTest, current codegen is set up to produce
     // the same value repeatedly in a grouped context
@@ -164,8 +165,8 @@ rt.stateful.single = x => ({ // error if more than one (XXX can't really do that
 rt.stateful.array = (x,extra) => ({
   init: () => [], 
   next: s => {
-    if (!extra) return [x]  // FIXME partial solution to double-sum bug
     if (x === undefined) return s
+    if (!extra) return [x]  // FIXME partial solution to double-sum bug
     s.push(x)
     return s
   }
