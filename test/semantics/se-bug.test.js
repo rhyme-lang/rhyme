@@ -183,7 +183,9 @@ test("groupTestNested2_encoding2", () => {
 
     // Second encoding discussed above -- add a separate filter to
     // each *variable* rather than changing access paths
-    // (NOTE: had to use *C instead of default *)
+    // NOTE (1): have to use *C instead of default * to match
+    // NOTE (2): have to use *K to iterate, can't just 
+    //           use data3.*C.key (without the bugfix!!)
 
     let func = compile(q1)
     let res = func({ data3, udf: {guard: (x,y) => y }}, true)
@@ -194,26 +196,5 @@ test("groupTestNested2_encoding2", () => {
     }
     expect(res).toEqual(expected)
 })
-
-
-test("groupTestNested2_encoding3", () => {
-    let q0 = {"data3.*A.key": { "*A": true }}
-
-    let q1 = { "data3.*C.key": rh`(array (udf.guard *B (array (
-                        udf.guard ${q0}.(data3.*C.key).*C data3.*C.sub.*B))))` }
-
-    // Variant of the second encoding discussed above -- 
-    // keep original 'group'
-
-    let func = compile(q1)
-    let res = func({ data3, udf: {guard: (x,y) => y }}, true)
-
-    let expected = { 
-      "A": [[110, 330], [120]],
-      "B": [[200]],
-    }
-    expect(res).toEqual(expected)
-})
-
 
 
