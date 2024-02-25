@@ -198,3 +198,25 @@ test("groupTestNested2_encoding2", () => {
 })
 
 
+//  another case -- like advanced/nestedIterator1-explicitlyHoisted
+//
+//  this doesn't seem to be a bug, but just how things are.
+//  however, encodings/hoisting need to operate accordingly.
+//
+//  TODO: investigate a transform that checks for every expression
+//  if it is in the grouping path, and if yes, does not create
+//  mind dependencies. 
+
+test("groupTest_explicitHoisting", () => {
+    let q0 = { "data.*.key": "array(data.*.key)" }
+
+    let func = compile(q0)
+    let res = func({ data }, true)
+
+    let expected = { 
+      "A": ["A","A"], // NOTE: two entries w/same key -> two results
+      "B": ["B"]
+    }
+    expect(res).toEqual(expected)
+})
+
