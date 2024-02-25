@@ -139,6 +139,7 @@ let path
 
 let vars
 let filters
+let pathkeys
 let assignments
 
 let reset = () => {
@@ -147,6 +148,7 @@ let reset = () => {
 
   vars = {}
   filters = []
+  pathkeys = []
   assignments = []
 }
 
@@ -276,7 +278,7 @@ let extract = q => {
       // cse -- could take care of unique "*" here as well
       let str = JSON.stringify({ ...q, arg: [e1,e2] })
       let ix = filters.map(x => JSON.stringify(x)).indexOf(str)
-      if (ix < 0) {
+      if (ix < 0) { // XXX is it ok to do CSE? concern inferBwd
         ix = filters.length
         let q1 = JSON.parse(str)
         filters.push(q1) // deep copy...
@@ -294,6 +296,16 @@ let extract = q => {
     return { key: "ref", op: x }
   } else if (q.key == "group") {
     let e1 = extract(q.arg[0])
+
+    let str = JSON.stringify(e1)
+    let ix = pathkeys.map(x => JSON.stringify(x)).indexOf(str)
+    if (ix < 0) {
+      ix = pathkeys.length
+      let e1c = JSON.parse(str)
+      pathkeys.push(e1c) // deep copy
+    }
+    e1.pathkey = ix
+
     let save = path
     path = [...path,e1]
     let e2 = extractFlex(q.arg[1])
@@ -304,6 +316,16 @@ let extract = q => {
   } else if (q.key == "update") {
     let e0 = extract(q.arg[0])
     let e1 = extract(q.arg[1])
+
+    let str = JSON.stringify(e1)
+    let ix = pathkeys.map(x => JSON.stringify(x)).indexOf(str)
+    if (ix < 0) {
+      ix = pathkeys.length
+      let e1c = JSON.parse(str)
+      pathkeys.push(e1c) // deep copy
+    }
+    e1.pathkey = ix
+
     let save = path
     path = [...path,e1]
     let e2 = extractFlex(q.arg[2])
@@ -390,7 +412,6 @@ let deno = q => k => {
 //
 
 let infer = q => {
-  //let recurse = q => 
   if (q.key == "input") {
     q.vars = []; //q.gens = []; 
     q.tmps = []
@@ -422,6 +443,15 @@ let infer = q => {
     q.dims = [...e1.dims]
   } else if (q.key == "get") {
     let [e1,e2] = q.arg.map(infer)
+
+    // if (e1.key == "ref") { // a 'reluctant' state may have been inserted
+    //   e1.dims = [...e1.mind] // force it to close up here
+    //   let e1x = assignments[e1.op]
+    //   e1x.dims = [...e1x.mind]
+    // }
+    // XXX: now done by using mind instead of dims for
+    // e1 in inferBwd for group/update 
+
     if (q.filter !== undefined) { // ref to a filter! lookup deps there?
       q.vars = unique([...e1.vars, ...e2.vars])
       // q.gens = unique([...e1.gens, ...e2.gens, q.filter])
@@ -458,7 +488,7 @@ let infer = q => {
     // q.deps = e1.deps
     //
     // decorrelate -- important for correctness!
-    q.path.map(infer)
+    // q.path.map(infer)
     q.path = q.path.filter(x => intersect(x.vars,q.vars).length > 0)
     q.tmps = unique([...q.tmps,...q.path.flatMap(x => x.tmps)])
     //
@@ -475,7 +505,7 @@ let infer = q => {
     q.tmps = unique([...e1.tmps, ...e2.tmps])
     //
     // decorrelate -- important for correctness!
-    q.path.map(infer)
+    // q.path.map(infer)
     q.path = q.path.filter(x => intersect(x.vars,q.vars).length > 0)
     q.tmps = unique([...q.tmps,...q.path.flatMap(x => x.tmps)])
     //
@@ -489,7 +519,7 @@ let infer = q => {
     q.tmps = unique([...e0.tmps, ...e1.tmps, ...e2.tmps])
     //
     // decorrelate -- important for correctness!
-    q.path.map(infer)
+    // q.path.map(infer)
     q.path = q.path.filter(x => intersect(x.vars,q.vars).length > 0)
     q.tmps = unique([...q.tmps,...q.path.flatMap(x => x.tmps)])
     //
@@ -534,12 +564,13 @@ let inferBwd = out => q => {
     inferBwd(out)(e1)
     q.out = out; 
     q.real = e1.real
-    q.free = unique([...e1.real, ...e1.path.flatMap(x => x.free)])
+    q.free = unique([...e1.real/*, ...e1.path.flatMap(x => x.free)*/])
   } else if (q.key == "get") {
     // q.out = out; 
     // q.real = q.dims
     if (q.filter !== undefined) { // ref to a filter! lookup deps there?
       inferBwd(out)(filters[q.filter])
+      // XXXX now doing CSE -- problem??
     }
     let [e1,e2] = q.arg.map(inferBwd(out))
     q.real = union(e1.real, e2.real)
@@ -557,19 +588,19 @@ let inferBwd = out => q => {
     let [e1] = q.arg.map(inferBwd(out1))
     // q.iter = e1.real // iteration space (enough?)
     q.path = q.path.filter(x => intersect(x.real,q.vars).length > 0)
-    q.iter = unique([...e1.real, ...q.path.flatMap(x => x.real)])
+    q.iter = unique([...e1.real/*, ...q.path.flatMap(x => x.real)*/])
     q.real = intersect(out, e1.real)
-    q.free = unique([...q.real,...e1.free, ...q.path.flatMap(x => x.free)])
+    q.free = unique([...q.real,...e1.free/*, ...q.path.flatMap(x => x.free)*/])
     // console.log("SUM", q.path, out, q.iter, q.real)
     // q.scope ??= diff(e1.real, q.real)
   } else if (q.key == "group") {
     q.out = out
-    let e1 = inferBwd(q.arg[0].dims)(q.arg[0]) // ???
+    let e1 = inferBwd(q.arg[0].mind)(q.arg[0]) // ???
     // let out1 = union(out,q.arg[0].dims)
     let e2 = inferBwd(out)(q.arg[1])
     // q.iter = e1.real // iteration space (enough?)
     q.path = q.path.filter(x => intersect(x.real,q.vars).length > 0)
-    q.iter = unique([...e1.real, ...e2.real, ...q.path.flatMap(x => x.real)])
+    q.iter = unique([...e1.real, ...e2.real/*, ...q.path.flatMap(x => x.real)*/])
     q.real = e2.real
     q.free = unique([...q.real,...e1.free, ...e2.free, ...q.path.flatMap(x => x.free)])
     // q.scope ??= diff(q.arg[0].real, q.real)
@@ -577,13 +608,13 @@ let inferBwd = out => q => {
   } else if (q.key == "update") {
     q.out = out
     let e0 = inferBwd(out)(q.arg[0]) // ???  !!!!
-    let e1 = inferBwd(q.arg[1].dims)(q.arg[1]) // ???
+    let e1 = inferBwd(q.arg[1].mind)(q.arg[1]) // ???
     let e2 = inferBwd(out)(q.arg[2])
     // q.iter = e1.real // iteration space (enough?)
     q.path = q.path.filter(x => intersect(x.real,q.vars).length > 0)
-    q.iter = unique([...e1.real, ...e2.real, ...q.path.flatMap(x => x.real)])
+    q.iter = unique([...e1.real, ...e2.real/*, ...q.path.flatMap(x => x.real)*/])
     q.real = e2.real
-    q.free = unique([...q.real,...e1.free, ...e2.free, ...q.path.flatMap(x => x.free)])
+    q.free = unique([...q.real,...e1.free, ...e2.free/*, ...q.path.flatMap(x => x.free)*/])
     // q.scope ??= diff(q.arg[1].real, q.real)
     // console.log("GRP",q.arg[1].real, q.real)
   } else {
@@ -597,7 +628,7 @@ let inferBwd = out => q => {
     console.assert(subset(q.real, q.iter))
   if (q.key == "stateful" || q.key =="group" || q.key == "update") {
     console.assert(subset(q.real, q.free), q.real+ "/"+ q.free)
-    console.assert(same(q.iter, q.free), q.iter+ "/"+ q.free)
+    // console.assert(same(q.iter, q.free), q.iter+ "/"+ q.free)
   }
 
   // console.assert(subset(q.dims, q.deps))
@@ -842,43 +873,48 @@ let emitCode = (q, order) => {
 
 
     let fv = q.free
-    let fvNeg = []
-    let xxx = false
 
-    // HACKISH -- and kinda specific to "groupTestNested1"
+    let buf1 = []
+    let buf2 = []
+    let buf3 = []
 
     // XXXX DOUBLE-SUM PROBLEM
-    if (q.key == "stateful" && q.path.length == 1) { // XXX only 1 for now
-      let [p] = q.path
-      let str = JSON.stringify(p)
-      let found = []
-      for (let i of q.tmps) {
-        if (assignments[i].path.map(x => JSON.stringify(x)).includes(str))
-          found.push(i)
-      }
-      if (found.length > 0) {
-        buf.push("// == SHARED PATH == "+pretty(p)+"  -->  "+p.vars)
-        // console.log("SHSH ", p.vars, q.real, q.arg[0].real)
+    let pathVars = unique(q.path.flatMap(x => x.free))
+    let seenVars = {}
+    for (let p of q.path) {
+      let k1 = buf.length
+      for (let vv of p.free) {
+        if (q.free.includes(vv)) {
+          buf2.push("// skip pre-gen key path "+pretty(p)+" to "+quoteVar(vv))
+          continue 
+          // seenVars[vv] = true
+        }
 
-        if (intersect(p.vars, q.arg[0].real).length == 0) { // CAREFUL
-
-        fv = fv.filter(v => !p.vars.includes(v))
-        let [vv] = p.vars
         // build temp structure
         let k = buf.length
+        buf.push("// pre-gen key path "+pretty(p)+" to "+quoteVar(vv))
         buf.push("let temp"+k+" = {}")
-        emitFilters([vv])(buf)
+        emitFilters(p.free)(buf)
         buf.push("{ temp"+k+"["+codegen(p)+"] = {}; temp"+k+"["+codegen(p)+"]["+quoteVar(vv)+"] = true; }")
-        buf.push("// ?")
-        buf.push("for (let K in temp"+k+") {")
-        buf.push("for (let "+quoteVar(vv)+" in temp"+k+"[K]) {") // only one entry!!
-        // buf.push("for (let "+quoteVar(vv)+" of [1,2,3])")
-        xxx = true
-        }
+        // XXX note that we only keep a single entry!
+
+        let i = p.pathkey
+
+        if (k == k1) // first time we see path elem
+          buf1.push("for (let K"+i+" in temp"+k+") ")
+        if (!seenVars[vv])
+          buf1.push("for (let "+quoteVar(vv)+" in temp"+k+"[K"+i+"]) {") // only one entry!!
+        else
+          buf2.push("if ("+quoteVar(vv)+" in temp"+k+"[K"+i+"]) {") // only one entry!!
+        // buf1.push("{")
+        buf3.push("}")
+        seenVars[vv] = true
       }
     }
 
+    buf.push(...buf1)
     emitFilters(fv)(buf)
+    buf.push(...buf2)
 
     // no longer an issue with "order"
     // if (q.tmps.some(x => x > i))
@@ -891,9 +927,7 @@ let emitCode = (q, order) => {
 
     buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStm(q) + ")")
 
-    if (xxx) buf.push("}}")
-
-    // buf.push("}")
+    buf.push(...buf3)
   }
 
   buf.push("// --- res ---")
@@ -945,11 +979,15 @@ let compile = (q,{
   // 2. Extract
   q = extract(q)
 
+  // console.log(" ****** START ***** ")
+  // console.log(pathkeys)
+
   // 3a. Infer dependencies bottom up
+  infer(q) // goes into assignments but not filters
+
   for (let i in filters) {
     infer(filters[i])
   }
-  infer(q) // goes into assignments but not filters
 
 
   let pseudo0 = emitPseudo(q)
@@ -1093,6 +1131,7 @@ let compile = (q,{
 
   let code = emitCode(q,order)
 
+  // console.log(pseudo)
   // console.log(code)
 
   let rt = runtime // make available in scope for generated code

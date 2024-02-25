@@ -172,7 +172,7 @@ test("nestedGroupAggregateTest", () => {
 
 test("joinSimpleTest1", () => {
     let q1 = {
-        "other.*O.country": "last(other.*O.region)"
+        "other.*O.country": "other.*O.region"
     }
     let query = {
         "data.*.city": {
@@ -193,7 +193,7 @@ test("joinSimpleTest1", () => {
 
 test("joinSimpleTest2", () => {
     let q1 = {
-        "other.*O.country": "last(other.*O.region)"
+        "other.*O.country": "other.*O.region"
     }
     let query = {
         "-": api.merge(api.get(q1, "data.*.country"), {
@@ -226,7 +226,8 @@ test("joinWithAggrTest", () => {
             "data.*.city": api.sum("data.*.population")
         }),
     }
-    let res = api.compile(query)({ data: countryData, other: regionData })
+    let func = api.compile(query)
+    let res = func({ data: countryData, other: regionData })
     let expected = {
         "total": 70,
         "Asia": {

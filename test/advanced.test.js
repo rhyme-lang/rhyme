@@ -77,6 +77,8 @@ test("nestedIterators1-explicitlyHoisted", () => {
         "B": { "my_total": 20, "A": 40, "B": 20 }
     }
     let exec = api.compile(query)
+    // console.log(exec.explain2.pseudo)
+    // console.log(exec.explain2.code)
     let res = exec({ data })
     expect(res).toEqual(expected)
 })
