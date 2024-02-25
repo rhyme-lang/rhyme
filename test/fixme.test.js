@@ -12,6 +12,9 @@ const { rh } = require('../src/parser')
 // Possible solution: find dependencies first, then transform
 // code based on context.
 
+
+// XXXX failure ???
+
 test("statelessRepeatedGrouping4", () => {
 
     let data = [{ key: "A", value: 10 }, { key: "B", value: 20}, { key: "C", value: 30 }]

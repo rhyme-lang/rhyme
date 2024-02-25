@@ -265,6 +265,14 @@ let extractFlex = q => {
 }
 
 let extract = q => {
+  let str = pretty(q)
+  let pp = path.map(x => pretty(x)) // can't use JSON.stringify - q has fewer info
+  let ix = pp.indexOf(str)
+  if (ix >= 0 && q.key != "var") {
+    q.inpath = true
+    // console.log("CSE1", pretty(q))
+  }
+
   if (q.key == "input") {
     return q
   } else if (q.key == "const") {
@@ -532,6 +540,12 @@ let infer = q => {
   //console.assert(subset(q.dims, q.deps))
   console.assert(subset(q.mind, q.dims))
   console.assert(subset(q.dims, q.vars))
+
+  if (q.inpath) {
+    q.mind = []
+    q.dims = []
+  }
+
   return q
 }
 
@@ -543,6 +557,14 @@ let infer = q => {
 //
 
 let inferBwd = out => q => {
+  if (q.inpath) {
+    // CSE of path key: we forced mind/dims to [], so compensate for
+    // potentially larger output -- this allows us to maintain
+    // mind < real for subexpressions of this.
+    // Below we force real/free to [] again after recursing.
+    out = q.vars
+  }
+
   if (q.key == "input") {
     q.out = out; 
     q.free = []
@@ -620,6 +642,12 @@ let inferBwd = out => q => {
   } else {
     console.error("unknown op", q)
   }
+
+  if (q.inpath) { // compensate again for CSE
+    q.real = []
+    q.free = []
+  }
+
   console.assert(subset(q.dims, q.vars))
   console.assert(subset(q.mind, q.real), "mind < real") // can happen for lazy 'last'
   // if (q.mode != "reluctant")
@@ -654,10 +682,10 @@ let pretty = q => {
   } else if (q.key == "get") {
     let [e1,e2] = q.arg.map(pretty)
     if (e1 == "inp") return e2
-    if (q.arg[1].key == "var") {
-      if (q.filter === undefined) // def
-        return e2 + " <- " + e1
-    }
+    // if (q.arg[1].key == "var") { // hampers CSE pre-extract
+      // if (q.filter === undefined) // def
+        // return e2 + " <- " + e1
+    // }
     return e1+"["+e2+"]"
   } else if (q.key == "pure") {
     let es = q.arg.map(pretty)

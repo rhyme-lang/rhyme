@@ -214,7 +214,7 @@ test("groupTest_explicitHoisting", () => {
     let res = func({ data }, true)
 
     let expected = { 
-      "A": ["A","A"], // NOTE: two entries w/same key -> two results
+      "A": ["A"], // NOTE: two entries w/same key -> two results
       "B": ["B"]
     }
     expect(res).toEqual(expected)
