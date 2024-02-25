@@ -11,6 +11,10 @@ let data = [
 ]
 
 
+// Test double-sum situations, i.e. where the
+// result of one accumulation is used in another
+// one.
+
 test("scalarTest0", () => {
     let query = {
       total: api.sum(api.sum("data.*.value")),
@@ -130,53 +134,86 @@ test("groupTestNested1", () => {
         items: [[200]],
       }
     }
-    expect(res).toEqual(expected)
+    expect(res).toEqual(expected)  
+
+    // NOTE: this is fixed now, albeit in a quite hacky way (so far)
+    // in 'emitCode'.
 })
 
 
-test("groupTestNested2_encoding", () => {
+test("groupTestNested2_encoding1", () => {
     let q0 = {"data3.*A.key": { "*A": "data3.*A" }}
 
-    let q1 = rh`udf.guard *K (array (udf.guard *B (array ${q0}.*K.*.sub.*B)) | group items)`
+    let q1 = rh`udf.guard *K (array (udf.guard *B (array ${q0}.*K.*.sub.*B)))`
 
     // NOTE: it's convenient to replace 'data' with 'q0.*K' in
     //   data.*.sub.*B --> q0.*K.*.sub.*B
-    // but not striclty required -- we could also do something
+    // but not strictly required -- we could also do something
     // like (q0.*K.*C) && (data.*C.sub.*B), i.e decouple data
-    // access from key filtering.
+    // access from key filtering.  ----> see test case below!
     //
     // Ultimately it's a choice between indexing each variable
     // (i.e. *A) via *K (so all the filter together) or indexing
     // each generator (i.e. data.*A).
     //
     // It seems reasonable to treat all generators in a 
-    // contextual way, subject to a path filter
+    // contextual way, subject to a path filter. One could
+    // try doing that in emitFilters. 
 
     let func = compile(q1)
     let res = func({ data3, udf: {guard: (x,y) => y }}, true)
 
     let expected = { 
-      // "total": 760, 
-      "A": {
-        // "subtotal": 560, 
-        items: [[110, 330], [120]],
-      },
-      "B": {
-        // "subtotal": 200, 
-        items: [[200]],
-      }
+      "A": [[110, 330], [120]],
+      "B": [[200]],
     }
     let bug = { 
-      // "total": 760, 
-      "A": {
-        // "subtotal": 1000,  // extra 110+330 !!!
-        items: [[110, 330], [120], [110, 330]], // extra 110, 330 !!!
-      },
-      "B": {
-        // "subtotal": 200, 
-        items: [[200]],
-      }
+      "A": [[110, 330], [120], [110, 330]], // extra 110, 330 !!!
+      "B": [[200]],
     }
     expect(res).toEqual(expected)
 })
+
+
+test("groupTestNested2_encoding2", () => {
+    let q0 = {"data3.*A.key": { "*A": true }}
+
+    let q1 = rh`udf.guard *K (array (udf.guard *B (
+                        array (udf.guard ${q0}.*K.*C data3.*C.sub.*B))))`
+
+    // Second encoding discussed above -- add a separate filter to
+    // each *variable* rather than changing access paths
+    // (NOTE: had to use *C instead of default *)
+
+    let func = compile(q1)
+    let res = func({ data3, udf: {guard: (x,y) => y }}, true)
+
+    let expected = { 
+      "A": [[110, 330], [120]],
+      "B": [[200]],
+    }
+    expect(res).toEqual(expected)
+})
+
+
+test("groupTestNested2_encoding3", () => {
+    let q0 = {"data3.*A.key": { "*A": true }}
+
+    let q1 = { "data3.*C.key": rh`(array (udf.guard *B (array (
+                        udf.guard ${q0}.(data3.*C.key).*C data3.*C.sub.*B))))` }
+
+    // Variant of the second encoding discussed above -- 
+    // keep original 'group'
+
+    let func = compile(q1)
+    let res = func({ data3, udf: {guard: (x,y) => y }}, true)
+
+    let expected = { 
+      "A": [[110, 330], [120]],
+      "B": [[200]],
+    }
+    expect(res).toEqual(expected)
+})
+
+
 
