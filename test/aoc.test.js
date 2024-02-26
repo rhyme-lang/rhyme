@@ -17,6 +17,8 @@ let udf_stdlib = {
   split: d => s => s.split(d),
   toNum: x => (n => Number.isNaN(n) ? undefined : n)(Number(x)),
   isGreaterThan: (x,y) => x > y,
+  isGreaterOrEqual: (x,y) => x >= y,
+  isLessThan: (x,y) => x < y,
   isLessOrEqual: (x,y) => x <= y,
   isEqual: (x,y) => x === y,
   exp: n => x => n ** x,
@@ -25,7 +27,10 @@ let udf_stdlib = {
   ceil: x => Math.ceil(x),
   int2Char: x => String.fromCharCode(x),
   matchAll: (regex, flags) => x => [...x.matchAll(new RegExp(regex, flags))],
-  logicalAnd: (x,y) => x && y
+  logicalAnd: (x,y) => x && y,
+  range: (start, stop, step) =>
+      Array.from({ length: (stop - start + step - 1) / step }, (_, i) => start + (i * step)),
+  slice: start => x => x.slice(start),
 }
 
 
@@ -309,7 +314,7 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
     incCard: (cards, n) => cards.count += n,
     ...udf_stdlib
   }
-  
+
   let line = rh`.input | udf.split "\\n" | .*line
                        | udf.split ":"`
 
@@ -324,7 +329,7 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
 
   // "count number | group number" groups the count of each number by number
   // which gives us the frequencies of numbers in an object
-  
+
   // We then to look for numbers with frequency = 2
   // with the underlying assumption that
   // each winning number and each number you have is unique
@@ -354,6 +359,87 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
   let func = api.compile(query)
   let res = func({input, udf})
   expect(res).toBe(30)
+})
+
+test("day5-part1", () => {
+  let input = `seeds: 79 14 55 13
+
+seed-to-soil map:
+50 98 2
+52 50 48
+
+soil-to-fertilizer map:
+0 15 37
+37 52 2
+39 0 15
+
+fertilizer-to-water map:
+49 53 8
+0 11 42
+42 0 7
+57 7 4
+
+water-to-light map:
+88 18 7
+18 25 70
+
+light-to-temperature map:
+45 77 23
+81 45 19
+68 64 13
+
+temperature-to-humidity map:
+0 69 1
+1 0 69
+
+humidity-to-location map:
+60 56 37
+56 93 4`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    andThen: (a,b) => b, // just to add a as dependency
+    orElse: (a,b) => a ?? b,
+    inRange: (x, start, len) => x >= start && x < start + len,
+    ...udf_stdlib
+  }
+
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+
+  let seeds = rh`.input | udf.split "\\n\\n" | .0 | udf.split ":" | .1 | udf.matchAll "\\\\d+" "g" | .*seed | udf.toNum | group *seed`
+
+  let ranges = [rh`.input | udf.split "\\n\\n" | udf.slice 1 | .*map | udf.split "\\n" | udf.slice 1 | .*range | udf.matchAll "\\\\d+" "g" | .*t0 | udf.toNum`]
+
+  let maps = rh`${ranges} | group *range | group *map`
+
+  // perform a range lookup in maps[id] on srcs
+  let lookup = (id, srcs) => {
+    let srcGen = `*src${id}`
+    let rangeGen = `*range${id}`
+    let src = rh`${srcs} | .${srcGen}`
+    let range = rh`${maps} | .${id} | .${rangeGen}`
+    // TODO: use this inRange is much more slower than a custom udf inRange,
+    //       after initial profiling, most of the time seem to be spent on ir.createIR
+    //       investigate this later!
+    //let inRange = rh`udf.logicalAnd (udf.isGreaterOrEqual ${src} ${range}.1) (udf.isLessThan ${src} (${range}.1 + ${range}.2))`
+    let inRange = rh`udf.inRange ${src} ${range}.1 ${range}.2`
+    // If src is not in any of the ranges, we map it to itself,
+    let dests = rh`udf.orElse (${range}.0 + ${src} - ${range}.1 | ${filterBy(`*f${id}`, inRange)} | first) ${src} | group ${srcGen}`
+    return dests
+  }
+
+  // use meta programming to do 7 chained lookups
+  let locations = Array.from(Array(7).keys()).reduce(
+    (acc, id) => lookup(id, acc),
+    seeds,
+  )
+
+  let query = rh`${locations} | .*final | min`
+
+  let func = api.compile(query)
+  let res = func({input, udf})
+
+  expect(res).toBe(35)
 })
 
 test("day6-part1", () => {
@@ -396,7 +482,7 @@ Distance:  9  40  200`
 
   let line = rh`.input | udf.split "\\n"`
 
-  let time = rh`${line}.0 | udf.matchAll "\\\\d+" "g" | .*pair 
+  let time = rh`${line}.0 | udf.matchAll "\\\\d+" "g" | .*pair
                           | sum | udf.toNum`
   let dist = rh`${line}.1 | udf.matchAll "\\\\d+" "g" | .*pair
                           | sum | udf.toNum`
