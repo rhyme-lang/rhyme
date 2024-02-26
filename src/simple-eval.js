@@ -266,11 +266,11 @@ let extractFlex = q => {
 
 let extract = q => {
   let str = pretty(q)
-  let pp = path.map(x => pretty(x)) // can't use JSON.stringify - q has fewer info
+  let pp = path.map(x => pretty(x)) // can't use JSON.stringify - q has less info
   let ix = pp.indexOf(str)
   if (ix >= 0 && q.key != "var") {
     q.inpath = true
-    // console.log("CSE1", pretty(q))
+    // return { key: "pathref", op: path[ix] } // XXX not quite working yet
   }
 
   if (q.key == "input") {
@@ -298,6 +298,8 @@ let extract = q => {
     let es = q.arg.map(extract)
     return { ...q, arg: es }
   } else if (q.key == "stateful") {
+    if (q.op == "mkset!")
+      q.mode = "reluctant"
     let es = q.arg.map(extract)
     let x = assignments.length
     assignments.push({ ...q, arg: es, path, vars:[], dims:[], tmps: [] }) // cycles?
@@ -437,6 +439,14 @@ let infer = q => {
     q.tmps = [...tmps]
     q.mind = [...syms]
     q.dims = [...syms]
+  } else if (q.key == "pathref") {
+    // if we're in a filter, we don't have information!
+    if (!q.op.vars)
+      infer(q.op)
+    q.vars = [...q.op.vars]
+    q.tmps = [...q.op.tmps]
+    q.mind = []
+    q.dims = []
   } else if (q.key == "ref") {
     // look up from assignments[q.op?]
     let e1 = assignments[q.op]
@@ -573,6 +583,10 @@ let inferBwd = out => q => {
     q.out = out; 
     q.free = []
     q.real = []
+  } else if (q.key == "pathref") {
+    q.out = out; 
+    q.free = []
+    q.real = []
   } else if (q.key == "var") {
     q.out = out; 
     // we have transitive information -- include 
@@ -676,6 +690,8 @@ let pretty = q => {
     return ""+q.op
   } else if (q.key == "var") {
     return q.op
+  } else if (q.key == "pathref") {
+    return "P"+q.op.pathkey+"["+pretty(q.op)+"]"
   } else if (q.key == "ref") {
     let e1 = assignments[q.op]
     return "tmp"+q.op//+e1.path.map(pretty).map(quoteIndex)
@@ -776,6 +792,11 @@ let codegen = q => {
       return String(q.op)
   } else if (q.key == "var") {
     return quoteVar(q.op)
+  } else if (q.key == "pathref") {
+    if (path.some(x => x.pathkey == q.op.pathkey))
+      return "K"+q.op.pathkey
+    else
+      return codegen(q.op)
   } else if (q.key == "ref") {
     let q1 = assignments[q.op]
     let xs = [String(q.op),...q1.path.map(codegen),...q1.real]
