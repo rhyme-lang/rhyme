@@ -198,6 +198,23 @@ test("groupTestNested2_encoding2", () => {
 })
 
 
+test("groupTestNested2_encoding3", () => {
+    let q0 = rh`(mkset data3.*C.key)`
+
+    let q1 = rh`udf.guard *K (array (udf.guard *B (
+                        array (udf.guard ${q0}.*K data3.*C.sub.*B))))`
+
+    let func = compile(q1)
+    let res = func({ data3, udf: {guard: (x,y) => y }}, true)
+
+    let expected = { 
+      "A": [[110, 330], [120]],
+      "B": [[200]],
+    }
+    expect(res).toEqual(expected)
+})
+
+
 //  another case -- like advanced/nestedIterator1-explicitlyHoisted
 //
 //  this doesn't seem to be a bug, but just how things are.

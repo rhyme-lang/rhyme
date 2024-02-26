@@ -172,6 +172,16 @@ rt.stateful.array = (x,extra) => ({
   }
 })
 
+rt.stateful.mkset = (x,extra) => ({
+  init: () => ({}), 
+  next: s => {
+    if (x === undefined) return s
+    s[x] = true
+    return s
+  }
+})
+
+
 
 
 // sum, count, min, max, 
