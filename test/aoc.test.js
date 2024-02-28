@@ -502,8 +502,7 @@ Distance:  9  40  200`
   expect(res).toBe(71503)
 })
 
-
-test("aoc-day8-part1", () => {
+test("day8-part1", () => {
   let input = `LLR
 
 AAA = (BBB, BBB)
