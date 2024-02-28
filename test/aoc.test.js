@@ -521,6 +521,8 @@ ZZZ = (ZZZ, ZZZ)`
   let line = rh`.input | udf.split "\\n"`
   let instructions = rh`${line}.0 | udf.split ""`
 
+  // Use generator as filter here to only get the rules
+  // since the first two lines will be the instructions and an empty line 
   let filter = p => x => rh`udf.andThen (udf.filter (${p})).*f ${x}`
 
   let ruleElems = rh`${line} | .*line | udf.matchAll "[A-Z]{3}" "g"`
@@ -536,10 +538,10 @@ ZZZ = (ZZZ, ZZZ)`
   let rules = rh`${node} | group ${ruleElemsFiltered}.0`
 
   // After we have the rules object
-  // use a generator to traverse through instruction
-
+  // use a generator to traverse through instructions
   let currentState = rh`.state`
 
+  // Each query returns the number of steps taken
   let query = rh`${instructions} | udf.updateState ${currentState} ${rules}.(${currentState}.state).(.*inst)
                                  | count .*inst`
 
