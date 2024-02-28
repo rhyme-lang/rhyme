@@ -190,6 +190,9 @@ test("groupTestNested2_encoding2", () => {
     let func = compile(q1)
     let res = func({ data3, udf: {guard: (x,y) => y }}, true)
 
+    console.log(func.explain.pseudo)
+    console.log(func.explain.code)
+
     let expected = { 
       "A": [[110, 330], [120]],
       "B": [[200]],
@@ -213,6 +216,83 @@ test("groupTestNested2_encoding3", () => {
     }
     expect(res).toEqual(expected)
 })
+
+
+
+// approach:
+//  - group/update creates new filter *K <- mkset(data.*.key)
+//  - internal stateful op picks up dependency on *K
+
+
+test("gt1", () => {
+    let q0 = {"data.*.key": "array data.*.value"}
+
+    let func = compile(q0)
+    let res = func({ data, udf: {guard: (x,y) => y }}, true)
+
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = { 
+      "A": [10,30],
+      "B": [20],
+    }
+    expect(res).toEqual(expected)
+})
+
+test("gt2", () => {
+    let q0 = {"data.*.key": "data.*.value"}
+
+    let func = compile(q0)
+    let res = func({ data, udf: {guard: (x,y) => y }}, true)
+
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = { 
+      0: {"A": 10 },
+      1: {"B": 20 },
+      2: {"A": 30 },
+    }
+    expect(res).toEqual(expected)
+})
+
+test("gt3", () => {
+    let q0 = {foo: {"data.*.key": { bar: "sum data.*.value" }}}
+
+    let func = compile(q0)
+    let res = func({ data, udf: {guard: (x,y) => y }}, true)
+
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = { 
+      foo: {"A": { bar: 40 },
+            "B": { bar: 20 }},
+    }
+    expect(res).toEqual(expected)
+})
+
+test("gt4", () => {
+    let q0 = { foo: 1,//{"data.*.key": "sum data.*.value" },
+               bar: 1}//{"data.*.key": "sum data.*.value" }}
+
+    let func = compile(q0)
+    let res = func({ data, udf: {guard: (x,y) => y }}, true)
+
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = { 
+      // foo: {"A": 40, "B": 20},
+      // bar: {"A": 40, "B": 20},
+      foo: 1,
+      bar: 1,
+    }
+    expect(res).toEqual(expected)
+})
+
+
 
 
 //  another case -- like advanced/nestedIterator1-explicitlyHoisted

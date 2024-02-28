@@ -136,6 +136,7 @@ let join = (obj1, obj2) => (schema1, schema2, schema3) => func => {
 
 let prefixes
 let path
+let pathAux
 
 let vars
 let filters
@@ -145,6 +146,7 @@ let assignments
 let reset = () => {
   prefixes = []
   path = []
+  pathAux = []
 
   vars = {}
   filters = []
@@ -266,10 +268,12 @@ let extractFlex = q => {
 
 let extract = q => {
   let str = pretty(q)
-  let pp = path.map(x => pretty(x)) // can't use JSON.stringify - q has less info
+  let pp = pathAux.map(x => pretty(x)) // can't use JSON.stringify - q has less info
   let ix = pp.indexOf(str)
   if (ix >= 0 && q.key != "var") {
-    q.inpath = true
+    // q.inpath = true
+    // console.log("CSE",str)     // TODO!
+    // return path[ix]
     // return { key: "pathref", op: path[ix] } // XXX not quite working yet
   }
 
@@ -297,14 +301,21 @@ let extract = q => {
   } else if (q.key == "pure") {
     let es = q.arg.map(extract)
     return { ...q, arg: es }
+  } else if (q.key == "mkset") {
+    let es = q.arg.map(extract)
+    return { ...q, arg: es }
   } else if (q.key == "stateful") {
     if (q.op == "mkset!")
       q.mode = "reluctant"
+    let myPath = JSON.parse(JSON.stringify(path))
     let es = q.arg.map(extract)
     let x = assignments.length
-    assignments.push({ ...q, arg: es, path, vars:[], dims:[], tmps: [] }) // cycles?
+    assignments.push({ ...q, arg: es, path: myPath, pathAux, vars:[], dims:[], tmps: [] }) // cycles?
     return { key: "ref", op: x }
   } else if (q.key == "group") {
+
+    let q2 = JSON.parse(JSON.stringify(q.arg[0]))
+
     let e1 = extract(q.arg[0])
 
     let str = JSON.stringify(e1)
@@ -316,14 +327,29 @@ let extract = q => {
     }
     e1.pathkey = ix
 
-    let save = path
-    path = [...path,e1]
+    if (e1.key == "var") { // optimize const case?
+      q.vK = e1
+    } else {
+      q.aux = extract({key:"get", arg: [
+        {key:"mkset", arg:[q2]}, 
+          {key:"var", op:"*K"+ix, arg:[]}]})
+
+      q.vK = extract({key:"var", op:"*K"+ix, arg:[]})
+    }
+
+    let save = {path,pathAux}
+    path = [...path,q.vK]
+    pathAux = [...pathAux,e1]
     let e2 = extractFlex(q.arg[1])
-    path = save
+    path = save.path
+    pathAux = save.pathAux
     let x = assignments.length
-    assignments.push({ ...q, arg: [e1,e2], path, vars:[], dims:[], tmps: [] })
+    assignments.push({ ...q, arg: [e1,e2], path, pathAux, vars:[], dims:[], tmps: [] })
     return { key: "ref", op: x }
   } else if (q.key == "update") {
+
+    let q2 = JSON.parse(JSON.stringify(q.arg[1]))
+
     let e0 = extract(q.arg[0])
     let e1 = extract(q.arg[1])
 
@@ -336,12 +362,24 @@ let extract = q => {
     }
     e1.pathkey = ix
 
-    let save = path
-    path = [...path,e1]
+    if (e1.key == "var") { // optimize const case?
+      q.vK = e1
+    } else {
+      q.aux = extract({key:"get", arg: [
+        {key:"mkset", arg:[q2]}, 
+          {key:"var", op:"*K"+ix, arg:[]}]})
+
+      q.vK = extract({key:"var", op:"*K"+ix, arg:[]})
+    }
+
+    let save = {path,pathAux}
+    path = [...path,q.vK]
+    pathAux = [...pathAux,e1]
     let e2 = extractFlex(q.arg[2])
-    path = save
+    path = save.path
+    pathAux = save.pathAux
     let x = assignments.length
-    assignments.push({ ...q, arg: [e0, e1,e2], path, vars:[], dims:[], tmps: [] })
+    assignments.push({ ...q, arg: [e0, e1,e2], path, pathAux, vars:[], dims:[], tmps: [] })
     return { key: "ref", op: x }
   } else {
     console.error("unknown op", q)
@@ -498,52 +536,127 @@ let infer = q => {
     q.tmps = unique(es.flatMap(x => x.tmps))
     q.mind = unique(es.flatMap(x => x.mind))
     q.dims = unique(es.flatMap(x => x.dims))
+  } else if (q.key == "mkset") {
+    let es = q.arg.map(infer)
+    q.vars = unique(es.flatMap(x => x.vars))
+    q.tmps = unique(es.flatMap(x => x.tmps))
+    q.mind = []
+    q.dims = []
   } else if (q.key == "stateful") {
     let [e1] = q.arg.map(infer)
-    q.vars = e1.vars
+    q.path = q.path.map(infer)
+
+    // decorrelate:
+    if (q.pathAux) { // only once
+    let newPath = []
+    for (let i in q.path) {
+      if (intersect(q.pathAux[i].vars,e1.vars).length){
+        // console.log("PRESERVE "+q.path[i].op+"="+pretty(q.pathAux[i])+" / "+pretty(e1))
+        newPath.push(q.path[i])
+      } else {
+        // console.log("DECORRELATE "+q.path[i].op+pretty(q.pathAux[i])+" / "+pretty(e1))
+        q.removed = {}
+        q.removed[i] = { 
+          l: pretty(q.pathAux[i]),
+          r: pretty(e1,),
+          lvars:q.pathAux[i].vars, 
+          rvars: e1.vars}
+      }
+    }
+    q.path = newPath
+    q.pathAux = null}
+
+
+    q.vars = unique([...e1.vars, ...q.path.flatMap(x => x.vars)])
     // q.gens = e1.gens
-    q.tmps = e1.tmps
+    q.tmps = unique([...e1.tmps, ...q.path.flatMap(x => x.tmps)])
     // q.deps = e1.deps
     //
     // decorrelate -- important for correctness!
     // q.path.map(infer)
-    q.path = q.path.filter(x => intersect(x.vars,q.vars).length > 0)
-    q.tmps = unique([...q.tmps,...q.path.flatMap(x => x.tmps)])
+
+    // q.path = q.path.filter(x => intersect(x.vars,q.vars).length > 0)
+    // q.tmps = unique([...q.tmps,...q.path.flatMap(x => x.tmps)])
     //
-    q.mind = []
+    q.mind = [...q.path.flatMap(x => x.mind)]
     if (q.mode == "reluctant") { //console.log("!!!")
-      q.dims = e1.dims
+      q.dims = unique([...e1.dims, ...q.path.flatMap(x => x.dims)])
     } else {
-      q.dims = [] // can always reduce to one elem
+      q.dims = unique([...q.path.flatMap(x => x.dims)]) // can always reduce to one elem
     }
   } else if (q.key == "group") {
     let [e1,e2] = q.arg.map(infer)
+    q.path = q.path.map(infer)
+
+    // decorrelate:
+    if (q.pathAux) { // only once
+    let newPath = []
+    for (let i in q.path) {
+      if (intersect(q.pathAux[i].vars,e1.vars).length){
+        // console.log("PRESERVE "+pretty(q.pathAux[i])+" / "+pretty(e1))
+        newPath.push(q.path[i])
+      } else {
+        // console.log("DECORRELATE "+pretty(q.pathAux[i])+" / "+pretty(e1))
+      }
+    }
+    q.path = newPath
+    q.pathAux = null}
+
     q.vars = unique([...e1.vars, ...e2.vars])
     // q.gens = unique([...e1.gens, ...e2.gens])
     q.tmps = unique([...e1.tmps, ...e2.tmps])
     //
     // decorrelate -- important for correctness!
     // q.path.map(infer)
-    q.path = q.path.filter(x => intersect(x.vars,q.vars).length > 0)
-    q.tmps = unique([...q.tmps,...q.path.flatMap(x => x.tmps)])
+    // q.path = q.path.filter(x => intersect(x.vars,q.vars).length > 0)
+    // q.tmps = unique([...q.tmps,...q.path.flatMap(x => x.tmps)])
     //
     // q.deps = unique([...e1.deps, ...e2.deps])
-    q.mind = unique([/*...e1.mind,*/ ...e2.mind])
-    q.dims = unique([/*...e1.dims,*/ ...e2.dims])
+    q.mind = diff(unique([/*...e1.mind,*/ ...e2.mind]), [q.vK.op])
+    q.dims = diff(unique([/*...e1.dims,*/ ...e2.dims]), [q.vK.op])
+
+    if (q.aux) {
+      infer(q.aux)
+      infer(q.vK)
+    }
+
   } else if (q.key == "update") {
     let [e0,e1,e2] = q.arg.map(infer)
+    q.path = q.path.map(infer)
+
+    // decorrelate:
+    if (q.pathAux) { // only once
+    let newPath = []
+    for (let i in q.path) {
+      if (intersect(q.pathAux[i].vars,e1.vars).length){
+        // console.log("PRESERVE "+pretty(q.pathAux[i])+" / "+pretty(e1))
+        newPath.push(q.path[i])
+      } else {
+        // console.log("DECORRELATE "+pretty(q.pathAux[i])+" / "+pretty(e1))
+      }
+    }
+    q.path = newPath
+    q.pathAux = null}
+
+
     q.vars = unique([...e0.vars, ...e1.vars, ...e2.vars])
     // q.gens = unique([...e1.gens, ...e2.gens])
     q.tmps = unique([...e0.tmps, ...e1.tmps, ...e2.tmps])
     //
     // decorrelate -- important for correctness!
     // q.path.map(infer)
-    q.path = q.path.filter(x => intersect(x.vars,q.vars).length > 0)
-    q.tmps = unique([...q.tmps,...q.path.flatMap(x => x.tmps)])
+    // q.path = q.path.filter(x => intersect(x.vars,q.vars).length > 0)
+    // q.tmps = unique([...q.tmps,...q.path.flatMap(x => x.tmps)])
     //
     // q.deps = unique([...e1.deps, ...e2.deps])
-    q.mind = unique([ /*...e1.mind,*/ ...e2.mind])
-    q.dims = unique([ /*...e1.dims,*/ ...e2.dims])
+    q.mind = diff(unique([...e0.mind,  /*...e1.mind,*/ ...e2.mind]), [q.vK.op])
+    q.dims = diff(unique([...e0.dims, /*...e1.dims,*/ ...e2.dims]), [q.vK.op])
+
+    if (q.aux) {
+      infer(q.aux)
+      infer(q.vK)
+    }
+
   } else {
     console.error("unknown op", q)
   }
@@ -616,41 +729,65 @@ let inferBwd = out => q => {
     let es = q.arg.map(inferBwd(out))
     q.real = unique(es.flatMap(x => x.real))
     q.free = unique(es.flatMap(x => x.free))
+  } else if (q.key == "mkset") {
+    // q.out = out; 
+    let es = q.arg.map(inferBwd(out))
+    q.real = unique(es.flatMap(x => x.real))
+    q.free = unique(es.flatMap(x => x.free))
   } else if (q.key == "stateful") {
     q.out = out
     let out1 = union(out,q.arg[0].dims) // mind vs dim?
     if (q.mode == "reluctant")
       out1 = union(out,q.arg[0].mind) // mind vs dim?
     let [e1] = q.arg.map(inferBwd(out1))
+    q.path.map(inferBwd(out1))
+
+    // q.path = q.path.filter(x => intersect(x.vars, e1.vars).length != 0)
+
     // q.iter = e1.real // iteration space (enough?)
-    q.path = q.path.filter(x => intersect(x.real,q.vars).length > 0)
-    q.iter = unique([...e1.real/*, ...q.path.flatMap(x => x.real)*/])
-    q.real = intersect(out, e1.real)
-    q.free = unique([...q.real,...e1.free/*, ...q.path.flatMap(x => x.free)*/])
+    // q.path = q.path.filter(x => intersect(x.real,q.vars).length > 0)
+    q.iter = unique([...e1.real, ...q.path.flatMap(x => x.real)])
+    q.real = intersect(out, q.iter)
+    q.free = unique([...q.real,...e1.free])
     // console.log("SUM", q.path, out, q.iter, q.real)
     // q.scope ??= diff(e1.real, q.real)
+
   } else if (q.key == "group") {
     q.out = out
     let e1 = inferBwd(q.arg[0].mind)(q.arg[0]) // ???
     // let out1 = union(out,q.arg[0].dims)
-    let e2 = inferBwd(out)(q.arg[1])
+    let e2 = inferBwd(union(out,[q.vK.op]))(q.arg[1])
+    q.path.map(inferBwd(out))
     // q.iter = e1.real // iteration space (enough?)
-    q.path = q.path.filter(x => intersect(x.real,q.vars).length > 0)
-    q.iter = unique([...e1.real, ...e2.real/*, ...q.path.flatMap(x => x.real)*/])
-    q.real = e2.real
-    q.free = unique([...q.real,...e1.free, ...e2.free, ...q.path.flatMap(x => x.free)])
+    // q.path = q.path.filter(x => intersect(x.vars,e2.real).length > 0)
+    q.iter = unique([...e2.real, q.vK.op/*, ...q.path.flatMap(x => x.real)*/])
+    q.real = diff(e2.real, [q.vK.op])
+    q.free = unique([...q.real, ...e2.free, q.vK.op])
+
+    if (q.aux) {
+      inferBwd(q.aux.dims)(q.aux) // union e1.mind e2.dims?
+      // inferBwd([q.vK])(q.vK)
+    }
+
     // q.scope ??= diff(q.arg[0].real, q.real)
     // console.log("GRP",q.arg[1].real, q.real)
   } else if (q.key == "update") {
     q.out = out
     let e0 = inferBwd(out)(q.arg[0]) // ???  !!!!
     let e1 = inferBwd(q.arg[1].mind)(q.arg[1]) // ???
-    let e2 = inferBwd(out)(q.arg[2])
+    let e2 = inferBwd(union(out,[q.vK.op]))(q.arg[2])
+    q.path.map(inferBwd(out))
     // q.iter = e1.real // iteration space (enough?)
-    q.path = q.path.filter(x => intersect(x.real,q.vars).length > 0)
-    q.iter = unique([...e1.real, ...e2.real/*, ...q.path.flatMap(x => x.real)*/])
-    q.real = e2.real
-    q.free = unique([...q.real,...e1.free, ...e2.free/*, ...q.path.flatMap(x => x.free)*/])
+    // q.path = q.path.filter(x => intersect(x.vars,e2.real).length > 0)
+    q.iter = unique([...e2.real, q.vK.op/*, ...q.path.flatMap(x => x.real)*/])
+    q.real = diff(unique([...e0.real, ...e2.real]), [q.vK.op])
+    q.free = unique([...q.real, ...e2.free, q.vK.op/*, ...q.path.flatMap(x => x.free)*/])
+
+    if (q.aux) {
+      inferBwd(q.aux.dims)(q.aux) // union e1.mind e2.dims?
+      // inferBwd([q.vK])(q.vK)
+    }
+
     // q.scope ??= diff(q.arg[1].real, q.real)
     // console.log("GRP",q.arg[1].real, q.real)
   } else {
@@ -663,7 +800,7 @@ let inferBwd = out => q => {
   }
 
   console.assert(subset(q.dims, q.vars))
-  console.assert(subset(q.mind, q.real), "mind < real") // can happen for lazy 'last'
+  // console.assert(subset(q.mind, q.real), "mind < real") // can happen for lazy 'last'
   // if (q.mode != "reluctant")
     // console.assert(subset(q.dims, q.real)) // can happen for lazy 'last'
   if (q.iter)
@@ -683,6 +820,12 @@ let inferBwd = out => q => {
 // 5a. Pretty print
 //
 
+let prettyPath = es => {
+  if (es === undefined) return "[?]"
+  let sub = x => typeof(x) === "string" ? x : pretty(x)
+  return "[" + es.map(sub).join(",") + "]"
+}
+
 let pretty = q => {
   if (q.key == "input") {
     return "inp"
@@ -694,7 +837,7 @@ let pretty = q => {
     return "P"+q.op.pathkey+"["+pretty(q.op)+"]"
   } else if (q.key == "ref") {
     let e1 = assignments[q.op]
-    return "tmp"+q.op//+e1.path.map(pretty).map(quoteIndex)
+    return "tmp"+q.op+prettyPath(e1.real)
   } else if (q.key == "get") {
     let [e1,e2] = q.arg.map(pretty)
     if (e1 == "inp") return e2
@@ -706,15 +849,18 @@ let pretty = q => {
   } else if (q.key == "pure") {
     let es = q.arg.map(pretty)
     return q.op + "(" + es.join(", ") + ")"
+  } else if (q.key == "mkset") {
+    let [e1] = q.arg.map(pretty)
+    return "mkset("+e1+")"
   } else if (q.key == "stateful") {
     let [e1] = q.arg.map(pretty)
     return q.op+"("+e1+")"
   } else if (q.key == "group") {
     let [e1,e2] = q.arg.map(pretty)
-    return "{ "+ e1 + ": " + e2 + " }"
+    return "{ "+ (q.vK?.op) + "=" + e1 + ": " + e2 + " }"
   } else if (q.key == "update") {
     let [e0,e1,e2] = q.arg.map(pretty)
-    return e0+ "{ "+ e1 + ": " + e2 + " }"
+    return e0+ "{ "+ (q.vK?.op) + "=" + e1 + ": " + e2 + " }"
   } else {
     console.error("unknown op", q)
   }
@@ -739,7 +885,8 @@ let emitPseudo = (q) => {
     buf.push("")
   for (let i in assignments) {
     let q = assignments[i]
-    buf.push("tmp"+i + " = " + pretty(q))
+    buf.push("tmp"+i + prettyPath(q.real) + " = " + pretty(q))
+      buf.push("  rem: " + JSON.stringify(q.removed))
     if (q.real?.length > 0)
       buf.push("  rel: " + q.real)
     if (q.path.length > 0) 
@@ -799,7 +946,7 @@ let codegen = q => {
       return codegen(q.op)
   } else if (q.key == "ref") {
     let q1 = assignments[q.op]
-    let xs = [String(q.op),...q1.path.map(codegen),...q1.real]
+    let xs = [String(q.op),...q1.real]
     return quoteIndexVars("tmp", xs)
   } else if (q.key == "get") {
     let [e1,e2] = q.arg.map(codegen)
@@ -807,6 +954,9 @@ let codegen = q => {
   } else if (q.key == "pure") {
     let es = q.arg.map(codegen)
     return "rt.pure."+q.op+"("+es.join(",")+")"
+  } else if (q.key == "mkset") {
+    let [e1] = q.arg.map(codegen)
+    return "{["+e1+"]: true}"
   } else {
     console.error("unknown op", q)
   }
@@ -825,11 +975,13 @@ let emitStm = (q) => {
   } else if (q.key == "group") {
     let [e1,e2] = q.arg.map(codegen)
     // return lhs+"["+e1+"] = "+e2
-    return "rt.stateful.group("+e1+", "+e2+")"
+    // return "rt.stateful.single("+e2+")"
+    return "rt.stateful.group("+quoteVar(q.vK.op)+", "+e2+")"
   } else if (q.key == "update") {
     let [e0,e1,e2] = q.arg.map(codegen)
     // return lhs+"["+e1+"] = "+e2
-    return "rt.stateful.update("+e0+", "+e1+", "+e2+")"
+    // return "rt.stateful.single2("+e0+","+e2+")"
+   return "rt.stateful.update("+e0+", "+quoteVar(q.vK.op)+", "+e2+")"
   } else {
     console.error("unknown op", q)
   }
@@ -876,6 +1028,9 @@ let emitFilters = (real, negative) => buf => {
         // determine iteration order accordingly.
 
         for (let v2 of notseen) {
+          if (real.includes(v2))
+            console.error("going to see "+v2+" later!")
+
           if (buf.indexOf("let gen"+i+quoteVar(v2)+" = {}") < 0 &&
               buf0.indexOf("let gen"+i+quoteVar(v2)+" = {}") < 0) {
             buf0.push("// pre-gen "+v2)
@@ -912,7 +1067,7 @@ let emitCode = (q, order) => {
 
   for (let is of order) {
     if (is.length > 1)
-      console.error("cycle")
+      console.error("cycle "+is)
     let [i] = is
     let q = assignments[i]
     
@@ -921,45 +1076,45 @@ let emitCode = (q, order) => {
     buf.push("// --- tmp"+i+" ---")
 
 
-    let fv = q.free
+    let fv = union(q.path,q.free)
 
     let buf1 = []
     let buf2 = []
     let buf3 = []
 
     // XXXX DOUBLE-SUM PROBLEM
-    let pathVars = unique(q.path.flatMap(x => x.free))
-    let seenVars = {}
-    for (let p of q.path) {
-      let k1 = buf.length
-      for (let vv of p.free) {
-        if (q.free.includes(vv)) {
-          buf2.push("// skip pre-gen key path "+pretty(p)+" to "+quoteVar(vv))
-          continue 
-          // seenVars[vv] = true
-        }
+    // let pathVars = unique(q.path.flatMap(x => x.free))
+    // let seenVars = {}
+    // for (let p of q.path) {
+    //   let k1 = buf.length
+    //   for (let vv of p.free) {
+    //     if (q.free.includes(vv)) {
+    //       buf2.push("// skip pre-gen key path "+pretty(p)+" to "+quoteVar(vv))
+    //       continue 
+    //       // seenVars[vv] = true
+    //     }
 
-        // build temp structure
-        let k = buf.length
-        buf.push("// pre-gen key path "+pretty(p)+" to "+quoteVar(vv))
-        buf.push("let temp"+k+" = {}")
-        emitFilters(p.free)(buf)
-        buf.push("{ temp"+k+"["+codegen(p)+"] = {}; temp"+k+"["+codegen(p)+"]["+quoteVar(vv)+"] = true; }")
-        // XXX note that we only keep a single entry!
+    //     // build temp structure
+    //     let k = buf.length
+    //     buf.push("// pre-gen key path "+pretty(p)+" to "+quoteVar(vv))
+    //     buf.push("let temp"+k+" = {}")
+    //     emitFilters(p.free)(buf)
+    //     buf.push("{ temp"+k+"["+codegen(p)+"] = {}; temp"+k+"["+codegen(p)+"]["+quoteVar(vv)+"] = true; }")
+    //     // XXX note that we only keep a single entry!
 
-        let i = p.pathkey
+    //     let i = p.pathkey
 
-        if (k == k1) // first time we see path elem
-          buf1.push("for (let K"+i+" in temp"+k+") ")
-        if (!seenVars[vv])
-          buf1.push("for (let "+quoteVar(vv)+" in temp"+k+"[K"+i+"]) {") // only one entry!!
-        else
-          buf2.push("if ("+quoteVar(vv)+" in temp"+k+"[K"+i+"]) {") // only one entry!!
-        // buf1.push("{")
-        buf3.push("}")
-        seenVars[vv] = true
-      }
-    }
+    //     if (k == k1) // first time we see path elem
+    //       buf1.push("for (let K"+i+" in temp"+k+") ")
+    //     if (!seenVars[vv])
+    //       buf1.push("for (let "+quoteVar(vv)+" in temp"+k+"[K"+i+"]) {") // only one entry!!
+    //     else
+    //       buf2.push("if ("+quoteVar(vv)+" in temp"+k+"[K"+i+"]) {") // only one entry!!
+    //     // buf1.push("{")
+    //     buf3.push("}")
+    //     seenVars[vv] = true
+    //   }
+    // }
 
     buf.push(...buf1)
     emitFilters(fv)(buf)
@@ -971,7 +1126,7 @@ let emitCode = (q, order) => {
     if (q.tmps.some(x => x == i))
       console.error("cycle")
 
-    let xs = [i,...q.path.map(codegen),...q.real.map(quoteVar)]
+    let xs = [i,...q.real.map(quoteVar)]
     let ys = xs.map(x => ","+x).join("")
 
     buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStm(q) + ")")
@@ -1041,6 +1196,7 @@ let compile = (q,{
 
   let pseudo0 = emitPseudo(q)
 
+// console.log(pseudo0)
 
   // calculate one-step dependencies between vars/tmps
 
@@ -1086,6 +1242,8 @@ let compile = (q,{
       for (let j in deps.var2tmp[v]) 
         deps2.tmp2tmp[i][j] = true
   }
+
+// console.dir(deps2)
 
   let order = scc(Object.keys(deps2.tmp2tmp), x => Object.keys(deps2.tmp2tmp[x])).reverse()
 

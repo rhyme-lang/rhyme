@@ -161,6 +161,25 @@ rt.stateful.single = (x,extra) => ({ // error if more than one (XXX can't really
   }
 })
 
+rt.stateful.single2 = (x1,x2,extra) => ({ // error if more than one (XXX can't really do that...)
+  init: () => undefined, 
+  next: s => {
+    if (x1 === undefined) return s
+    if (x2 === undefined) return s
+    if (s === undefined) {
+      console.log("FUSE", x1, x2)
+      return {...x1,...x2}
+    }
+    if (!extra) return x  // FIXME partial solution to double-sum bug
+    // throw new Error("single value expected but got two: "+s+", "+x)
+    // see groupByAverageTest, current codegen is set up to produce
+    // the same value repeatedly in a grouped context
+    if (JSON.stringify(s) !== JSON.stringify(x))
+      console.error("single value expected but got two: "+s+", "+x)
+    return s
+  }
+})
+
 
 rt.stateful.array = (x,extra) => ({
   init: () => [], 
@@ -209,7 +228,6 @@ rt.stateful.update = (x0,x1,x2) => ({
     return s
   }
 })
-
 
 
 
