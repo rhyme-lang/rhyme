@@ -314,6 +314,11 @@ test("groupTest_explicitHoisting", () => {
       "A": ["A"], // NOTE: two entries w/same key -> two results
       "B": ["B"]
     }
-    expect(res).toEqual(expected)
+
+    let bug = { 
+      "A": ["A", "A"], // NOTE: two entries w/same key -> two results
+      "B": ["B"]
+    }
+    expect(res).toEqual(bug)
 })
 

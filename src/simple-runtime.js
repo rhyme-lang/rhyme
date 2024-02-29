@@ -72,6 +72,11 @@ rt.pure.flatten = (...x1) => { // array flatten
   return x1.flat()
 }
 
+rt.singleton = (x1) => { // 'mkset'
+  if (x1 === undefined) return {}
+  return {[x1]:true}
+}
+
 
 // stateful operations (reducers)
 

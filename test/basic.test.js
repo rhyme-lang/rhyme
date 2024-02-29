@@ -342,47 +342,6 @@ test("arrayTest7Eta", () => {
     let query = { "*k": api.get(query0,"*k") }
     //let func0 = api.compile(query0)
     let func = api.compile(query)
-
-    console.log(func.explain2.pseudo0)
-    console.log(func.explain2.pseudo)
-    console.log(func.explain2.code)
-
-let code = `(inp => k => {
-      let tmp = {}
-      // --- tmp0 ---
-      for (let x_DEFAULT_0 in inp?.['data'])
-        rt.update(tmp,0)
-        (rt.stateful.array(inp?.['data']?.[x_DEFAULT_0]?.['value'],1))
-      // --- tmp1 ---
-      // pre-gen *_DEFAULT_0
-      let gen1x_DEFAULT_0 = {}
-      for (let x_DEFAULT_0 in inp?.['data'])
-      for (let xK1 in {[inp?.['data']?.[x_DEFAULT_0]?.['key']]: true})
-        gen1x_DEFAULT_0[xK1] = true //{[inp?.['data']?.[x_DEFAULT_0]?.['key']]: true}?.[xK1]
-      // main loop
-      for (let xK1 in gen1x_DEFAULT_0) {
-        rt.update(tmp,1)
-        (rt.stateful.group(xK1, tmp?.[0]))
-        console.log("KEY", xK1)
-    }
-      // --- tmp2 ---
-      for (let xk in tmp?.[1])
-        rt.update(tmp,2,xk)
-        (rt.stateful.single(tmp?.[1]?.[xk],0))
-      // --- tmp3 ---
-      for (let xk in tmp?.[1])
-        rt.update(tmp,3)
-        (rt.stateful.group(xk, tmp?.[2]?.[xk]))
-      // --- res ---
-      k(tmp?.[3])
-      })
-
-`
-let func2 = eval(code)
-
-func2({data})(x => console.log(x))
-
-
     let res = func({ data })
     let expected = {
       "A": [10, 30],
