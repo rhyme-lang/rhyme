@@ -563,6 +563,82 @@ ZZZ = (ZZZ, ZZZ)`
   // recursive computations.
 })
 
+test("day8-part2", () => {
+  let input = `LR
+
+11A = (11B, XXX)
+11B = (XXX, 11Z)
+11Z = (11B, XXX)
+22A = (22B, XXX)
+22B = (22C, 22C)
+22C = (22Z, 22Z)
+22Z = (22B, 22B)
+XXX = (XXX, XXX)`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    andThen: (a,b) => b, // just to add a as dependency
+    isRule: s => s.search("=") != -1,
+    isStartState: s => s[s.length - 1] == 'A',
+    updateState: (state, newState) => state.state = newState,
+    ...udf_stdlib
+  }
+
+  let line = rh`.input | udf.split "\\n"`
+  let instructions = rh`${line}.0 | udf.split ""`
+
+  // Use generator as filter here to only get the rules
+  // since the first two lines will be the instructions and an empty line 
+  let filter = (gen, p) => x => rh`udf.andThen (udf.filter (${p})).${gen} ${x}`
+
+  let ruleElems = rh`${line} | .*line | udf.matchAll "[0-9A-Z]{3}" "g"`
+  let isRule = rh`${line} | .*line | udf.isRule`
+
+  let ruleElemsFiltered = rh`${ruleElems} | ${filter("*f1", isRule)}`
+
+  let isStartState = rh`${ruleElemsFiltered}.0.0 | udf.isStartState`
+  let startStates = rh`${ruleElemsFiltered}.0.0 | ${filter("*f2", isStartState)}`
+
+  let startStatesArray = api.array({ state: startStates })
+
+  let getStartStates = api.compile(startStatesArray)
+
+  let states = getStartStates({input, udf})
+  
+  let node = {
+    L: rh`${ruleElemsFiltered}.1.0`,
+    R: rh`${ruleElemsFiltered}.2.0`
+  }
+
+  let currStates = rh`.states`
+
+  let rules = rh`${node} | group ${ruleElemsFiltered}.0.0`
+
+  // // Each query returns the number of steps taken
+  let query = rh`${instructions} | udf.updateState ${currStates}.*state ${rules}.(${currStates}.*state.state).(.*inst)
+                                 | (count .*inst) / (count ${currStates}.*state)`
+  let func = api.compile(query)
+
+  // console.log(states)
+
+  const isEndState = s => s[s.length - 1] == 'Z'
+  const cannotStop = (statesObj) => {
+    for (let s in statesObj) {
+      if (!isEndState(statesObj[s].state)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  let res = 0
+  while (cannotStop(states)) {
+    res += func({input, udf, states: states})
+  }
+
+  expect(res).toBe(6)
+})
+
 // 2022
 
 test("day1-A", () => {
