@@ -779,9 +779,23 @@ let inferBwd = out => q => {
   } else if (q.key == "group") {
     q.out = out
 
+// console.log("GRP", pretty(q), q.vK.op, vars[q.vK.op].vars, "/", out, q.arg[1].vars)
 
     let vks = unique([q.vK.op])//, ...vars[q.vK.op].vars])
-    let vks1 = unique([q.vK.op, ...diff(vars[q.vK.op].vars,q.arg[1].vars)])
+
+// generatorAsFilter --- need to include F
+// aggregateAsKey --- do not include *
+
+// WAS -    
+
+   // generatorAsFilter OK
+    // let vks1 = unique([q.vK.op, ...diff(diff(vars[q.vK.op].vars,q.arg[1].vars), out)])
+
+   // aggregateAsKey OK
+   let vks1 = unique([q.vK.op, ...intersect(vars[q.vK.op].vars,  q.path)])
+
+
+    // let vks1 = unique([q.vK.op, ...diff(diff(vars[q.vK.op].vars,q.arg[1].vars), out)])
     let e1 = inferBwd(union(out,q.arg[0].mind))(q.arg[0]) // ???
     // let out1 = union(out,q.arg[0].dims)
     let e2 = inferBwd(union(out,vks1))(q.arg[1])

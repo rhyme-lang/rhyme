@@ -174,6 +174,13 @@ test("aggregateAsKey", () => {
     let q1 = { "data.*.A": { "sum(data.*.B)": true } }
     let q2 = { "sum(data.*.B)": { "data.*.A": true } }
 
+/* first one:
+
+    t0 = "data.*.A" -> "sum(data.*.B)"
+    t1 = t0[K0] -> t0[K0][K1] -> true
+
+*/
+
     let f1 = api.compile(q1)
     let f2 = api.compile(q2)
 
@@ -195,6 +202,10 @@ test("aggregateAsKey", () => {
     let e2_alt = {
         60: { 1: true, 2: true }, // XXX is this the right one?
     }
+
+
+    // console.log(f1.c2.explain.pseudo)
+    // console.log(f1.c2.explain.code)
 
 
     // console.dir(res1)

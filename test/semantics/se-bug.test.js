@@ -190,8 +190,8 @@ test("groupTestNested2_encoding2", () => {
     let func = compile(q1)
     let res = func({ data3, udf: {guard: (x,y) => y }}, true)
 
-    console.log(func.explain.pseudo)
-    console.log(func.explain.code)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
 
     let expected = { 
       "A": [[110, 330], [120]],
