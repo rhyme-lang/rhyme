@@ -1037,79 +1037,87 @@ let emitStm = (q) => {
   }
 }
 
-let emitFilters = (real, negative) => buf => {
-  let vv = vars 
-  {
+let emitFilters = (real) => buf => {
+
   let watermark = buf.length
-  let vars = {}
-  let seen = {}
-  if (negative) for (let v of negative) seen[v] = true
-  for (let v of real) vars[v] = true
-  // filters
   let buf0 = buf
   let buf1 = []
+
+  let vars = {}
+  let seen = {}
+  for (let v of real) vars[v] = true
+
+  let worklist = []
+  let skipcount = {}
   for (let i in filters) {
+    worklist.push(i)
+    skipcount[i] = 0
+  }
+
+  // process filters
+  while (worklist.length > 0) {
+    let i = worklist.shift()
     let f = filters[i]
     let v1 = f.arg[1].op
     let g1 = f.arg[0]
-    if (vars[v1]) {
-      let notseen = g1.free.filter(x => !seen[x]) // unavailable deps?
-      if (notseen.length == 0) { // ok, just emit current
-        if (!seen[v1]) {
-          buf1.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
-        } else {
-          buf1.push("if ("+quoteVar(v1)+" in "+codegen(g1)+")")
-        }
+    if (!vars[v1]) continue // not interested in this? skip
+
+    // Do we have an ordering problem? I.e. we depend on a
+    // variable that's only introduced later (first filter
+    // not seen yet). Try to solve this by postponing current
+    // to end of list. Need to be careful about cycles.
+    //
+    // TODO: would be better to use proper topsort
+    let orderingProblem = g1.free.filter(x => !seen[x] && vars[x])
+    if (orderingProblem.length != 0) { // ok, just emit current
+      if (skipcount[i]++ < 10) {
+        worklist.push(i)
+        continue
       } else {
-        // XXX bit of a hack right now: our generator/filter for v1
-        // is dependent on (at least) one other variable v2 that
-        // is not part of the current iteration space. Solution:
-        // run this generator separately and reify into a
-        // datastructure. This needs to happen before the main
-        // loop, hence separate output buffers.
-        //
-        // TODO: it would be much cleaner to extract this into a 
-        // proper assignment statement
-        //
-        // console.assert(intersect(notseen, real).length == 0) 
-        //
-        // We're eliminating
-        // iteration over this variable, so gotta make sure we weren't
-        // planning to iterate over it later in the sequence.
-        // XXX: this is brittle. Much better to start with 'real', and
-        // determine iteration order accordingly.
+        console.warn("unsolved filter ordering problem:"+orderingProblem)
+      }
+    }
 
-        for (let v2 of notseen) {
-          if (real.includes(v2)) {
-            // console.warn("going to see "+v2+" later!")
-            continue
-          }
+    // Do we depend on variables that we don't want to iterate
+    // over? Then we need to project those out. Run the generator 
+    // separately and reify into a data structure. This needs 
+    // to happen before the main loop, hence separate output 
+    // buffers.
+    //
+    // TODO: it would be much cleaner to extract this into a 
+    // proper assignment statement
+    let extra = g1.free.filter(x => !vars[x])
 
-          if (buf.indexOf("let gen"+i+quoteVar(v2)+" = {}") < 0 &&
-              buf0.indexOf("let gen"+i+quoteVar(v2)+" = {}") < 0) {
-            buf0.push("// pre-gen "+v2)
-            buf0.push("let gen"+i+quoteVar(v2)+" = {}")
-            emitFilters(g1.free)(buf0)
-            buf0.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
-            buf0.push("  gen"+i+quoteVar(v2)+"["+quoteVar(v1)+"] = true //"+codegen(g1)+"?.["+quoteVar(v1)+"]")
-            // with the aux data structure in place, we're ready to
-            // proceed with the main loop nest:
-          } else
-            buf0.push("// skip gen"+i+quoteVar(v2))
-
-          if (!seen[v1])
-            buf1.push("for (let "+quoteVar(v1)+" in gen"+i+quoteVar(v2)+")")
-          else
-            buf1.push("if ("+quoteVar(v1)+" in gen"+i+quoteVar(v2)+")")
-          seen[v1] = true
-        }
+    if (extra.length != 0) {
+      for (let v2 of extra) {
+        if (buf0.indexOf("let gen"+i+quoteVar(v2)+" = {}") < 0) {
+          buf0.push("// pre-gen "+v2)
+          buf0.push("let gen"+i+quoteVar(v2)+" = {}")
+          emitFilters(g1.free)(buf0)
+          buf0.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
+          buf0.push("  gen"+i+quoteVar(v2)+"["+quoteVar(v1)+"] = true //"+codegen(g1)+"?.["+quoteVar(v1)+"]")
+          // with the aux data structure in place, we're ready to
+          // proceed with the main loop nest:
+        } 
+        if (!seen[v1])
+          buf1.push("for (let "+quoteVar(v1)+" in gen"+i+quoteVar(v2)+")")
+        else
+          buf1.push("if ("+quoteVar(v1)+" in gen"+i+quoteVar(v2)+")")
+        seen[v1] = true
+      }
+    } else { // ok, just emit current
+      if (!seen[v1]) {
+        buf1.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
+      } else {
+        buf1.push("if ("+quoteVar(v1)+" in "+codegen(g1)+")")
       }
       seen[v1] = true
     }
   }
-  //buf.push(...buf0)
+
+  // combine buffers
   if (buf.length > watermark) buf.push("// main loop")
-  buf.push(...buf1)}
+  buf.push(...buf1)
 }
 
 
