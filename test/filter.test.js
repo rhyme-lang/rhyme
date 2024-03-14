@@ -94,10 +94,19 @@ test("generatorAsFilter", () => {
     let udf = {
         filter: c => c ? { [c]: true } : {},
         andThen: (a,b) => b, // just to add a as dependency
-        eq: a => b => a == b
+        eq: a => b => a == b,
+        eq2: (a, b) => a == b,
+        tbl: {A:true},
+        tru: {true:true}
     }
     let filter = p => x => rh`udf.andThen (udf.filter (${p} ${x})).*F ${x}`
     let query = rh`sum data.*.value | group (data.*.key | ${filter("udf.eq A")})`
+
+
+query = { "udf.andThen (udf.filter (udf.eq2 A data.*.key)).*F data.*.key":
+    rh`sum(data.*.value)`
+}
+
 
 /*
 
@@ -123,13 +132,59 @@ test("generatorAsFilter", () => {
     // The key is passed through, but all the values are filtered out.
 
     let expected = { "A": 40 }
-    let func = api.compile(query)
+    let func = api.compile(query).c2
 
-    console.log(func.c2.explain.pseudo)
-    console.log(func.c2.explain.code)
+    console.log(func.explain.pseudo)
+    console.log(func.explain.code)
 
 
     // console.dir(func.explain.code)
-    let res = func({ data, udf })
+    let res = func({ data, udf }, true)
     expect(res).toEqual(expected)
 })
+
+
+// XXX temp -- with simple eval, the following work
+
+test("generatorAsFilter2", () => {
+    let udf = {
+        filter: c => c ? { [c]: true } : {},
+        andThen: (a,b) => b, // just to add a as dependency
+        eq2: (a, b) => a == b,
+    }
+    let query = { // filter value, not key (difference? see above about 0 init)
+      "data.*.key":
+        rh`sum(udf.andThen (udf.filter (udf.eq2 A data.*.key)).*F data.*.value)`
+    }
+
+    let expected = { "A": 40 }
+    let func = api.compile(query).c2
+
+    console.log(func.explain.pseudo)
+    console.log(func.explain.code)
+
+    let res = func({ data, udf }, true)
+    expect(res).toEqual(expected)
+})
+
+test("generatorAsFilter3", () => {
+    let udf = {
+        filter: c => c ? { [c]: true } : {},
+        andThen: (a,b) => a && b, // proper test here!!!
+        tbl: {A:true},
+    }
+    let query = { // rely only on non-undefined test here, not var *F
+      "data.*.key":
+        rh`sum(udf.andThen (udf.tbl.(data.*.key)) data.*.value)`
+    }
+
+    let expected = { "A": 40 }
+    let func = api.compile(query).c2
+
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let res = func({ data, udf }, true)
+    expect(res).toEqual(expected)
+})
+

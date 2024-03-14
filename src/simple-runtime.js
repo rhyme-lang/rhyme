@@ -59,6 +59,7 @@ rt.pure.div = (x1,x2) => {
 
 rt.pure.apply = (x1,...x2) => {
   if (x1 === undefined) return undefined
+  // undefined arguments currently ok!
   return x1(...x2)
 }
 
