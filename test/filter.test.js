@@ -102,19 +102,12 @@ test("generatorAsFilter", () => {
     let filter = p => x => rh`udf.andThen (udf.filter (${p} ${x})).*F ${x}`
     let query = rh`sum data.*.value | group (data.*.key | ${filter("udf.eq A")})`
 
-
-query = { "udf.andThen (udf.filter (udf.eq2 A data.*.key)).*F data.*.key":
-    rh`sum(data.*.value)`
-}
-
-
 /*
 
     t0 = <A == data.*.key>[*F] && data.*.key
     t0[K0] -> sum(data.*.value)
 
 */
-
 
     // NOTE: can we achieve udf.filter more directly using a query
     // object expresion { ... } ? Almost, but not quite! (TODO)
@@ -134,8 +127,8 @@ query = { "udf.andThen (udf.filter (udf.eq2 A data.*.key)).*F data.*.key":
     let expected = { "A": 40 }
     let func = api.compile(query).c2
 
-    console.log(func.explain.pseudo)
-    console.log(func.explain.code)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
 
 
     // console.dir(func.explain.code)
@@ -160,8 +153,8 @@ test("generatorAsFilter2", () => {
     let expected = { "A": 40 }
     let func = api.compile(query).c2
 
-    console.log(func.explain.pseudo)
-    console.log(func.explain.code)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
 
     let res = func({ data, udf }, true)
     expect(res).toEqual(expected)

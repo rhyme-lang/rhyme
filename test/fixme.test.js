@@ -162,6 +162,8 @@ test("undefinedKey", () => {
 //
 // Computing this fully incrementally is not trivial and
 // requires moving entries from one key to another.
+//
+// TODO: discuss desirable semantics for q2
 
 test("aggregateAsKey", () => {
 
