@@ -57,6 +57,12 @@ rt.pure.div = (x1,x2) => {
   return Math.trunc(Number(x1) / Number(x2))
 }
 
+rt.pure.mod = (x1,x2) => {
+  if (x1 === undefined) return undefined
+  if (x2 === undefined) return undefined
+  return Number(x1) % Number(x2)
+}
+
 rt.pure.apply = (x1,...x2) => {
   if (x1 === undefined) return undefined
   // undefined arguments currently ok!

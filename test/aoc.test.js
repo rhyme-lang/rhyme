@@ -514,49 +514,50 @@ BBB = (AAA, ZZZ)
 ZZZ = (ZZZ, ZZZ)`
 
   let udf = {
-    filter: c => c ? { [c]: true } : {},
-    andThen: (a,b) => b, // just to add a as dependency
-    isRule: s => s.search("=") != -1,
-    updateState: (state, newState) => state.state = newState,
     ...udf_stdlib
   }
 
-  let line = rh`.input | udf.split "\\n"`
-  let instructions = rh`${line}.0 | udf.split ""`
+  let chunks = rh`.input | udf.split "\\n\\n"`
+  let lines = rh`${chunks}.1 | udf.split "\\n"`
+  
+  // decode instructions
+  let instructions = rh`${chunks}.0 | udf.split ""`
+  let instrStep = i => rh`${instructions}.(${i} % (count ${instructions}.*I))`
 
-  // Use generator as filter here to only get the rules
-  // since the first two lines will be the instructions and an empty line 
-  let filter = p => x => rh`udf.andThen (udf.filter (${p})).*f ${x}`
-
-  let ruleElems = rh`${line} | .*line | udf.matchAll "[A-Z]{3}" "g"`
-  let isRule = rh`${line} | .*line | udf.isRule`
-
-  let ruleElemsFiltered = rh`${ruleElems} | ${filter(isRule)}`
-
-  let node = {
-    L: rh`${ruleElemsFiltered}.1.0`,
-    R: rh`${ruleElemsFiltered}.2.0`
+  // decode rules
+  let ruleParts = rh`${lines} | .*line | udf.matchAll "[A-Z]{3}" "g"`
+  let ruleBody = {
+    L: rh`${ruleParts}.1.0`,
+    R: rh`${ruleParts}.2.0`
   }
+  let rules = rh`${ruleBody} | group ${ruleParts}.0.0`
 
-  let rules = rh`${node} | group ${ruleElemsFiltered}.0`
-
-  // After we have the rules object
-  // use a generator to traverse through instructions
-  let currentState = rh`.state`
-
-  // Each query returns the number of steps taken
-  let query = rh`${instructions} | udf.updateState ${currentState} ${rules}.(${currentState}.state).(.*inst)
-                                 | count .*inst`
+  // main query
+  let query = {
+    state: rh`.state | ${rules}.(.state).(${instrStep} .steps)`,
+    steps: rh`state.steps + 1`
+  }
 
   let func = api.compile(query)
+
+  // initial state and driver loop
   let state = {
-    state: "AAA"
+    state: "AAA",
+    steps: 0
   }
-  let res = 0
   while (state.state != "ZZZ") {
-    res += func({input, udf, state})
+    state = func({input, udf, state})
   }
-  expect(res).toBe(6)
+  expect(state.steps).toBe(6)
+
+  // NOTE: each iteration of the loop re-parses the
+  // entire input. We could eliminate this redundant
+  // work by pre-computing 'rules' and 'instructions'
+  // before the loop.
+  //
+  // This would be match the emerging pattern of 
+  // having separate 'init' and 'step' queries for 
+  // recursive computations.
 })
 
 // 2022
