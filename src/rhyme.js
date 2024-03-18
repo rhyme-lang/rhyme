@@ -151,6 +151,17 @@ api["query"] = api["compile"] = (query) => {
     wrapper.explain2 = c2.explain
     return wrapper
 }
+api["compileFastPathOnly"] = (query) => {
+    let rep = ir.createIR(query)
+    let c1 = codegen.generate(rep)
+    let wrapper = (x) => {
+        let res1 = c1(x)
+        return res1
+    }
+    wrapper.c1 = c1
+    wrapper.explain = c1.explain
+    return wrapper
+}
 
 // displaying graphics/visualizations in the browser
 api["display"] = (o, domParent) => graphics.display(o, domParent)

@@ -365,7 +365,7 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
   expect(res).toBe(30)
 })
 
-test("day5-part1", () => { return // HANGS! -- filter?
+test("day5-part1", () => {
   let input = `seeds: 79 14 55 13
 
 seed-to-soil map:
@@ -410,9 +410,11 @@ humidity-to-location map:
 
   let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
 
-  let seeds = rh`.input | udf.split "\\n\\n" | .0 | udf.split ":" | .1 | udf.matchAll "\\\\d+" "g" | .*seed | udf.toNum | group *seed`
+  let chunks = rh`.input | udf.split "\\n\\n"`
 
-  let ranges = [rh`.input | udf.split "\\n\\n" | udf.slice 1 | .*map | udf.split "\\n" | udf.slice 1 | .*range | udf.matchAll "\\\\d+" "g" | .*t0 | udf.toNum`]
+  let seeds = rh`${chunks}.0 | udf.split ":" | .1 | udf.matchAll "\\\\d+" "g" | .*seed | udf.toNum | group *seed`
+
+  let ranges = [rh`${chunks} | udf.slice 1 | .*map | udf.split "\\n" | udf.slice 1 | .*range | udf.matchAll "\\\\d+" "g" | .*t0 | udf.toNum`]
 
   let maps = rh`${ranges} | group *range | group *map`
 
@@ -425,6 +427,7 @@ humidity-to-location map:
     // TODO: use this inRange is much more slower than a custom udf inRange,
     //       after initial profiling, most of the time seem to be spent on ir.createIR
     //       investigate this later!
+    // GUESS: code duplication due to multiple uses of src and range (udf will be cse'd)
     //let inRange = rh`udf.logicalAnd (udf.isGreaterOrEqual ${src} ${range}.1) (udf.isLessThan ${src} (${range}.1 + ${range}.2))`
     let inRange = rh`udf.inRange ${src} ${range}.1 ${range}.2`
     // If src is not in any of the ranges, we map it to itself,
@@ -440,8 +443,8 @@ humidity-to-location map:
 
   let query = rh`${locations} | .*final | min`
 
-  let func = api.compile(query)
-  let res = func({input, udf})
+  let func = api.compileFastPathOnly(query) // FIXME: can't run with ref semantics yet. No cse -> code blowup!
+  let res = func.c1({input, udf})
 
   expect(res).toBe(35)
 })
@@ -552,11 +555,11 @@ ZZZ = (ZZZ, ZZZ)`
 
   // NOTE: each iteration of the loop re-parses the
   // entire input. We could eliminate this redundant
-  // work by pre-computing 'rules' and 'instructions'
-  // before the loop.
+  // computation by pre-computing 'rules' and 
+  // 'instructions' before the loop.
   //
-  // This would be match the emerging pattern of 
-  // having separate 'init' and 'step' queries for 
+  // This would match the emerging pattern of having
+  // separate 'init' and 'step' queries for recursive
   // recursive computations.
 })
 
