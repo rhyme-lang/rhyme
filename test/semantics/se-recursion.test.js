@@ -18,7 +18,7 @@ test("testEta0", () => {
   // console.log(func.explain.pseudo)
   // console.log(func.explain.code)
 
-  let res = func({fib}, true)
+  let res = func({fib})
 
   // console.log(res)
 
@@ -39,7 +39,7 @@ test("testEta1", () => {
   // console.log(func.explain.pseudo)
   // console.log(func.explain.code)
 
-  let res = func({fib}, true)
+  let res = func({fib})
 
   // console.log(res)
 
@@ -60,7 +60,7 @@ test("testRecursion1", () => {
 
   let res = {fib}
   while (!res.fib[5])
-    res = func(res, true)
+    res = func(res)
 
   // console.log(res)
 

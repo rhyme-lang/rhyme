@@ -1,20 +1,32 @@
-const { api, pipe } = require('./rhyme')
-const { rh, parse } = require('./parser')
+const { api } = require('./rhyme')
+const { parse } = require('./parser')
 const { scc } = require('./scc')
 const { runtime } = require('./simple-runtime')
 
-// TODO: missing functionality
+// DONE
+//
+// Functionality
 //
 // - objects with multiple entries (merge)
 // - array constructor (collect into array)
 // - other primitives -> abstract over path/stateful op
 // - udfs
-// - &&, ??, non-unifying get -> sufficient to model 
-//    failure, filters, left outer joins, etc?
 //
-// Add tests
+// Tests
 //
 // - nested grouping, partial sums at multiple levels
+// 
+// TODO
+//
+// Functionality
+//
+// - &&, ??, non-unifying get -> sufficient to model 
+//    failure, filters, left outer joins, etc?
+// - recursion: structural (tree traversal), 
+//    fixpoint (datalog, incremental), inf. stream
+//
+// Tests
+//
 // - more corner cases involving var->tmp->var->... closure
 //
 // Questions
@@ -23,12 +35,14 @@ const { runtime } = require('./simple-runtime')
 //   of var->tmp->var->... precise enough?
 // - what to do with cycles between assignments?
 // - how do semantics justify smarter code generation:
+//    - cse, dce
 //    - destination passing style (accumulate directly
 //      into mutable targets)
 //    - loop fusion: horizontal (independent results)
 //      and vertical (producer/consumer)
 
 
+// ----- utils -----
 
 // sets, implemented as arrays
 
@@ -132,6 +146,7 @@ let join = (obj1, obj2) => (schema1, schema2, schema3) => func => {
 }
 
 
+// ----- auxiliary state -----
 
 
 let prefixes
@@ -154,6 +169,8 @@ let reset = () => {
   assignments = []
 }
 
+
+// ----- front end -----
 
 //
 // 1. Preprocess: convert from Rhyme AST to our slightly stratified version
@@ -395,76 +412,16 @@ let extract = q => {
 }
 
 
-//
-// XXX. Denotational: 
-//    - try to make "infer" compositional!
-//    - k: dims -> out, i.e. minimum we can produce -> what is observed
 
-let deno = q => k => {
-  if (q.key == "input") {
-    let {out} = k({vars:[],dims:[]})
-    q.real = []
-    return pretty(q)
-  } else if (q.key == "const") {
-    let {out} = k({vars:[],dims:[]})
-    q.real = []
-    return pretty(q)
-  } else if (q.key == "var") {
-    let {out} = k({vars:[q.op],dims:[q.op]})
-    q.real = [q.op]
-    return pretty(q)
-  } else if (q.key == "get" || q.key == "pure") {
-    console.assert(q.arg.length == 2)
-    let [e1,e2] = q.arg
-    let r1 = deno(e1)(v1 => { // todo: support multiple?
-      let r2 = deno(e2)(v2 => {
-        let {out} = k({
-          vars: union(v1.vars,v2.vars),
-          dims: union(v1.dims,v2.dims)
-        })
-        q.out = out
-        return {out:q.out} // for v2
-      })
-      return {out:q.out} // for v2
-    })
-    q.real = union(e1.real, e2.real)
-    return pretty(q)
-  } else if (q.key == "stateful") {
-    console.assert(q.arg.length == 1)
-    let [e1] = q.arg
-    deno(e1)(v1 => {
-      let {out} = k({
-        vars: v1.vars,
-        dims: []
-      })
-      q.out = out
-      return {out:union(q.out,v1.dims)}
-    })
-    q.real = intersect(q.out,e1.real)
-    console.log("SUM", ""+e1.real+"->"+q.real + " / "+q.out , " --- ", pretty(q))
-    return pretty(q)
-/*  } else if (q.key == "group") {
-    let e1 = extract(q.arg[0])
-    let save = path
-    path = [...path,e1]
-    let e2 = extract(q.arg[1])
-    path = save
-    let x = assignments.length
-    assignments.push({ ...q, arg: [e1,e2], path, vars:[], dims:[], tmps: [] })
-    return { key: "ref", arg: x }*/
-  } else {
-    console.error("unknown op", q)
-  }
-}
-
-
-
+// ----- middle-tier -----
 
 //
 // 3. Infer dependencies bottom up: 
 //    - vars: variables used
 //    - mind: minimum set of variables in output (not removed through reductions)
 //    - dims: desired set of variables in output
+//
+//    - tmps: assignments used
 //
 
 let infer = q => {
@@ -686,7 +643,7 @@ let infer = q => {
 }
 
 //
-// 4. Infer dependencies top down: 
+// 5. Infer dependencies top down: 
 //    - real: variables actually in output
 //    - iter: iteration space to compute results
 //      (for stms only)
@@ -870,6 +827,226 @@ let inferBwd = out => q => {
   // console.assert(subset(q.real, q.out))
   return q
 }
+
+
+// XXX. alternative "denotational" formulation: 
+//    - try to make "infer" compositional!
+//    - combine forward and backward pass into a single function
+//    - k: dims -> out, i.e. minimum we can produce -> what is observed
+//
+// (currently not used, needs more work to bring up to date)
+
+let deno = q => k => {
+  if (q.key == "input") {
+    let {out} = k({vars:[],dims:[]})
+    q.real = []
+    return pretty(q)
+  } else if (q.key == "const") {
+    let {out} = k({vars:[],dims:[]})
+    q.real = []
+    return pretty(q)
+  } else if (q.key == "var") {
+    let {out} = k({vars:[q.op],dims:[q.op]})
+    q.real = [q.op]
+    return pretty(q)
+  } else if (q.key == "get" || q.key == "pure") {
+    console.assert(q.arg.length == 2)
+    let [e1,e2] = q.arg
+    let r1 = deno(e1)(v1 => { // todo: support multiple?
+      let r2 = deno(e2)(v2 => {
+        let {out} = k({
+          vars: union(v1.vars,v2.vars),
+          dims: union(v1.dims,v2.dims)
+        })
+        q.out = out
+        return {out:q.out} // for v2
+      })
+      return {out:q.out} // for v2
+    })
+    q.real = union(e1.real, e2.real)
+    return pretty(q)
+  } else if (q.key == "stateful") {
+    console.assert(q.arg.length == 1)
+    let [e1] = q.arg
+    deno(e1)(v1 => {
+      let {out} = k({
+        vars: v1.vars,
+        dims: []
+      })
+      q.out = out
+      return {out:union(q.out,v1.dims)}
+    })
+    q.real = intersect(q.out,e1.real)
+    console.log("SUM", ""+e1.real+"->"+q.real + " / "+q.out , " --- ", pretty(q))
+    return pretty(q)
+/*  } else if (q.key == "group") {
+    let e1 = extract(q.arg[0])
+    let save = path
+    path = [...path,e1]
+    let e2 = extract(q.arg[1])
+    path = save
+    let x = assignments.length
+    assignments.push({ ...q, arg: [e1,e2], path, vars:[], dims:[], tmps: [] })
+    return { key: "ref", arg: x }*/
+  } else {
+    console.error("unknown op", q)
+  }
+}
+
+
+//
+// 4: Compute dependencies between vars and tmps
+//
+// this runs between infer and inferBwd
+//
+
+let computeDependencies = () => {
+
+  // calculate one-step dependencies between vars/tmps
+
+  let deps = {
+    var2var: {},
+    var2tmp: {},
+    tmp2var: {},
+    tmp2tmp: {}
+  }
+
+  for (let v in vars) {
+    deps.var2var[v] = {}
+    deps.var2tmp[v] = {}
+  }
+
+  for (let i in assignments) {
+    deps.tmp2var[i] = {}
+    deps.tmp2tmp[i] = {}
+    let q = assignments[i]
+    for (let v of q.vars) deps.tmp2var[i][v] = true
+    for (let j of q.tmps) deps.tmp2tmp[i][j] = true
+  }
+
+  for (let i in filters) {
+    let f = filters[i]
+    let v = f.arg[1].op // var name
+    for (let w of f.vars) deps.var2var[v][w] = true
+    for (let j of f.tmps) deps.var2tmp[v][j] = true
+  }
+
+
+  // calculate explicit transitive closure
+
+  let transdeps = {
+    var2var: {},
+    var2tmp: {},
+    tmp2var: {},
+    tmp2tmp: {}
+  }
+
+  let followVarVar = (i,j) => {
+    if (transdeps.var2var[i][j]) return
+    transdeps.var2var[i][j] = true
+    for (let k in deps.var2var[j]) followVarVar(i,k)
+    for (let k in deps.var2tmp[j]) followVarTmp(i,k)
+  }
+  let followVarTmp = (i,j) => {
+    if (transdeps.var2tmp[i][j]) return
+    transdeps.var2tmp[i][j] = true
+    for (let k in deps.tmp2var[j]) followVarVar(i,k)
+    for (let k in deps.tmp2tmp[j]) followVarTmp(i,k)
+  }
+  let followTmpVar = (i,j) => {
+    if (transdeps.tmp2var[i][j]) return
+    transdeps.tmp2var[i][j] = true
+    for (let k in deps.var2var[j]) followTmpVar(i,k)
+    for (let k in deps.var2tmp[j]) followTmpTmp(i,k)
+  }
+  let followTmpTmp = (i,j) => {
+    if (transdeps.tmp2tmp[i][j]) return
+    transdeps.tmp2tmp[i][j] = true
+    for (let k in deps.tmp2var[j]) followTmpVar(i,k)
+    for (let k in deps.tmp2tmp[j]) followTmpTmp(i,k)
+  }
+
+  for (let i in deps.var2var) {
+    transdeps.var2var[i] ??= {}
+    transdeps.var2tmp[i] ??= {}
+    for (let j in deps.var2var[i]) followVarVar(i,j)
+    for (let j in deps.var2tmp[i]) followVarTmp(i,j)
+  }
+
+  for (let i in deps.tmp2var) {
+    transdeps.tmp2var[i] ??= {}
+    transdeps.tmp2tmp[i] ??= {}
+    for (let j in deps.tmp2var[i]) followTmpVar(i,j)
+    for (let j in deps.tmp2tmp[i]) followTmpTmp(i,j)
+  }
+
+
+  // inject transitive closure info so "infer" will pick it up
+
+  for (let i in deps.var2var) {
+    // console.log(i, transdeps.var2var[i])
+    vars[i].vars = Object.keys(transdeps.var2var[i])
+    vars[i].tmps = Object.keys(transdeps.var2tmp[i]).map(Number)
+  }
+}
+
+
+//
+// 6: Compute legal order of assignments
+//
+
+let computeOrder = q => {
+  // after inferBwd, schedule based on q.free
+
+  let deps = {
+    var2var: {},
+    var2tmp: {},
+    tmp2var: {},
+    tmp2tmp: {}
+  }
+
+  for (let v in vars) {
+    deps.var2var[v] = {}
+    deps.var2tmp[v] = {}
+  }
+
+  for (let i in assignments) {
+    deps.tmp2var[i] = {}
+    deps.tmp2tmp[i] = {}
+    let q = assignments[i]
+    for (let v of q.free) deps.tmp2var[i][v] = true
+    for (let j of q.tmps) deps.tmp2tmp[i][j] = true
+  }
+
+  for (let i in filters) {
+    let f = filters[i]
+    let v = f.arg[1].op // var name
+    for (let w of f.free) deps.var2var[v][w] = true
+    for (let j of f.tmps) deps.var2tmp[v][j] = true
+  }
+
+  // compute topological order of statements
+
+  // tmp->tmp + tmp->var->tmp
+  let deps2 = {
+    tmp2tmp: {}
+  }
+  for (let i in deps.tmp2tmp) {
+    deps2.tmp2tmp[i] = {}
+    for (let j in deps.tmp2tmp[i]) 
+      deps2.tmp2tmp[i][j] = true
+    for (let v in deps.tmp2var[i])
+      for (let j in deps.var2tmp[v]) 
+        deps2.tmp2tmp[i][j] = true
+  }
+
+  let order = scc(Object.keys(deps2.tmp2tmp), x => Object.keys(deps2.tmp2tmp[x])).reverse()
+  return order
+}
+
+
+
+// ----- back end -----
 
 //
 // 5a. Pretty print
@@ -1220,21 +1397,20 @@ let emitCode = (q, order) => {
 
 
 
-
-
-
 let compile = (q,{
-  flag = false, 
-  singleResult = false
+  altInfer = false, 
+  singleResult = true // TODO: elim flag?
 }={}) => {
 
   reset()
 
-  // 1. Preprocess
+  // ---- front end ----
+
+  // 1. Preprocess (after parse, desugar)
   q = preproc(q)
   let src = q
 
-  if (flag) {
+  if (altInfer) { // alternative analysis implementation
     console.log(q)
     let q0 = JSON.parse(JSON.stringify(q))
     let q1 = deno(q0)(x => {
@@ -1245,222 +1421,65 @@ let compile = (q,{
     console.log("RES:",q1)
   }
 
-
-  // if (singleResult)
-    // q = smartlast(q)
-
-
   // 2. Extract
   q = extract(q)
 
-  // console.log(" ****** START ***** ")
-  // console.log(pathkeys)
 
-  // 3a. Infer dependencies bottom up
+  // ---- middle tier ----
+
+  // 3. Infer dependencies bottom up
   infer(q) // goes into assignments but not filters
 
   for (let i in filters) {
     infer(filters[i])
   }
 
-
+  // Pretty print (debug out)
   let pseudo0 = emitPseudo(q)
 
-// console.log(pseudo0)
+  // 4. Calculate dependencies between vars/tmps
+  computeDependencies()
 
-  // calculate one-step dependencies between vars/tmps
-
-  let deps = {
-    var2var: {},
-    var2tmp: {},
-    tmp2var: {},
-    tmp2tmp: {}
-  }
-
-  for (let v in vars) {
-    deps.var2var[v] = {}
-    deps.var2tmp[v] = {}
-  }
-
-  for (let i in assignments) {
-    deps.tmp2var[i] = {}
-    deps.tmp2tmp[i] = {}
-    let q = assignments[i]
-    for (let v of q.vars) deps.tmp2var[i][v] = true
-    for (let j of q.tmps) deps.tmp2tmp[i][j] = true
-  }
-
-  for (let i in filters) {
-    let f = filters[i]
-    let v = f.arg[1].op // var name
-    for (let w of f.vars) deps.var2var[v][w] = true
-    for (let j of f.tmps) deps.var2tmp[v][j] = true
-  }
-
-
-  // calculate explicit transitive closure
-
-  let transdeps = {
-    var2var: {},
-    var2tmp: {},
-    tmp2var: {},
-    tmp2tmp: {}
-  }
-
-  let followVarVar = (i,j) => {
-    if (transdeps.var2var[i][j]) return
-    transdeps.var2var[i][j] = true
-    for (let k in deps.var2var[j]) followVarVar(i,k)
-    for (let k in deps.var2tmp[j]) followVarTmp(i,k)
-  }
-  let followVarTmp = (i,j) => {
-    if (transdeps.var2tmp[i][j]) return
-    transdeps.var2tmp[i][j] = true
-    for (let k in deps.tmp2var[j]) followVarVar(i,k)
-    for (let k in deps.tmp2tmp[j]) followVarTmp(i,k)
-  }
-  let followTmpVar = (i,j) => {
-    if (transdeps.tmp2var[i][j]) return
-    transdeps.tmp2var[i][j] = true
-    for (let k in deps.var2var[j]) followTmpVar(i,k)
-    for (let k in deps.var2tmp[j]) followTmpTmp(i,k)
-  }
-  let followTmpTmp = (i,j) => {
-    if (transdeps.tmp2tmp[i][j]) return
-    transdeps.tmp2tmp[i][j] = true
-    for (let k in deps.tmp2var[j]) followTmpVar(i,k)
-    for (let k in deps.tmp2tmp[j]) followTmpTmp(i,k)
-  }
-
-  for (let i in deps.var2var) {
-    transdeps.var2var[i] ??= {}
-    transdeps.var2tmp[i] ??= {}
-    for (let j in deps.var2var[i]) followVarVar(i,j)
-    for (let j in deps.var2tmp[i]) followVarTmp(i,j)
-  }
-
-  for (let i in deps.tmp2var) {
-    transdeps.tmp2var[i] ??= {}
-    transdeps.tmp2tmp[i] ??= {}
-    for (let j in deps.tmp2var[i]) followTmpVar(i,j)
-    for (let j in deps.tmp2tmp[i]) followTmpTmp(i,j)
-  }
-
-
-  // inject transitive closure info so "infer" will pick it up
-
-  for (let i in deps.var2var) {
-    // console.log(i, transdeps.var2var[i])
-    vars[i].vars = Object.keys(transdeps.var2var[i])
-    vars[i].tmps = Object.keys(transdeps.var2tmp[i]).map(Number)
-  }
-
-
-  // 4. Backward pass to infer output dimensions
+  // 5. Backward pass to infer output dimensions
   if (singleResult) {
-    console.assert(q.mind.length == 0)
+    // console.assert(q.mind.length == 0)
     inferBwd(q.mind)(q)
   } else
     inferBwd(q.dims)(q)
 
 
-
-// DO THIS AGAIN! SCHEDULE BASED ON "FREE"
-
-  deps = {
-    var2var: {},
-    var2tmp: {},
-    tmp2var: {},
-    tmp2tmp: {}
-  }
-
-  for (let v in vars) {
-    deps.var2var[v] = {}
-    deps.var2tmp[v] = {}
-  }
-
-  for (let i in assignments) {
-    deps.tmp2var[i] = {}
-    deps.tmp2tmp[i] = {}
-    let q = assignments[i]
-    for (let v of q.free) deps.tmp2var[i][v] = true
-    for (let j of q.tmps) deps.tmp2tmp[i][j] = true
-  }
-
-  for (let i in filters) {
-    let f = filters[i]
-    let v = f.arg[1].op // var name
-    for (let w of f.free) deps.var2var[v][w] = true
-    for (let j of f.tmps) deps.var2tmp[v][j] = true
-  }
+  // 6. Compute legal order of assignments
+  let order = computeOrder(q)
 
 
-  // compute topological order of statements
-
-  // tmp->tmp + tmp->var->tmp
-  let deps2 = {
-    tmp2tmp: {}
-  }
-  for (let i in deps.tmp2tmp) {
-    deps2.tmp2tmp[i] = {}
-    for (let j in deps.tmp2tmp[i]) 
-      deps2.tmp2tmp[i][j] = true
-    for (let v in deps.tmp2var[i])
-      for (let j in deps.var2tmp[v]) 
-        deps2.tmp2tmp[i][j] = true
-  }
-
-// console.dir(deps2)
-
-  let order = scc(Object.keys(deps2.tmp2tmp), x => Object.keys(deps2.tmp2tmp[x])).reverse()
+  // ---- back end ----
 
 
-
-
-  // sanity checks
-  // for (let i in assignments) {
-  //   let q = assignments[i]
-  //   let v1 = q.real
-  //   let v2 = Object.keys(transdeps.tmp2var[i])
-  //   let t1 = q.tmps
-  //   let t2 = Object.keys(transdeps.tmp2tmp[i])
-  //   if (!same(v1,v2) || !same(t1,t2)) {
-  //     console.error("MISMATCH",i,{real:v1,closure:v2, tmp:t1, tmptrans:t2})
-  //   }
-  //   // console.assert(same(q.real, Object.keys(transdeps.tmp2var[i])), {a1, a2})
-  // }
-
-  // 5a. Pretty print (debug out)
-
+  // Pretty print (debug out)
   let pseudo = emitPseudo(q)
 
-
-  // 5b. Codegen
-
+  // 8. Codegen
   let code = emitCode(q,order)
 
   // console.log(pseudo)
   // console.log(code)
 
+
+  // ---- link / eval ----
+
   let rt = runtime // make available in scope for generated code
   let func = eval(code)
 
-  let wrap = (input,fullpath) => {
-    if (fullpath) {
-      let res
-      // func(input)((x,...path) => res.push([...path,x]))// update(res)(...path)(x))
-      func(input)((x,...path) => res = update(res)(path)(x))
-      return res
-    } else {
-      let res = []
-      func(input)((x,...path) => res.push(x))
-      return res
-    }
+  let wrap = (input) => {
+    let res
+    func(input)((x,...path) => res = update(res)(path)(x))
+    // alternative: discard path and collect into an array
+    return res
   }
 
   wrap.explain = { 
     src,
-    ir: {filters, assignments, vars, deps, transdeps, order}, 
+    ir: {filters, assignments, vars, order}, 
     pseudo0, pseudo, code 
   }
   return wrap

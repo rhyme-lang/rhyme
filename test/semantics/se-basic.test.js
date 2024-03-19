@@ -54,7 +54,7 @@ test("testScalar0", () => {
   let query = rh`data.*.value`
 
   let func = compile(query)
-  let res = func({data, other}, true)
+  let res = func({data, other})
 
   // console.log(res)
 
@@ -66,7 +66,7 @@ test("testScalar1", () => {
   let query = rh`sum data.*.value`
 
   let func = compile(query)
-  let res = func({data, other}, true)
+  let res = func({data, other})
 
   // console.log(res)
 
@@ -80,7 +80,7 @@ test("testZipScalar2", () => {
   let query = rh`data.*A.value + other.*A.value`
 
   let func = compile(query)
-  let res = func({data, other}, true)
+  let res = func({data, other})
 
   // console.log(res)
 
@@ -92,7 +92,7 @@ test("testZipScalar3", () => {
   let query = rh`(sum data.*A.value) + (sum other.*A.value)`
 
   let func = compile(query)
-  let res = func({data, other}, true)
+  let res = func({data, other})
 
   // console.log(res)
 
@@ -105,7 +105,7 @@ test("testZipScalar4", () => {
   // NONSENSICAL? SHAPE ERROR? -- no, can just take sum of single element...
 
   let func = compile(query)
-  let res = func({data, other}, true)
+  let res = func({data, other})
 
   // console.log(res)
 
@@ -118,7 +118,7 @@ test("testZipScalar4", () => {
 test("testJoinScalar2", () => {
   let query = rh`data.*A.value + other.*B.value`
   let func = compile(query)
-  let res = func({data, other}, true)
+  let res = func({data, other})
 
   // console.log(res)
 
@@ -138,7 +138,7 @@ test("testJoinScalar3", () => {
   let query = rh`(sum data.*A.value) + (sum other.*B.value)`
 
   let func = compile(query)
-  let res = func({data, other}, true)
+  let res = func({data, other})
 
   // console.log(res)
 
@@ -150,7 +150,7 @@ test("testJoinScalar4", () => {
   let query = rh`(sum data.*A.value) + other.*B.value` 
 
   let func = compile(query)
-  let res = func({data, other}, true)
+  let res = func({data, other})
 
   // console.log(res)
 
@@ -164,7 +164,7 @@ test("testNested0", () => {
   let query = rh`nested.*A.*B.value` 
 // debug = true
   let func = compile(query)
-  let res = func({nested, other}, true)
+  let res = func({nested, other})
 
   // console.log(res)
 
@@ -184,7 +184,7 @@ test("testNested1", () => {
   let query = rh`sum nested.*A.*B.value` 
 // debug = true
   let func = compile(query)
-  let res = func({nested, other}, true)
+  let res = func({nested, other})
 
   // console.log(res)
 
@@ -196,7 +196,7 @@ test("testZipNested2", () => {
   let query = rh`nested.*A.*B.value + other.*B.value` 
 // debug = true
   let func = compile(query)
-  let res = func({nested, other}, true)
+  let res = func({nested, other})
 
   // console.log(res)
 
@@ -216,7 +216,7 @@ test("testZipNested3", () => {
   let query = rh`nested.*A.*B.value + nestedB.*C.*B.value` // neither *B dominates!
 // debug = true
   let func = compile(query)
-  let res = func({nested, nestedB}, true)
+  let res = func({nested, nestedB})
 
   // console.log(res)
 
@@ -245,8 +245,12 @@ test("testZipNestedRec3", () => {
   let res = func({data})
 
   // console.log(res)
-
-  expect(res).toEqual([10, 30, 60, 80]) // AEA, AFA, BGB, BHB
+  let expected = {
+    "A": {"E": 10, "F": 30}, 
+    "B": {"G": 60, "H": 80}
+  }
+  // expect(res).toEqual([10, 30, 60, 80]) // AEA, AFA, BGB, BHB
+  expect(res).toEqual(expected) // AEA, AFA, BGB, BHB
 })
 
 
@@ -257,20 +261,43 @@ test("testZipNestedRec3", () => {
 test("testGroup0", () => {
   let query = {"data.*.key": rh`data.*.value`}
 
-  let func = compile(query)
+  let func = compile(query, {singleResult:false})
   let res = func({data, other})
 
-/* plausible:
+/* plausible groupings:
 
   [ { U: 40 }, { U: 20 }, { V: 10 } ]
 
   { U: [40, 20] }, { V: [10] }
 
   { U: [40, 20], V: [10] }  <-- this would be rhs = array(data.*.value)
+
+  (but here we don't group ...)
 */
 
+  expect(res).toEqual(
+    {"A": {"U": 40}, "B": {"U": 20}, "C": {"V": 10}}
+  )
+})
+
+test("testGroup0-a", () => {
+  let query = {"data.*.key": rh`array(data.*.value)`}
+
+  let func = compile(query)
+  let res = func({data, other})
+
+  expect(res).toEqual(
+   { U: [40, 20], V: [10] }
+  )
+})
+
+test("testGroup0-b", () => {
+  let query = [{"data.*.key": rh`data.*.value`}]
+
+  let func = compile(query)
+  let res = func({data, other})
+
   expect(res).toEqual([
-//    { U: [40, 20], V: [10] }
     { U: 40 }, { U: 20 }, { V: 10 }
   ])
 })
@@ -290,9 +317,9 @@ test("testGroup1", () => {
   [ { U: 40 }, { U: 20 }, { V: 10 } ]  <-- no, want sum to iterate
 */
 
-  expect(res).toEqual([{
+  expect(res).toEqual({
     U: 60, V: 10
-  }])
+  })
 })
 
 
@@ -300,7 +327,7 @@ test("testGroup2", () => {
   let query = {"data.*.key": rh`sum(data.*B.value)`}
 
   let func = compile(query)
-  let res = func({data, other}, true)
+  let res = func({data, other})
 
 /* uncorrelated -- test decorrelation */
 

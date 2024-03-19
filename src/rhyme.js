@@ -138,10 +138,10 @@ api["exec"] = (query, data) => {
 api["query"] = api["compile"] = (query) => {
     let rep = ir.createIR(query)
     let c1 = codegen.generate(rep)
-    let c2 = compile(query, {singleResult:true})
+    let c2 = compile(query)
     let wrapper = (x) => {
         let res1 = c1(x)
-        let res2 = c2(x, true)
+        let res2 = c2(x)
 
         let cmp = src => ({ 
           toEqual: dst => { 

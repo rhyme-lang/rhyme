@@ -185,7 +185,7 @@ San Jose,Samsung,Note 8,150`
           let func = api.compileFastPathOnly(query) // FIXME: simple eval works, 
                                                     // but leaves some empty objects {}
           console.log("Pivot Tables: ", func.explain)
-          let res = func({data,udf}, true)
+          let res = func({data,udf})
           api.display(res, domParent)
         })
     </script>

@@ -243,7 +243,7 @@ test("gt1", () => {
 test("gt2", () => {
     let q0 = {"data.*.key": "data.*.value"}
 
-    let func = compile(q0)
+    let func = compile(q0, {singleResult:false})
     let res = func({ data, udf: {guard: (x,y) => y }}, true)
 
     // console.log(func.explain.pseudo)
