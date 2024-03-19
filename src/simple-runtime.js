@@ -173,10 +173,12 @@ rt.stateful.single = x => ({ // error if more than one
     //
     // NOTE: relaxed to support multiple occurrances of the
     // same value. Tighter semantics (above) currently not 
-    // in line with test nestedIterators3 and variants.
-    // Also see groupTest_explicitHoisting, this seems to
-    // be related to not identifying 1:1 mappings,
-    // specifically for keys already on the grouping path.
+    // in line with expected output of test nestedIterators3 
+    // and variants.
+    //
+    // This seems to be related to not identifying 1:1 mappings,
+    // specifically for keys already on the grouping path
+    // (also see groupTest_explicitHoisting).
     //
     // In general, codegen must be careful not to produce
     // values multiple times in a grouped context (consider
@@ -215,20 +217,24 @@ rt.stateful.mkset = x => ({
 
 // these are dealt with somewhat specially
 rt.stateful.group = (x1,x2) => ({
-  init: () => ({}),
-  next: s => { 
+  init: () => undefined, // ({}) XXX what do we want?
+                         // (see undefinedFields2, partial fix)
+  next: s => {
     if (x1 === undefined) return s
     if (x2 === undefined) return s
+    if (s === undefined) s = {}
     s[x1] = x2
     return s
   }
 })
 
 rt.stateful.update = (x0,x1,x2) => ({
-  init: () => ({...x0}),
+  init: () => ({...x0}), // NOTE: preserve init value! 
+                         // (see react-todo-app.html)
   next: s => { 
     if (x1 === undefined) return s
     if (x2 === undefined) return s
+    if (s === undefined) s = {...x0}
     s[x1] = x2
     return s
   }

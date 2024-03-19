@@ -326,40 +326,29 @@ test("groupTest_explicitHoisting", () => {
 // The following is from demos/tables.html
 
 test("undefinedFields1", () => {
-
     let data = [
         {product: "iPhone", model: "7", quantity: 10},
         {product: "Galaxy", model: "S6", quantity: 20},
     ]
-
     let q0 = { "data.*.product": { "data.*.model": "sum(data.*.quantity)" }}
-
     let func = compile(q0)
     let res = func({ data }, true)
-
-    // console.log(res)
 
     let expected = { 
       "iPhone": { "7": 10},
       "Galaxy": { "S6": 20},
     }
-
     expect(res).toEqual(expected)
 })
 
 test("undefinedFields2", () => {
-
     let data = [
         {product: "iPhone", model: "7", quantity: 10},
         {product: "Galaxy", model: "S6", quantity: 20},
     ]
-
     let q0 = { "data.*.product": { "data.*.model": {Q:"sum(data.*.quantity)" }}}
-
     let func = compile(q0)
     let res = func({ data }, true)
-
-    // console.log(res)
 
     let expected = { 
       "iPhone": { 
@@ -369,7 +358,6 @@ test("undefinedFields2", () => {
         "S6": { Q: 20} 
       },
     }
-
     let bug = { 
       "iPhone": { 
         "7": { Q: 10},
@@ -380,8 +368,38 @@ test("undefinedFields2", () => {
         "7": { },
       }
     }
-
-    expect(res).toEqual(bug)
+    expect(res).toEqual(expected)
+    // NOTE: fixed by using 'undefined' instead of {} as
+    // init value in stateful.group
 })
 
+test("undefinedFields3", () => {
+    let data = [
+        {product: "iPhone", model: "7", quantity: 10},
+        {product: "Galaxy", model: "S6", quantity: 20},
+    ]
+    let q0 = { "data.*.product": { "data.*.model": true}}
+    let func = compile(q0)
+    let res = func({ data }, true)
 
+    let expected = {
+      "iPhone": { 
+        "7": true
+      },
+      "Galaxy": { 
+        "S6": true
+      },
+    }
+    let bug = { 
+      "iPhone": { 
+        "7": true,
+        "S6": true
+      },
+      "Galaxy": { 
+        "S6": true,
+        "7": true
+      }
+    }
+    expect(res).toEqual(bug)
+    // NOTE: need a different mechanism to solve this!
+})
