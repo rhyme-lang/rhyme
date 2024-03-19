@@ -27,10 +27,14 @@ rt.special.merge = rt.special.keyval = true
 // - operations may raise exceptions for severe error cases
 //   or illegal uses of an operation
 
+// TODO: deal with NaN specially?
+
 rt.pure.plus = (x1,x2) => {
   if (x1 === undefined) return undefined
   if (x2 === undefined) return undefined
   let res = Number(x1) + Number(x2)
+  // NOTE: falling back to string concat
+  // (see e.g. svg demo)
   if (Number.isNaN(res)) return x1 + x2
   return res
 }
@@ -68,10 +72,11 @@ rt.pure.mod = (x1,x2) => {
 rt.pure.apply = (x1,...x2) => {
   if (x1 === undefined) return undefined
   // undefined arguments currently ok!
+  // (delegate responsibility to the udf)
   return x1(...x2)
 }
 
-rt.pure.join = (x1) => { // string join
+rt.pure.join = (x1) => { // array string join
   if (x1 === undefined) return undefined
   return x1.join()
 }
@@ -97,10 +102,9 @@ rt.singleton = (x1) => { // 'mkset'
 //   may be either 'undefined' or some other default
 
 
-rt.stateful.sum = (x,extra) => ({
+rt.stateful.sum = x => ({
   init: () => undefined, // XXX want 0 to start?
   next: s => {
-    if (!extra) return x // FIXME partial solution to double-sum bug
     if (x === undefined) return s
     if (s === undefined) return x
     return s + x
@@ -108,7 +112,7 @@ rt.stateful.sum = (x,extra) => ({
 })
 
 rt.stateful.product = x => ({
-  init: () => undefined, // XXX want 0 to start?
+  init: () => undefined, // XXX want 1 to start?
   next: s => {
     if (x === undefined) return s
     if (s === undefined) return x
@@ -160,52 +164,39 @@ rt.stateful.last = x => ({
   }
 })
 
-rt.stateful.single = (x,extra) => ({ // error if more than one (XXX can't really do that...)
+rt.stateful.single = x => ({ // error if more than one
   init: () => undefined, 
   next: s => {
     if (x === undefined) return s
     if (s === undefined) return x
-    if (!extra) return x  // FIXME partial solution to double-sum bug
     // throw new Error("single value expected but got two: "+s+", "+x)
-    // see groupByAverageTest, current codegen is set up to produce
-    // the same value repeatedly in a grouped context
+    //
+    // NOTE: relaxed to support multiple occurrances of the
+    // same value. Tighter semantics (above) currently not 
+    // in line with test nestedIterators3 and variants.
+    // Also see groupTest_explicitHoisting, this seems to
+    // be related to not identifying 1:1 mappings,
+    // specifically for keys already on the grouping path.
+    //
+    // In general, codegen must be careful not to produce
+    // values multiple times in a grouped context (consider
+    // e.g. count).
     if (JSON.stringify(s) !== JSON.stringify(x))
       console.error("single value expected but got two: "+s+", "+x)
     return s
   }
 })
 
-rt.stateful.single2 = (x1,x2,extra) => ({ // error if more than one (XXX can't really do that...)
-  init: () => undefined, 
-  next: s => {
-    if (x1 === undefined) return s
-    if (x2 === undefined) return s
-    if (s === undefined) {
-      console.log("FUSE", x1, x2)
-      return {...x1,...x2}
-    }
-    if (!extra) return x  // FIXME partial solution to double-sum bug
-    // throw new Error("single value expected but got two: "+s+", "+x)
-    // see groupByAverageTest, current codegen is set up to produce
-    // the same value repeatedly in a grouped context
-    if (JSON.stringify(s) !== JSON.stringify(x))
-      console.error("single value expected but got two: "+s+", "+x)
-    return s
-  }
-})
-
-
-rt.stateful.array = (x,extra) => ({
+rt.stateful.array = x => ({
   init: () => [], 
   next: s => {
     if (x === undefined) return s
-    if (!extra) return [x]  // FIXME partial solution to double-sum bug
     s.push(x)
     return s
   }
 })
 
-rt.stateful.mkset = (x,extra) => ({
+rt.stateful.mkset = x => ({
   init: () => ({}), 
   next: s => {
     if (x === undefined) return s
