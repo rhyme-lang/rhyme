@@ -148,14 +148,12 @@ let join = (obj1, obj2) => (schema1, schema2, schema3) => func => {
 
 // ----- auxiliary state -----
 
+let prefixes      // canonicalize * for every prefix, e.g., data.* (preproc)
+let path          // current grouping path variables (extract)
+let pathAux       // grouping key expressions for those variables
 
-let prefixes
-let path
-let pathAux
-
-let vars
+let vars          // deps var->var, var->tmp
 let filters
-let pathkeys
 let assignments
 
 let reset = () => {
@@ -230,19 +228,17 @@ let preproc = q => {
   } else if (q.xxkey == "array") {
     return preproc(q.xxparam)
   } else if (q instanceof Array) {
-    // XXX what about xxkey == "Array" ?
     if (q.length == 1)
       return { key: "stateful", op: "array", arg: q.map(preproc) }
     else
       return { key: "pure", op: "flatten", arg: q.map(x => preproc([x])) }
   } else if (typeof(q) === "object" && !q.xxpath && !q.xxkey) {
-    //console.assert(Object.keys(q).length == 1) // TODO
     let res
     for (let k of Object.keys(q)) {
       let v = q[k]
       let e1 = preproc(k)
       let e2 = preproc(v)
-      if (e2.key == "merge" || e2.key == "keyval") { // TODO: flatten
+      if (e2.key == "merge" || e2.key == "keyval") { // TODO: support 'flatten'
         e1 = e2.arg[0]
         e2 = e2.arg[1]
       }
@@ -276,6 +272,11 @@ let preproc = q => {
 // 2. Extract: 
 //    - all data.*A operations into 'filters'
 //    - sum, group operations into 'assignments'
+//
+//    Metadata added:
+//    - get: .filter --> unique filter id
+//    - stateful, group, update: .path, .pathAux --> grouping path
+//    - group, update: .vK, .aux --> new group var and grouping expression
 //
 
 let extractFlex = q => {
@@ -325,38 +326,29 @@ let extract = q => {
     let es = q.arg.map(extract)
     return { ...q, arg: es }
   } else if (q.key == "stateful") {
-    let myPath = JSON.parse(JSON.stringify(path))
+    let myPath = path //JSON.parse(JSON.stringify(path))
     let es = q.arg.map(extract)
     let x = assignments.length
     assignments.push({ ...q, arg: es, path: myPath, pathAux, vars:[], dims:[], tmps: [] }) // cycles?
     return { key: "ref", op: x }
   } else if (q.key == "group") {
-
-    // let q2 = JSON.parse(JSON.stringify(q.arg[0]))
-
-    // let e1 = extract(q.arg[0])
     let e1 = q.arg[0]
-
-    let str = JSON.stringify(e1)
-    let ix = pathkeys.map(x => JSON.stringify(x)).indexOf(str)
-    if (ix < 0) {
-      ix = pathkeys.length
-      let e1c = JSON.parse(str)
-      pathkeys.push(e1c) // deep copy
-    }
-    // e1.pathkey = ix
 
     if (e1.key == "var") { // optimize const case?
       q.vK = extract(e1)
     } else {
-      q.aux = extract({key:"get", arg: [
-        {key:"mkset", arg:[e1]}, 
-          {key:"var", op:"*K"+ix, arg:[]}]})
+      let prefix = {key:"mkset", arg:[e1]}
 
+      // canonicalize index var
+      let str = JSON.stringify(prefix)
+      let ix = prefixes.indexOf(str)
+      if (ix < 0) { ix = prefixes.length; prefixes.push(str) }
+
+      q.aux = extract({key:"get", arg: [prefix,
+        {key:"var", op:"*K"+ix, arg:[]}]})
       q.vK = extract({key:"var", op:"*K"+ix, arg:[]})
-      e1 = q.aux.arg[0].arg[0]
+      e1 = q.aux.arg[0].arg[0] // extract(e1), don't call twice
     }
-
 
     let save = {path,pathAux}
     path = [...path,q.vK]
@@ -365,35 +357,27 @@ let extract = q => {
     path = save.path
     pathAux = save.pathAux
     let x = assignments.length
-    e1 = {key:"const", op:777}
+    e1 = {key:"const", op:777} // dummy, real e1 moved into aux
     assignments.push({ ...q, arg: [e1, e2], path, pathAux, vars:[], dims:[], tmps: [] })
     return { key: "ref", op: x }
   } else if (q.key == "update") {
-
     let e0 = extract(q.arg[0])
-
-    // let q2 = JSON.parse(JSON.stringify(q.arg[1]))
-
     let e1 = q.arg[1]
-
-    let str = JSON.stringify(e1)
-    let ix = pathkeys.map(x => JSON.stringify(x)).indexOf(str)
-    if (ix < 0) {
-      ix = pathkeys.length
-      let e1c = JSON.parse(str)
-      pathkeys.push(e1c) // deep copy
-    }
-    // e1.pathkey = ix
 
     if (e1.key == "var") { // optimize const case?
       q.vK = extract(e1)
     } else {
-      q.aux = extract({key:"get", arg: [
-        {key:"mkset", arg:[e1]}, 
-          {key:"var", op:"*K"+ix, arg:[]}]})
+      let prefix = {key:"mkset", arg:[e1]}
 
+      // canonicalize index var
+      let str = JSON.stringify(prefix)
+      let ix = prefixes.indexOf(str)
+      if (ix < 0) { ix = prefixes.length; prefixes.push(str) }
+
+      q.aux = extract({key:"get", arg: [prefix,
+        {key:"var", op:"*K"+ix, arg:[]}]})
       q.vK = extract({key:"var", op:"*K"+ix, arg:[]})
-      e1 = q.aux.arg[0].arg[0]
+      e1 = q.aux.arg[0].arg[0] // extract(e1), don't call twice
     }
 
     let save = {path,pathAux}
@@ -403,7 +387,7 @@ let extract = q => {
     path = save.path
     pathAux = save.pathAux
     let x = assignments.length
-    e1 = {key:"const", op:777}
+    e1 = {key:"const", op:777} // dummy, real e1 moved into aux
     assignments.push({ ...q, arg: [e0, e1, e2], path, pathAux, vars:[], dims:[], tmps: [] })
     return { key: "ref", op: x }
   } else {
@@ -896,12 +880,13 @@ let deno = q => k => {
 
 //
 // 4: Compute dependencies between vars and tmps
+//    - fill in vars[i].vars and vars[i].tmps
+//    - based on q.vars
 //
-// this runs between infer and inferBwd
+//    This runs between infer and inferBwd
 //
 
 let computeDependencies = () => {
-
   // calculate one-step dependencies between vars/tmps
 
   let deps = {
@@ -981,10 +966,9 @@ let computeDependencies = () => {
   }
 
 
-  // inject transitive closure info so "infer" will pick it up
+  // inject transitive closure info so "inferBwd" will pick it up
 
   for (let i in deps.var2var) {
-    // console.log(i, transdeps.var2var[i])
     vars[i].vars = Object.keys(transdeps.var2var[i])
     vars[i].tmps = Object.keys(transdeps.var2tmp[i]).map(Number)
   }
@@ -993,6 +977,7 @@ let computeDependencies = () => {
 
 //
 // 6: Compute legal order of assignments
+//    - topological sort based on q.free
 //
 
 let computeOrder = q => {
