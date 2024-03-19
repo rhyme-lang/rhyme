@@ -1,4 +1,5 @@
-const { parse, desugar, rh } = require('../src/parser')
+const { parse, rh } = require('../src/parser')
+const { desugar } = require('../src/desugar')
 const { api } = require('../src/rhyme')
 
 function ast_ident(a) {
