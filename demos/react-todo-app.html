@@ -108,8 +108,8 @@ npm install webpack webpack-cli --save-dev
       }
 
       // We will use query expressions to update our app data:
-      let toggleQuery = {"data": {"items": { "*": { "done": "udf.toggle"}}}}
-      let deleteQuery = {"data": {"items": { "*": "udf.delete"}}}
+      let toggleQuery = {"data": {"items": { "*I": { "done": "udf.toggle"}}}}
+      let deleteQuery = {"data": {"items": { "*I": "udf.delete"}}}
       let insertQuery = "udf.insert"
 
       // These currently require some helper UDFs:
@@ -186,19 +186,19 @@ npm install webpack webpack-cli --save-dev
 
       // We are now ready to define our main render query -- first, items:
       let item = re.div(
-        "*", '": "', "data.items.*.title", '" "',
-        g("button", { onClick: h(toggleQuery) }, '"Done: "', "data.items.*.done"),
+        "*I", '": "', "data.items.*I.title", '" "',
+        g("button", { onClick: h(toggleQuery) }, '"Done: "', "data.items.*I.done"),
         g("button", { onClick: h(deleteQuery) }, '"X"'))
 
       // Main app screen
       let query = re.div(
         re.h1('"Todo MVC"'), 
         re.p(g("udf.InputElem", { placeholder: '"New item"', onSubmit: h(insertQuery)})),
-        re.list({"*": item}),
+        re.list({"*I": item}),
         re.p(
-          '"Total: "', "count data.items.*",
-          '" Todo: "', rh.sum(rh.get({true:0,false:1},"data.items.*.done")),
-          '" Done: "', rh.sum(rh.get({true:1,false:0},"data.items.*.done")),
+          '"Total: "', "count data.items.*I",
+          '" Todo: "', rh.sum(rh.get({true:0,false:1},"data.items.*I.done")),
+          '" Done: "', rh.sum(rh.get({true:1,false:0},"data.items.*I.done")),
           ))
 
 

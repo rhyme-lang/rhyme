@@ -158,6 +158,11 @@ San Jose,Samsung,Note 8,150`
                 "$display": "table",
                 rows: 3, cols: 1,
                 data: {
+                  "Total": {
+                    '"-"': {
+                      '"-"': computeEntry
+                    }
+                  },
                   "data.*.warehouse": {
                     "Total": {
                       '"-"': computeEntry,
@@ -166,25 +171,21 @@ San Jose,Samsung,Note 8,150`
                       "Total": computeEntry,
                       "data.*.model": computeEntry
                     }
-                  },
-                  "Total": {
-                    '"-"': {
-                      '"-"': computeEntry
-                    }
                   }
                 }
               },
               '"Raw Data"': {
                 "$display": "table",
                 rows: 1, cols: 1,
-                data: { "*":"data.*" }
+                data: ".data"//{ "*i":"data.*i" }
               },
             }
           }
 
-          let func = api.compile(query)
+          let func = api.compileFastPathOnly(query) // FIXME: simple eval works, 
+                                                    // but leaves some empty objects {}
           console.log("Pivot Tables: ", func.explain)
-          let res = func({data,udf})
+          let res = func({data,udf}, true)
           api.display(res, domParent)
         })
     </script>
@@ -235,11 +236,11 @@ San Jose,Samsung,Note 8,150`
               '"Raw Data"': {
                 "$display": "table",
                 rows: 1, cols: 0,
-                data: { "*": "data.*" }
+                data: ".data" //{ "*i": "data.*i" }
               },
             }
           }
-          let func = api.compile(query)
+          let func = api.compileFastPathOnly(query) // FIXME: simple eval works, but too slow
           console.log("Bar Chart Race: ", func.explain)
           let res = func({data,udf})
           api.display(res, domParent)

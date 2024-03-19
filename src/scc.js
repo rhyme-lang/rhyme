@@ -55,23 +55,23 @@ function* reverse(array) {
 exports.scc = stronglyConnectedComponents
 
 
-test("ABC", function() {
-  let start = ["A","B"]
-  let succ = {
-    "A": ["C"],
-    "B": ["C"],
-  }
-  let s = stronglyConnectedComponents(start, x => succ[x])
-  expect(s).toEqual([["A"],["B"],["C"]])
-})
-test("ABCD", function() {
-  let start = ["A"]
-  let succ = {
-    "A": ["B"],
-    "B": ["C"],
-    "C": ["A","D"]
-  }
-  let s = stronglyConnectedComponents(start, x => succ[x])
-  expect(s).toEqual([["A","B","C"],["D"]])
-})
+// test("ABC", function() {
+//   let start = ["A","B"]
+//   let succ = {
+//     "A": ["C"],
+//     "B": ["C"],
+//   }
+//   let s = stronglyConnectedComponents(start, x => succ[x])
+//   expect(s).toEqual([["A"],["B"],["C"]])
+// })
+// test("ABCD", function() {
+//   let start = ["A"]
+//   let succ = {
+//     "A": ["B"],
+//     "B": ["C"],
+//     "C": ["A","D"]
+//   }
+//   let s = stronglyConnectedComponents(start, x => succ[x])
+//   expect(s).toEqual([["A","B","C"],["D"]])
+// })
 

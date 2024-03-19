@@ -322,3 +322,66 @@ test("groupTest_explicitHoisting", () => {
     expect(res).toEqual(bug)
 })
 
+
+// The following is from demos/tables.html
+
+test("undefinedFields1", () => {
+
+    let data = [
+        {product: "iPhone", model: "7", quantity: 10},
+        {product: "Galaxy", model: "S6", quantity: 20},
+    ]
+
+    let q0 = { "data.*.product": { "data.*.model": "sum(data.*.quantity)" }}
+
+    let func = compile(q0)
+    let res = func({ data }, true)
+
+    // console.log(res)
+
+    let expected = { 
+      "iPhone": { "7": 10},
+      "Galaxy": { "S6": 20},
+    }
+
+    expect(res).toEqual(expected)
+})
+
+test("undefinedFields2", () => {
+
+    let data = [
+        {product: "iPhone", model: "7", quantity: 10},
+        {product: "Galaxy", model: "S6", quantity: 20},
+    ]
+
+    let q0 = { "data.*.product": { "data.*.model": {Q:"sum(data.*.quantity)" }}}
+
+    let func = compile(q0)
+    let res = func({ data }, true)
+
+    // console.log(res)
+
+    let expected = { 
+      "iPhone": { 
+        "7": { Q: 10} 
+      },
+      "Galaxy": { 
+        "S6": { Q: 20} 
+      },
+    }
+
+    let bug = { 
+      "iPhone": { 
+        "7": { Q: 10},
+        "S6": { },
+      },
+      "Galaxy": { 
+        "S6": { Q: 20},
+        "7": { },
+      }
+    }
+
+    expect(res).toEqual(bug)
+})
+
+

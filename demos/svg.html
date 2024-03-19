@@ -54,7 +54,7 @@ npm install webpack webpack-cli --save-dev
 
         let line = {
           "$display": "dom", type: '"svg:polyline"',
-          props: { points: api.join(api.plus("data.*.x",api.plus('","',api.plus("data.*.y",'" "')))), stroke: "black", fill:"none" },
+          props: { points: api.join([api.plus("data.*.x",api.plus('","',api.plus("data.*.y",'" "')))]), stroke: "black", fill:"none" },
         }
         let bars = {
           "$display": "dom", type: '"svg:rect"',
@@ -91,7 +91,7 @@ npm install webpack webpack-cli --save-dev
             },
           }
         }
-        let func = api.query(query)
+        let func = api.query(query)  // FIXME: simple eval works, but some asserts fail
         console.log("SVG Plots:", func.explain)
         let res = func({data})
         api.display(res, domParent)
@@ -116,7 +116,7 @@ npm install webpack webpack-cli --save-dev
               transform: api.plus('"rotate(-"',api.plus("data.*",'" 150 100)"')) },
           }]
         }
-        let func = api.query(query)
+        let func = api.query(query)  // FIXME: simple eval works, but some asserts fail
         console.log("Other SVG Graphics:", func.explain)
         let res = func({data})
         api.display(res, domParent)

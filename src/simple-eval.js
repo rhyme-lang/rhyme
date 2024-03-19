@@ -233,6 +233,8 @@ let preproc = q => {
       else res = { key: "update", arg: [res,e1,e2] }
     }
     // return { key: "group", arg: [e1,{key:"stateful", op: "last", mode: "reluctant", arg:[e2]}] }
+    if (!res) // empty?
+      res = { key: "const", op: {} }
     return res
   } else if (q.xxpath || q.xxkey) {
     // if 'update .. ident ..', convert ident to input ref?
@@ -883,7 +885,8 @@ let pretty = q => {
   if (q.key == "input") {
     return "inp"
   } else if (q.key == "const") {
-    return ""+q.op
+    if (typeof q.op === "object" && Object.keys(q.op).length == 0) return "{}"
+    else return ""+q.op
   } else if (q.key == "var") {
     return q.op
   } else if (q.key == "pathref") {
@@ -988,6 +991,8 @@ let codegen = q => {
   } else if (q.key == "const") {
     if (typeof q.op === "string")
       return "'"+q.op+"'"
+    else if (typeof q.op === "object" && Object.keys(q.op).length == 0)
+      return "{}"
     else
       return String(q.op)
   } else if (q.key == "var") {

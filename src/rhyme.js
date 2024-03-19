@@ -142,7 +142,16 @@ api["query"] = api["compile"] = (query) => {
     let wrapper = (x) => {
         let res1 = c1(x)
         let res2 = c2(x, true)
-        expect(res2).toEqual(res1)
+
+        let cmp = src => ({ 
+          toEqual: dst => { 
+            let ssrc = JSON.stringify(src)
+            let sdst = JSON.stringify(dst)
+            console.assert(ssrc == sdst, ssrc+" != "+sdst)
+          }})
+        try { cmp = expect } catch (e) {} // use test runner if available
+
+        cmp(res2).toEqual(res1)
         return res2
     }
     wrapper.c1 = c1

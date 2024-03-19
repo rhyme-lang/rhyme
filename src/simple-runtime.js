@@ -30,7 +30,9 @@ rt.special.merge = rt.special.keyval = true
 rt.pure.plus = (x1,x2) => {
   if (x1 === undefined) return undefined
   if (x2 === undefined) return undefined
-  return Number(x1) + Number(x2)
+  let res = Number(x1) + Number(x2)
+  if (Number.isNaN(res)) return x1 + x2
+  return res
 }
 
 rt.pure.minus = (x1,x2) => {
