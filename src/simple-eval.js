@@ -200,21 +200,15 @@ let preproc = q => {
     else if (!Number.isNaN(Number(q.xxparam))) return { key: "const", op: Number(q.xxparam) }
     else return { key: "const", op: q.xxparam }
   } else if (q.xxpath == "ident") {
-    if (q.xxparam == "*") console.error("cannot support free-standing *")
-    else if (isVar(q.xxparam)) return { key: "var", op: q.xxparam }
+    if (isVar(q.xxparam)) return { key: "var", op: q.xxparam }
     else return { key: "const", op: q.xxparam }
   } else if (q.xxpath == "get") {
     let e1 = preproc(q.xxparam[0]) 
-    // XXX special case for literal "*": do this here or better in extract?
+    // special case for literal "*": moved from here to extract
     let e2
     if (q.xxparam[1] === undefined) {
       e2 = e1
       e1 = { key: "input" }
-    } else if (q.xxparam[1] == "*" || q.xxparam[1].xxpath == "ident" && q.xxparam[1].xxparam == "*") {
-      let str = JSON.stringify(e1)
-      let key = prefixes.indexOf(str)
-      if (key < 0) { key = prefixes.length; prefixes.push(str) }
-      e2 = { key: "var", op: "*_DEFAULT_"+key }
     } else
       e2 = preproc(q.xxparam[1])
     return { key: "get", arg: [e1,e2] }
@@ -303,12 +297,26 @@ let extract = q => {
   } else if (q.key == "const") {
     return q
   } else if (q.key == "var") {
+    if (q.op == "*") throw console.error("cannot support free-standing *")
     vars[q.op] ??= { vars: [], tmps: [] }
     return q
   } else if (q.key == "get") {
-    let [e1,e2] = q.arg.map(extract)
+    let [e1,e2] = q.arg
+
     if (e2.key == "var") {
-      // cse -- could take care of unique "*" here as well
+      // canonicalize '*' in 'data.*' to a unique variable
+      // NOTE: we use e1 _before_ extract as key
+      if (e2.op == "*") {
+        let str = JSON.stringify(e1)
+        let key = prefixes.indexOf(str)
+        if (key < 0) { key = prefixes.length; prefixes.push(str) }
+        let name = e1.key == "mkset" ? "K" : "*_DEFAULT_"
+        e2 = {...e2, op: name+key }
+      }
+      e1 = extract(e1)
+      e2 = extract(e2)
+      // extract filter -- this is subject to cse
+      // NOTE: we use e1,e2 _after_ extract as key
       let str = JSON.stringify({ ...q, arg: [e1,e2] })
       let ix = filters.map(x => JSON.stringify(x)).indexOf(str)
       if (ix < 0) { // XXX is it ok to do CSE? concern inferBwd
@@ -317,6 +325,9 @@ let extract = q => {
         filters.push(q1) // deep copy...
       }
       q.filter = ix
+    } else {
+      e1 = extract(e1)
+      e2 = extract(e2)
     }
     return { ...q, arg: [e1,e2]}
   } else if (q.key == "pure") {
@@ -337,16 +348,10 @@ let extract = q => {
     if (e1.key == "var") { // optimize const case?
       q.vK = extract(e1)
     } else {
-      let prefix = {key:"mkset", arg:[e1]}
-
-      // canonicalize index var
-      let str = JSON.stringify(prefix)
-      let ix = prefixes.indexOf(str)
-      if (ix < 0) { ix = prefixes.length; prefixes.push(str) }
-
-      q.aux = extract({key:"get", arg: [prefix,
-        {key:"var", op:"*K"+ix, arg:[]}]})
-      q.vK = extract({key:"var", op:"*K"+ix, arg:[]})
+      q.aux = extract({key:"get", arg: [
+        {key:"mkset", arg:[e1]},
+        {key:"var", op:"*", arg:[]}]})
+      q.vK = q.aux.arg[1] // the variable after canonicalization
       e1 = q.aux.arg[0].arg[0] // extract(e1), don't call twice
     }
 
@@ -367,16 +372,10 @@ let extract = q => {
     if (e1.key == "var") { // optimize const case?
       q.vK = extract(e1)
     } else {
-      let prefix = {key:"mkset", arg:[e1]}
-
-      // canonicalize index var
-      let str = JSON.stringify(prefix)
-      let ix = prefixes.indexOf(str)
-      if (ix < 0) { ix = prefixes.length; prefixes.push(str) }
-
-      q.aux = extract({key:"get", arg: [prefix,
-        {key:"var", op:"*K"+ix, arg:[]}]})
-      q.vK = extract({key:"var", op:"*K"+ix, arg:[]})
+      q.aux = extract({key:"get", arg: [
+        {key:"mkset", arg:[e1]},
+        {key:"var", op:"*", arg:[]}]})
+      q.vK = q.aux.arg[1] // the variable after canonicalization
       e1 = q.aux.arg[0].arg[0] // extract(e1), don't call twice
     }
 
