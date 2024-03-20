@@ -21,7 +21,7 @@ test("scalarTest0", () => {
       all: [["data.*.value"]]
     }
     let func = compile(query)
-    let res = func({ data }, true)
+    let res = func({ data })
     let expected = { total: 60, all: [[10,20,30]] }
     expect(res).toEqual(expected)
 })
@@ -33,7 +33,7 @@ test("groupTest0", () => {
         "data.*.key": api.sum("data.*.value")
     }
     let func = compile(query)
-    let res = func({ data }, true)
+    let res = func({ data })
     let expected = { "total": 60, "A": 40, "B": 20 }
     expect(res).toEqual(expected)
 })
@@ -44,7 +44,7 @@ test("groupTest1", () => {
         "data.*.key": api.plus(api.sum("data.*.value"), 0)
     }
     let func = compile(query)
-    let res = func({ data }, true)
+    let res = func({ data })
     let expected = { "total": 60, "A": 40, "B": 20 }
     expect(res).toEqual(expected)
 })
@@ -55,7 +55,7 @@ test("groupTest2", () => { // BUG!!!
         "data.*.key": api.sum(api.sum("data.*.value"))  // XXXX !!!!
     }
     let func = compile(query)
-    let res = func({ data }, true)
+    let res = func({ data })
     let expected = { "total": 60, "A": 40, "B": 20 }
     let bug = { "total": 60, "A": 80, "B": 20 }
     expect(res).toEqual(expected)
@@ -71,7 +71,7 @@ test("groupTest3", () => { // BUG!!!
     // console.log(func.explain.pseudo)
     // console.log(func.explain.code)
 
-    let res = func({ data }, true)
+    let res = func({ data })
     let expected = { "total": 60, "A": [[10,30]], "B": [[20]] }
     let bug = { "total": 60, "A": [[10,30],[10,30]], "B": [[20]] }
     expect(res).toEqual(expected)
@@ -107,7 +107,7 @@ test("groupTestNested1", () => {
     // console.log(func.explain.pseudo)
     // console.log(func.explain.code)
 
-    let res = func({ data3, udf: {guard: (x,y) => y }}, true)
+    let res = func({ data3, udf: {guard: (x,y) => y }})
 
     // console.dir(res, {depth:7})
 
@@ -161,7 +161,7 @@ test("groupTestNested2_encoding1", () => {
     // try doing that in emitFilters. 
 
     let func = compile(q1)
-    let res = func({ data3, udf: {guard: (x,y) => y }}, true)
+    let res = func({ data3, udf: {guard: (x,y) => y }})
 
     let expected = { 
       "A": [[110, 330], [120]],
@@ -188,7 +188,7 @@ test("groupTestNested2_encoding2", () => {
     //           use data3.*C.key (without the bugfix!!)
 
     let func = compile(q1)
-    let res = func({ data3, udf: {guard: (x,y) => y }}, true)
+    let res = func({ data3, udf: {guard: (x,y) => y }})
 
     // console.log(func.explain.pseudo)
     // console.log(func.explain.code)
@@ -208,7 +208,7 @@ test("groupTestNested2_encoding3", () => {
                         array (udf.guard ${q0}.*K data3.*C.sub.*B))))`
 
     let func = compile(q1)
-    let res = func({ data3, udf: {guard: (x,y) => y }}, true)
+    let res = func({ data3, udf: {guard: (x,y) => y }})
 
     let expected = { 
       "A": [[110, 330], [120]],
@@ -228,7 +228,7 @@ test("gt1", () => {
     let q0 = {"data.*.key": "array data.*.value"}
 
     let func = compile(q0)
-    let res = func({ data, udf: {guard: (x,y) => y }}, true)
+    let res = func({ data, udf: {guard: (x,y) => y }})
 
     // console.log(func.explain.pseudo)
     // console.log(func.explain.code)
@@ -244,7 +244,7 @@ test("gt2", () => {
     let q0 = {"data.*.key": "data.*.value"}
 
     let func = compile(q0, {singleResult:false})
-    let res = func({ data, udf: {guard: (x,y) => y }}, true)
+    let res = func({ data, udf: {guard: (x,y) => y }})
 
     // console.log(func.explain.pseudo)
     // console.log(func.explain.code)
@@ -261,7 +261,7 @@ test("gt3", () => {
     let q0 = {foo: {"data.*.key": { bar: "sum data.*.value" }}}
 
     let func = compile(q0)
-    let res = func({ data, udf: {guard: (x,y) => y }}, true)
+    let res = func({ data, udf: {guard: (x,y) => y }})
 
     // console.log(func.explain.pseudo)
     // console.log(func.explain.code)
@@ -278,7 +278,7 @@ test("gt4", () => {
                bar: 1}//{"data.*.key": "sum data.*.value" }}
 
     let func = compile(q0)
-    let res = func({ data, udf: {guard: (x,y) => y }}, true)
+    let res = func({ data, udf: {guard: (x,y) => y }})
 
     // console.log(func.explain.pseudo)
     // console.log(func.explain.code)
@@ -308,7 +308,7 @@ test("groupTest_explicitHoisting", () => {
     let q0 = { "data.*.key": "array(data.*.key)" }
 
     let func = compile(q0)
-    let res = func({ data }, true)
+    let res = func({ data })
 
     let expected = { 
       "A": ["A"], // NOTE: two entries w/same key -> two results
@@ -332,7 +332,7 @@ test("undefinedFields1", () => {
     ]
     let q0 = { "data.*.product": { "data.*.model": "sum(data.*.quantity)" }}
     let func = compile(q0)
-    let res = func({ data }, true)
+    let res = func({ data })
 
     let expected = { 
       "iPhone": { "7": 10},
@@ -348,7 +348,7 @@ test("undefinedFields2", () => {
     ]
     let q0 = { "data.*.product": { "data.*.model": {Q:"sum(data.*.quantity)" }}}
     let func = compile(q0)
-    let res = func({ data }, true)
+    let res = func({ data })
 
     let expected = { 
       "iPhone": { 
@@ -380,7 +380,11 @@ test("undefinedFields3", () => {
     ]
     let q0 = { "data.*.product": { "data.*.model": true}}
     let func = compile(q0)
-    let res = func({ data }, true)
+    let res = func({ data })
+
+    // console.log(func.explain.pseudo0)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
 
     let expected = {
       "iPhone": { 
