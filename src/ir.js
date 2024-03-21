@@ -1,12 +1,9 @@
-const { quoteVar, debug, trace, print, inspect, error, warn } = require("./utils")
+const { quoteVar, isVar, debug, trace, print, inspect, error, warn } = require("./utils")
 const { parse } = require("./parser")
 
 exports.createIR = (query) => {
     //
     // ---------- Internals ----------
-    //
-    // string literal or iterator variable?
-    let isVar = s => s.startsWith("*") // || s.startsWith("$") || s.startsWith("%")
     //
     // create an expression with code 'txt' and dependency on symbols 'args'
     let expr = (txt, ...args) => ({ txt, deps: args })
@@ -69,7 +66,12 @@ exports.createIR = (query) => {
     //
     //
     function selectUser(a, b) {
-        if (exprIsVar(b)) {
+        // Circular dependencies
+        // * <- tmp <- *
+        // This exists in A.*i.*i, i.e., diagonal access
+        // Whenver a is scheduled, it must be already within loop b,
+        // therefore we do not need a new generator for b (it is already generated!)
+        if (exprIsVar(b) && !a.deps.includes(b.deps[0])) {
             let b1 = b.deps[0]
             let e = expr("for " + b1 + " <- " + a.txt, ...a.deps)
             e.sym = b1
