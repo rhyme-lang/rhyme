@@ -356,7 +356,7 @@ let extract = q => {
       q.aux = extract({key:"get", arg: [
         {key:"mkset", arg:[e1]},
         {key:"var", op:"*", arg:[]}]})
-      q.vK = q.aux.arg[1] // the variable after canonicalization
+      q.vK = {...q.aux.arg[1]} // the variable after canonicalization
       e1 = q.aux.arg[0].arg[0] // extract(e1), don't call twice
     }
 
@@ -381,7 +381,7 @@ let extract = q => {
       q.aux = extract({key:"get", arg: [
         {key:"mkset", arg:[e1]},
         {key:"var", op:"*", arg:[]}]})
-      q.vK = q.aux.arg[1] // the variable after canonicalization
+      q.vK = {...q.aux.arg[1]} // the variable after canonicalization
       e1 = q.aux.arg[0].arg[0] // extract(e1), don't call twice
     }
 
@@ -484,7 +484,10 @@ let infer = q => {
     // NOTE: wo do not include vars/tmps/dims information from path, only from e1.
     // What is the rationale for this?
 
-    // q.vars = unique([...e1.vars, ...q.path.map(x => x.vars)])
+    // In short: we don't have transitive dependencies yet.
+    // 
+
+    // q.vars = unique([...e1.vars, ...q.path.flatMap(x => x.vars)])
     // 
     // Naively adding this:
     // - fixes undefinedFields3
@@ -506,9 +509,9 @@ let infer = q => {
   } else if (q.key == "group") {
     q.path = q.path.map(infer)
     let [e1,e2] = q.arg.map(infer)
+    q.vK = infer(q.vK)
     if (q.aux) {
-      infer(q.aux)
-      infer(q.vK)
+      q.aux = infer(q.aux)
     }
     // NOTE: e1 has been set to a dummy val by extract
     q.tmps = unique([...e1.tmps, ...e2.tmps])
@@ -518,9 +521,9 @@ let infer = q => {
   } else if (q.key == "update") {
     q.path = q.path.map(infer)
     let [e0,e1,e2] = q.arg.map(infer)
+    q.vK = infer(q.vK)
     if (q.aux) {
-      infer(q.aux)
-      infer(q.vK)
+      q.aux = infer(q.aux)
     }
     // NOTE: e1 has been set to a dummy val by extract
     q.tmps = unique([...e0.tmps, ...e1.tmps, ...e2.tmps])
@@ -610,13 +613,43 @@ let inferBwd = out => q => {
     else
       out1 = union(out,q.arg[0].dims) // mind vs dim?
     let [e1] = q.arg.map(inferBwd(out1))
+
+    let trans = ps => unique([...ps,...ps.flatMap(x => vars[x].vars)])
+
     q.path.map(inferBwd(out))
 
+    let oldPath = q.path
+    q.path = []
+    for (let p of oldPath) {
+      if (intersect(trans(p.vars), trans(q.vars)).length > 0)
+        q.path.push(p)
+    }
+
     let vks = q.path.flatMap(x => x.real)
+
+    // vks = unique(trans(q.path.flatMap(x => x.vars)))
+
+    // vks = []
     q.free = unique([...e1.real,...vks])
     q.real = intersect(out, q.free)
   } else if (q.key == "group") {
     q.out = out
+
+    let trans = ps => unique([...ps,...ps.flatMap(x => vars[x].vars)])
+
+    q.path.map(inferBwd(out))
+    inferBwd(out)(q.vK)
+
+    let oldPath = q.path
+    q.path = []
+    for (let p of oldPath) {
+      if (intersect(trans(p.vars), trans(q.vars)).length > 0)
+        q.path.push(p)
+    }
+
+    let xxAll = unique(trans([...q.path,q.vK].flatMap(x => x.vars)))
+
+    // console.log(xxAll)
 
     let vksAll = unique([q.vK.op, ...vars[q.vK.op].vars])
 
@@ -636,15 +669,14 @@ let inferBwd = out => q => {
 
     let e1 = inferBwd(union(out,q.arg[0].mind))(q.arg[0]) // (this is a dummy)
     let e2 = inferBwd(union(out,vks1))(q.arg[1])
-    q.path.map(inferBwd(out))
 
     let vks2 = q.path.flatMap(x => x.real)
-    // vks2 = []
+    vks2 = [q.vK.op,...vks2]
 
     // if (!same(vks1,vks2))
       // console.log(vks1+" ≠ "+vks2)
 
-    q.free = unique([...e2.real,...vks2])//, ...vks1])
+    q.free = unique([...e2.real,...xxAll])//, ...vks1])
     q.real = intersect(q.free, q.out)
 
     if (q.aux) {
@@ -654,6 +686,23 @@ let inferBwd = out => q => {
     }
   } else if (q.key == "update") {
     q.out = out
+
+    let trans = ps => unique([...ps,...ps.flatMap(x => vars[x].vars)])
+
+    q.path.map(inferBwd(out))
+    inferBwd(out)(q.vK)
+
+    let oldPath = q.path
+    q.path = []
+    for (let p of oldPath) {
+      if (intersect(trans(p.vars), trans(q.vars)).length > 0)
+        q.path.push(p)
+    }
+
+    let xxAll = unique(trans([...q.path,q.vK].flatMap(x => x.vars)))
+
+
+
     let vksAll = unique([q.vK.op, ...vars[q.vK.op].vars])
     let vks1 = unique([q.vK.op, ...diff(vars[q.vK.op].vars,q.arg[2].vars)])
     let test = intersect(vksAll, q.arg[2].vars)
@@ -663,12 +712,11 @@ let inferBwd = out => q => {
     let e0 = inferBwd(out)(q.arg[0]) // ???  !!!!
     let e1 = inferBwd(union(out, q.arg[1].mind))(q.arg[1]) // (this is a dummy)
     let e2 = inferBwd(union(out,vks1))(q.arg[2])
-    q.path.map(inferBwd(out))
 
     let vks2 = q.path.flatMap(x => x.real)
     vks2 = [] // XX not needed?
 
-    q.free = unique([...e0.real,...e2.real,...vks2])//, ...vks1])
+    q.free = unique([...e0.real,...e2.real,...xxAll])//, ...vks1])
     q.real = intersect(q.free, q.out)
 
     if (q.aux) {
@@ -682,7 +730,8 @@ let inferBwd = out => q => {
 
   console.assert(subset(q.mind, q.dims))
   console.assert(subset(q.dims, q.vars))
-  console.assert(subset(q.mind, q.real), "mind !< real: "+q.mind+" / "+q.real+" at "+pretty(q))
+  if (q.key != "var") 
+    console.assert(subset(q.mind, q.real), "mind !< real: "+q.mind+" / "+q.real+" at "+pretty(q))
 
   if (q.mode && q.mode != "reluctant")
     console.assert(subset(q.dims, q.real)) // can happen for lazy 'last'

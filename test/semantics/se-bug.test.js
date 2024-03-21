@@ -404,6 +404,6 @@ test("undefinedFields3", () => {
         "7": true
       }
     }
-    expect(res).toEqual(bug)
-    // NOTE: need a different mechanism to solve this!
+    expect(res).toEqual(expected)
+    // NOTE: fixed by being more careful about decorrelation
 })

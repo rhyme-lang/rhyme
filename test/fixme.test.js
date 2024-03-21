@@ -205,10 +205,9 @@ test("aggregateAsKey", () => {
         60: { 1: true, 2: true }, // XXX is this the right one?
     }
 
-
+    // console.log(f1.c2.explain.pseudo0)
     // console.log(f1.c2.explain.pseudo)
     // console.log(f1.c2.explain.code)
-
 
     // console.dir(res1)
     // console.dir(res2)
