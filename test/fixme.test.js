@@ -25,7 +25,7 @@ test("groupingWithStar", () => {
     // let func = api.compile(query)
   
     // let res = func({data})
-  })
+})
 
 // Nested grouping: this case is challenging because we're
 // using "*" in two sibling fields of the same object, without
