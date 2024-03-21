@@ -152,7 +152,7 @@ api["query"] = api["compile"] = (query) => {
         try { cmp = expect } catch (e) {} // use test runner if available
 
         cmp(res2).toEqual(res1)
-        return res2
+        return res1
     }
     wrapper.c1 = c1
     wrapper.c2 = c2

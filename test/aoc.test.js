@@ -563,6 +563,7 @@ ZZZ = (ZZZ, ZZZ)`
   // recursive computations.
 })
 
+
 test("day8-part2", () => {
   let input = `LR
 
@@ -578,65 +579,57 @@ XXX = (XXX, XXX)`
   let udf = {
     filter: c => c ? { [c]: true } : {},
     andThen: (a,b) => b, // just to add a as dependency
-    isRule: s => s.search("=") != -1,
     isStartState: s => s[s.length - 1] == 'A',
-    updateState: (state, newState) => state.state = newState,
+    isNotEndState: s => s[s.length - 1] != 'Z' ? 1 : 0,
     ...udf_stdlib
   }
 
-  let line = rh`.input | udf.split "\\n"`
-  let instructions = rh`${line}.0 | udf.split ""`
+  let chunks = rh`.input | udf.split "\\n\\n"`
+  let lines = rh`${chunks}.1 | udf.split "\\n"`
 
-  // Use generator as filter here to only get the rules
-  // since the first two lines will be the instructions and an empty line 
+  // decode instructions
+  let instructions = rh`${chunks}.0 | udf.split ""`
+  let instrStep = i => rh`${instructions}.(${i} % (count ${instructions}.*I))`
+
+  // decode rules
+  let ruleParts = rh`${lines} | .*line | udf.matchAll "[0-9A-Z]{3}" "g"`
+
+  let ruleBody = {
+    L: rh`${ruleParts}.1.0`,
+    R: rh`${ruleParts}.2.0`
+  }
+  let rules = rh`${ruleBody} | group ${ruleParts}.0.0`
+
   let filter = (gen, p) => x => rh`udf.andThen (udf.filter (${p})).${gen} ${x}`
+  let isStartState = rh`${ruleParts}.0.0 | udf.isStartState`
+  let startStates = rh`${ruleParts}.0.0 | ${filter("*f", isStartState)}`
+  let initialStatesObj = {
+    states: api.array(startStates),
+  }
 
-  let ruleElems = rh`${line} | .*line | udf.matchAll "[0-9A-Z]{3}" "g"`
-  let isRule = rh`${line} | .*line | udf.isRule`
-
-  let ruleElemsFiltered = rh`${ruleElems} | ${filter("*f1", isRule)}`
-
-  let isStartState = rh`${ruleElemsFiltered}.0.0 | udf.isStartState`
-  let startStates = rh`${ruleElemsFiltered}.0.0 | ${filter("*f2", isStartState)}`
-
-  let startStatesArray = api.array({ state: startStates })
-
-  let getStartStates = api.compile(startStatesArray)
+  let getStartStates = api.compile(initialStatesObj)
 
   let states = getStartStates({input, udf})
-  
-  let node = {
-    L: rh`${ruleElemsFiltered}.1.0`,
-    R: rh`${ruleElemsFiltered}.2.0`
+
+  states.steps = 0
+  states.intermediateStateCount = 1
+
+  let newState = rh`.states | ${rules}.(.states.*S).(${instrStep} .steps)`
+
+  // main query
+  let query = {
+    states: api.array(newState),
+    steps: rh`states.steps + 1`,
+    intermediateStateCount: rh`${newState} | udf.isNotEndState | sum`
   }
 
-  let currStates = rh`.states`
-
-  let rules = rh`${node} | group ${ruleElemsFiltered}.0.0`
-
-  // // Each query returns the number of steps taken
-  let query = rh`${instructions} | udf.updateState ${currStates}.*state ${rules}.(${currStates}.*state.state).(.*inst)
-                                 | (count .*inst) / (count ${currStates}.*state)`
   let func = api.compile(query)
 
-  // console.log(states)
-
-  const isEndState = s => s[s.length - 1] == 'Z'
-  const cannotStop = (statesObj) => {
-    for (let s in statesObj) {
-      if (!isEndState(statesObj[s].state)) {
-        return true;
-      }
-    }
-    return false;
+  while (states.intermediateStateCount != 0) {
+    states = func({input, udf, states})
   }
 
-  let res = 0
-  while (cannotStop(states)) {
-    res += func({input, udf, states: states})
-  }
-
-  expect(res).toBe(6)
+  expect(states.steps).toBe(6)
 })
 
 // 2022
