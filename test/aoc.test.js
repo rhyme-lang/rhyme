@@ -570,17 +570,48 @@ SJLL7
 |F--J
 LJ.LJ`
 
+  let connected = (grid, i, j) => {
+    switch (grid[i][j]) {
+      case "|":
+        return [[i - 1, j], [i + 1, j]]
+      case "-":
+        return [[i, j - 1], [i, j + 1]]
+      case "L":
+        return [[i - 1, j], [i, j + 1]]
+      case "J":
+        return [[i - 1, j], [i, j - 1]]
+      case "7":
+        return [[i + 1, j], [i, j - 1]]
+      case "F":
+        return [[i + 1, j], [i, j + 1]]
+      case ".":
+        return []
+      case "S":
+        // Need to check neighbor for connected cells
+    }
+  }
+
   let udf = {
+    connected,
     ...udf_stdlib
   }
 
   let cells = rh`.input | udf.split "\\n" | .*line
                         | udf.split ""`
 
+  let state = {
+    state: [], // The coordinate of starting cell
+    count: 0
+  }
   let query = api.array(cells);
 
   // Each query moves from the current cell
   // to the next cell and mark the current cell as visited
+
+  // The query checks the connected cells of the current cell
+  // and find the one not visited
+
+  // It stops when the current cell becomes S
 
   let func = api.compile(query)
   console.log(func.explain.code)
