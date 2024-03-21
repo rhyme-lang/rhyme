@@ -563,6 +563,33 @@ ZZZ = (ZZZ, ZZZ)`
   // recursive computations.
 })
 
+test("day10-part1", () => {
+  let input = `7-F7-
+.FJ|7
+SJLL7
+|F--J
+LJ.LJ`
+
+  let udf = {
+    ...udf_stdlib
+  }
+
+  let cells = rh`.input | udf.split "\\n" | .*line
+                        | udf.split ""`
+
+  let query = api.array(cells);
+
+  // Each query moves from the current cell
+  // to the next cell and mark the current cell as visited
+
+  let func = api.compile(query)
+  console.log(func.explain.code)
+
+  let res = func({input, udf})
+
+  console.log(res)
+})
+
 // 2022
 
 test("day1-A", () => {
