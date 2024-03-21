@@ -2,6 +2,28 @@ const { api } = require('../src/rhyme')
 const { rh } = require('../src/parser')
 
 
+test("simpleEval", () => {
+    let data = [{ key: "A", value: 10 }, { key: "B", value: 20}, { key: "C", value: 30 }]
+
+    let query = rh`data.*.key`
+
+    let func = api.compile(query)
+    
+    // c1 and c2 results not the same
+    // let res = func({data})
+})
+
+test("groupingWithStar", () => {
+    let data = [{ key: "A", value: 10 }, { key: "B", value: 20}, { key: "A", value: 30 }]
+  
+    // Results in parsing error
+    // * will be interpreted as a binary multiply operator
+    let query = rh`data.*.value | group *`
+    // let func = api.compile(query)
+  
+    // let res = func({data})
+  })
+
 // Nested grouping: this case is challenging because we're
 // using "*" in two sibling fields of the same object, without
 // having any key depend on "*".
