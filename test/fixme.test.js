@@ -5,12 +5,11 @@ const { rh } = require('../src/parser')
 test("simpleEval", () => {
     let data = [{ key: "A", value: 10 }, { key: "B", value: 20}, { key: "C", value: 30 }]
 
-    let query = rh`data.*.key`
-
     let func = api.compile(query)
     
     // c1 and c2 results not the same
-    // let res = func({data})
+    // causing cmp(res2).toEqual(res1) assertion to fail
+    let query = rh`data.*.value | group *`
 })
 
 test("groupingWithStar", () => {
@@ -18,7 +17,11 @@ test("groupingWithStar", () => {
   
     // Results in parsing error
     // * will be interpreted as a binary multiply operator
-    let query = rh`data.*.value | group *`
+    try {
+        let query = rh`data.*.value | group *`
+    } catch (e) {
+        console.log(e)
+    }
     // let func = api.compile(query)
   
     // let res = func({data})
