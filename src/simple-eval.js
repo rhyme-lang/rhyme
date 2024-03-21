@@ -5,25 +5,35 @@ const { runtime } = require('./simple-runtime')
 
 // DONE
 //
-// Functionality
+// Features
 //
 // - objects with multiple entries (merge)
 // - array constructor (collect into array)
 // - other primitives -> abstract over path/stateful op
 // - udfs
 //
+// Optimizations
+//
+// - path decorrelation
+//
 // Tests
 //
-// - nested grouping, partial sums at multiple levels
+// - nested grouping, partial sums at multiple levels,
+//   aggregates as keys, generators as filters
 // 
 // TODO
 //
-// Functionality
+// Features
 //
 // - &&, ??, non-unifying get -> sufficient to model 
 //    failure, filters, left outer joins, etc?
 // - recursion: structural (tree traversal), 
-//    fixpoint (datalog, incremental), inf. stream
+//    fixpoint (datalog, incremental), inf. streams
+//
+// Optimizations
+//
+// - cse, including expr computed as path
+// - loop fusion
 //
 // Tests
 //
@@ -35,7 +45,7 @@ const { runtime } = require('./simple-runtime')
 //   of var->tmp->var->... precise enough?
 // - what to do with cycles between assignments?
 // - how do semantics justify smarter code generation:
-//    - cse, dce
+//    - cse (a bit tricky b/c of context semantics)
 //    - destination passing style (accumulate directly
 //      into mutable targets)
 //    - loop fusion: horizontal (independent results)
@@ -461,41 +471,12 @@ let infer = q => {
     q.path = q.path.map(infer)
     let [e1] = q.arg.map(infer)
 
-    // XXX investigate: decorrelate:
-    // if (q.pathAux) { // only once
-    // let newPath = []
-    // for (let i in q.path) {
-    //   if (intersect(q.pathAux[i].vars,e1.vars).length){
-    //     // console.log("PRESERVE "+q.path[i].op+"="+pretty(q.pathAux[i])+" / "+pretty(e1))
-    //     newPath.push(q.path[i])
-    //   } else {
-    //     // console.log("DECORRELATE "+q.path[i].op+pretty(q.pathAux[i])+" / "+pretty(e1))
-    //     q.removed = {}
-    //     q.removed[i] = { 
-    //       l: pretty(q.pathAux[i]),
-    //       r: pretty(e1,),
-    //       lvars:q.pathAux[i].vars, 
-    //       rvars: e1.vars}
-    //   }
-    // }
-    // q.path = newPath
-    // q.pathAux = null}
+    // NOTE: wo do not include vars/tmps/dims information from path,
+    // only from e1. What is the rationale for this?
 
-    // NOTE: wo do not include vars/tmps/dims information from path, only from e1.
-    // What is the rationale for this?
-
-    // In short: we don't have transitive dependencies yet.
-    // 
-
-    // q.vars = unique([...e1.vars, ...q.path.flatMap(x => x.vars)])
-    // 
-    // Naively adding this:
-    // - fixes undefinedFields3
-    // - breaks aggregateAsKey
-    // - cause stms/filter cycles in aoc day4-part2
-    //
-    // TODO: investigate!!
-    //
+    // In short: we want to decorrelate paths but we don't have enough
+    // information yet. Specifically, transitive var dependencies are
+    // only available after infer.
 
     q.tmps = [...e1.tmps]
     q.vars = [...e1.vars]
@@ -510,9 +491,7 @@ let infer = q => {
     q.path = q.path.map(infer)
     let [e1,e2] = q.arg.map(infer)
     q.vK = infer(q.vK)
-    if (q.aux) {
-      q.aux = infer(q.aux)
-    }
+    if (q.aux) q.aux = infer(q.aux)
     // NOTE: e1 has been set to a dummy val by extract
     q.tmps = unique([...e1.tmps, ...e2.tmps])
     q.vars = unique([...e1.vars, ...e2.vars, q.vK.op])
@@ -522,13 +501,11 @@ let infer = q => {
     q.path = q.path.map(infer)
     let [e0,e1,e2] = q.arg.map(infer)
     q.vK = infer(q.vK)
-    if (q.aux) {
-      q.aux = infer(q.aux)
-    }
+    if (q.aux) q.aux = infer(q.aux)
     // NOTE: e1 has been set to a dummy val by extract
     q.tmps = unique([...e0.tmps, ...e1.tmps, ...e2.tmps])
     q.vars = unique([...e0.vars, ...e1.vars, ...e2.vars, q.vK.op])
-    q.mind = diff(unique([...e0.mind,  /*...e1.mind,*/ ...e2.mind]), [q.vK.op])
+    q.mind = diff(unique([...e0.mind, /*...e1.mind,*/ ...e2.mind]), [q.vK.op])
     q.dims = diff(unique([...e0.dims, /*...e1.dims,*/ ...e2.dims]), [q.vK.op])
   } else {
     console.error("unknown op", q)
@@ -540,11 +517,15 @@ let infer = q => {
 
 //
 // 5. Infer dependencies top down: 
-//    - out:  maximum allowed set of variables in output (provides as input arg)
+//    - out:  maximum allowed set of variables in output (provided as input arg)
 //    - real: variables actually in output
 //    - free: free variables used to compute result
 //      (iteration space for stms)
 //
+//    Decorrelate paths and eliminate trivial recursion
+//
+
+let trans = ps => unique([...ps,...ps.flatMap(x => vars[x].vars)])
 
 let inferBwd = out => q => {
   if (q.out !== undefined) {
@@ -575,17 +556,10 @@ let inferBwd = out => q => {
     q.out = out
     let e1 = assignments[q.op]
 
-    // XXX eliminate recursive path deps --
-    // these typically arise through eta expansion
-    let oldPath = e1.path
-    e1.path = []
-    for (let p of oldPath) {
-      if (p.key == "var" && vars[p.op].tmps.indexOf(q.op) >= 0) {
-        // console.log("Recursion: "+pretty(p)+"->"+q.op+"="+pretty(e1))
-      } else {
-        e1.path.push(p)
-      }
-    }
+    // eliminate recursive path deps -- these
+    // typically arise from eta expansion
+    e1.path = e1.path.filter(p =>
+      p.key != "var" || vars[p.op].tmps.indexOf(q.op) < 0)
 
     inferBwd(out)(e1)
     q.real = e1.real
@@ -614,74 +588,48 @@ let inferBwd = out => q => {
       out1 = union(out,q.arg[0].dims) // mind vs dim?
     let [e1] = q.arg.map(inferBwd(out1))
 
-    let trans = ps => unique([...ps,...ps.flatMap(x => vars[x].vars)])
-
+    // decorrelate path
     q.path.map(inferBwd(out))
+    q.path = q.path.filter(p => 
+      intersect(trans(p.vars), trans(q.vars)).length > 0)
 
-    let oldPath = q.path
-    q.path = []
-    for (let p of oldPath) {
-      if (intersect(trans(p.vars), trans(q.vars)).length > 0)
-        q.path.push(p)
-    }
+    let pathVs = q.path.flatMap(x => x.real)
+    // pathVs = trans(q.path.flatMap(x => x.vars)) wrong res
 
-    let vks = q.path.flatMap(x => x.real)
-
-    // vks = unique(trans(q.path.flatMap(x => x.vars)))
-
-    // vks = []
-    q.free = unique([...e1.real,...vks])
+    q.free = unique([...e1.real, ...pathVs])
     q.real = intersect(out, q.free)
   } else if (q.key == "group") {
     q.out = out
 
-    let trans = ps => unique([...ps,...ps.flatMap(x => vars[x].vars)])
-
+    // decorrelate path
     q.path.map(inferBwd(out))
-    inferBwd(out)(q.vK)
+    q.path = q.path.filter(p => 
+      intersect(trans(p.vars), trans(q.vars)).length > 0)
 
-    let oldPath = q.path
-    q.path = []
-    for (let p of oldPath) {
-      if (intersect(trans(p.vars), trans(q.vars)).length > 0)
-        q.path.push(p)
-    }
-
-    let xxAll = unique(trans([...q.path,q.vK].flatMap(x => x.vars)))
-
-    // console.log(xxAll)
-
-    let vksAll = unique([q.vK.op, ...vars[q.vK.op].vars])
+    let pathVs = q.path.flatMap(x => x.real)
+    // pathVs = trans(q.path.flatMap(x => x.vars))
 
 // generatorAsFilter --- need to include F
 // aggregateAsKey --- do not include *
 
-   // generatorAsFilter OK
-    let vks1 = unique([q.vK.op, ...diff(vars[q.vK.op].vars, q.arg[1].vars)])
+    inferBwd(out)(q.vK)
+    let vks1
+    let vksAll = trans(q.vK.vars)
+    if (intersect(vksAll, q.arg[1].vars).length > 0) {
+      vks1 = unique([q.vK.op, ...diff(vksAll, q.arg[1].vars)])
+    } else {
+      vks1 = unique([q.vK.op])
+    }
 
-   // aggregateAsKey OK
-   // let vks1 = unique([q.vK.op, ...intersect(vars[q.vK.op].vars,  q.path)])
+    let e1 = inferBwd(union(out, q.arg[0].mind))(q.arg[0]) // (this is a dummy)
+    let e2 = inferBwd(union(out, vks1))(q.arg[1])
 
-    let test = intersect(vksAll, q.arg[1].vars)
-    if (test.length == 0)
-      vks1 = unique([q.vK.op])//, ...intersect(vars[q.vK.op].vars,  q.path.map(x=>x.op))])
-
-
-    let e1 = inferBwd(union(out,q.arg[0].mind))(q.arg[0]) // (this is a dummy)
-    let e2 = inferBwd(union(out,vks1))(q.arg[1])
-
-    let vks2 = q.path.flatMap(x => x.real)
-    vks2 = [q.vK.op,...vks2]
-
-    // if (!same(vks1,vks2))
-      // console.log(vks1+" ≠ "+vks2)
-
-    q.free = unique([...e2.real,...xxAll])//, ...vks1])
+    q.free = unique([...e2.real, ...pathVs, ...vksAll])
     q.real = intersect(q.free, q.out)
 
     if (q.aux) {
       // trigger processing of the filter expression
-      inferBwd(union(out,q.aux.mind))(q.aux) // union e1.mind e2.dims?
+      inferBwd(union(out, q.aux.mind))(q.aux) // union e1.mind e2.dims?
       // inferBwd([q.vK])(q.vK)
     }
   } else if (q.key == "update") {
@@ -689,39 +637,33 @@ let inferBwd = out => q => {
 
     let trans = ps => unique([...ps,...ps.flatMap(x => vars[x].vars)])
 
+    // decorrelate path
     q.path.map(inferBwd(out))
-    inferBwd(out)(q.vK)
+    q.path = q.path.filter(p => 
+      intersect(trans(p.vars), trans(q.vars)).length > 0)
 
-    let oldPath = q.path
-    q.path = []
-    for (let p of oldPath) {
-      if (intersect(trans(p.vars), trans(q.vars)).length > 0)
-        q.path.push(p)
+    let pathVs = q.path.flatMap(x => x.real)
+    // pathVs = trans(q.path.flatMap(x => x.vars))
+
+    inferBwd(out)(q.vK)
+    let vks1
+    let vksAll = trans(q.vK.vars)
+    if (intersect(vksAll, q.arg[2].vars).length > 0) {
+      vks1 = unique([q.vK.op, ...diff(vksAll, q.arg[2].vars)])
+    } else {
+      vks1 = unique([q.vK.op])
     }
 
-    let xxAll = unique(trans([...q.path,q.vK].flatMap(x => x.vars)))
-
-
-
-    let vksAll = unique([q.vK.op, ...vars[q.vK.op].vars])
-    let vks1 = unique([q.vK.op, ...diff(vars[q.vK.op].vars,q.arg[2].vars)])
-    let test = intersect(vksAll, q.arg[2].vars)
-    if (test.length == 0)
-      vks1 = unique([q.vK.op])//, ...intersect(vars[q.vK.op].vars,  q.path)])
-
-    let e0 = inferBwd(out)(q.arg[0]) // ???  !!!!
+    let e0 = inferBwd(out)(q.arg[0])
     let e1 = inferBwd(union(out, q.arg[1].mind))(q.arg[1]) // (this is a dummy)
-    let e2 = inferBwd(union(out,vks1))(q.arg[2])
+    let e2 = inferBwd(union(out, vks1))(q.arg[2])
 
-    let vks2 = q.path.flatMap(x => x.real)
-    vks2 = [] // XX not needed?
-
-    q.free = unique([...e0.real,...e2.real,...xxAll])//, ...vks1])
+    q.free = unique([...e0.real, ...e2.real, ...pathVs, ...vksAll])
     q.real = intersect(q.free, q.out)
 
     if (q.aux) {
       // trigger processing of the filter expression
-      inferBwd(union(out,q.aux.mind))(q.aux) // union e1.mind e2.dims?
+      inferBwd(union(out, q.aux.mind))(q.aux) // union e1.mind e2.dims?
       // inferBwd([q.vK])(q.vK)
     }
   } else {

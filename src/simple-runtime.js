@@ -217,8 +217,8 @@ rt.stateful.mkset = x => ({
 
 // these are dealt with somewhat specially
 rt.stateful.group = (x1,x2) => ({
-  init: () => undefined, // ({}) XXX what do we want?
-                         // (see undefinedFields2, partial fix)
+  init: () => ({}), // {} vs undefined, what do we want?
+                    // (see undefinedFields2, tables.html)
   next: s => {
     if (x1 === undefined) return s
     if (x2 === undefined) return s

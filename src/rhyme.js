@@ -147,7 +147,7 @@ api["query"] = api["compile"] = (query) => {
           toEqual: dst => { 
             let ssrc = JSON.stringify(src)
             let sdst = JSON.stringify(dst)
-            console.assert(ssrc == sdst, ssrc+" != "+sdst)
+            console.assert(ssrc == sdst, "result mismatch")
           }})
         try { cmp = expect } catch (e) {} // use test runner if available
 

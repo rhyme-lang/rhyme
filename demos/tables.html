@@ -182,8 +182,7 @@ San Jose,Samsung,Note 8,150`
             }
           }
 
-          let func = api.compileFastPathOnly(query) // FIXME: simple eval works, 
-                                                    // but leaves some empty objects {}
+          let func = api.compile(query)
           console.log("Pivot Tables: ", func.explain)
           let res = func({data,udf})
           api.display(res, domParent)
@@ -240,7 +239,7 @@ San Jose,Samsung,Note 8,150`
               },
             }
           }
-          let func = api.compileFastPathOnly(query) // FIXME: simple eval works, but too slow
+          let func = api.compileFastPathOnly(query) // FIXME: simple eval works, but too slow (4-5s)
           console.log("Bar Chart Race: ", func.explain)
           let res = func({data,udf})
           api.display(res, domParent)
