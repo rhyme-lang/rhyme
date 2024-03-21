@@ -1,4 +1,5 @@
 const codegen = require('./codegen')
+const new_codegen = require('./new-codegen')
 const ir = require('./ir')
 const graphics = require('./graphics')
 
@@ -137,14 +138,14 @@ api["exec"] = (query, data) => {
 // }
 api["query"] = api["compile"] = (query) => {
     let rep = ir.createIR(query)
-    let c1 = codegen.generate(rep)
+    let c1 = new_codegen.generate(rep)
     let c2 = compile(query)
     let wrapper = (x) => {
         let res1 = c1(x)
         let res2 = c2(x)
 
-        let cmp = src => ({ 
-          toEqual: dst => { 
+        let cmp = src => ({
+          toEqual: dst => {
             let ssrc = JSON.stringify(src)
             let sdst = JSON.stringify(dst)
             console.assert(ssrc == sdst, "result mismatch")
@@ -162,7 +163,7 @@ api["query"] = api["compile"] = (query) => {
 }
 api["compileFastPathOnly"] = (query) => {
     let rep = ir.createIR(query)
-    let c1 = codegen.generate(rep)
+    let c1 = new_codegen.generate(rep)
     let wrapper = (x) => {
         let res1 = c1(x)
         return res1
