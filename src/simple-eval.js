@@ -1224,7 +1224,7 @@ let emitPseudo = (q) => {
     let q = filters[i]
     buf.push("gen"+i + ": " + pretty(q))
     if (q.vars.length)
-      buf.push("  " + q.vars)
+      buf.push("  " + q.vars + " / " + q.real + " / " + q.free)
   }
   buf.push("")
   let hi = buf.length
@@ -1371,7 +1371,7 @@ let emitFilters = (real) => buf => {
     // to end of list. Need to be careful about cycles.
     //
     // TODO: would be better to use proper topsort
-    let orderingProblem = g1.free.filter(x => !seen[x] && vars[x])
+    let orderingProblem = g1.real.filter(x => !seen[x] && vars[x])
     if (orderingProblem.length != 0) { // ok, just emit current
       if (skipcount[i]++ < 10) {
         worklist.push(i)
@@ -1389,9 +1389,11 @@ let emitFilters = (real) => buf => {
     //
     // TODO: it would be much cleaner to extract this into a 
     // proper assignment statement
-    let extra = g1.free.filter(x => !vars[x])
+    let extra = g1.real.filter(x => !vars[x])
+    // XXX NOTE: was g1.free !! <-- previous diff ref/tmp
 
     if (extra.length != 0) {
+      buf0.push("// pre-pre-gen "+extra+" in "+pretty(g1))
       for (let v2 of extra) {
         if (buf0.indexOf("let gen"+i+quoteVar(v2)+" = {}") < 0) {
           buf0.push("// pre-gen "+v2)
@@ -1522,7 +1524,7 @@ let compile = (q,{
 
   reset()
 
-  let console = { log: () => {} }
+  // let console = { log: () => {} }
 
   // ---- front end ----
 
