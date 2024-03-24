@@ -143,6 +143,7 @@ exports.generate = (ir) => {
   let tmpVarWriteRank = ir.tmpVarWriteRank
 
   let deps = buildDeps(assignmentStms, generatorStms, tmpVarWriteRank)
+  let nodes = deps.nodes
   let stmtdeps = deps.stmtdeps
   let loopdeps = deps.loopdeps
   let assignByTmp = deps.assignByTmp
@@ -183,7 +184,7 @@ exports.generate = (ir) => {
   explain.ir.generators = [...generatorStms]
   let generatorStmsCopy = [...generatorStms] // TODO(supun): temporary fix
 
-  explain.dependencies = { stmtdeps }
+  explain.dependencies = { nodes, stmtdeps, loopdeps, stmt2stmtByLoop }
   if (debug) {
       inspect({ stmtdeps })
       print("---- end dependency data ----")

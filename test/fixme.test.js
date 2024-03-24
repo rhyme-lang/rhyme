@@ -189,6 +189,7 @@ test("aggregateAsKey", () => {
 
     let res1 = f1.c1({data})
     let res2 = f2.c1({data})
+    let res2_opt = f2.c1_opt({data})
     let res1_new = f1.c2({data}, true)
     let res2_new = f2.c2({data}, true)
 
@@ -233,7 +234,8 @@ test("aggregateAsKey", () => {
     // partial sums show up in the structure
 
     expect(res1).toEqual(bug1)
-    expect(res2).toEqual(e2_alt_string)
+    expect(res2).toEqual(bug2)
+    expect(res2_opt).toEqual(e2_alt_string)
     expect(res1_new).toEqual(e1)
     expect(res2_new).toEqual(e2_alt)
 })

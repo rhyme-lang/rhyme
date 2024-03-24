@@ -138,10 +138,12 @@ api["exec"] = (query, data) => {
 // }
 api["query"] = api["compile"] = (query) => {
     let rep = ir.createIR(query)
-    let c1 = new_codegen.generate(rep)
+    let c1 = codegen.generate(rep)
+    let c1_opt = new_codegen.generate(rep)
     let c2 = compile(query)
     let wrapper = (x) => {
         let res1 = c1(x)
+        let res1_opt = c1_opt(x)
         let res2 = c2(x)
 
         let cmp = src => ({
@@ -152,24 +154,41 @@ api["query"] = api["compile"] = (query) => {
           }})
         try { cmp = expect } catch (e) {} // use test runner if available
 
+        cmp(res1_opt).toEqual(res1)
         cmp(res2).toEqual(res1)
         return res2
     }
     wrapper.c1 = c1
+    wrapper.c1_opt = c1_opt
     wrapper.c2 = c2
     wrapper.explain = c1.explain
+    wrapper.explain_opt = c1_opt.explain
     wrapper.explain2 = c2.explain
     return wrapper
 }
 api["compileFastPathOnly"] = (query) => {
     let rep = ir.createIR(query)
-    let c1 = new_codegen.generate(rep)
+    let c1 = codegen.generate(rep)
+    let c1_opt = new_codegen.generate(rep)
     let wrapper = (x) => {
         let res1 = c1(x)
+        let res1_opt = c1_opt(x)
+
+        let cmp = src => ({
+          toEqual: dst => {
+            let ssrc = JSON.stringify(src)
+            let sdst = JSON.stringify(dst)
+            console.assert(ssrc == sdst, "result mismatch")
+          }})
+        try { cmp = expect } catch (e) {} // use test runner if available
+
+        cmp(res1_opt).toEqual(res1)
         return res1
     }
     wrapper.c1 = c1
+    wrapper.c1_opt = c1_opt
     wrapper.explain = c1.explain
+    wrapper.explain_opt = c1_opt.explain
     return wrapper
 }
 
