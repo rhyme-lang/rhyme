@@ -890,6 +890,10 @@ let inferBwd2 = out => q => {
     path.map(inferBwd2(out)) // needed here?
     let ps = path.filter(p => 
       intersect(trans(p.vars), trans(q.vars)).length > 0)
+
+    // XXX REC: solves arrayTest6Flatten?
+    // ps = ps.filter(x => vars[x.op].vars.indexOf(""+e1.op) < 0)
+
     let pathVs = ps.flatMap(x => x.real)
     // let pathVs = ps.map(x => x.op)
 
@@ -914,6 +918,19 @@ let inferBwd2 = out => q => {
 
 
     let save = path
+
+    // let drop = path.filter(x => vars[x.op].vars.includes(e1.op))
+
+    // XXX REC: solves filter ordering issues, but
+    // not enough to remove tmp2tmp fix below!!!
+    path = path.filter(x => vars[x.op].vars.indexOf(""+e1.op) < 0)
+
+    // console.log("XXX "+pretty(q)+"\n"+
+    //   trans(path.flatMap(x => x.vars))+"\n"+
+    //   drop.map(pretty)+"\n"+
+    //   e1.op+"\n"+
+    //   vksAll
+    //   )
 
     // if (!trans(path.flatMap(x => x.vars)).includes(e1.op))
       path = [...path, e1]
@@ -1613,7 +1630,6 @@ console.log(emitPseudo(q))
     q.real = q.real.filter(x => !vars[x].tmps.includes(Number(ix)))
     q.free = q.free.filter(x => !vars[x].tmps.includes(Number(ix)))
   }
-
 
 console.log("---- AFTER REC FIXUP")
 console.log(emitPseudo(q))
