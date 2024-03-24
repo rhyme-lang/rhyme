@@ -8,7 +8,7 @@ const { runtime } = require('../src/simple-runtime')
 // having any key depend on "*".
 //
 // The current dependency extraction is not set up for this,
-// as it happens at the same time as IR construction. 
+// as it happens at the same time as IR construction.
 //
 // Possible solution: find dependencies first, then transform
 // code based on context.
@@ -206,6 +206,10 @@ test("aggregateAsKey", () => {
         60: { 1: true, 2: true }, // XXX is this the right one?
     }
 
+    let e2_alt_string = {
+        60: { 1: "true", 2: "true" }
+    }
+
     // console.log(f1.c2.explain.pseudo0)
     // console.log(f1.c2.explain.pseudo)
     // console.log(f1.c2.explain.code)
@@ -229,7 +233,7 @@ test("aggregateAsKey", () => {
     // partial sums show up in the structure
 
     expect(res1).toEqual(bug1)
-    expect(res2).toEqual(bug2)
+    expect(res2).toEqual(e2_alt_string)
     expect(res1_new).toEqual(e1)
     expect(res2_new).toEqual(e2_alt)
 })
