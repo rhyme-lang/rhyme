@@ -1,5 +1,6 @@
 const { api } = require('../src/rhyme')
 const { rh } = require('../src/parser')
+const { runtime } = require('../src/simple-runtime')
 
 
 // Nested grouping: this case is challenging because we're

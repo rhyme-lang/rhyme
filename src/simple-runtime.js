@@ -86,6 +86,13 @@ rt.pure.flatten = (...x1) => { // array flatten
   return x1.flat()
 }
 
+
+rt.pure.and = (x1,x2) => {
+  if (x1 === undefined) return undefined
+  return x2
+}
+
+
 rt.singleton = (x1) => { // 'mkset'
   if (x1 === undefined) return {}
   return {[x1]:true}
