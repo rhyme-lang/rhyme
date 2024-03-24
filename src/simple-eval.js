@@ -500,7 +500,7 @@ let extract2 = q => {
 
 
 let extract3 = q => {
-  if (q.key == "stateful") {
+  if (q.key == "stateful" || q.key == "update") {
     let es = q.arg.map(extract3)
     let tmps = unique(es.flatMap(x => x.tmps))
     let ix = assignments.length
@@ -508,7 +508,7 @@ let extract3 = q => {
     return { ...q, key: "ref", op: ix, arg: [],
       tmps:[ix]
     }
-  } else if (q.key == "group") {
+/*  } else if (q.key == "group") {
     let es = q.arg.map(extract3)
     let tmps = unique(es.flatMap(x => x.tmps))
     let ix = assignments.length
@@ -523,7 +523,7 @@ let extract3 = q => {
     assignments.push({ ...q, arg: es, tmps })
     return { ...q, key: "ref", op: ix, arg: [],
       tmps:[ix] // real: q.real
-    }
+    }*/
   } else if (q.arg) {
     let es = q.arg.map(extract3)
     let tmps = unique(es.flatMap(x => x.tmps))
@@ -626,12 +626,13 @@ let infer = q => {
     let [e0,e1,e2] = q.arg.map(infer)
     // q.vK = infer(q.vK)
     // if (q.aux) q.aux = infer(q.aux)
-    // NOTE: e1 has been set to a dummy val by extract
+    // XXX NOTE previous: e1 has been set to a dummy val by extract
+    // XXX NOTE: ignoring e3 here!!!
     q.vK = e1
     q.tmps = unique([...e0.tmps, ...e1.tmps, ...e2.tmps])
     q.vars = unique([...e0.vars, ...e1.vars, ...e2.vars, q.vK.op])
-    q.mind = diff(unique([...e0.mind, /*...e1.mind,*/ ...e2.mind]), [q.vK.op])
-    q.dims = diff(unique([...e0.dims, /*...e1.dims,*/ ...e2.dims]), [q.vK.op])
+    q.mind = diff(unique([...e0.mind, /*...e1.mind,*/ ...e2.mind]), e1.vars)
+    q.dims = diff(unique([...e0.dims, /*...e1.dims,*/ ...e2.dims]), e1.vars)
   } else {
     console.error("unknown op", q)
   }
@@ -911,8 +912,11 @@ let inferBwd2 = out => q => {
 
 
 
+
     let save = path
-    path = [...path, e1]
+
+    // if (!trans(path.flatMap(x => x.vars)).includes(e1.op))
+      path = [...path, e1]
 
     let e2 = inferBwd2(union(out, vks1))(q.arg[2])
 
@@ -920,6 +924,9 @@ let inferBwd2 = out => q => {
 
     q.free = unique([...e2.real, ...pathVs, ...vksAll])
     q.real = intersect(q.free, out)
+
+
+
 
   } else {
     console.error("unknown op", q)
@@ -1140,6 +1147,10 @@ let computeOrder = q => {
     let f = filters[i]
     let v = f.arg[1].op // var name
     f = f.arg[0] // XXX
+
+    // if (f.free.includes(v)) continue
+
+    // XXX free or real??
     for (let w of f.free) deps.var2var[v][w] = true
     for (let j of f.tmps) deps.var2tmp[v][j] = true
   }
@@ -1158,6 +1169,9 @@ let computeOrder = q => {
       for (let j in deps.var2tmp[v]) 
         deps2.tmp2tmp[i][j] = true
   }
+
+  // console.dir(deps)
+  // console.dir(deps2)
 
   let order = scc(Object.keys(deps2.tmp2tmp), x => Object.keys(deps2.tmp2tmp[x])).reverse()
   return order
@@ -1371,13 +1385,13 @@ let emitFilters = (real) => buf => {
     // to end of list. Need to be careful about cycles.
     //
     // TODO: would be better to use proper topsort
-    let orderingProblem = g1.real.filter(x => !seen[x] && vars[x])
+    let orderingProblem = g1.real.filter(x => x != v1 && !seen[x] && vars[x])
     if (orderingProblem.length != 0) { // ok, just emit current
       if (skipcount[i]++ < 10) {
         worklist.push(i)
         continue
       } else {
-        console.warn("unsolved filter ordering problem:"+orderingProblem)
+        console.warn("unsolved filter ordering problem:"+orderingProblem+" at "+v1)
       }
     }
 
@@ -1524,7 +1538,7 @@ let compile = (q,{
 
   reset()
 
-  // let console = { log: () => {} }
+  let console = { log: () => {} }
 
   // ---- front end ----
 
@@ -1590,6 +1604,19 @@ console.log(emitPseudo(q))
 console.log("---- AFTER EXTRACT2/3")
 console.log(emitPseudo(q))
 
+// XXX recursion!!
+  // console.log(vars)
+  computeDependencies() // want var2tmp now
+  // console.log(vars)
+  for (let ix in assignments) {
+    let q = assignments[ix]
+    q.real = q.real.filter(x => !vars[x].tmps.includes(Number(ix)))
+    q.free = q.free.filter(x => !vars[x].tmps.includes(Number(ix)))
+  }
+
+
+console.log("---- AFTER REC FIXUP")
+console.log(emitPseudo(q))
 
 
 
