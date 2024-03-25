@@ -47,8 +47,8 @@ function buildDeps(assignmentStms, generatorStms, tmpVarWriteRank) {
     let n = assign2Node[i]
     let e = assignmentStms[i]
     for (let v of e.deps) {
-        if (isloop(v)) deps[n][gen2Node[v]] = true
-        if (istmp(v)) deps[n][tmp2Node[v]] = true
+      if (isloop(v)) deps[n][gen2Node[v]] = true
+      if (istmp(v)) deps[n][tmp2Node[v]] = true
     }
   }
 
@@ -68,8 +68,8 @@ function buildDeps(assignmentStms, generatorStms, tmpVarWriteRank) {
     let n = gen2Node[e]
     for (let gen of gens) {
       for (let v of gen.deps) {
-          if (isloop(v)) deps[n][gen2Node[v]] = true
-          if (istmp(v)) deps[n][tmp2Node[v]] = true
+        if (isloop(v)) deps[n][gen2Node[v]] = true
+        if (istmp(v)) deps[n][tmp2Node[v]] = true
       }
     }
   }
@@ -118,23 +118,35 @@ function buildDeps(assignmentStms, generatorStms, tmpVarWriteRank) {
   }
 
   let stmt2stmtByLoop = {}
+  let stmt2stmtloopAfterloop = {}
+
+  let stmt2loops = Object.keys(stmtdeps).map(s => nodes[s].val.deps.filter(x => isloop(x)))
 
   for (let t in stmtdeps) {
     stmt2stmtByLoop[t] = {}
-    let inLoop = nodes[t].val.deps.filter(x => isloop(x))
+    stmt2stmtloopAfterloop[t] = {}
+    let curloops = stmt2loops[t]
     for (let p in stmtdeps[t]) {
       stmt2stmtByLoop[t][p] = {}
+      stmt2stmtloopAfterloop[t][p] = {}
       if (nodes[p].val.writeSym != nodes[t].val.writeSym) {
-        for (let l of nodes[p].val.deps) {
-          if (isloop(l) && !inLoop.includes(l)) {
+        let preloops = stmt2loops[p]
+        for (let l of preloops) {
+          if (!curloops.includes(l)) {
             stmt2stmtByLoop[t][p][l] = true
+            for (let l1 of curloops) {
+              if (!preloops.includes(l1)) {
+                stmt2stmtloopAfterloop[t][p][l1] ??= {}
+                stmt2stmtloopAfterloop[t][p][l1][l] = true
+              }
+            }
           }
         }
       }
     }
   }
 
-  return { nodes, assignByTmp, gensBySym, stmtdeps, loopdeps, stmt2stmtByLoop, assign2Node, tmp2Node, gen2Node }
+  return { nodes, assignByTmp, gensBySym, stmtdeps, loopdeps, stmt2stmtByLoop, stmt2stmtloopAfterloop, assign2Node, tmp2Node, gen2Node }
 }
 
 exports.generate = (ir) => {
@@ -149,6 +161,7 @@ exports.generate = (ir) => {
   let assignByTmp = deps.assignByTmp
   let gensBySym = deps.gensBySym
   let stmt2stmtByLoop = deps.stmt2stmtByLoop
+  let stmt2stmtloopAfterloop = deps.stmt2stmtloopAfterloop
 
   let res = ir.res
   //
@@ -163,31 +176,30 @@ exports.generate = (ir) => {
   let code = []
   let indent = 0
   function emit(str) {
-      if (str.indexOf("}") == 0) indent--
-      code.push("".padEnd(indent * 4, ' ') + str)
-      //console.log("".padEnd(indent * 4, ' ') + str + "\n")
-      if (str.indexOf("{") >= 0) indent++
-      if (str.indexOf("}") > 0) indent--
+    if (str.indexOf("}") == 0) indent--
+    code.push("".padEnd(indent * 4, ' ') + str)
+    //console.log("".padEnd(indent * 4, ' ') + str + "\n")
+    if (str.indexOf("{") >= 0) indent++
+    if (str.indexOf("}") > 0) indent--
   }
   emit("inp => {")
   emit("let tmp = {}")
   if (debug) {
-      print("---- begin code ----")
-      for (let e of assignmentStms)
-          if (e.txt.indexOf("??=") < 0) // skip init stmts
-              print(e.txt + "  // " + e.writeSym + " #" + e.writeRank + " <- " + e.deps)
-      print("return " + res.txt)
-      print("---- end code ----")
+    print("---- begin code ----")
+    for (let e of assignmentStms)
+      if (e.txt.indexOf("??=") < 0) // skip init stmts
+        print(e.txt + "  // " + e.writeSym + " #" + e.writeRank + " <- " + e.deps)
+    print("return " + res.txt)
+    print("---- end code ----")
   }
   explain.ir = {}
   explain.ir.assignments = [...assignmentStms]
   explain.ir.generators = [...generatorStms]
-  let generatorStmsCopy = [...generatorStms] // TODO(supun): temporary fix
 
   explain.dependencies = { nodes, stmtdeps, loopdeps, stmt2stmtByLoop }
   if (debug) {
-      inspect({ stmtdeps })
-      print("---- end dependency data ----")
+    inspect({ stmtdeps })
+    print("---- end dependency data ----")
   }
   //
   //
@@ -255,7 +267,7 @@ exports.generate = (ir) => {
     emit("for (let " + quoteVar(e.sym) + " in " + e.rhs + ") {")
     // filters
     for (let e1 of es) {
-        emit("if (" + e1.rhs + "[" + quoteVar(e1.sym) + "] === undefined) continue")
+      emit("if (" + e1.rhs + "[" + quoteVar(e1.sym) + "] === undefined) continue")
     }
 
     // recurse!
@@ -271,6 +283,48 @@ exports.generate = (ir) => {
         closedLoopByStmt[i][l] = true
       }
     }
+  }
+  function nextLoop(stmts, emittableAfterLoop) {
+    let loopStmtCount = {}
+    for (let i of emittableAfterLoop) {
+      let loops = loopdeps[i]
+      for (let l in loops) {
+        if (loopEmittable(l)) {
+          loopStmtCount[l] ??= 0
+          loopStmtCount[l] += 1
+        }
+      }
+    }
+
+    let newloop
+    let loops = Object.keys(loopStmtCount)
+
+    if (loops.length === 0) return newloop
+
+    let loopAfterloop = {}
+
+    for (let i of stmts) {
+      for (let j of stmts) {
+        if (j in stmt2stmtloopAfterloop[i]) {
+          for (let li in stmt2stmtloopAfterloop[i][j]) {
+            for (let lj in stmt2stmtloopAfterloop[i][j][li]) {
+              if (!isOpened(li) && !isOpened(lj)) {
+                loopAfterloop[li] ??= {}
+                loopAfterloop[li][lj] = true
+              }
+            }
+          }
+        }
+      }
+    }
+
+    let candidates = loops.filter(l => loopAfterloop[l] === undefined || Object.keys(loopAfterloop[l]).length === 0)
+    if (candidates.length === 0) candidates = loops
+    for (let l of candidates) {
+      newloop ??= l
+      if (loopStmtCount[l] > loopStmtCount[newloop]) newloop = l
+    }
+    return newloop
   }
   function emitCode(stmts) {
     while(filterDepsAvailable(stmts).length > 0) {
@@ -288,29 +342,14 @@ exports.generate = (ir) => {
 
       if (emittableAfterLoop.length == 0) return stmts
 
-      let loopStmtCount = {}
-      for (let i of emittableAfterLoop) {
-        let loops = loopdeps[i]
-        for (let l in loops) {
-          if (loopEmittable(l)) {
-            loopStmtCount[l] ??= 0
-            loopStmtCount[l] += 1
-          }
-        }
-      }
+      let newloop = nextLoop(stmts, emittableAfterLoop)
 
-      if (Object.keys(loopStmtCount).length == 0) {
+      if (newloop === undefined) {
         throw new Error("No emittable loops")
       }
 
-      let maxGen
-      for (let l in loopStmtCount) {
-        maxGen ??= l
-        if (loopStmtCount[l] > loopStmtCount[maxGen]) maxGen = l
-      }
-
-      emitLoopProlog(maxGen)
-      let innerStmts = stmts.filter(i => loopdeps[i][maxGen])
+      emitLoopProlog(newloop)
+      let innerStmts = stmts.filter(i => loopdeps[i][newloop])
       let remainingStmts = emitCode(innerStmts)
       emitLoopEpilog()
       if (innerStmts.length == remainingStmts.length) {
