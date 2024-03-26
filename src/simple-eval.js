@@ -871,6 +871,12 @@ let inferBwd2 = out => q => {
     let e0 = inferBwd2(out)(q.arg[0]) // what are we extending
     let e1 = inferBwd2(out)(q.arg[1]) // key variable
 
+    // constructs such as eta-expansion may introduce
+    // recursive dependencies once statements are extracted.
+    // rather than using trans(e1.vars), we extract
+    // _single-step_ reachable variables from e1 via e3
+    // to avoid this
+
     let e1Body
     if (q.arg[3]) {
       let e3 = inferBwd2(union(out, q.arg[3].mind))(q.arg[3]) // filter expr
@@ -883,28 +889,17 @@ let inferBwd2 = out => q => {
     }
 
     let e1Real = [e1.op, ...diff(e1Body.real,out)]
-    // diff: fix for day4-part1
+    // diff(.., out): this is the fix for day4-part1
 
-    let extra = diff(trans(e1.vars), trans(q.arg[2].vars))
-
-    // console.log("EXTRA "+extra+" / "+e1Real)
-
-    // if (e1.op == "K1") {
-    //   console.log(pretty(q))
-    //   console.log(extra)
-    //   console.log(e1Real)
-    // }
-
-    // if (e1.op == "*line") {
-    //   console.log(pretty(q))
-    //   console.log(extra)
-    //   console.log(e1Real)
-    // }
+    let extra = diff(e1Real, (q.arg[2].vars))
 
 
+    // generatorAsFilter vs aggregateAsKey:
+    // if the key is correlated with the body, we need
+    // to track its transitive vars, too. Otherwise not.
 
     let keyAndBodyCorrelated = 
-      intersects(trans(e1.vars), trans(q.arg[2].vars))
+      intersects(e1Real, (q.arg[2].vars))
       // && !intersects(trans(e1.vars), trans(path.flatMap(x => x.vars)))
     let vks1
     if (keyAndBodyCorrelated) {
