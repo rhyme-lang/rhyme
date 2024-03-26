@@ -882,7 +882,8 @@ let inferBwd2 = out => q => {
         vars: [], mind: [], dims: [], real: [] }
     }
 
-    let e1Real = [e1.op, ...e1Body.real]
+    let e1Real = [e1.op, ...diff(e1Body.real,out)]
+    // diff: fix for day4-part1
 
     let extra = diff(trans(e1.vars), trans(q.arg[2].vars))
 
@@ -1731,7 +1732,7 @@ console.log(emitPseudo(q))
 
 // XXX recursion!!
   // console.log(vars)
-  computeDependencies() // want var2tmp now
+  // computeDependencies() // want var2tmp now
   // console.log(vars)
   for (let ix in assignments) {
     let q = assignments[ix]
