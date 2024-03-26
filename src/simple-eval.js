@@ -351,24 +351,7 @@ let extract0 = q => {
 }
 
 
-let extract2 = q => {
-  if (q.arg) q.arg.map(extract2)
-  if (q.key == "var") {
-    vars[q.op] ??= { vars:[], tmps: [] }
-  } else if (q.key == "get") {
-    let [e1,e2] = q.arg
-    if (e2.key == "var") {
-      let str = JSON.stringify(q)
-      if (filters.map(x => JSON.stringify(x)).indexOf(str) < 0) {
-      let ix = filters.length
-      let q1 = JSON.parse(str)
-      filters.push(q1) // deep copy...
-      }
-    }
-  }
-}
-
-
+// extract assignments
 let extract3 = q => {
   if (q.key == "stateful" || q.key == "update") {
     let es = q.arg.map(extract3)
@@ -387,6 +370,24 @@ let extract3 = q => {
   }
 }
 
+
+// extract filters
+let extract2 = q => {
+  if (q.arg) q.arg.map(extract2)
+  if (q.key == "var") {
+    vars[q.op] ??= { vars:[], tmps: [] }
+  } else if (q.key == "get") {
+    let [e1,e2] = q.arg
+    if (e2.key == "var") {
+      let str = JSON.stringify(q)
+      if (filters.map(x => JSON.stringify(x)).indexOf(str) < 0) {
+      let ix = filters.length
+      let q1 = JSON.parse(str)
+      filters.push(q1) // deep copy...
+      }
+    }
+  }
+}
 
 
 
@@ -1114,46 +1115,11 @@ let emitCode = (q, order) => {
 
     buf.push("// --- tmp"+i+" ---")
 
-
-    let fv = q.free // union(q.path,q.free)
+    let fv = q.free
 
     let buf1 = []
     let buf2 = []
     let buf3 = []
-
-    // XXXX DOUBLE-SUM PROBLEM
-    // let pathVars = unique(q.path.flatMap(x => x.free))
-    // let seenVars = {}
-    // for (let p of q.path) {
-    //   let k1 = buf.length
-    //   for (let vv of p.free) {
-    //     if (q.free.includes(vv)) {
-    //       buf2.push("// skip pre-gen key path "+pretty(p)+" to "+quoteVar(vv))
-    //       continue 
-    //       // seenVars[vv] = true
-    //     }
-
-    //     // build temp structure
-    //     let k = buf.length
-    //     buf.push("// pre-gen key path "+pretty(p)+" to "+quoteVar(vv))
-    //     buf.push("let temp"+k+" = {}")
-    //     emitFilters(p.free)(buf)
-    //     buf.push("{ temp"+k+"["+codegen(p)+"] = {}; temp"+k+"["+codegen(p)+"]["+quoteVar(vv)+"] = true; }")
-    //     // XXX note that we only keep a single entry!
-
-    //     let i = p.pathkey
-
-    //     if (k == k1) // first time we see path elem
-    //       buf1.push("for (let K"+i+" in temp"+k+") ")
-    //     if (!seenVars[vv])
-    //       buf1.push("for (let "+quoteVar(vv)+" in temp"+k+"[K"+i+"]) {") // only one entry!!
-    //     else
-    //       buf2.push("if ("+quoteVar(vv)+" in temp"+k+"[K"+i+"]) {") // only one entry!!
-    //     // buf1.push("{")
-    //     buf3.push("}")
-    //     seenVars[vv] = true
-    //   }
-    // }
 
     buf.push(...buf1)
     emitFilters(fv)(buf)
