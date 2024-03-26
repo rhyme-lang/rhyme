@@ -404,29 +404,24 @@ let extract2 = q => {
 
 let infer = q => {
   if (q.key == "input") {
-    q.tmps = []
     q.vars = []
     q.mind = [] 
     q.dims = []
   } else if (q.key == "const") {
-    q.tmps = []
     q.vars = []
     q.mind = []
     q.dims = []
   } else if (q.key == "var") {
-    q.tmps = []
     q.vars = [q.op]
     q.mind = [q.op]
     q.dims = [q.op]
   } else if (q.key == "get") {
     let [e1,e2] = q.arg.map(infer)
-    q.tmps = unique([...e1.tmps, ...e2.tmps])
     q.vars = unique([...e1.vars, ...e2.vars])
     q.mind = unique([...e1.mind, ...e2.mind])
     q.dims = unique([...e1.dims, ...e2.dims])
   } else if (q.key == "pure" || q.key == "mkset") {
     let es = q.arg.map(infer)
-    q.tmps = unique(es.flatMap(x => x.tmps))
     q.vars = unique(es.flatMap(x => x.vars))
     q.mind = unique(es.flatMap(x => x.mind))
     q.dims = unique(es.flatMap(x => x.dims))
@@ -441,7 +436,6 @@ let infer = q => {
     // information yet. Specifically, transitive var dependencies are
     // only available after infer.
 
-    q.tmps = [...e1.tmps]
     q.vars = [...e1.vars]
 
     q.mind = [] // can always reduce to one elem
@@ -452,7 +446,6 @@ let infer = q => {
     }
   } else if (q.key == "update") {
     let [e0,e1,e2] = q.arg.map(infer)
-    q.tmps = unique([...e0.tmps, ...e1.tmps, ...e2.tmps])
     q.vars = unique([...e0.vars, ...e1.vars, ...e2.vars])
     q.mind = diff(unique([...e0.mind, /*...e1.mind,*/ ...e2.mind]), e1.vars)
     q.dims = diff(unique([...e0.dims, /*...e1.dims,*/ ...e2.dims]), e1.vars)
@@ -713,7 +706,7 @@ let computeDependencies = () => {
     deps.tmp2tmp[i] = {}
     let q = assignments[i]
     for (let v of q.vars) deps.tmp2var[i][v] = true
-    for (let j of q.tmps) deps.tmp2tmp[i][j] = true
+    if (q.tmps) for (let j of q.tmps) deps.tmp2tmp[i][j] = true
   }
 
   for (let i in filters) {
@@ -723,7 +716,7 @@ let computeDependencies = () => {
     f = f.arg[0] // XXX skip dep on var itself!
 
     for (let w of f.vars) deps.var2var[v][w] = true
-    for (let j of f.tmps) deps.var2tmp[v][j] = true
+    if (f.tmps) for (let j of f.tmps) deps.var2tmp[v][j] = true
   }
 
 
