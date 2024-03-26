@@ -407,3 +407,122 @@ test("undefinedFields3", () => {
     expect(res).toEqual(expected)
     // NOTE: fixed by being more careful about decorrelation
 })
+
+
+test("eta1", () => { // OK -- no eta
+    let data = [
+        {product: "iPhone", model: "7", quantity: 10},
+        {product: "Galaxy", model: "S6", quantity: 20},
+    ]
+    let q0 = rh`sum data.*A.quantity | group data.*A.product`
+    let func = compile(q0)
+    let res = func({ data })
+
+    // console.log(func.explain.pseudo0)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = {
+      "iPhone": 10,
+      "Galaxy": 20
+    }
+    expect(res).toEqual(expected)
+})
+
+test("eta2", () => { // OK -- eta in body of group expr
+    let data = [
+        {product: "iPhone", model: "7", quantity: 10},
+        {product: "Galaxy", model: "S6", quantity: 20},
+    ]
+    let data0 = "data"
+    let data1 = {"*E": "data.*E"}
+    let q0 = rh`sum data.*A.quantity | group ${data1}.*A.product`
+    let func = compile(q0)
+    let res = func({ data })
+
+    // console.log(func.explain.pseudo0)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = {
+      "iPhone": 10,
+      "Galaxy": 20
+    }
+    expect(res).toEqual(expected)
+})
+
+test("eta3", () => { // BUG -- eta in key of group expr
+    let data = [
+        {product: "iPhone", model: "7", quantity: 10},
+        {product: "Galaxy", model: "S6", quantity: 20},
+    ]
+    let data0 = "data"
+    let data1 = {"*E": "data.*E"}
+    let q0 = rh`sum ${data1}.*A.quantity | group ${data1}.*A.product`
+    let func = compile(q0)
+    let res = func({ data })
+
+    // console.log(func.explain.pseudo0)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = {
+      "iPhone": 10,
+      "Galaxy": 20
+    }
+    expect(res).toEqual(expected)
+    // NOTE: requires recursion fix
+})
+
+// this is the core of plainSortTest3
+test("eta4", () => { // BUG -- eta via array constr
+    let data = [
+        {product: "iPhone", model: "7", quantity: 10},
+        {product: "Galaxy", model: "S6", quantity: 20},
+    ]
+    let data0 = "data"
+    let data1 = ["data.*E"]
+    let q0 = rh`sum ${data1}.*A.quantity | group ${data1}.*A.product`
+    let func = compile(q0)
+    let res = func({ data })
+
+    // console.log(func.explain.pseudo0)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = {
+      "iPhone": 10,
+      "Galaxy": 20
+    }
+    expect(res).toEqual(expected)
+    // NOTE: requires recursion fix
+})
+
+
+/*
+
+The issue:
+
+{ data.*.key: sum data.*.value }
+
+for (* <- data)
+  for (K <- mkset(data.*.key))
+    tmp[K] += data.*.value
+
+Want:
+
+{ [data.*E].*.key: sum [data.*E].*.value }
+
+for (* <- [data.*E])
+  for (K <- mkset([data.*E].*.key))
+    tmp[K] += [data.*E].*.value
+
+But we're more likely to get:
+
+for (*E <- data)
+  for (* <- [data.*E])
+    ...
+
+*/
+
+

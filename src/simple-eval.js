@@ -842,39 +842,97 @@ let inferBwd2 = out => q => {
     let es = q.arg.map(inferBwd2(out))
     q.real = unique(es.flatMap(x => x.real))
     q.free = unique(es.flatMap(x => x.free))
+
   } else if (q.key == "stateful") {
     q.out = out
     let out1
+    // XXX distinction necessary?
+    out1 = union(out,q.arg[0].dims) // mind vs dim?
+    let [e1] = q.arg.map(inferBwd2(out1))
+    q.free = e1.real
 
-    // console.log("XXX STATEFUL " + pretty(q) +"\nout: " + out)
+    // let extra = path.filter(x => intersect(vars[x].vars, e1.real).length >= 0)
+    let extra = path.flatMap(x => x.xxreal).filter(x => intersect(vars[x].vars, e1.real).length >= 0)
+    // let extra = path.flatMap(x => x.vars).filter(x => intersect(vars[x].vars, e1.real).length >= 0)
 
-    // XXX distinction not necessary?
+    q.free = union(q.free, extra)
+    q.real = intersect(out, q.free)
+    q.path = path
+  } else if (q.key == "update") {
+    q.out = out
+    q.path = path
+
+    let e0 = inferBwd2(out)(q.arg[0]) // what are we extending
+
+    let e1 = inferBwd2(out)(q.arg[1]) // key variable
+
+    let e1Body
+    if (q.arg[3]) {
+      let e3 = inferBwd2(union(out, q.arg[3].mind))(q.arg[3]) // filter expr
+      e1Body = e3.arg[0]
+      console.assert(e3.key == "get")
+      console.assert(e3.arg[1].key == "var" && e3.arg[1].op == e1.op)
+    } else {
+      e1Body = { key: "const", op: "???", 
+        vars: [], mind: [], dims: [], real: [] }
+    }
+
+    let e1Real = [e1.op, ...e1Body.real]
+    e1.xxreal = e1Real
+
+    let extra = diff(trans(e1.vars), (q.arg[2].vars))
+    // let extra = diff(e1Real, trans(q.arg[2].vars))
+    // if (diff(extra,[e1.op]).length > 0) 
+      // console.log("EXTRA "+extra+" / "+e1Real)
+
+    let intersects = (a,b) => intersect(a,b).length > 0
+    let overlaps = (a,b) => intersects(trans(a),trans(b))
+
+    let keyAndBodyCorrelated = intersects(trans(e1.vars), (q.arg[2].vars))
+    // let keyAndBodyCorrelated = intersects(e1Real, trans(q.arg[2].vars))
+    let vks1
+    if (keyAndBodyCorrelated) {
+      e1.xxreal = extra //e1Real
+      vks1 = unique([e1.op,...extra])
+    } else {
+      e1.xxreal = [e1.op]
+      vks1 = [e1.op]
+    }
+
+    let save = path
+    path = [...path,e1]
+    let e2 = inferBwd2(union(out, vks1))(q.arg[2])
+    path = save
+
+    q.free = unique([...e0.real, ...e1Real, ...e2.real])
+    q.real = intersect(q.free, out)
+
+
+  } else if (q.key == "stateful") {
+    q.out = out
+    let out1
+    // XXX distinction necessary?
     if (q.mode == "reluctant")
       out1 = union(out,q.arg[0].mind) // mind vs dim?
     else
       out1 = union(out,q.arg[0].dims) // mind vs dim?
     let [e1] = q.arg.map(inferBwd2(out1))
-
-    // // decorrelate path
-    // q.path.map(inferBwd(out))
-    // q.path = q.path.filter(p => 
-    //   intersect(trans(p.vars), trans(q.vars)).length > 0)
-
-    path.map(inferBwd2(out))
+    // decorrelate path
+    // path.map(inferBwd2(out))
     let ps = path.filter(p => 
-      intersect(trans(p.vars), trans(q.vars)).length > 0)
-
-    // let pathVs = q.path.flatMap(x => x.real)
-    // pathVs = trans(q.path.flatMap(x => x.vars)) wrong res
-    let pathVs = ps.flatMap(x => x.real)
-    // let pathVs = ps.map(x => x.op)
-
-    // console.log("XXX1 " + path.map(pretty) + " / " + pretty(q))
-    // console.log("XXX2 " + path.map(x => trans(x.vars)) + " / "+trans(q.vars))
-    // console.log("XXX3 " + path.map(x => x.real))
-
+      // intersect(trans(p.vars), (q.dims)).length > 0
+      intersect(trans(p.vars), (e1.vars)).length > 0
+      )
+    // let pathVs = ps.flatMap(x => x.real)
+    // q.free = unique([...e1.real, ...pathVs])
+    // q.real = intersect(out, q.free)
+    // same code below in expanded form:
+    let pathVs = intersect(out, trans(ps.map(x => x.op)))
+    // let pathVs = trans(ps.map(x => x.op))
     q.free = unique([...e1.real, ...pathVs])
+    // q.real = unique([...intersect(out,e1.real), ...pathVs])
     q.real = intersect(out, q.free)
+    q.path = ps
   } else if (q.key == "update") {
     q.out = out
 
@@ -887,62 +945,82 @@ let inferBwd2 = out => q => {
     // let e1 = inferBwd2(union(out, q.arg[1].mind))(q.arg[1]) // key variable
     let e1 = inferBwd2(out)(q.arg[1]) // key variable
 
-    path.map(inferBwd2(out)) // needed here?
-    let ps = path.filter(p => 
-      intersect(trans(p.vars), trans(q.vars)).length > 0)
-
-    // XXX REC: solves arrayTest6Flatten?
-    // ps = ps.filter(x => vars[x.op].vars.indexOf(""+e1.op) < 0)
-
-    let pathVs = ps.flatMap(x => x.real)
-    // let pathVs = ps.map(x => x.op)
+    // path.map(inferBwd2(out)) // needed here?
 
 // generatorAsFilter --- need to include F
 // aggregateAsKey --- do not include *
 
-    let vks1
-    let vksAll = trans(e1.vars)
-    if (intersect(vksAll, q.arg[2].vars).length > 0) {
-      vks1 = unique([e1.op, ...diff(vksAll, q.arg[2].vars)])
-    } else {
-      vks1 = unique([e1.op])
-    }
+    let intersects = (a,b) => intersect(a,b).length > 0
+    let overlaps = (a,b) => intersects(trans(a),trans(b))
 
-    // console.log("YYY " + path.map(pretty) + " / " + pretty(q))
-    // console.log("YYY " + vks1)
-
-
-    // console.log("XXX UPDATE " + pretty(q) + "\nvks1: "+vks1)
-
-
+    let keyAndBodyCorrelated = intersects(trans(e1.vars), trans(q.arg[2].vars))
 
 
     let save = path
 
-    // let drop = path.filter(x => vars[x.op].vars.includes(e1.op))
+    let ps = path.filter(p => 
+        trans(p.vars).includes(e1.op) && trans(e1.vars).length == 1 && !overlaps(p.vars, q.arg[2].vars)
+     || !trans(p.vars).includes(e1.op) && trans(e1.vars).length > 1 && overlaps(p.vars, e1.vars)
+     || !trans(p.vars).includes(e1.op) && overlaps(p.vars, q.arg[2].vars)
+     || !trans(p.vars).includes(e1.op) && overlaps(p.vars, q.arg[2].vars)
+    )
 
-    // XXX REC: solves filter ordering issues, but
-    // not enough to remove tmp2tmp fix below!!!
-    path = path.filter(x => vars[x.op].vars.indexOf(""+e1.op) < 0)
+    // let ps = path.filter(p => overlaps(p.vars, q.vars))
 
-    // console.log("XXX "+pretty(q)+"\n"+
-    //   trans(path.flatMap(x => x.vars))+"\n"+
-    //   drop.map(pretty)+"\n"+
-    //   e1.op+"\n"+
-    //   vksAll
-    //   )
+    // no condition: groupTestNested2_encoding1 and 2 fails
+    // if (keyAndBodyCorrelated) // groupTestNested2_encoding1 fails 
+    // if (vksAll.length > 1)
+      // ps = ps.filter(p => !trans(p.vars).includes(e1.op))
 
-    // if (!trans(path.flatMap(x => x.vars)).includes(e1.op))
-      path = [...path, e1]
+    // let pathVs = ps.flatMap(x => x.real)
+    let pathVs = intersect(out, trans(ps.map(x => x.op)))
+    // let pathVs = trans(ps.map(x => x.op))
+
+    let vks1
+    let vksAll
+    if (keyAndBodyCorrelated) {
+
+      let b1 = q.arg[2].vars.includes(e1.op)
+      let b2 = trans(q.arg[2].vars).includes(e1.op)
+      if (b1 != b2) console.log(b1,b2)
+
+      ps = path.filter(p => 
+         !trans(p.vars).includes(e1.op) && overlaps(p.vars, q.arg[2].vars)
+      ||  !trans(p.vars).includes(e1.op) && overlaps(p.vars, e1.vars)
+      ||  trans(p.vars).includes(e1.op) && trans(e1.vars).length == 1 && !overlaps(p.vars, q.arg[2].vars)
+     )
+
+// console.log("PING PONG "+ps)
+
+      pathVs = /*intersect(out,*/ trans(ps.map(x => x.op))
+
+      // generatorAsFilter needs this
+      vks1 = unique([e1.op, ...diff(trans(e1.vars), trans(q.arg[2].vars))])
+
+
+      // vks1 = unique([e1.op])
+      vksAll = trans(e1.vars)
+      path = [...ps, e1]
+    } else {
+      // ps = path.filter(p => 
+        // overlaps(p.vars, q.arg[2].vars)
+      // )
+
+      // pathVs = intersect(out, trans(ps.map(x => x.op)))
+
+      // vks1 = unique([e1.op])      
+      vks1 = []
+      vksAll = trans(e1.vars)
+      path = [...ps]
+    }
 
     let e2 = inferBwd2(union(out, vks1))(q.arg[2])
 
     path = save
 
-    q.free = unique([...e2.real, ...pathVs, ...vksAll])
+    // XXX ignore e0, e3?
+    q.free = unique([...e0.real, ...e2.real, ...pathVs, ...vksAll])
     q.real = intersect(q.free, out)
-
-
 
 
   } else {
@@ -1555,7 +1633,7 @@ let compile = (q,{
 
   reset()
 
-  let console = { log: () => {} }
+  // let console = { log: () => {} }
 
   // ---- front end ----
 

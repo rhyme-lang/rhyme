@@ -59,7 +59,7 @@ test("plainSortTest2", () => {
 })
 
 test("plainSortTest3", () => {
-    let sp = sorted("countryData.*.population")
+    let sp = sorted("countryData.*D.population")
     let query = api.group(rh`countryData.${sp}.population`, rh`countryData.${sp}.city`)
 
     let func = api.compile(query)
