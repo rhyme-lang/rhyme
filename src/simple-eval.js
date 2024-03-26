@@ -1726,12 +1726,17 @@ trace.log(emitPseudo(q))
 trace.log("---- AFTER EXTRACT2/3")
 trace.log(emitPseudo(q))
 
-// XXX recursion!!
-  // console.log(vars)
-  // computeDependencies() // want var2tmp now
-  // console.log(vars)
+  // Recursion fix: eliminate simple self-recursive
+  // assignment deps by breaking the cycle.
+  // This should no longer be necessary, but we keep
+  // it around to generate a warning when triggered.
+  computeDependencies() // want var2tmp now
   for (let ix in assignments) {
     let q = assignments[ix]
+    // report a warning when triggered
+    let drop = union(q.real, q.free).filter(x => vars[x].tmps.includes(Number(ix)))
+    if (drop.length > 0)
+      console.warn("trigger recursion fix (this should no longer be necessary):\n  "+drop+" dropping at\n  "+pretty(q))
     q.real = q.real.filter(x => !vars[x].tmps.includes(Number(ix)))
     q.free = q.free.filter(x => !vars[x].tmps.includes(Number(ix)))
   }
