@@ -1650,8 +1650,6 @@ let emitCode = (q, order) => {
 
 
 
-
-
 let compile = (q,{
   altInfer = false, 
   singleResult = true // TODO: elim flag?
@@ -1659,7 +1657,10 @@ let compile = (q,{
 
   reset()
 
-  let console = { log: () => {} }
+  let trace = { 
+    log: () => {} 
+    // log: console.log
+  }
 
   // ---- front end ----
 
@@ -1668,14 +1669,14 @@ let compile = (q,{
   let src = q
 
   if (altInfer) { // alternative analysis implementation
-    console.log(q)
+    trace.log(q)
     let q0 = JSON.parse(JSON.stringify(q))
     let q1 = deno(q0)(x => {
       let y = { out: x.dims }
-      console.log("K:", x, "->", y)
+      trace.log("K:", x, "->", y)
       return y
     })
-    console.log("RES:",q1)
+    trace.log("RES:",q1)
   }
 
   // 2. Extract
@@ -1691,8 +1692,8 @@ let compile = (q,{
 
   // Pretty print (debug out)
   let pseudo0 = emitPseudo(q)
-console.log("---- AFTER INFER, EXTRACT2")
-console.log(emitPseudo(q))
+trace.log("---- AFTER INFER, EXTRACT2")
+trace.log(emitPseudo(q))
 
 
   // 4. Calculate dependencies between vars/tmps
@@ -1703,18 +1704,18 @@ console.log(emitPseudo(q))
 
   // q = extract(q)
 
-// console.log(vars)
+// trace.log(vars)
 
 
   // 5. Backward pass to infer output dimensions
   if (singleResult) {
-    // console.assert(q.mind.length == 0)
+    // trace.assert(q.mind.length == 0)
     q = inferBwd2(q.mind)(q)
   } else
     q = inferBwd2(q.dims)(q)
 
-console.log("---- AFTER INFER_BWD")
-console.log(emitPseudo(q))
+trace.log("---- AFTER INFER_BWD")
+trace.log(emitPseudo(q))
 
   q = extract3(q) // extract assignments
 
@@ -1722,8 +1723,8 @@ console.log(emitPseudo(q))
   for (let e of assignments)
     extract2(e)
 
-console.log("---- AFTER EXTRACT2/3")
-console.log(emitPseudo(q))
+trace.log("---- AFTER EXTRACT2/3")
+trace.log(emitPseudo(q))
 
 // XXX recursion!!
   // console.log(vars)
@@ -1735,8 +1736,8 @@ console.log(emitPseudo(q))
     q.free = q.free.filter(x => !vars[x].tmps.includes(Number(ix)))
   }
 
-console.log("---- AFTER REC FIXUP")
-console.log(emitPseudo(q))
+trace.log("---- AFTER REC FIXUP")
+trace.log(emitPseudo(q))
 
 
 
@@ -1753,8 +1754,8 @@ console.log(emitPseudo(q))
   // 8. Codegen
   let code = emitCode(q,order)
 
-  // console.log(pseudo)
-  console.log(code)
+  // trace.log(pseudo)
+  trace.log(code)
 
 
   // ---- link / eval ----
