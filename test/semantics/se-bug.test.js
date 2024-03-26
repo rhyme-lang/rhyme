@@ -498,6 +498,48 @@ test("eta4", () => { // BUG -- eta via array constr
     // NOTE: requires recursion fix
 })
 
+test("etaIndirect1", () => { // OK
+    let data = { foo: [1,2,2,4,4,5] }
+    let q0 = { "*FOO": rh`count data.*FOO.*A | group data.*FOO.*A` }
+    let func = compile(q0)
+    let res = func({ data })
+
+    // console.log(func.explain.pseudo0)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = { foo: {
+      1:1,
+      2:2,
+      4:2,
+      5:1,
+    }}
+    expect(res).toEqual(expected)
+    // NOTE: requires recursion fix
+})
+
+// this is the core of day4-part1
+test("etaIndirect2", () => { // BUG -- eta via array constr
+    let data = { foo: [1,2,2,4,4,5] }
+    let data0 = "data.*FOO"
+    let data1 = ["data.foo.*E"]
+    let q0 = { "foo": rh`count ${data1}.*A | group ${data1}.*A` }
+    let func = compile(q0)
+    let res = func({ data })
+
+    // console.log(func.explain.pseudo0)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = { foo: {
+      1:1,
+      2:2,
+      4:2,
+      5:1,
+    }}
+    expect(res).toEqual(expected)
+    // NOTE: requires recursion fix
+})
 
 /*
 

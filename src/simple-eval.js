@@ -653,6 +653,11 @@ let infer = q => {
 
 let trans = ps => unique([...ps,...ps.flatMap(x => vars[x].vars)])
 
+let intersects = (a,b) => intersect(a,b).length > 0
+
+let overlaps = (a,b) => intersects(trans(a),trans(b))
+
+
 let inferBwd = out => q => {
   if (q.out !== undefined) {
     if (!same(q.out,out))
@@ -851,9 +856,10 @@ let inferBwd2 = out => q => {
     let [e1] = q.arg.map(inferBwd2(out1))
     q.free = e1.real
 
-    // let extra = path.filter(x => intersect(vars[x].vars, e1.real).length >= 0)
-    let extra = path.flatMap(x => x.xxreal).filter(x => intersect(vars[x].vars, e1.real).length >= 0)
-    // let extra = path.flatMap(x => x.vars).filter(x => intersect(vars[x].vars, e1.real).length >= 0)
+    let extra = path.filter(x => intersects(x.yyreal, e1.vars)).flatMap(x => x.xxreal)
+
+    // NOTE: if we decorrelate aggressively here,
+    // we need to add some vars to enclosing updates
 
     q.free = union(q.free, extra)
     q.real = intersect(out, q.free)
@@ -863,7 +869,6 @@ let inferBwd2 = out => q => {
     q.path = path
 
     let e0 = inferBwd2(out)(q.arg[0]) // what are we extending
-
     let e1 = inferBwd2(out)(q.arg[1]) // key variable
 
     let e1Body
@@ -878,33 +883,58 @@ let inferBwd2 = out => q => {
     }
 
     let e1Real = [e1.op, ...e1Body.real]
-    e1.xxreal = e1Real
 
-    let extra = diff(trans(e1.vars), (q.arg[2].vars))
-    // let extra = diff(e1Real, trans(q.arg[2].vars))
-    // if (diff(extra,[e1.op]).length > 0) 
-      // console.log("EXTRA "+extra+" / "+e1Real)
+    let extra = diff(trans(e1.vars), trans(q.arg[2].vars))
 
-    let intersects = (a,b) => intersect(a,b).length > 0
-    let overlaps = (a,b) => intersects(trans(a),trans(b))
+    // console.log("EXTRA "+extra+" / "+e1Real)
 
-    let keyAndBodyCorrelated = intersects(trans(e1.vars), (q.arg[2].vars))
-    // let keyAndBodyCorrelated = intersects(e1Real, trans(q.arg[2].vars))
+    // if (e1.op == "K1") {
+    //   console.log(pretty(q))
+    //   console.log(extra)
+    //   console.log(e1Real)
+    // }
+
+    // if (e1.op == "*line") {
+    //   console.log(pretty(q))
+    //   console.log(extra)
+    //   console.log(e1Real)
+    // }
+
+
+
+    let keyAndBodyCorrelated = 
+      intersects(trans(e1.vars), trans(q.arg[2].vars))
+      // && !intersects(trans(e1.vars), trans(path.flatMap(x => x.vars)))
     let vks1
     if (keyAndBodyCorrelated) {
-      e1.xxreal = extra //e1Real
+      e1.xxreal = extra
+      e1.yyreal = e1Real
       vks1 = unique([e1.op,...extra])
     } else {
       e1.xxreal = [e1.op]
+      e1.yyreal = e1Real
       vks1 = [e1.op]
     }
 
     let save = path
+
+    // NEEDED? WANTED?
+    path = path.filter(x => 
+      intersects(x.yyreal, q.arg[2].vars)// ||
+      && !trans(x.vars).includes(e1.op)
+    )
+
     path = [...path,e1]
+
     let e2 = inferBwd2(union(out, vks1))(q.arg[2])
     path = save
 
-    q.free = unique([...e0.real, ...e1Real, ...e2.real])
+
+    let extra2 = path.filter(x => 
+      intersects(x.yyreal, trans(q.vars))).flatMap(x => x.xxreal)
+    // trans(q.vars): this is to deal with K1, could break it down
+
+    q.free = unique([...e0.real, ...e1Real, ...e2.real, ...extra2])
     q.real = intersect(q.free, out)
 
 
@@ -1633,7 +1663,7 @@ let compile = (q,{
 
   reset()
 
-  // let console = { log: () => {} }
+  let console = { log: () => {} }
 
   // ---- front end ----
 
