@@ -351,6 +351,21 @@ let extract0 = q => {
 }
 
 
+// extract filters variable deps
+let extract1 = q => {
+  if (q.arg) q.arg.map(extract1)
+  if (q.key == "var") {
+    vars[q.op] ??= { vars:[] }
+  } else if (q.key == "get") {
+    let [e1,e2] = q.arg
+    if (e2.key == "var") {
+      vars[e2.op].vars = union(vars[e2.op].vars, e1.vars)
+    }
+  }
+}
+
+
+
 // extract assignments
 let extract3 = q => {
   if (q.key == "stateful" || q.key == "update") {
@@ -501,7 +516,7 @@ let inferBwd2 = out => q => {
     q.out = out
     q.path = path // mainly for debugging
     let out1
-    out1 = union(out,q.arg[0].dims) // mind vs dim?
+    out1 = union(out,q.arg[0].dims) // mode=relc
     let [e1] = q.arg.map(inferBwd2(out1))
 
     let extra = path.filter(x => intersects(x.yyreal, e1.vars)).flatMap(x => x.xxreal)
@@ -675,6 +690,32 @@ let deno = q => k => {
 //    This runs between infer and inferBwd
 //
 
+let computeDependencies0 = (q) => {
+  // calculate transitive dependencies between vars directly
+
+  let deps = {
+    var2var: {},
+  }
+
+  let followVarVar = (i,j) => {
+    if (deps.var2var[i][j]) return
+    deps.var2var[i][j] = true
+    for (let k in deps.var2var[j]) followVarVar(i,k)
+  }
+
+  for (let i in vars) {
+    deps.var2var[i] ??= {}
+    for (let j of vars[i].vars) followVarVar(i,j)
+  }
+
+  // inject transitive closure info so "inferBwd" will pick it up
+
+  for (let i in deps.var2var) {
+    vars[i].vars = Object.keys(deps.var2var[i])
+  }
+}
+
+
 let computeDependencies = () => {
   // calculate one-step dependencies between vars/tmps
 
@@ -701,9 +742,7 @@ let computeDependencies = () => {
   for (let i in filters) {
     let f = filters[i]
     let v = f.arg[1].op // var name
-
-    f = f.arg[0] // XXX skip dep on var itself!
-
+    f = f.arg[0] // skip dep on var itself
     for (let w of f.vars) deps.var2var[v][w] = true
     if (f.tmps) for (let j of f.tmps) deps.var2tmp[v][j] = true
   }
@@ -798,11 +837,7 @@ let computeOrder = q => {
   for (let i in filters) {
     let f = filters[i]
     let v = f.arg[1].op // var name
-    f = f.arg[0] // XXX
-
-    // if (f.free.includes(v)) continue
-
-    // XXX free or real??
+    f = f.arg[0] // skip dep on var itself
     for (let w of f.real) deps.var2var[v][w] = true
     for (let j of f.tmps) deps.var2tmp[v][j] = true
   }
@@ -895,7 +930,7 @@ let emitPseudo = (q) => {
   buf.push("")
   let hi = buf.length
   for (let v in vars) {
-    if (vars[v].vars.length > 0 || vars[v].tmps.length > 0)
+    if (vars[v].vars.length > 0 || vars[v].tmps && vars[v].tmps.length > 0)
       buf.push(v + " -> " + vars[v].vars +"  "+ vars[v].tmps)
   }
   if (buf.length > hi)
@@ -910,13 +945,13 @@ let emitPseudo = (q) => {
     // buf.push("  = " + pretty(q))
     if (q.vars.length > 0) 
       buf.push("  var: " + q.vars)
-    if (q.tmps.length > 0) 
+    if (q.tmps?.length > 0) 
       buf.push("  tmp: " + q.tmps)
     if (q.mind.length > 0)  
       buf.push("  min: " + q.mind)
     if (q.dims.length > 0)  
       buf.push("  dim: " + q.dims)
-    if (q.out && q.out.length > 0)  
+    if (q.out?.length > 0)  
       buf.push("  out: " + q.out)
     if (q.iter?.length > 0) 
       buf.push("  itr: " + q.iter)
@@ -1179,23 +1214,10 @@ let compile = (q,{
   // compute initial vars[x] during infer,
   // then computeDeps only performs closure
 
-  extract2(q) // extract filters
-
-  // Pretty print (debug out)
-  let pseudo0 = emitPseudo(q)
-trace.log("---- AFTER INFER, EXTRACT2")
-trace.log(emitPseudo(q))
-
+  extract1(q) // extract filters
 
   // 4. Calculate dependencies between vars/tmps
-  computeDependencies()
-
-  filters = []
-  assignments = []
-
-  // q = extract(q)
-
-// trace.log(vars)
+  computeDependencies0()
 
 
   // 5. Backward pass to infer output dimensions
@@ -1210,9 +1232,10 @@ trace.log(emitPseudo(q))
 
   q = extract3(q) // extract assignments
 
-  extract2(q) // extract filters
+  // extract filters
   for (let e of assignments)
     extract2(e)
+  extract2(q)
 
 trace.log("---- AFTER EXTRACT2/3")
 trace.log(emitPseudo(q))
@@ -1269,7 +1292,7 @@ trace.log(emitPseudo(q))
   wrap.explain = { 
     src,
     ir: {filters, assignments, vars, order}, 
-    pseudo0, pseudo, code 
+    pseudo, code 
   }
   return wrap
 }
