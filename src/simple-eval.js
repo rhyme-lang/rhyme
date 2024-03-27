@@ -481,47 +481,36 @@ let inferBwd2 = out => q => {
   }
 
   if (q.key == "input") {
-    // q.out = out
-    q.free = []
     q.real = []
   } else if (q.key == "const") {
-    // q.out = out
-    q.free = []
     q.real = []
   } else if (q.key == "var") {
-    // q.out = out
     // we have transitive information now -- include 
     // vars[q.op] if visible in out
     let syms = unique([q.op, ...vars[q.op].vars])
     q.real = intersect(syms, out)
-    q.free = [q.op]
   } else if (q.key == "get") {
     // q.out = out
     let [e1,e2] = q.arg.map(inferBwd2(out))
     q.real = union(e1.real, e2.real)
-    q.free = union(e1.free, e2.free)
   } else if (q.key == "pure" || q.key == "mkset") {
     // q.out = out
     let es = q.arg.map(inferBwd2(out))
     q.real = unique(es.flatMap(x => x.real))
-    q.free = unique(es.flatMap(x => x.free))
-
   } else if (q.key == "stateful") {
     q.out = out
+    q.path = path // mainly for debugging
     let out1
-    // XXX distinction necessary?
     out1 = union(out,q.arg[0].dims) // mind vs dim?
     let [e1] = q.arg.map(inferBwd2(out1))
-    q.free = e1.real
 
     let extra = path.filter(x => intersects(x.yyreal, e1.vars)).flatMap(x => x.xxreal)
 
     // NOTE: if we decorrelate aggressively here,
     // we need to add some vars to enclosing updates
 
-    q.free = union(q.free, extra)
+    q.free = union(e1.real, extra)
     q.real = intersect(out, q.free)
-    q.path = path
   } else if (q.key == "update") {
     q.out = out
     q.path = path
@@ -814,7 +803,7 @@ let computeOrder = q => {
     // if (f.free.includes(v)) continue
 
     // XXX free or real??
-    for (let w of f.free) deps.var2var[v][w] = true
+    for (let w of f.real) deps.var2var[v][w] = true
     for (let j of f.tmps) deps.var2tmp[v][j] = true
   }
 
@@ -1064,7 +1053,7 @@ let emitFilters = (real) => buf => {
         if (buf0.indexOf("let gen"+i+quoteVar(v2)+" = {}") < 0) {
           buf0.push("// pre-gen "+v2)
           buf0.push("let gen"+i+quoteVar(v2)+" = {}")
-          emitFilters(g1.free)(buf0)
+          emitFilters(g1.real)(buf0)
           buf0.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
           buf0.push("  gen"+i+quoteVar(v2)+"["+quoteVar(v1)+"] = true //"+codegen(g1)+"?.["+quoteVar(v1)+"]")
           // with the aux data structure in place, we're ready to
