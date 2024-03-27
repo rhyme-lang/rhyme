@@ -125,7 +125,7 @@ test("generatorAsFilter", () => {
     // The key is passed through, but all the values are filtered out.
 
     let expected = { "A": 40 }
-    let func = api.compile(query).c2
+    let func = api.compile(query)
 
     // console.log(func.explain.pseudo)
     // console.log(func.explain.code)
@@ -151,7 +151,7 @@ test("generatorAsFilter2", () => {
     }
 
     let expected = { "A": 40 }
-    let func = api.compile(query).c2
+    let func = api.compile(query).c2 // CS only!
 
     // console.log(func.explain.pseudo)
     // console.log(func.explain.code)
@@ -172,7 +172,7 @@ test("generatorAsFilter3", () => {
     }
 
     let expected = { "A": 40 }
-    let func = api.compile(query).c2
+    let func = api.compile(query).c2 // C2 only!
 
     // console.log(func.explain.pseudo)
     // console.log(func.explain.code)

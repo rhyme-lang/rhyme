@@ -1257,7 +1257,7 @@ trace.log(emitPseudo(q))
     return res
   }
 
-  wrap.explain = { 
+  wrap.explain = {
     src,
     ir: {filters, assignments, vars, order}, 
     pseudo, code 
