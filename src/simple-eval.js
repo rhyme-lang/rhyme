@@ -160,7 +160,6 @@ let join = (obj1, obj2) => (schema1, schema2, schema3) => func => {
 
 let prefixes      // canonicalize * for every prefix, e.g., data.* (preproc)
 let path          // current grouping path variables (extract)
-let pathAux       // grouping key expressions for those variables
 
 let vars          // deps var->var, var->tmp
 let filters
@@ -169,11 +168,9 @@ let assignments
 let reset = () => {
   prefixes = []
   path = []
-  pathAux = []
 
   vars = {}
   filters = []
-  pathkeys = []
   assignments = []
 }
 
@@ -273,7 +270,8 @@ let preproc = q => {
 
 
 //
-// 2,4,7,8. Extract: key information from program
+// 2,4,7,8. Extract: extract key information from program
+//  into external data structures
 //
 
 // 2: extract0: 
@@ -357,6 +355,8 @@ let extract1 = q => {
 }
 
 
+// TODO: cse for array-valued udfs?
+
 // 7: extract assignments
 //    - runs after inferBwd()
 let extract2 = q => {
@@ -408,24 +408,15 @@ let extract3 = q => {
 //
 
 let infer = q => {
-  if (q.key == "input") {
+  if (q.key == "input" || q.key == "const") {
     q.vars = []
     q.mind = [] 
-    q.dims = []
-  } else if (q.key == "const") {
-    q.vars = []
-    q.mind = []
     q.dims = []
   } else if (q.key == "var") {
     q.vars = [q.op]
     q.mind = [q.op]
     q.dims = [q.op]
-  } else if (q.key == "get") {
-    let [e1,e2] = q.arg.map(infer)
-    q.vars = unique([...e1.vars, ...e2.vars])
-    q.mind = unique([...e1.mind, ...e2.mind])
-    q.dims = unique([...e1.dims, ...e2.dims])
-  } else if (q.key == "pure" || q.key == "mkset") {
+  } else if (q.key == "get" || q.key == "pure" || q.key == "mkset") {
     let es = q.arg.map(infer)
     q.vars = unique(es.flatMap(x => x.vars))
     q.mind = unique(es.flatMap(x => x.mind))
@@ -477,33 +468,21 @@ let overlaps = (a,b) => intersects(trans(a),trans(b))
 
 
 let inferBwd2 = out => q => {
-  if (q.out !== undefined) {
-    if (!same(q.out,out))
-      throw console.warn("calling inferBwd twice on "+pretty(q)+"\nout: "+q.out+" -> "+out)
-  }
-
-  if (q.key == "input") {
-    q.real = []
-  } else if (q.key == "const") {
+  if (q.key == "input" || q.key == "const") {
     q.real = []
   } else if (q.key == "var") {
     // we have transitive information now -- include 
     // vars[q.op] if visible in out
     let syms = unique([q.op, ...vars[q.op].vars])
     q.real = intersect(syms, out)
-  } else if (q.key == "get") {
-    // q.out = out
-    let [e1,e2] = q.arg.map(inferBwd2(out))
-    q.real = union(e1.real, e2.real)
-  } else if (q.key == "pure" || q.key == "mkset") {
+  } else if (q.key == "get" || q.key == "pure" || q.key == "mkset") {
     // q.out = out
     let es = q.arg.map(inferBwd2(out))
     q.real = unique(es.flatMap(x => x.real))
   } else if (q.key == "stateful") {
-    q.out = out
-    q.path = path // mainly for debugging
-    let out1
-    out1 = union(out,q.arg[0].dims) // mode=relc
+    // q.out = out // debugging info vs cse
+    // q.path = path
+    let out1 = union(out,q.arg[0].dims) // need to consider mode?
     let [e1] = q.arg.map(inferBwd2(out1))
 
     let extra = path.filter(x => intersects(x.yyreal, e1.vars)).flatMap(x => x.xxreal)
@@ -514,8 +493,8 @@ let inferBwd2 = out => q => {
     q.free = union(e1.real, extra)
     q.real = intersect(out, q.free)
   } else if (q.key == "update") {
-    q.out = out
-    q.path = path
+    // q.out = out // debugging info vs cse
+    // q.path = path
 
     let e0 = inferBwd2(out)(q.arg[0]) // what are we extending
     let e1 = inferBwd2(out)(q.arg[1]) // key variable
@@ -671,8 +650,7 @@ let deno = q => k => {
 
 //
 // 5: Compute dependencies between vars
-//    - fill in vars[i].vars
-//    - based on q.vars
+//    - fill in vars[i].vars, based onq.vars
 //
 //    This runs between infer and inferBwd
 //
@@ -696,7 +674,6 @@ let computeDependencies0 = (q) => {
   }
 
   // inject transitive closure info so "inferBwd" will pick it up
-
   for (let i in deps.var2var) {
     vars[i].vars = Object.keys(deps.var2var[i])
   }
@@ -706,7 +683,6 @@ let computeDependencies0 = (q) => {
 //
 // 9: Compute dependencies between vars and tmps
 //    - fill in vars[i].vars and vars[i].tmps
-//    - based on q.vars
 //
 //    This runs as part of the recursion sanity check
 //
@@ -1214,8 +1190,8 @@ let compile = (q,{
   } else
     q = inferBwd2(q.dims)(q)
 
-trace.log("---- AFTER INFER_BWD")
-trace.log(emitPseudo(q))
+// trace.log("---- AFTER INFER_BWD")
+// trace.log(emitPseudo(q))
 
   // ---- middle tier, imperative form ----
 
@@ -1227,8 +1203,8 @@ trace.log(emitPseudo(q))
     extract3(e)
   extract3(q)
 
-trace.log("---- AFTER EXTRACT2/3")
-trace.log(emitPseudo(q))
+// trace.log("---- AFTER EXTRACT2/3")
+// trace.log(emitPseudo(q))
 
   // 9. Statement dependencies, recursion fix
 
