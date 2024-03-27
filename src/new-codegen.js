@@ -285,19 +285,24 @@ exports.generate = (ir) => {
     }
   }
   function nextLoop(stmts, emittableAfterLoop) {
-    let loopStmtCount = {}
-    for (let i of emittableAfterLoop) {
+    let availStmtCnt = {}
+    let stmtCnt = {}
+    for (let i of stmts) {
       let loops = loopdeps[i]
       for (let l in loops) {
         if (loopEmittable(l)) {
-          loopStmtCount[l] ??= 0
-          loopStmtCount[l] += 1
+          stmtCnt[l] ??= 0
+          stmtCnt[l] += 1
+          if (emittableAfterLoop.includes(i)) {
+            availStmtCnt[l] ??= 0
+            availStmtCnt[l] += 1
+          }
         }
       }
     }
 
     let newloop
-    let loops = Object.keys(loopStmtCount)
+    let loops = Object.keys(availStmtCnt)
 
     if (loops.length === 0) return newloop
 
@@ -320,9 +325,14 @@ exports.generate = (ir) => {
 
     let candidates = loops.filter(l => loopAfterloop[l] === undefined || Object.keys(loopAfterloop[l]).length === 0)
     if (candidates.length === 0) candidates = loops
+    let greater = (l1, l2) => {
+      if (availStmtCnt[l1] > availStmtCnt[l2]) return true
+      else if (availStmtCnt[l1] === availStmtCnt[l2]) return stmtCnt[l1] > stmtCnt[l2]
+      else return false
+    }
     for (let l of candidates) {
       newloop ??= l
-      if (loopStmtCount[l] > loopStmtCount[newloop]) newloop = l
+      if (greater(l, newloop)) newloop = l
     }
     return newloop
   }
