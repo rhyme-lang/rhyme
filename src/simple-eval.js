@@ -357,24 +357,23 @@ let extract1 = q => {
 }
 
 
-
 // 7: extract assignments
 //    - runs after inferBwd()
 let extract2 = q => {
+  if (!q.arg) return { ...q, tmps:[] }
+  let es = q.arg.map(extract2)
+  let tmps = unique(es.flatMap(x => x.tmps))
   if (q.key == "stateful" || q.key == "update") {
-    let es = q.arg.map(extract2)
-    let tmps = unique(es.flatMap(x => x.tmps))
-    let ix = assignments.length
-    assignments.push({ ...q, arg: es, tmps })
-    return { ...q, key: "ref", op: ix, arg: [],
-      tmps:[ix]
+    let q1 = { ...q, arg: es, tmps }
+    let str = JSON.stringify(q1) // extract & cse
+    let ix = assignments.map(x => JSON.stringify(x)).indexOf(str)
+    if (ix < 0) {
+      ix = assignments.length
+      assignments.push(q1)
     }
-  } else if (q.arg) {
-    let es = q.arg.map(extract2)
-    let tmps = unique(es.flatMap(x => x.tmps))
-    return { ...q, arg: es, tmps }
+    return { ...q, key: "ref", op: ix, arg: [], tmps:[ix] }
   } else {
-    return { ...q, tmps:[] }
+    return { ...q, arg: es, tmps }
   }
 }
 
@@ -382,15 +381,16 @@ let extract2 = q => {
 // 8: extract filters
 //    - runs after inferBwd()
 let extract3 = q => {
-  if (q.arg) q.arg.map(extract3)
+  if (!q.arg) return
+  q.arg.map(extract3)
   if (q.key == "get") {
     let [e1,e2] = q.arg
     if (e2.key == "var") {
-      let str = JSON.stringify(q)
+      let str = JSON.stringify(q) // extract & cse
       if (filters.map(x => JSON.stringify(x)).indexOf(str) < 0) {
-      let ix = filters.length
-      let q1 = JSON.parse(str)
-      filters.push(q1) // deep copy...
+        let ix = filters.length
+        let q1 = JSON.parse(str)
+        filters.push(q1) // deep copy...
       }
     }
   }
