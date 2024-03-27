@@ -273,19 +273,14 @@ let preproc = q => {
 
 
 //
-// 2. Extract: 
-//    - all data.*A operations into 'filters'
-//    - sum, group operations into 'assignments'
+// 2,4,7,8. Extract: key information from program
 //
-//    Metadata added:
-//    - get: .filter --> unique filter id
-//    - stateful, group, update: .path, .pathAux --> grouping path
-//    - group, update: .vK, .aux --> new group var and grouping expression
-//
-//    Convert 'group e1 e2' to '(mkset e1).K && group K e2' for
-//    nontrivial e1 (not a variable).
-//
-// (TODO docs)
+
+// 2: extract0: 
+// - canonicalize *
+// - insert 'single' in nested stateful positions
+// - ensure all grouping is wrt a variable, i.e.,
+//   transform { e1: e2 } to {}{ K1: e2 } / mkset(e1).K1
 
 let canonicalVarName = e1 => {
   let str = JSON.stringify(e1)
@@ -294,10 +289,6 @@ let canonicalVarName = e1 => {
   let name = e1.key == "mkset" ? "K" : "D"
   return name+key
 }
-
-// extract0: only
-// - canonicalize *
-// - insert 'single' in nested stateful positions
 
 let extractFlex0 = q => {
   if (q.key == "stateful" || q.key == "group" || q.key == "update")
@@ -314,7 +305,7 @@ let extract0 = q => {
     let [e1,e2] = q.arg
     if (e2.key == "var") {
       // canonicalize '*' in 'data.*' to a unique variable
-      // NOTE: we use e1 _before_ extract as key
+      // NOTE: we use e1 _before_ extract as key -- XXX consistent with 'update' below?
       if (e2.op == "*")
         e2 = {...e2, op: canonicalVarName(e1) }
     }
@@ -351,7 +342,8 @@ let extract0 = q => {
 }
 
 
-// extract filters variable deps
+// 4: extract var -> filter variable deps
+//    - runs after infer()
 let extract1 = q => {
   if (q.arg) q.arg.map(extract1)
   if (q.key == "var") {
@@ -366,10 +358,11 @@ let extract1 = q => {
 
 
 
-// extract assignments
-let extract3 = q => {
+// 7: extract assignments
+//    - runs after inferBwd()
+let extract2 = q => {
   if (q.key == "stateful" || q.key == "update") {
-    let es = q.arg.map(extract3)
+    let es = q.arg.map(extract2)
     let tmps = unique(es.flatMap(x => x.tmps))
     let ix = assignments.length
     assignments.push({ ...q, arg: es, tmps })
@@ -377,7 +370,7 @@ let extract3 = q => {
       tmps:[ix]
     }
   } else if (q.arg) {
-    let es = q.arg.map(extract3)
+    let es = q.arg.map(extract2)
     let tmps = unique(es.flatMap(x => x.tmps))
     return { ...q, arg: es, tmps }
   } else {
@@ -386,12 +379,11 @@ let extract3 = q => {
 }
 
 
-// extract filters
-let extract2 = q => {
-  if (q.arg) q.arg.map(extract2)
-  if (q.key == "var") {
-    vars[q.op] ??= { vars:[], tmps: [] }
-  } else if (q.key == "get") {
+// 8: extract filters
+//    - runs after inferBwd()
+let extract3 = q => {
+  if (q.arg) q.arg.map(extract3)
+  if (q.key == "get") {
     let [e1,e2] = q.arg
     if (e2.key == "var") {
       let str = JSON.stringify(q)
@@ -413,8 +405,6 @@ let extract2 = q => {
 //    - vars: variables used
 //    - mind: minimum set of variables in output (not removed through reductions)
 //    - dims: desired set of variables in output
-//
-//    - tmps: assignments used
 //
 
 let infer = q => {
@@ -441,7 +431,6 @@ let infer = q => {
     q.mind = unique(es.flatMap(x => x.mind))
     q.dims = unique(es.flatMap(x => x.dims))
   } else if (q.key == "stateful") {
-    //q.path = q.path.map(infer)
     let [e1] = q.arg.map(infer)
 
     // NOTE: wo do not include vars/tmps/dims information from path,
@@ -452,7 +441,6 @@ let infer = q => {
     // only available after infer.
 
     q.vars = [...e1.vars]
-
     q.mind = [] // can always reduce to one elem
     if (q.mode == "reluctant") {
       q.dims = [...e1.dims] // but prefer not to
@@ -473,11 +461,10 @@ let infer = q => {
 }
 
 //
-// 5. Infer dependencies top down: 
+// 6. Infer dependencies top down: 
 //    - out:  maximum allowed set of variables in output (provided as input arg)
 //    - real: variables actually in output
-//    - free: free variables used to compute result
-//      (iteration space for stms)
+//    - free: iteration space for stms
 //
 //    Decorrelate paths and eliminate trivial recursion
 //
@@ -618,7 +605,7 @@ let inferBwd2 = out => q => {
 
 
 // XXX. alternative "denotational" formulation: 
-//    - try to make "infer" compositional!
+//    - try to make "infer" compositional
 //    - combine forward and backward pass into a single function
 //    - k: dims -> out, i.e. minimum we can produce -> what is observed
 //
@@ -683,8 +670,8 @@ let deno = q => k => {
 
 
 //
-// 4: Compute dependencies between vars and tmps
-//    - fill in vars[i].vars and vars[i].tmps
+// 5: Compute dependencies between vars
+//    - fill in vars[i].vars
 //    - based on q.vars
 //
 //    This runs between infer and inferBwd
@@ -716,6 +703,14 @@ let computeDependencies0 = (q) => {
 }
 
 
+//
+// 9: Compute dependencies between vars and tmps
+//    - fill in vars[i].vars and vars[i].tmps
+//    - based on q.vars
+//
+//    This runs as part of the recursion sanity check
+//
+
 let computeDependencies = () => {
   // calculate one-step dependencies between vars/tmps
 
@@ -746,7 +741,6 @@ let computeDependencies = () => {
     for (let w of f.vars) deps.var2var[v][w] = true
     if (f.tmps) for (let j of f.tmps) deps.var2tmp[v][j] = true
   }
-
 
   // calculate explicit transitive closure
 
@@ -796,7 +790,6 @@ let computeDependencies = () => {
     for (let j in deps.tmp2tmp[i]) followTmpTmp(i,j)
   }
 
-
   // inject transitive closure info so "inferBwd" will pick it up
 
   for (let i in deps.var2var) {
@@ -807,8 +800,8 @@ let computeDependencies = () => {
 
 
 //
-// 6: Compute legal order of assignments
-//    - topological sort based on q.free
+// 10: Compute legal order of assignments
+//    - topological sort based on q.free/q.real
 //
 
 let computeOrder = q => {
@@ -869,7 +862,7 @@ let computeOrder = q => {
 // ----- back end -----
 
 //
-// 5a. Pretty print
+// 11a. Pretty print
 //
 
 let prettyPath = es => {
@@ -968,7 +961,7 @@ let emitPseudo = (q) => {
 
 
 //
-// 5b. Code generation
+// 11. Code generation
 //
 
 
@@ -1200,27 +1193,21 @@ let compile = (q,{
   }
 
   // 2. Extract
-  q = extract0(q)
+  q = extract0(q) // basic massaging
 
 
   // ---- middle tier ----
 
   // 3. Infer dependencies bottom up
-  q = infer(q) // goes into assignments but not filters
+  q = infer(q)
 
+  // 4. Extract var->var dependencies due to filters
+  extract1(q)
 
-  // TODO: potential refactoring
-  // instead of extract2 + computeDeps,
-  // compute initial vars[x] during infer,
-  // then computeDeps only performs closure
-
-  extract1(q) // extract filters
-
-  // 4. Calculate dependencies between vars/tmps
+  // 5. Calculate transitive var->var dependencies
   computeDependencies0()
 
-
-  // 5. Backward pass to infer output dimensions
+  // 6. Backward pass to infer output dimensions
   if (singleResult) {
     // trace.assert(q.mind.length == 0)
     q = inferBwd2(q.mind)(q)
@@ -1230,15 +1217,20 @@ let compile = (q,{
 trace.log("---- AFTER INFER_BWD")
 trace.log(emitPseudo(q))
 
-  q = extract3(q) // extract assignments
+  // ---- middle tier, imperative form ----
 
-  // extract filters
+  // 7. Extract assignments
+  q = extract2(q)
+
+  // 8. Extract filters
   for (let e of assignments)
-    extract2(e)
-  extract2(q)
+    extract3(e)
+  extract3(q)
 
 trace.log("---- AFTER EXTRACT2/3")
 trace.log(emitPseudo(q))
+
+  // 9. Statement dependencies, recursion fix
 
   // Recursion fix: eliminate simple self-recursive
   // assignment deps by breaking the cycle.
@@ -1260,7 +1252,7 @@ trace.log(emitPseudo(q))
 
 
 
-  // 6. Compute legal order of assignments
+  // 10. Compute legal order of assignments
   let order = computeOrder(q)
 
 
@@ -1270,7 +1262,7 @@ trace.log(emitPseudo(q))
   // Pretty print (debug out)
   let pseudo = emitPseudo(q)
 
-  // 8. Codegen
+  // 11. Codegen
   let code = emitCode(q,order)
 
   // trace.log(pseudo)
