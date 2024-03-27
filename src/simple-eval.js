@@ -1173,6 +1173,12 @@ let compile = (q,{
   // 3. Infer dependencies bottom up
   q = infer(q) // goes into assignments but not filters
 
+
+  // TODO: potential refactoring
+  // instead of extract2 + computeDeps,
+  // compute initial vars[x] during infer,
+  // then computeDeps only performs closure
+
   extract2(q) // extract filters
 
   // Pretty print (debug out)
