@@ -657,6 +657,105 @@ LJ.LJ`
   expect(res).toBe(8)
 })
 
+test("day10-part2", () => {
+  let input = `...........
+.S-------7.
+.|F-----7|.
+.||.....||.
+.||.....||.
+.|L-7.F-J|.
+.|..|.|..|.
+.L--J.L--J.
+...........`
+
+  let connected = (grid, i, j) => {
+    switch (grid[i][j]) {
+      case "|":
+        return [[i - 1, j], [i + 1, j]]
+      case "-":
+        return [[i, j - 1], [i, j + 1]]
+      case "L":
+        return [[i - 1, j], [i, j + 1]]
+      case "J":
+        return [[i - 1, j], [i, j - 1]]
+      case "7":
+        return [[i + 1, j], [i, j - 1]]
+      case "F":
+        return [[i + 1, j], [i, j + 1]]
+      case ".":
+        return []
+    }
+  }
+
+  let udf = {
+    connected,
+    getAdj: point => {
+      let i = +point[0]
+      let j = +point[1]
+      return [[i - 1, j], [i + 1, j], [i, j - 1], [i, j + 1]]
+    },
+    filter: c => c ? { [c]: true } : {},
+    andThen: (a,b) => b, // just to add a as dependency
+    toCoord: (i, j) => [i, j],
+    ...udf_stdlib
+  }
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+
+  let lines = rh`.input | udf.split "\\n" | .*line
+                        | udf.split ""`
+  
+  let grid = api.array(lines)
+
+  let isStart = rh`udf.isEqual ${grid}.*i.*j "S"`
+  let startPos = rh`udf.toCoord (udf.toNum *i) (udf.toNum *j) | ${filterBy("*f1", isStart)} | last`
+
+  let isConnected = rh`${startPos} | udf.getAdj | udf.connected ${grid} .*adj.0 .*adj.1
+                                   | udf.isEqual (udf.isEqual .*neighbor.0 ${startPos}.0) + (udf.isEqual .*neighbor.1 ${startPos}.1) 2`
+  let startCell = rh`${startPos} | udf.getAdj | .*adj | ${filterBy("*f2", isConnected)} | first`
+  let initialState = {
+    prev: startPos,
+    curr: startCell,
+    cell: rh`${grid}.(${startCell}.0).(${startCell}.1)`
+  }
+
+  let getInitialState = api.compile(initialState)
+
+  let state = getInitialState({input, udf})
+  state.count = 1
+
+  // Each query moves from the current cell
+  // to the next cell which are the not visited connected cells
+
+  // The query checks the connected cells of the current cell
+  // and find the one not visited
+
+  // It stops when the current cell becomes S
+  let notVisited = rh`udf.connected ${grid} state.curr.0 state.curr.1 | udf.notEqual (udf.isEqual .*adj.0 state.prev.0) + (udf.isEqual .*adj.1 state.prev.1) 2`
+
+  let curr = rh`udf.connected ${grid} state.curr.0 state.curr.1 | .*adj | ${filterBy("*f", notVisited)} | first`
+
+  let query = {
+    prev: rh`state.curr`,
+    curr: curr,
+    cell: rh`${grid}.(${curr}.0).(${curr}.1)`,
+    count: rh`.state.count + 1`
+  }
+
+  let func = api.compile(query)
+
+  while (state.cell != "S") {
+    state = func({input, udf, state})
+  }
+
+  let res = state.count / 2
+  
+
+  // Find the loop first because we need to know which cells are in the loop
+  // We then iterate through the grid and check for croossings.
+
+  // Need to know whether a cell connects to north
+})
+
 // 2022
 
 test("day1-A", () => {
