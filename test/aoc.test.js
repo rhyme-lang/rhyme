@@ -356,10 +356,10 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
   // udf.andThen here use the first argument as a side effect so that the final result will contain only the count
 
   let query = rh`${matchCountObj} | .*lineRes
-                                  | udf.andThen (udf.incCard ${matchCountObj}.(${matchCountObj}.*.id) ((udf.logicalAnd (udf.isGreaterThan ${matchCountObj}.*.id .id) (udf.isLessOrEqual ${matchCountObj}.*.id (.id + .match))) * .count)) .count
-                                  | group *lineRes
+                                  | udf.andThen (udf.incCard ${matchCountObj}.(${matchCountObj}.*j.id) ((udf.logicalAnd (udf.isGreaterThan ${matchCountObj}.*j.id .id) (udf.isLessOrEqual ${matchCountObj}.*j.id (.id + .match))) * .count)) .count
+                                  | last | group *lineRes
                                   | sum .*`
-  
+
   let func = api.compile(query)
   let res = func.c1({input, udf})
   expect(res).toBe(30)
@@ -522,7 +522,7 @@ ZZZ = (ZZZ, ZZZ)`
 
   let chunks = rh`.input | udf.split "\\n\\n"`
   let lines = rh`${chunks}.1 | udf.split "\\n"`
-  
+
   // decode instructions
   let instructions = rh`${chunks}.0 | udf.split ""`
   let instrStep = i => rh`${instructions}.(${i} % (count ${instructions}.*I))`
@@ -555,7 +555,7 @@ ZZZ = (ZZZ, ZZZ)`
 
   // NOTE: each iteration of the loop re-parses the
   // entire input. We could eliminate this redundant
-  // computation by pre-computing 'rules' and 
+  // computation by pre-computing 'rules' and
   // 'instructions' before the loop.
   //
   // This would match the emerging pattern of having
