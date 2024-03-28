@@ -609,12 +609,19 @@ LJ.LJ`
   
   let grid = api.array(lines)
 
+  // Use filter to find the start position
   let isStart = rh`udf.isEqual ${grid}.*i.*j "S"`
   let startPos = rh`udf.toCoord (udf.toNum *i) (udf.toNum *j) | ${filterBy("*f1", isStart)} | last`
 
+  // Get all the adjacent cells of the start cell. Filter the neighbors by whether they
+  // are connected with the start cell. i.e. coordinate of one of the connected cell
+  // is identical to the start cell
   let isConnected = rh`${startPos} | udf.getAdj | udf.connected ${grid} .*adj.0 .*adj.1
                                    | udf.isEqual (udf.isEqual .*neighbor.0 ${startPos}.0) + (udf.isEqual .*neighbor.1 ${startPos}.1) 2`
   let startCell = rh`${startPos} | udf.getAdj | .*adj | ${filterBy("*f2", isConnected)} | first`
+
+  // In the initial state, "curr" is actually the cell after we make the first move
+  // The start cell becomes the first "prev" value which is used to check for visited cells
   let initialState = {
     prev: startPos,
     curr: startCell,
@@ -634,9 +641,9 @@ LJ.LJ`
 
   // It stops when the current cell becomes S
   let notVisited = rh`udf.connected ${grid} state.curr.0 state.curr.1 | udf.notEqual (udf.isEqual .*adj.0 state.prev.0) + (udf.isEqual .*adj.1 state.prev.1) 2`
-
   let curr = rh`udf.connected ${grid} state.curr.0 state.curr.1 | .*adj | ${filterBy("*f", notVisited)} | first`
 
+  // Main query
   let query = {
     prev: rh`state.curr`,
     curr: curr,
