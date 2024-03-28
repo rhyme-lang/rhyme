@@ -8,7 +8,7 @@ const { runtime } = require('../src/simple-runtime')
 // having any key depend on "*".
 //
 // The current dependency extraction is not set up for this,
-// as it happens at the same time as IR construction. 
+// as it happens at the same time as IR construction.
 //
 // Possible solution: find dependencies first, then transform
 // code based on context.
@@ -189,6 +189,7 @@ test("aggregateAsKey", () => {
 
     let res1 = f1.c1({data})
     let res2 = f2.c1({data})
+    let res2_opt = f2.c1_opt({data})
     let res1_new = f1.c2({data}, true)
     let res2_new = f2.c2({data}, true)
 
@@ -204,6 +205,10 @@ test("aggregateAsKey", () => {
 
     let e2_alt = {
         60: { 1: true, 2: true }, // XXX is this the right one?
+    }
+
+    let e2_alt_string = {
+        60: { 1: "true", 2: "true" }
     }
 
     // console.log(f1.c2.explain.pseudo0)
@@ -230,6 +235,7 @@ test("aggregateAsKey", () => {
 
     expect(res1).toEqual(bug1)
     expect(res2).toEqual(bug2)
+    expect(res2_opt).toEqual(e2_alt_string)
     expect(res1_new).toEqual(e1)
     expect(res2_new).toEqual(e2_alt)
 })
