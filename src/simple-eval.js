@@ -485,7 +485,8 @@ let inferBwd2 = out => q => {
     let out1 = union(out,q.arg[0].dims) // need to consider mode?
     let [e1] = q.arg.map(inferBwd2(out1))
 
-    let extra = path.filter(x => intersects(x.yyreal, e1.vars)).flatMap(x => x.xxreal)
+    let extra = path.filter(x => 
+      intersects(x.yyreal, e1.vars)).flatMap(x => x.xxreal)
 
     // NOTE: if we decorrelate aggressively here,
     // we need to add some vars to enclosing updates
@@ -516,29 +517,18 @@ let inferBwd2 = out => q => {
         vars: [], mind: [], dims: [], real: [] }
     }
 
-    let e1Real = [e1.op, ...diff(e1Body.real,out)]
+    let e1Real = [e1.op, ...diff(e1Body.real, out)]
     // diff(.., out): this is the fix for day4-part1
-
-    let extra = diff(e1Real, (q.arg[2].vars))
-
 
     // generatorAsFilter vs aggregateAsKey:
     // if the key is correlated with the body, we need
     // to track its transitive vars, too. Otherwise not.
 
-    let keyAndBodyCorrelated = 
-      intersects(e1Real, (q.arg[2].vars))
-      // && !intersects(trans(e1.vars), trans(path.flatMap(x => x.vars)))
-    let vks1
-    if (keyAndBodyCorrelated) {
-      e1.xxreal = extra
-      e1.yyreal = e1Real
-      vks1 = unique([e1.op,...extra])
-    } else {
-      e1.xxreal = [e1.op]
-      e1.yyreal = e1Real
-      vks1 = [e1.op]
-    }
+    let keyAndBodyCorrelated = intersects(e1Real, (q.arg[2].vars))
+
+    let e1RealPre = keyAndBodyCorrelated 
+      ? [e1.op, ...diff(e1Body.real, union(out,q.arg[2].vars))]
+      : [e1.op]
 
     let save = path
 
@@ -547,16 +537,21 @@ let inferBwd2 = out => q => {
       intersects(x.yyreal, q.arg[2].vars)// ||
       && !trans(x.vars).includes(e1.op)
     )
+    // difference between trans(x.vars) and xxreal?
+
+    e1.xxreal = e1RealPre
+    e1.yyreal = e1Real
 
     path = [...path,e1]
 
-    let e2 = inferBwd2(union(out, vks1))(q.arg[2])
+    let e2 = inferBwd2(union(out, e1RealPre))(q.arg[2])
     path = save
 
+    // was trans(q.vars): this is to deal with K1
+    let V = unique([...e0.vars, ...e1.vars, ...e2.vars, ...e1Body.vars])
 
     let extra2 = path.filter(x => 
-      intersects(x.yyreal, trans(q.vars))).flatMap(x => x.xxreal)
-    // trans(q.vars): this is to deal with K1, could break it down
+      intersects(x.yyreal, V)).flatMap(x => x.xxreal)
 
     q.free = unique([...e0.real, ...e1Real, ...e2.real, ...extra2])
     q.real = intersect(q.free, out)
