@@ -571,23 +571,16 @@ SJLL7
 |F--J
 LJ.LJ`
 
-  let connected = (grid, i, j) => {
-    switch (grid[i][j]) {
-      case "|":
-        return [[i - 1, j], [i + 1, j]]
-      case "-":
-        return [[i, j - 1], [i, j + 1]]
-      case "L":
-        return [[i - 1, j], [i, j + 1]]
-      case "J":
-        return [[i - 1, j], [i, j - 1]]
-      case "7":
-        return [[i + 1, j], [i, j - 1]]
-      case "F":
-        return [[i + 1, j], [i, j + 1]]
-      case ".":
-        return []
-    }
+  // Each array element [x, y] represents the offset
+  // on each dimension from the current position
+  let connected = {
+    "|": [[-1, 0], [1, 0]],
+    "-": [[0, -1], [0, 1]],
+    "L": [[-1, 0], [0, 1]],
+    "J": [[-1, 0], [0, -1]],
+    "7": [[1, 0], [0, -1]],
+    "F": [[1, 0], [0, 1]],
+    ".": []
   }
 
   let udf = {
@@ -616,8 +609,9 @@ LJ.LJ`
   // Get all the adjacent cells of the start cell. Filter the neighbors by whether they
   // are connected with the start cell. i.e. coordinate of one of the connected cell
   // is identical to the start cell
-  let isConnected = rh`${startPos} | udf.getAdj | udf.connected ${grid} .*adj.0 .*adj.1
-                                   | udf.isEqual (udf.isEqual .*neighbor.0 ${startPos}.0) + (udf.isEqual .*neighbor.1 ${startPos}.1) 2`
+  let isConnected = rh`${startPos} | udf.getAdj
+                                   | udf.toCoord (connected.(${grid}.(.*adj.0).(.*adj.1)).*neighbor.0 + .*adj.0) (connected.(${grid}.(.*adj.0).(.*adj.1)).*neighbor.1 + .*adj.1)
+                                   | udf.isEqual (udf.isEqual .0 ${startPos}.0) + (udf.isEqual .1 ${startPos}.1) 2`
   let startCell = rh`${startPos} | udf.getAdj | .*adj | ${filterBy("*f2", isConnected)} | first`
 
   // In the initial state, "curr" is actually the cell after we make the first move
@@ -630,7 +624,7 @@ LJ.LJ`
 
   let getInitialState = api.compile(initialState)
 
-  let state = getInitialState({input, udf})
+  let state = getInitialState({input, udf, connected})
   state.count = 1
 
   // Each query moves from the current cell
@@ -640,21 +634,23 @@ LJ.LJ`
   // and find the one not visited
 
   // It stops when the current cell becomes S
-  let notVisited = rh`udf.connected ${grid} state.curr.0 state.curr.1 | udf.notEqual (udf.isEqual .*adj.0 state.prev.0) + (udf.isEqual .*adj.1 state.prev.1) 2`
-  let curr = rh`udf.connected ${grid} state.curr.0 state.curr.1 | .*adj | ${filterBy("*f", notVisited)} | first`
+  let notVisited = rh`udf.toCoord (connected.(${grid}.(state.curr.0).(state.curr.1)).*adj.0 + state.curr.0) (connected.(${grid}.(state.curr.0).(state.curr.1)).*adj.1 + state.curr.1)
+                      | udf.notEqual (udf.isEqual .0 state.prev.0) + (udf.isEqual .1 state.prev.1) 2`
+  let curr = rh`udf.toCoord (connected.(${grid}.(state.curr.0).(state.curr.1)).*adj.0 + state.curr.0) (connected.(${grid}.(state.curr.0).(state.curr.1)).*adj.1 + state.curr.1)
+                | ${filterBy("*f", notVisited)} | first`
 
   // Main query
   let query = {
     prev: rh`state.curr`,
     curr: curr,
     cell: rh`${grid}.(${curr}.0).(${curr}.1)`,
-    count: rh`.state.count + 1`
+    count: rh`state.count + 1`
   }
 
   let func = api.compile(query)
 
   while (state.cell != "S") {
-    state = func({input, udf, state})
+    state = func({input, udf, state, connected})
   }
 
   let res = state.count / 2
