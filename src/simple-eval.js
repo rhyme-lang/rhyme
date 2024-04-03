@@ -1027,7 +1027,38 @@ let emitFilters = (real) => buf => {
       let f = filters[i]
       let v1 = f.arg[1].op
       let g1 = f.arg[0]
-      let avail = g1.real.every(x => !vars[x] || seen[x] || x == v1) // vars OK?
+
+// NOTE: this isn't quite right. Consider:
+//
+// (1) let avail = g1.vars.every(x => !vars[x] || seen[x])
+//
+// But g1.vars isn't up to date anymore if the path contains
+// grouping. After extraction we may have (aggregateAsKey)
+//
+//    mkset(tmp1[K2])[K1] with mkset(tmp1[K2]).vars = D0 and .real = K2
+//
+// So it seems like we want
+//
+// (2) let avail = g1.vars.every(x => !vars[x] || seen[x])
+//
+// But that also isn't quite right for some terms without
+// grouping. For nontrivial variable dependencies as in
+//
+//    data.*U.*V.*U  and thus  data.*U.real = *U,*V
+//
+// (because of the second .*U dependency) we need to
+// emit data.*U, then data.*U.*V, etc. But data.*U.*V
+// fails because *V isn't available yet.
+//
+// PROPER SOLUTION: properly compute free variables *after*
+// extraction of filters.
+//
+// CURRENT WORKAROUND: special case for g1.V if V is
+// in g1.real but not in g1.vars.
+
+      let avail = g1.real.every(x => !vars[x] || seen[x] ||
+        x == v1 && !g1.vars.includes(x))
+
       if (avail)
         available.push(i)
       else
