@@ -455,7 +455,8 @@ let infer = q => {
 // 6. Infer dependencies top down: 
 //    - out:  maximum allowed set of variables in output (provided as input arg)
 //    - real: variables actually in output
-//    - free: iteration space for stms
+//    - iter: iteration space for stms
+//    - free: free variables, anticipating conversion to loops
 //
 //    Decorrelate paths and eliminate trivial recursion
 //
@@ -470,15 +471,19 @@ let overlaps = (a,b) => intersects(trans(a),trans(b))
 let inferBwd2 = out => q => {
   if (q.key == "input" || q.key == "const") {
     q.real = []
+    q.free = []
   } else if (q.key == "var") {
     // we have transitive information now -- include 
     // vars[q.op] if visible in out
     let syms = unique([q.op, ...vars[q.op].vars])
+    // console.assert(out.includes(q.op), q.op) no?
     q.real = intersect(syms, out)
+    q.free = [q.op]
   } else if (q.key == "get" || q.key == "pure" || q.key == "mkset") {
     // q.out = out
     let es = q.arg.map(inferBwd2(out))
     q.real = unique(es.flatMap(x => x.real))
+    q.free = unique(es.flatMap(x => x.free))
   } else if (q.key == "stateful") {
     // q.out = out // debugging info vs cse
     // q.path = path
@@ -493,6 +498,7 @@ let inferBwd2 = out => q => {
 
     q.iter = union(e1.real, extra)
     q.real = intersect(out, q.iter)
+    q.free = q.real
   } else if (q.key == "update") {
     // q.out = out // debugging info vs cse
     // q.path = path
@@ -555,7 +561,7 @@ let inferBwd2 = out => q => {
 
     q.iter = unique([...e0.real, ...e1Real, ...e2.real, ...extra2])
     q.real = intersect(q.iter, out)
-
+    q.free = q.real
   } else {
     console.error("unknown op", q)
   }
@@ -567,9 +573,9 @@ let inferBwd2 = out => q => {
 
   if (q.mode && q.mode != "reluctant")
     console.assert(subset(q.dims, q.real)) // can happen for lazy 'last'
-  if (q.key == "stateful" || q.key =="group" || q.key == "update") {
+  if (q.key == "stateful" || q.key =="group" || q.key == "update")
     console.assert(subset(q.real, q.iter), q.real+ "/"+ q.iter)
-  }
+  // console.assert(subset(q.free, q.real), q.free+ "/"+ q.real + " "+pretty(q))  no?
 
   return q
 }
@@ -956,11 +962,6 @@ let codegen = q => {
       return String(q.op)
   } else if (q.key == "var") {
     return quoteVar(q.op)
-  } else if (q.key == "pathref") {
-    if (path.some(x => x.pathkey == q.op.pathkey))
-      return "K"+q.op.pathkey
-    else
-      return codegen(q.op)
   } else if (q.key == "ref") {
     let q1 = assignments[q.op]
     let xs = [String(q.op),...q1.real]
@@ -1028,7 +1029,7 @@ let emitFilters = (real) => buf => {
       let v1 = f.arg[1].op
       let g1 = f.arg[0]
 
-// NOTE: this isn't quite right. Consider:
+// NOTE: this is a bit subtle. Consider:
 //
 // (1) let avail = g1.vars.every(x => !vars[x] || seen[x])
 //
@@ -1037,9 +1038,9 @@ let emitFilters = (real) => buf => {
 //
 //    mkset(tmp1[K2])[K1] with mkset(tmp1[K2]).vars = D0 and .real = K2
 //
-// So it seems like we want
+// So it seems like we might want
 //
-// (2) let avail = g1.vars.every(x => !vars[x] || seen[x])
+// (2) let avail = g1.real.every(x => !vars[x] || seen[x])
 //
 // But that also isn't quite right for some terms without
 // grouping. For nontrivial variable dependencies as in
@@ -1050,14 +1051,10 @@ let emitFilters = (real) => buf => {
 // emit data.*U, then data.*U.*V, etc. But data.*U.*V
 // fails because *V isn't available yet.
 //
-// PROPER SOLUTION: properly compute free variables *after*
-// extraction of filters.
-//
-// CURRENT WORKAROUND: special case for g1.V if V is
-// in g1.real but not in g1.vars.
+// SOLUTION: compute free variables *after* extraction
+// of filters, use q1.free
 
-      let avail = g1.real.every(x => !vars[x] || seen[x] ||
-        x == v1 && !g1.vars.includes(x))
+      let avail = g1.free.every(x => !vars[x] || seen[x])
 
       if (avail)
         available.push(i)
@@ -1083,8 +1080,7 @@ let emitFilters = (real) => buf => {
       //
       // TODO: it would be much cleaner to extract this into a 
       // proper assignment statement
-      let extra = g1.real.filter(x => !vars[x])
-      // XXX NOTE: was g1.free !! <-- previous diff ref/tmp
+      let extra = g1.free.filter(x => !vars[x]) // .free vs .real here?
 
       if (extra.length != 0) {
         buf0.push("// pre-pre-gen "+extra+" in "+pretty(g1))
@@ -1092,7 +1088,7 @@ let emitFilters = (real) => buf => {
           if (buf0.indexOf("let gen"+i+quoteVar(v2)+" = {}") < 0) {
             buf0.push("// pre-gen "+v2)
             buf0.push("let gen"+i+quoteVar(v2)+" = {}")
-            emitFilters(g1.real)(buf0)
+            emitFilters(g1.free)(buf0) // .free vs .real here?
             buf0.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
             buf0.push("  gen"+i+quoteVar(v2)+"["+quoteVar(v1)+"] = true //"+codegen(g1)+"?.["+quoteVar(v1)+"]")
             // with the aux data structure in place, we're ready to
@@ -1152,13 +1148,7 @@ let emitCode = (q, order) => {
     emitFilters(fv)(buf)
     buf.push(...buf2)
 
-    // no longer an issue with "order"
-    // if (q.tmps.some(x => x > i))
-    //  console.error("wrong order", i, q)
-    if (q.tmps.some(x => x == i))
-      console.error("cycle")
-
-    let xs = [i,...q.real.map(quoteVar)]
+    let xs = [i,...q.real.map(quoteVar)] // free = real for assignments
     let ys = xs.map(x => ","+x).join("")
 
     buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStm(q) + ")")
@@ -1167,6 +1157,7 @@ let emitCode = (q, order) => {
   }
 
   buf.push("// --- res ---")
+  console.assert(subset(q.free, q.real))
   emitFilters(q.real)(buf)
     let xs = q.real.map(quoteVar)
     let ys = xs.map(x => ","+x).join("")
