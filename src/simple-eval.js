@@ -1002,76 +1002,91 @@ let emitFilters = (real) => buf => {
 
   let vars = {}
   let seen = {}
+
+  // remember the set of iteration vars
   for (let v of real) vars[v] = true
 
-  let worklist = []
-  let skipcount = {}
+  // only consider filters contributing to iteration vars=
+  let pending = []
   for (let i in filters) {
-    worklist.push(i)
-    skipcount[i] = 0
-  }
-
-  // process filters
-  while (worklist.length > 0) {
-    let i = worklist.shift()
     let f = filters[i]
     let v1 = f.arg[1].op
     let g1 = f.arg[0]
-    if (!vars[v1]) continue // not interested in this? skip
+    if (vars[v1]) // not interested in this? skip
+      pending.push(i)
+  }
 
-    // Do we have an ordering problem? I.e. we depend on a
-    // variable that's only introduced later (first filter
-    // not seen yet). Try to solve this by postponing current
-    // to end of list. Need to be careful about cycles.
-    //
-    // TODO: would be better to use proper topsort
-    let orderingProblem = g1.real.filter(x => x != v1 && !seen[x] && vars[x])
-    if (orderingProblem.length != 0) { // ok, just emit current
-      if (skipcount[i]++ < 10) {
-        worklist.push(i)
-        continue
-      } else {
-        console.warn("unsolved filter ordering problem:"+orderingProblem+" at "+v1)
-      }
+  // compute next set of available filters:
+  // all dependent iteration vars have been seen (emitted before)
+  let available
+  let next = () => {
+    let p = pending
+    available = []
+    pending = []
+    for (let i of p) {
+      let f = filters[i]
+      let v1 = f.arg[1].op
+      let g1 = f.arg[0]
+      let avail = g1.real.every(x => !vars[x] || seen[x] || x == v1) // vars OK?
+      if (avail)
+        available.push(i)
+      else
+        pending.push(i)
     }
+    return available.length > 0
+  }
 
-    // Do we depend on variables that we don't want to iterate
-    // over? Then we need to project those out. Run the generator 
-    // separately and reify into a data structure. This needs 
-    // to happen before the main loop, hence separate output 
-    // buffers.
-    //
-    // TODO: it would be much cleaner to extract this into a 
-    // proper assignment statement
-    let extra = g1.real.filter(x => !vars[x])
-    // XXX NOTE: was g1.free !! <-- previous diff ref/tmp
 
-    if (extra.length != 0) {
-      buf0.push("// pre-pre-gen "+extra+" in "+pretty(g1))
-      for (let v2 of extra) {
-        if (buf0.indexOf("let gen"+i+quoteVar(v2)+" = {}") < 0) {
-          buf0.push("// pre-gen "+v2)
-          buf0.push("let gen"+i+quoteVar(v2)+" = {}")
-          emitFilters(g1.real)(buf0)
-          buf0.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
-          buf0.push("  gen"+i+quoteVar(v2)+"["+quoteVar(v1)+"] = true //"+codegen(g1)+"?.["+quoteVar(v1)+"]")
-          // with the aux data structure in place, we're ready to
-          // proceed with the main loop nest:
-        } 
-        if (!seen[v1])
-          buf1.push("for (let "+quoteVar(v1)+" in gen"+i+quoteVar(v2)+")")
-        else
-          buf1.push("if ("+quoteVar(v1)+" in gen"+i+quoteVar(v2)+")")
+  // process filters
+  while (next()) {
+    for (let i of available) {
+      let f = filters[i]
+      let v1 = f.arg[1].op
+      let g1 = f.arg[0]
+
+      // Do we depend on variables that we don't want to iterate
+      // over? Then we need to project those out. Run the generator 
+      // separately and reify into a data structure. This needs 
+      // to happen before the main loop, hence separate output 
+      // buffers.
+      //
+      // TODO: it would be much cleaner to extract this into a 
+      // proper assignment statement
+      let extra = g1.real.filter(x => !vars[x])
+      // XXX NOTE: was g1.free !! <-- previous diff ref/tmp
+
+      if (extra.length != 0) {
+        buf0.push("// pre-pre-gen "+extra+" in "+pretty(g1))
+        for (let v2 of extra) {
+          if (buf0.indexOf("let gen"+i+quoteVar(v2)+" = {}") < 0) {
+            buf0.push("// pre-gen "+v2)
+            buf0.push("let gen"+i+quoteVar(v2)+" = {}")
+            emitFilters(g1.real)(buf0)
+            buf0.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
+            buf0.push("  gen"+i+quoteVar(v2)+"["+quoteVar(v1)+"] = true //"+codegen(g1)+"?.["+quoteVar(v1)+"]")
+            // with the aux data structure in place, we're ready to
+            // proceed with the main loop nest:
+          } 
+          if (!seen[v1])
+            buf1.push("for (let "+quoteVar(v1)+" in gen"+i+quoteVar(v2)+")")
+          else
+            buf1.push("if ("+quoteVar(v1)+" in gen"+i+quoteVar(v2)+")")
+          seen[v1] = true
+        }
+      } else { // ok, just emit current
+        if (!seen[v1]) {
+          buf1.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
+        } else {
+          buf1.push("if ("+quoteVar(v1)+" in "+codegen(g1)+")")
+        }
         seen[v1] = true
       }
-    } else { // ok, just emit current
-      if (!seen[v1]) {
-        buf1.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
-      } else {
-        buf1.push("if ("+quoteVar(v1)+" in "+codegen(g1)+")")
-      }
-      seen[v1] = true
     }
+  }
+
+  if (pending.length > 0) {
+    let problem = pending.map(i => pretty(filters[i])).join(", ")
+    console.warn("unsolved filter ordering problem: couldn't emit "+problem)
   }
 
   // combine buffers
