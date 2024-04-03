@@ -491,8 +491,8 @@ let inferBwd2 = out => q => {
     // NOTE: if we decorrelate aggressively here,
     // we need to add some vars to enclosing updates
 
-    q.free = union(e1.real, extra)
-    q.real = intersect(out, q.free)
+    q.iter = union(e1.real, extra)
+    q.real = intersect(out, q.iter)
   } else if (q.key == "update") {
     // q.out = out // debugging info vs cse
     // q.path = path
@@ -553,8 +553,8 @@ let inferBwd2 = out => q => {
     let extra2 = path.filter(x => 
       intersects(x.yyreal, V)).flatMap(x => x.xxreal)
 
-    q.free = unique([...e0.real, ...e1Real, ...e2.real, ...extra2])
-    q.real = intersect(q.free, out)
+    q.iter = unique([...e0.real, ...e1Real, ...e2.real, ...extra2])
+    q.real = intersect(q.iter, out)
 
   } else {
     console.error("unknown op", q)
@@ -568,7 +568,7 @@ let inferBwd2 = out => q => {
   if (q.mode && q.mode != "reluctant")
     console.assert(subset(q.dims, q.real)) // can happen for lazy 'last'
   if (q.key == "stateful" || q.key =="group" || q.key == "update") {
-    console.assert(subset(q.real, q.free), q.real+ "/"+ q.free)
+    console.assert(subset(q.real, q.iter), q.real+ "/"+ q.iter)
   }
 
   return q
@@ -772,11 +772,11 @@ let computeDependencies = () => {
 
 //
 // 10: Compute legal order of assignments
-//    - topological sort based on q.free/q.real
+//    - topological sort based on q.iter/q.real
 //
 
 let computeOrder = q => {
-  // after inferBwd, schedule based on q.free
+  // after inferBwd, schedule based on q.iter
 
   let deps = {
     var2var: {},
@@ -794,7 +794,7 @@ let computeOrder = q => {
     deps.tmp2var[i] = {}
     deps.tmp2tmp[i] = {}
     let q = assignments[i]
-    for (let v of q.free) deps.tmp2var[i][v] = true
+    for (let v of q.iter) deps.tmp2var[i][v] = true
     for (let j of q.tmps) deps.tmp2tmp[i][j] = true
   }
 
@@ -889,7 +889,7 @@ let emitPseudo = (q) => {
     let q = filters[i]
     buf.push("gen"+i + ": " + pretty(q))
     if (q.vars.length)
-      buf.push("  " + q.vars + " / " + q.real + " / " + q.free)
+      buf.push("  " + q.vars + " / " + q.real + " / " + q.iter)
   }
   buf.push("")
   let hi = buf.length
@@ -1142,7 +1142,7 @@ let emitCode = (q, order) => {
 
     buf.push("// --- tmp"+i+" ---")
 
-    let fv = q.free
+    let fv = q.iter
 
     let buf1 = []
     let buf2 = []
@@ -1257,11 +1257,11 @@ let compile = (q,{
   for (let ix in assignments) {
     let q = assignments[ix]
     // report a warning when triggered
-    let drop = union(q.real, q.free).filter(x => vars[x].tmps.includes(Number(ix)))
+    let drop = union(q.real, q.iter).filter(x => vars[x].tmps.includes(Number(ix)))
     if (drop.length > 0)
       console.warn("trigger recursion fix (this should no longer be necessary):\n  "+drop+" dropping at\n  "+pretty(q))
     q.real = q.real.filter(x => !vars[x].tmps.includes(Number(ix)))
-    q.free = q.free.filter(x => !vars[x].tmps.includes(Number(ix)))
+    q.iter = q.iter.filter(x => !vars[x].tmps.includes(Number(ix)))
   }
 
 trace.log("---- AFTER REC FIXUP")
