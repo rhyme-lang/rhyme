@@ -564,6 +564,7 @@ ZZZ = (ZZZ, ZZZ)`
   // recursive computations.
 })
 
+
 test("day10-part1", () => {
   let input = `7-F7-
 .FJ|7
@@ -655,6 +656,41 @@ LJ.LJ`
 
   let res = state.count / 2
   expect(res).toBe(8)
+})
+
+
+test("aoc-day14-part1", () => {
+  let input = `O....#....
+O.OO#....#
+.....##...
+OO.#O....O
+.O.....O#.
+O.#..O.#.#
+..O..#O..O
+.......O..
+#....###..
+#OO..#....`
+
+  let udf = {
+    andThen: (a,b) => b,
+    ...udf_stdlib
+  }
+
+  let lines = rh`.input | udf.split "\\n"`
+  let platform = rh`${lines} | .*line | udf.split "" | group *line`
+  let n = rh`${lines} | count .*line`
+  let whereCanIFall = api.array(rh`${lines} | .0 | udf.split "" | udf.andThen .*col 0`)
+
+  let query = {
+    lines: platform,
+    n: n,
+    whereCanIFall
+  }
+
+  let func = api.compile(query)
+  console.log(func.explain.code)
+  let res = func({input, udf})
+  console.log(res)
 })
 
 // 2022
