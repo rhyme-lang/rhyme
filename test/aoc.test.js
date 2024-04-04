@@ -672,24 +672,35 @@ O.#..O.#.#
 #OO..#....`
 
   let udf = {
+    filter: c => c ? { [c]: true } : {},
     andThen: (a,b) => b,
+    onRock: (o, k, n) => (dummy) => {
+      o[k] ??= 0
+      let res = n - o[k]
+      o[k] += 1
+      return res
+    },
     ...udf_stdlib
   }
 
   let lines = rh`.input | udf.split "\\n"`
   let platform = rh`${lines} | .*line | udf.split "" | group *line`
   let n = rh`${lines} | count .*line`
-  let whereCanIFall = api.array(rh`${lines} | .0 | udf.split "" | udf.andThen .*col 0`)
+  let whereCanIFall = rh`.whereCanIFall`
 
-  let query = {
-    lines: platform,
-    n: n,
-    whereCanIFall
-  }
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+  let isRock = rh`${platform} | .*row | udf.isEqual .*col "O"`
+  let isCube = rh`${platform} | .*row | udf.isEqual .*col "#"`
+  let isEmpty = rh`${platform} | .*row | udf.isEqual .*col "."`
+  let query = rh`${platform} | .*row | .*col
+                             | ${filterBy("*f", isRock)}
+                             | udf.onRock ${whereCanIFall} *col (${n}) | sum
+                             | group *row`
 
   let func = api.compile(query)
   console.log(func.explain.code)
-  let res = func({input, udf})
+  console.log(func.explain_opt.code)
+  let res = func({input, udf, whereCanIFall: {}})
   console.log(res)
 })
 
