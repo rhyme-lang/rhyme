@@ -658,33 +658,47 @@ LJ.LJ`
 })
 
 test("day10-part2", () => {
-  let input = `...........
-.S-------7.
-.|F-----7|.
-.||.....||.
-.||.....||.
-.|L-7.F-J|.
-.|..|.|..|.
-.L--J.L--J.
-...........`
+  let input = `FF7FSF7F7F7F7F7F---7
+L|LJ||||||||||||F--J
+FL-7LJLJ||||||LJL-77
+F--JF--7||LJLJ7F7FJ-
+L---JF-JLJ.||-FJLJJ7
+|F|F-JF---7F7-L7L|7|
+|FFJF7L7F-JF7|JL---7
+7-L-JL7||F7|L7F-7F7|
+L.L7LFJ|||||FJL7||LJ
+L7JLJL-JLJLJL--JLJ.L`
 
-  let connected = (grid, i, j) => {
-    switch (grid[i][j]) {
-      case "|":
-        return [[i - 1, j], [i + 1, j]]
-      case "-":
-        return [[i, j - 1], [i, j + 1]]
-      case "L":
-        return [[i - 1, j], [i, j + 1]]
-      case "J":
-        return [[i - 1, j], [i, j - 1]]
-      case "7":
-        return [[i + 1, j], [i, j - 1]]
-      case "F":
-        return [[i + 1, j], [i, j + 1]]
-      case ".":
-        return []
-    }
+  // Each array element [x, y] represents the offset
+  // on each dimension from the current position
+  let connected = {
+    "|": [[-1, 0], [1, 0]],
+    "-": [[0, -1], [0, 1]],
+    "L": [[-1, 0], [0, 1]],
+    "J": [[-1, 0], [0, -1]],
+    "7": [[1, 0], [0, -1]],
+    "F": [[1, 0], [0, 1]],
+    ".": []
+  }
+
+  let connectedSouth = {
+    "|": true,
+    "-": false,
+    "L": false,
+    "J": false,
+    "7": true,
+    "F": true,
+    ".": false
+  }
+
+  let connectedNorth = {
+    "|": true,
+    "-": false,
+    "L": true,
+    "J": true,
+    "7": false,
+    "F": false,
+    ".": false
   }
 
   let udf = {
@@ -696,22 +710,44 @@ test("day10-part2", () => {
     },
     filter: c => c ? { [c]: true } : {},
     andThen: (a,b) => b, // just to add a as dependency
+    optionalChaining: (o, k) => o?.[k],
     toCoord: (i, j) => [i, j],
+    inLoop: (i, j, path) => path[i]?.[j] ? true : false,
+    getEnclosedArray: (i, path, grid) => (row) => {
+      let enclosed = false
+      let res = []
+      for (let j in row) {
+        if (udf.inLoop(i, j, path)) {
+          enclosed = enclosed != (row[j] == "S" ? connectedSouth[grid[i - 1]?.[j]] : connectedNorth[row[j]])
+        } else {
+          res.push(enclosed)
+        }
+      }
+      return res
+    },
     ...udf_stdlib
   }
   let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
 
   let lines = rh`.input | udf.split "\\n" | .*line
                         | udf.split ""`
-  
+
   let grid = api.array(lines)
 
+  // Use filter to find the start position
   let isStart = rh`udf.isEqual ${grid}.*i.*j "S"`
   let startPos = rh`udf.toCoord (udf.toNum *i) (udf.toNum *j) | ${filterBy("*f1", isStart)} | last`
 
-  let isConnected = rh`${startPos} | udf.getAdj | udf.connected ${grid} .*adj.0 .*adj.1
-                                   | udf.isEqual (udf.isEqual .*neighbor.0 ${startPos}.0) + (udf.isEqual .*neighbor.1 ${startPos}.1) 2`
+  // Get all the adjacent cells of the start cell. Filter the neighbors by whether they
+  // are connected with the start cell. i.e. coordinate of one of the connected cell
+  // is identical to the start cell
+  let isConnected = rh`${startPos} | udf.getAdj
+                                   | udf.toCoord (connected.(udf.optionalChaining ${grid}.(.*adj.0) (.*adj.1)).*neighbor.0 + .*adj.0) (connected.(udf.optionalChaining ${grid}.(.*adj.0) (.*adj.1)).*neighbor.1 + .*adj.1)
+                                   | udf.isEqual (udf.isEqual .0 ${startPos}.0) + (udf.isEqual .1 ${startPos}.1) 2`
   let startCell = rh`${startPos} | udf.getAdj | .*adj | ${filterBy("*f2", isConnected)} | first`
+
+  // In the initial state, "curr" is actually the cell after we make the first move
+  // The start cell becomes the first "prev" value which is used to check for visited cells
   let initialState = {
     prev: startPos,
     curr: startCell,
@@ -720,8 +756,13 @@ test("day10-part2", () => {
 
   let getInitialState = api.compile(initialState)
 
-  let state = getInitialState({input, udf})
-  state.count = 1
+  let state = getInitialState({input, udf, connected})
+  
+  let path = {}
+  path[state.prev[0]] ??= {}
+  path[state.prev[0]][state.prev[1]] = true
+  path[state.curr[0]] ??= {}
+  path[state.curr[0]][state.curr[1]] = true
 
   // Each query moves from the current cell
   // to the next cell which are the not visited connected cells
@@ -730,30 +771,33 @@ test("day10-part2", () => {
   // and find the one not visited
 
   // It stops when the current cell becomes S
-  let notVisited = rh`udf.connected ${grid} state.curr.0 state.curr.1 | udf.notEqual (udf.isEqual .*adj.0 state.prev.0) + (udf.isEqual .*adj.1 state.prev.1) 2`
+  let notVisited = rh`udf.toCoord (connected.(${grid}.(state.curr.0).(state.curr.1)).*adj.0 + state.curr.0) (connected.(${grid}.(state.curr.0).(state.curr.1)).*adj.1 + state.curr.1)
+                      | udf.notEqual (udf.isEqual .0 state.prev.0) + (udf.isEqual .1 state.prev.1) 2`
+  let curr = rh`udf.toCoord (connected.(${grid}.(state.curr.0).(state.curr.1)).*adj.0 + state.curr.0) (connected.(${grid}.(state.curr.0).(state.curr.1)).*adj.1 + state.curr.1)
+                | ${filterBy("*f", notVisited)} | first`
 
-  let curr = rh`udf.connected ${grid} state.curr.0 state.curr.1 | .*adj | ${filterBy("*f", notVisited)} | first`
-
-  let query = {
+  // Main query
+  let pathObj = {
     prev: rh`state.curr`,
     curr: curr,
     cell: rh`${grid}.(${curr}.0).(${curr}.1)`,
-    count: rh`.state.count + 1`
   }
 
-  let func = api.compile(query)
+  let findPath = api.compile(pathObj)
 
   while (state.cell != "S") {
-    state = func({input, udf, state})
+    state = findPath({input, udf, state, connected})
+    path[state.curr[0]] ??= {}
+    path[state.curr[0]][state.curr[1]] = true
   }
 
-  let res = state.count / 2
+  let pathQuery = rh`.path`
+  let query = rh`${grid}.*row | udf.getEnclosedArray *row ${pathQuery} ${grid} | sum .*enclosed | group *row | sum .*`
+  let func = api.compile(query)
   
+  let res = func({input, udf, connected, path})
 
-  // Find the loop first because we need to know which cells are in the loop
-  // We then iterate through the grid and check for croossings.
-
-  // Need to know whether a cell connects to north
+  expect(res).toBe(10)
 })
 
 // 2022
