@@ -439,10 +439,12 @@ let infer = q => {
       q.dims = []
     }
   } else if (q.key == "update") {
-    let [e0,e1,e2] = q.arg.map(infer)
-    q.vars = unique([...e0.vars, ...e1.vars, ...e2.vars])
-    q.mind = diff(unique([...e0.mind, /*...e1.mind,*/ ...e2.mind]), e1.vars)
-    q.dims = diff(unique([...e0.dims, /*...e1.dims,*/ ...e2.dims]), e1.vars)
+    let [e0,e1,e2,e3] = q.arg.map(infer)
+    e3 ??= { vars: [], mind: [], dims: [] }
+    q.vars = unique([...e0.vars, ...e1.vars, ...e2.vars, ...e3.vars])
+    // treat e3 like a reduction: do not propagate it's mind/dims
+    q.mind = union(e0.mind, diff(e2.mind, e1.vars))
+    q.dims = union(e0.dims, diff(e2.dims, e1.vars))
   } else {
     console.error("unknown op", q)
   }
@@ -530,7 +532,7 @@ let inferBwd2 = out => q => {
     // if the key is correlated with the body, we need
     // to track its transitive vars, too. Otherwise not.
 
-    let keyAndBodyCorrelated = intersects(e1Real, (q.arg[2].vars))
+    let keyAndBodyCorrelated = intersects(e1Real, q.arg[2].vars)
 
     let e1RealPre = keyAndBodyCorrelated 
       ? [e1.op, ...diff(e1Body.real, union(out,q.arg[2].vars))]
