@@ -21,6 +21,7 @@ let udf_stdlib = {
   isLessThan: (x,y) => x < y,
   isLessOrEqual: (x,y) => x <= y,
   isEqual: (x,y) => x === y,
+  notEqual: (x,y) => x !== y,
   exp: n => x => n ** x,
   sqrt: n => Math.sqrt(n),
   floor: x => Math.floor(x),
@@ -561,6 +562,99 @@ ZZZ = (ZZZ, ZZZ)`
   // This would match the emerging pattern of having
   // separate 'init' and 'step' queries for recursive
   // recursive computations.
+})
+
+test("day10-part1", () => {
+  let input = `7-F7-
+.FJ|7
+SJLL7
+|F--J
+LJ.LJ`
+
+  // Each array element [x, y] represents the offset
+  // on each dimension from the current position
+  let connected = {
+    "|": [[-1, 0], [1, 0]],
+    "-": [[0, -1], [0, 1]],
+    "L": [[-1, 0], [0, 1]],
+    "J": [[-1, 0], [0, -1]],
+    "7": [[1, 0], [0, -1]],
+    "F": [[1, 0], [0, 1]],
+    ".": []
+  }
+
+  let udf = {
+    connected,
+    getAdj: point => {
+      let i = +point[0]
+      let j = +point[1]
+      return [[i - 1, j], [i + 1, j], [i, j - 1], [i, j + 1]]
+    },
+    filter: c => c ? { [c]: true } : {},
+    andThen: (a,b) => b, // just to add a as dependency
+    toCoord: (i, j) => [i, j],
+    ...udf_stdlib
+  }
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+
+  let lines = rh`.input | udf.split "\\n" | .*line
+                        | udf.split ""`
+  
+  let grid = api.array(lines)
+
+  // Use filter to find the start position
+  let isStart = rh`udf.isEqual ${grid}.*i.*j "S"`
+  let startPos = rh`udf.toCoord (udf.toNum *i) (udf.toNum *j) | ${filterBy("*f1", isStart)} | last`
+
+  // Get all the adjacent cells of the start cell. Filter the neighbors by whether they
+  // are connected with the start cell. i.e. coordinate of one of the connected cell
+  // is identical to the start cell
+  let isConnected = rh`${startPos} | udf.getAdj
+                                   | udf.toCoord (connected.(${grid}.(.*adj.0).(.*adj.1)).*neighbor.0 + .*adj.0) (connected.(${grid}.(.*adj.0).(.*adj.1)).*neighbor.1 + .*adj.1)
+                                   | udf.isEqual (udf.isEqual .0 ${startPos}.0) + (udf.isEqual .1 ${startPos}.1) 2`
+  let startCell = rh`${startPos} | udf.getAdj | .*adj | ${filterBy("*f2", isConnected)} | first`
+
+  // In the initial state, "curr" is actually the cell after we make the first move
+  // The start cell becomes the first "prev" value which is used to check for visited cells
+  let initialState = {
+    prev: startPos,
+    curr: startCell,
+    cell: rh`${grid}.(${startCell}.0).(${startCell}.1)`
+  }
+
+  let getInitialState = api.compile(initialState)
+
+  let state = getInitialState({input, udf, connected})
+  state.count = 1
+
+  // Each query moves from the current cell
+  // to the next cell which are the not visited connected cells
+
+  // The query checks the connected cells of the current cell
+  // and find the one not visited
+
+  // It stops when the current cell becomes S
+  let notVisited = rh`udf.toCoord (connected.(${grid}.(state.curr.0).(state.curr.1)).*adj.0 + state.curr.0) (connected.(${grid}.(state.curr.0).(state.curr.1)).*adj.1 + state.curr.1)
+                      | udf.notEqual (udf.isEqual .0 state.prev.0) + (udf.isEqual .1 state.prev.1) 2`
+  let curr = rh`udf.toCoord (connected.(${grid}.(state.curr.0).(state.curr.1)).*adj.0 + state.curr.0) (connected.(${grid}.(state.curr.0).(state.curr.1)).*adj.1 + state.curr.1)
+                | ${filterBy("*f", notVisited)} | first`
+
+  // Main query
+  let query = {
+    prev: rh`state.curr`,
+    curr: curr,
+    cell: rh`${grid}.(${curr}.0).(${curr}.1)`,
+    count: rh`state.count + 1`
+  }
+
+  let func = api.compile(query)
+
+  while (state.cell != "S") {
+    state = func({input, udf, state, connected})
+  }
+
+  let res = state.count / 2
+  expect(res).toBe(8)
 })
 
 // 2022
