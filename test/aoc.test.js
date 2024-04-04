@@ -564,7 +564,6 @@ ZZZ = (ZZZ, ZZZ)`
   // recursive computations.
 })
 
-
 test("day10-part1", () => {
   let input = `7-F7-
 .FJ|7
@@ -658,6 +657,63 @@ LJ.LJ`
   expect(res).toBe(8)
 })
 
+// test("aoc-day14-part1", () => {
+//   let input = `O....#....
+// O.OO#....#
+// .....##...
+// OO.#O....O
+// .O.....O#.
+// O.#..O.#.#
+// ..O..#O..O
+// .......O..
+// #....###..
+// #OO..#....`
+
+//   let udf = {
+//     filter: c => c ? { [c]: true } : {},
+//     andThen: (a,b) => b,
+//     onRock: (o, k, n) => (dummy) => {
+//       o[k] ??= 0
+//       let res = n - o[k]
+//       o[k] += 1
+//       return res
+//     },
+//     onCube: (o, k, n) => (dummy) => {
+//       o[k] = n
+//       return 0
+//     },
+//     ...udf_stdlib
+//   }
+
+//   let lines = rh`.input | udf.split "\\n"`
+//   let platform = rh`${lines} | .*line | udf.split "" | group *line`
+//   let n = rh`${lines} | count .*line`
+//   let whereCanIFall = rh`.whereCanIFall`
+
+//   let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+//   let isRock = rh`${platform} | .*row | udf.isEqual .*col "O"`
+//   let isCube = rh`${platform} | .*row | udf.isEqual .*col "#"`
+//   let isEmpty = rh`${platform} | .*row | udf.isEqual .*col "."`
+//   let queryRock = rh`${platform} | .*row | .*col
+//                              | ${filterBy("*fRock", isRock)}
+//                              | udf.onRock ${whereCanIFall} (udf.toNum *col) (${n}) | sum
+//                              | group *row`
+//   let queryCube = rh`${platform} | .*row | .*col
+//                              | ${filterBy("*fCube", isCube)}
+//                              | udf.onCube ${whereCanIFall} (udf.toNum *col) ((udf.toNum *row) + 1) | sum
+//                              | group *row`
+
+//   let query = {
+//     rock: queryRock,
+//     cube: queryCube
+//   }
+
+//   let func = api.compile(query)
+//   console.log(func.explain.code)
+//   console.log(func.explain_opt.code)
+//   let res = func({input, udf, whereCanIFall: {}})
+//   console.log(res)
+// })
 
 test("aoc-day14-part1", () => {
   let input = `O....#....
@@ -674,34 +730,37 @@ O.#..O.#.#
   let udf = {
     filter: c => c ? { [c]: true } : {},
     andThen: (a,b) => b,
-    onRock: (o, k, n) => (dummy) => {
-      o[k] ??= 0
-      let res = n - o[k]
-      o[k] += 1
-      return res
-    },
+    onRock: (old, cell) => cell == "O" ? old + 1 : 0,
+    onCube: (row, cell) => cell == "#" ? row + 1 : 0,
+    ident: x => x,
     ...udf_stdlib
   }
 
   let lines = rh`.input | udf.split "\\n"`
   let platform = rh`${lines} | .*line | udf.split "" | group *line`
   let n = rh`${lines} | count .*line`
-  let whereCanIFall = rh`.whereCanIFall`
 
-  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
-  let isRock = rh`${platform} | .*row | udf.isEqual .*col "O"`
-  let isCube = rh`${platform} | .*row | udf.isEqual .*col "#"`
-  let isEmpty = rh`${platform} | .*row | udf.isEqual .*col "."`
-  let query = rh`${platform} | .*row | .*col
-                             | ${filterBy("*f", isRock)}
-                             | udf.onRock ${whereCanIFall} *col (${n}) | sum
-                             | group *row`
+  let whereCanIFall = rh`${platform} | .(state.row)
+                                     | (udf.onRock state.whereCanIFall.(udf.ident *col) .*col) + (udf.onCube state.row .*col)`
+
+  let state = {
+    whereCanIFall: {},
+    row: 0,
+    n: Infinity
+  }
+
+  let query = {
+    platform: platform,
+    whereCanIFall: api.array(whereCanIFall),
+    row: rh`state.row + 1`,
+    n: n
+  }
 
   let func = api.compile(query)
   console.log(func.explain.code)
-  console.log(func.explain_opt.code)
-  let res = func({input, udf, whereCanIFall: {}})
-  console.log(res)
+  // while (state.row < state.n) {
+    state = func({input, udf, state})
+  // }
 })
 
 // 2022
