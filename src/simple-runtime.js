@@ -284,9 +284,9 @@ rt.deepGet = (root, a) => {
 }
 
 rt.deepForIn = (root, f) => {
+  f([]) // preorder
   if (typeof root == "object") {
     for (let k in root) {
-      f([k]) // preorder
       rt.deepForIn(root[k], p => {
         f([k,...p])
       })

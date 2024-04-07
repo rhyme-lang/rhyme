@@ -57,24 +57,35 @@ test("testPath0", () => {
   let res = func({data})
 
   expect(res).toEqual([
+    [],
     ["A"], ["B"], ["foo1"],
     ["foo1","A"], ["foo1","B"], ["foo1","foo2"],
     ["foo1","foo2","A"], ["foo1","foo2","B"]
   ])
 })
 
-
 test("testPath1", () => {
-   // filter and collect paths (equijoin)
+  // filter and collect paths (equijoin)
   let query = rh`array (data.**A & other.**A & **A)`
 
   let func = compile(query)
   let res = func({data,other})
 
   expect(res).toEqual([
+    [],
     ["foo1"],
     ["foo1","B"], ["foo1","foo2"],
     ["foo1","foo2","A"]
   ])
+})
+
+test("testPath2", () => {
+  // look for specific keys deep in the tree
+  let query = rh`array data.**A.B`
+
+  let func = compile(query)
+  let res = func({data,other})
+
+  expect(res).toEqual([8,18,28])
 })
 
