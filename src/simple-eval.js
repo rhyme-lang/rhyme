@@ -997,7 +997,7 @@ let emitStm = (q) => {
   }
 }
 
-let emitFilters = (real) => buf => {
+let emitFilters = (real) => buf => body => {
 
   let watermark = buf.length
   let buf0 = buf
@@ -1090,9 +1090,10 @@ let emitFilters = (real) => buf => {
           if (buf0.indexOf("let gen"+i+quoteVar(v2)+" = {}") < 0) {
             buf0.push("// pre-gen "+v2)
             buf0.push("let gen"+i+quoteVar(v2)+" = {}")
-            emitFilters(g1.free)(buf0) // .free vs .real here?
-            buf0.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
-            buf0.push("  gen"+i+quoteVar(v2)+"["+quoteVar(v1)+"] = true //"+codegen(g1)+"?.["+quoteVar(v1)+"]")
+            emitFilters(g1.free)(buf0)(() => { // .free vs .real here?
+              buf0.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
+              buf0.push("  gen"+i+quoteVar(v2)+"["+quoteVar(v1)+"] = true //"+codegen(g1)+"?.["+quoteVar(v1)+"]")
+            })
             // with the aux data structure in place, we're ready to
             // proceed with the main loop nest:
           } 
@@ -1121,6 +1122,8 @@ let emitFilters = (real) => buf => {
   // combine buffers
   if (buf.length > watermark) buf.push("// main loop")
   buf.push(...buf1)
+
+  body()
 }
 
 
@@ -1142,28 +1145,21 @@ let emitCode = (q, order) => {
 
     let fv = q.iter
 
-    let buf1 = []
-    let buf2 = []
-    let buf3 = []
+    emitFilters(fv)(buf)(() => {
+      let xs = [i,...q.real.map(quoteVar)] // free = real for assignments
+      let ys = xs.map(x => ","+x).join("")
 
-    buf.push(...buf1)
-    emitFilters(fv)(buf)
-    buf.push(...buf2)
-
-    let xs = [i,...q.real.map(quoteVar)] // free = real for assignments
-    let ys = xs.map(x => ","+x).join("")
-
-    buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStm(q) + ")")
-
-    buf.push(...buf3)
+      buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStm(q) + ")")
+    })
   }
 
   buf.push("// --- res ---")
   console.assert(subset(q.free, q.real))
-  emitFilters(q.real)(buf)
+  emitFilters(q.real)(buf)(() => {
     let xs = q.real.map(quoteVar)
     let ys = xs.map(x => ","+x).join("")
-  buf.push("k("+codegen(q)+ys+")")
+    buf.push("k("+codegen(q)+ys+")")
+  })
   buf.push("})")
 
   return buf.join("\n")
