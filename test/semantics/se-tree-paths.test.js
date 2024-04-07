@@ -13,6 +13,16 @@ let data = {
   },
 }
 
+let other = {
+  C: 9,
+  foo1: {
+    B: 12,
+    foo2: {
+      A: 13, C: 15,
+    }
+  }
+}
+
 /*
 
 Motivation:
@@ -50,6 +60,21 @@ test("testPath0", () => {
     ["A"], ["B"], ["foo1"],
     ["foo1","A"], ["foo1","B"], ["foo1","foo2"],
     ["foo1","foo2","A"], ["foo1","foo2","B"]
+  ])
+})
+
+
+test("testPath1", () => {
+   // filter and collect paths (equijoin)
+  let query = rh`array (data.**A & other.**A & **A)`
+
+  let func = compile(query)
+  let res = func({data,other})
+
+  expect(res).toEqual([
+    ["foo1"],
+    ["foo1","B"], ["foo1","foo2"],
+    ["foo1","foo2","A"]
   ])
 })
 

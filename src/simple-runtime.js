@@ -294,9 +294,19 @@ rt.deepForIn = (root, f) => {
   }
 }
 
-rt.deepIfIn = (root, k, f) => {
-  // TODO
-  if (k[0] in root) f()
+rt.deepIfIn = (root, a, f) => {
+  if (a instanceof Array) {
+    if (a.length > 0) {
+      let [hd,...tl] = a
+      if (root && hd in root)
+        rt.deepIfIn(root[hd], tl, f)
+    } else {
+      f()
+    }
+  } else {
+    if (a in root)
+      f()
+  }
 }
 
 
