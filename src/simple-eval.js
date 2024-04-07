@@ -944,12 +944,17 @@ let emitPseudo = (q) => {
 //
 
 
+let isDeepVarStr = s => s.startsWith("**")
 
-let quoteVar = s => s.replace("*", "x")
+let isDeepVarExp = s => s.key == "var" && isDeepVarStr(s.op)
+
+
+let quoteVar = s => s.replaceAll("*", "x")
 
 let quoteIndex = s => "?.["+s+"]"
 
 let quoteIndexVars = (s,vs) => s + vs.map(quoteVar).map(quoteIndex).join("")
+
 
 
 let codegen = q => {
@@ -968,6 +973,9 @@ let codegen = q => {
     let q1 = assignments[q.op]
     let xs = [String(q.op),...q1.real]
     return quoteIndexVars("tmp", xs)
+  } else if (q.key == "get" && isDeepVarExp(q.arg[1])) {
+    let [e1,e2] = q.arg.map(codegen)
+    return "rt.deepGet("+e1+","+e2+")"
   } else if (q.key == "get") {
     let [e1,e2] = q.arg.map(codegen)
     return e1+quoteIndex(e2)
@@ -1066,6 +1074,7 @@ let emitFilters = (real) => buf => body => {
     return available.length > 0
   }
 
+  let nesting = 0
 
   // process filters
   while (next()) {
@@ -1103,6 +1112,14 @@ let emitFilters = (real) => buf => body => {
             buf1.push("if ("+quoteVar(v1)+" in gen"+i+quoteVar(v2)+")")
           seen[v1] = true
         }
+      } else if (isDeepVarStr(v1)) { // ok, just emit current
+        if (!seen[v1]) {
+          buf1.push("rt.deepForIn("+codegen(g1)+", "+quoteVar(v1)+" => {")
+        } else {
+          buf1.push("rt.deepIfIn("+codegen(g1)+", "+quoteVar(v1)+", () => {")
+        }
+        seen[v1] = true
+        nesting += 1
       } else { // ok, just emit current
         if (!seen[v1]) {
           buf1.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
@@ -1124,6 +1141,9 @@ let emitFilters = (real) => buf => body => {
   buf.push(...buf1)
 
   body()
+
+  for (let i = 0; i < nesting; i++)
+    buf.push("})")
 }
 
 

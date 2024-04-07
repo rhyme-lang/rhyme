@@ -266,3 +266,39 @@ rt.update = (root,...path) => (fold) => {
 
   obj[ix] = fold.next(obj[ix])
 }
+
+
+// deep vars (tree paths)
+
+rt.deepGet = (root, a) => {
+  if (a instanceof Array) {
+    if (a.length > 0) {
+      let [hd,...tl] = a
+      return rt.deepGet(root?.[hd], tl)
+    } else {
+      return root
+    }
+  } else {
+    return root?.[a]
+  }
+}
+
+rt.deepForIn = (root, f) => {
+  if (typeof root == "object") {
+    for (let k in root) {
+      f([k]) // preorder
+      rt.deepForIn(root[k], p => {
+        f([k,...p])
+      })
+    }
+  }
+}
+
+rt.deepIfIn = (root, k, f) => {
+  // TODO
+  if (k[0] in root) f()
+}
+
+
+
+
