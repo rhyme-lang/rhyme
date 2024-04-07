@@ -89,3 +89,53 @@ test("testPath2", () => {
   expect(res).toEqual([8,18,28])
 })
 
+
+// test shape-polymorphic arithmetic
+test("testArith0", () => {
+  let A = 7
+  let B = 8
+
+  let query = rh`A.**I + B.**I`
+
+  let func = compile(query)
+  let res = func({A,B})
+
+  expect(res).toEqual({"": 15}) // FIXME: grouping by **I not supported yet
+})
+
+test("testArith1", () => {
+  let A = [1,2,3]
+  let B = [10,20,30]
+
+  let query = rh`A.**I + B.**I`
+
+  let func = compile(query)
+  let res = func({A,B})
+
+  expect(res).toEqual({
+    "": "1,2,310,20,30",
+    0: 11,
+    1: 22,
+    2: 33,
+  }) // FIXME: grouping by **I, plus of non-numbers
+})
+
+test("testArith2", () => {
+  let A = [[1,2],[3,4]]
+  let B = [[10,20],[30,40]]
+
+  let query = rh`A.**I + B.**I`
+
+  let func = compile(query)
+  let res = func({A,B})
+
+  expect(res).toEqual({
+    "": "1,2,3,410,20,30,40",
+    "0": "1,210,20",
+    "0,0": 11,
+    "0,1": 22,
+    "1": "3,430,40",
+    "1,0": 33,
+    "1,1": 44,
+  }) // FIXME: grouping by **I, plus of non-numbers
+})
