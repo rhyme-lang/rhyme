@@ -50,6 +50,8 @@ further.
 */
 
 
+// test traversal
+
 test("testPath0", () => {
   let query = rh`array (data.**A & **A)` // collect all paths
 
@@ -87,6 +89,75 @@ test("testPath2", () => {
   let res = func({data,other})
 
   expect(res).toEqual([8,18,28])
+})
+
+
+// test grouping: implicit & explicit
+
+test("testPathGroup1", () => {
+  let query = rh`data.**A.B`
+
+  let func = compile(query)
+  let res = func({data,other})
+
+  // XXX: implicit grouping is problematic if parts of
+  // key path are removed
+
+  let wrong = 8
+  expect(res).toEqual(wrong) // FIXME: top-level has path [],
+                             // so we set res = 8 and then try to
+                             // add 8.foo1 = ... etc.
+                             // What's the desired result here?
+  // expect(res).toEqual({B: 8, foo1: {B: 18, foo2: {B:28}}})
+})
+
+test("testPathGroup2", () => {
+  // look for specific keys deep in the tree
+  let query = { "join **A": rh`data.**A.B` }
+
+  let func = compile(query)
+  let res = func({data,other})
+
+  // Explicit grouping is ok if we convert the key to a string
+
+  expect(res).toEqual({
+    "": 8, 
+    "foo1": 18,
+    "foo1,foo2": 28
+  })
+})
+
+test("testPathGroup3", () => {
+  // let query = { "**A": rh`data.**A.B` }  // same issue as implicit grouping
+  let query = { "**A": { "BOO": rh`data.**A.B` } }
+
+  let func = compile(query)
+  // let res = func({data,other})
+
+  // console.log(func.explain.code)
+  // console.log(res)
+
+  // XXX similar problem if we introduce a level of nesting:
+  // paths [] and [foo1] and [foo1,foo2] all have B key,
+  // so we successively overwrite.
+
+  // Possible solution: merge, don't overwrite.
+  // Pitfall: want to preserve "update" semantics of
+  // overwriting *previous* values.
+  // (Value from before the update)
+
+  let wrong = {
+    A: {}, B : {},
+    foo1: {
+      BOO: 18,
+      A: {}, B: {},
+      foo2: {
+        A: {}, B: {}
+      } 
+    }
+  }
+
+  // expect(res).toEqual(wrong) // FIXME
 })
 
 

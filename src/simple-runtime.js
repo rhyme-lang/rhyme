@@ -244,9 +244,12 @@ rt.stateful.update = (x0,x1,x2) => ({
     if (x1 === undefined) return s
     if (x2 === undefined) return s
     if (s === undefined) s = {...x0}
-    if (x1 instanceof Array)
-      console.error("TODO: add deep update! "+x1)
-    s[x1] = x2
+    if (x1 instanceof Array) {
+      // console.error("TODO: add deep update (group)! "+x1)
+      rt.deepUpdate(s, x1, x2)
+    } else {
+      s[x1] = x2
+    }
     return s
   }
 })
@@ -261,18 +264,24 @@ rt.update = (root,...path) => (fold) => {
   let c = 0
   for (let ix of path.slice(0,path.length-1)) {
     if (ix === undefined) return
-    if (ix instanceof Array)
+    if (ix instanceof Array) 
       console.error("TODO: add deep update! "+ix)
     obj[ix] ??= {}
     obj = obj[ix]
   }
 
   let ix = path[path.length-1]
-  if (ix instanceof Array)
-    console.error("TODO: add deep update! "+ix)
-  obj[ix] ??= fold.init()
-
-  obj[ix] = fold.next(obj[ix])
+  if (ix instanceof Array) {
+    // console.error("TODO: add deep update (red)! "+ix)
+    let v = rt.deepGet(obj, ix)
+    if (v === undefined)
+      rt.deepUpdate(obj, ix, fold.next(fold.init()))
+    else
+      rt.deepUpdate(obj, ix, fold.next(v))
+  } else {
+    obj[ix] ??= fold.init()
+    obj[ix] = fold.next(obj[ix])
+  }
 }
 
 
@@ -294,14 +303,15 @@ rt.deepGet = (root, a) => {
 }
 
 rt.deepUpdate = (obj, path, value) => {
+  // console.log(path, value)
   if (value === undefined) return obj
   if (path.length > 0) {
     let [k,...rest] = path
-    obj ??= {}
     if (k instanceof Array) {
       // deep! e.g. deep var in top-level iter space
       obj = rt.deepUpdate(obj, [...k,...rest], value)
     } else {
+      obj ??= {}
       obj[k] = rt.deepUpdate(obj[k] ?? {}, rest, value)
     }
     return obj
