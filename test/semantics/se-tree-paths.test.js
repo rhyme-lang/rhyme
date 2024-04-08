@@ -91,51 +91,57 @@ test("testPath2", () => {
 
 
 // test shape-polymorphic arithmetic
+
+// the default + falls back string concat
+// for non-numbers, but we want undefined
+let udf = {
+  plus: (x1,x2) => {
+    if (x1 === undefined) return undefined
+    if (x2 === undefined) return undefined
+    let res = Number(x1) + Number(x2)
+    // do not fall back on string concat!
+    if (Number.isNaN(res)) return undefined
+    return res
+  }
+}
+
 test("testArith0", () => {
   let A = 7
   let B = 8
 
-  let query = rh`A.**I + B.**I`
+  let query = rh`udf.plus A.**I B.**I`
 
   let func = compile(query)
-  let res = func({A,B})
+  let res = func({A,B,udf})
 
-  expect(res).toEqual({"": 15}) // FIXME: grouping by **I not supported yet
+  expect(res).toEqual(15)
 })
 
 test("testArith1", () => {
   let A = [1,2,3]
   let B = [10,20,30]
 
-  let query = rh`A.**I + B.**I`
+  let query = rh`udf.plus A.**I B.**I`
 
   let func = compile(query)
-  let res = func({A,B})
+  let res = func({A,B,udf})
 
-  expect(res).toEqual({
-    "": "1,2,310,20,30",
-    0: 11,
-    1: 22,
-    2: 33,
-  }) // FIXME: grouping by **I, plus of non-numbers
+  expect(res).toEqual({ // [11, 22, 33]
+    0: 11,1: 22, 2: 33 
+  })
 })
 
 test("testArith2", () => {
   let A = [[1,2],[3,4]]
   let B = [[10,20],[30,40]]
 
-  let query = rh`A.**I + B.**I`
+  let query = rh`udf.plus A.**I B.**I`
 
   let func = compile(query)
-  let res = func({A,B})
+  let res = func({A,B,udf})
 
   expect(res).toEqual({
-    "": "1,2,3,410,20,30,40",
-    "0": "1,210,20",
-    "0,0": 11,
-    "0,1": 22,
-    "1": "3,430,40",
-    "1,0": 33,
-    "1,1": 44,
-  }) // FIXME: grouping by **I, plus of non-numbers
+    0: {0: 11, 1: 22},   // [11, 22]
+    1: {0: 33, 1: 44}    // [33, 44]
+  })
 })

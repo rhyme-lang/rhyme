@@ -1302,7 +1302,7 @@ trace.log(emitPseudo(q))
 
   let wrap = (input) => {
     let res
-    func(input)((x,...path) => res = update(res)(path)(x))
+    func(input)((x,...path) => res = rt.deepUpdate(res,path,x))
     // alternative: discard path and collect into an array
     return res
   }
