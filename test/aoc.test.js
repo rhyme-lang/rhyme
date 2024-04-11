@@ -853,7 +853,7 @@ O.#..O.#.#
 #OO..#....`
 
   let udf = {
-    getOrDefault: (o, k, cell) => o[k] == undefined ? 0 : o[k],
+    getOrDefault: (o, k) => o[k] ?? 0,
     ...udf_stdlib
   }
 
@@ -862,12 +862,12 @@ O.#..O.#.#
   let n = rh`${lines} | count .*line2`
 
   let whereCanIFall = rh`${platform} | .(state.row)
-                                     | ((udf.getOrDefault state.whereCanIFall (udf.toNum *col) .*col) + 1) * (udf.isEqual .*col "O") +
+                                     | ((udf.getOrDefault state.whereCanIFall *col) + 1) * (udf.isEqual .*col "O") +
                                        (state.row + 1) * (udf.isEqual .*col "#") +
-                                       (udf.getOrDefault state.whereCanIFall (udf.toNum *col) .*col) * (udf.isEqual .*col ".")`
-  
+                                       (udf.getOrDefault state.whereCanIFall *col) * (udf.isEqual .*col ".")`
+
   let load = rh`${platform} | .(state.row)
-                            | (${n} - (udf.getOrDefault state.whereCanIFall (udf.toNum *col) .*col)) * (udf.isEqual .*col "O")
+                            | (${n} - (udf.getOrDefault state.whereCanIFall *col)) * (udf.isEqual .*col "O")
                             | sum`
 
   let state = {

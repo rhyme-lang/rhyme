@@ -2,6 +2,26 @@ const { api } = require('../src/rhyme')
 const { rh } = require('../src/parser')
 const { runtime } = require('../src/simple-runtime')
 
+test("siblingFields", () => {
+    let data = [{ key: "A", value: 10 }, { key: "B", value: 20}, { key: "C", value: 30 }]
+
+    let q1 = [rh`data.*A.value`]
+    let q2 = rh`data.*A | count`
+
+    let q3 = rh`${q1} | sum .*B`
+
+    let query = {
+        q2, q3
+    }
+
+    let func = api.compile(query)
+    // c1 produces incorrect code
+
+    // console.dir(func.explain.code)
+    // console.dir(func.explain_opt.code)
+    // let res = func({data})
+    // console.dir(res) 
+})
 
 // Nested grouping: this case is challenging because we're
 // using "*" in two sibling fields of the same object, without
