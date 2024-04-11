@@ -955,6 +955,10 @@ let quoteIndex = s => "?.["+s+"]"
 
 let quoteIndexVars = (s,vs) => s + vs.map(quoteVar).map(quoteIndex).join("")
 
+// XXX trouble with tmp path vars, see testPathGroup3
+let quoteVarXS = s => isDeepVarStr(s) ? quoteVar(s)+".join('-')+'-'" : quoteVar(s)
+let quoteIndexVarsXS = (s,vs) => s + vs.map(quoteVarXS).map(quoteIndex).join("")
+
 
 
 let codegen = q => {
@@ -972,7 +976,7 @@ let codegen = q => {
   } else if (q.key == "ref") {
     let q1 = assignments[q.op]
     let xs = [String(q.op),...q1.real]
-    return quoteIndexVars("tmp", xs)
+    return quoteIndexVarsXS("tmp", xs)
   } else if (q.key == "get" && isDeepVarExp(q.arg[1])) {
     let [e1,e2] = q.arg.map(codegen)
     return "rt.deepGet("+e1+","+e2+")"

@@ -240,13 +240,15 @@ rt.stateful.group = (x1,x2) => ({
 rt.stateful.update = (x0,x1,x2) => ({
   init: () => ({...x0}), // NOTE: preserve init value! 
                          // (see react-todo-app.html)
+                         // XXX: conflicting use-cases,
+                         // see also testPathGroup3
   next: s => { 
     if (x1 === undefined) return s
     if (x2 === undefined) return s
     if (s === undefined) s = {...x0}
     if (x1 instanceof Array) {
       // console.error("TODO: add deep update (group)! "+x1)
-      rt.deepUpdate(s, x1, x2)
+      s = rt.deepUpdate(s, x1, x2)
     } else {
       s[x1] = x2
     }
@@ -273,12 +275,19 @@ rt.update = (root,...path) => (fold) => {
   let ix = path[path.length-1]
   if (ix instanceof Array) {
     // console.error("TODO: add deep update (red)! "+ix)
-    let v = rt.deepGet(obj, ix)
-    if (v === undefined)
-      rt.deepUpdate(obj, ix, fold.next(fold.init()))
-    else
-      rt.deepUpdate(obj, ix, fold.next(v))
+    // XXX trouble with tmp path vars, see testPathGroup3
+    ix = ix.join("-")+"-"
+    obj[ix] ??= fold.init()
+    obj[ix] = fold.next(obj[ix])
   } else {
+  // if (ix instanceof Array) {
+  //   // console.error("TODO: add deep update (red)! "+ix)
+  //   let v = rt.deepGet(obj, ix)
+  //   if (v === undefined)
+  //     rt.deepUpdate(obj, ix, fold.next(fold.init()))
+  //   else
+  //     rt.deepUpdate(obj, ix, fold.next(v))
+  // } else {
     obj[ix] ??= fold.init()
     obj[ix] = fold.next(obj[ix])
   }
