@@ -32,6 +32,9 @@ let udf_stdlib = {
   range: (start, stop, step) =>
       Array.from({ length: (stop - start + step - 1) / step }, (_, i) => start + (i * step)),
   slice: start => x => x.slice(start),
+  join: delim => array => array.join(delim),
+  sort: cmpFn => array => array.sort(cmpFn),
+  values: o => Object.values(o),
 }
 
 
@@ -510,6 +513,43 @@ Distance:  9  40  200`
   expect(res).toBe(71503)
 })
 
+test("day7-part1", () => {
+  let input = `32T3K 765
+T55J5 684
+KK677 28
+KTJJT 220
+QQQJA 483`
+
+let ranks = {2:"a", 3:"b", 4:"c", 5:"d", 6:"e", 7:"f", 8:"g", 9:"h", T:"i", J:"j", Q:"k", K:"l", A:"m"}
+
+let udf = {
+    cmpFreq: (a, b) => b - a,
+    cmpCard: (a, b) => {
+      if (a.freq == b.freq) return a.card.localeCompare(b.card)
+      else return a.freq.localeCompare(b.freq)
+    },
+    getRank: x => ranks[x],
+    ...udf_stdlib
+  }
+
+  let line = rh`.input | udf.split "\\n" | .*line | udf.split " "`
+
+  let card = rh`${line}.0 | udf.split "" | .*card`
+  let cardscore = [rh`${card} | udf.getRank`]
+  let freq_ = rh`count ${card} | group ${card}`
+  let freq = rh`${freq_} | udf.values | udf.sort udf.cmpFreq | udf.join ""`
+  let bid = rh`${line}.1 | udf.toNum`
+
+  let stats = {card: rh`${cardscore} | udf.join ""`, freq, bid}
+
+  let sortedCards = rh`${stats} | group *line | udf.values | udf.sort udf.cmpCard | .*sc`
+  let query = rh`((udf.toNum *sc) + 1) * ${sortedCards}.bid | sum`
+
+  let func = api.compile(query)
+  let res = func({input, udf})
+  expect(res).toBe(6440)
+})
+
 test("day8-part1", () => {
   let input = `LLR
 
@@ -599,7 +639,7 @@ LJ.LJ`
 
   let lines = rh`.input | udf.split "\\n" | .*line
                         | udf.split ""`
-  
+
   let grid = api.array(lines)
 
   // Use filter to find the start position
