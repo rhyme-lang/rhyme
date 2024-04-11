@@ -1,6 +1,7 @@
 const { api, pipe } = require('../../src/rhyme')
 const { rh, parse } = require('../../src/parser')
 const { compile } = require('../../src/simple-eval')
+const { runtime } = require('../../src/simple-runtime')
 
 
 let data = {
@@ -132,8 +133,9 @@ test("testPathGroup3", () => {
   let query = { "**A": { "BOO": rh`data.**A.B` } }
 
   let func = compile(query)
-  // let res = func({data,other})
+  let res = func({data,other})
 
+  // console.log(func.explain.pseudo)
   // console.log(func.explain.code)
   // console.log(res)
 
@@ -146,18 +148,79 @@ test("testPathGroup3", () => {
   // overwriting *previous* values.
   // (Value from before the update)
 
+  // XXX todo: proper analysis
+  // This is only partially what was going on. The main
+  // issue was that we extract tmp0[**A] = data.**A.B,
+  // so exactly the same issue as for implicit grouping
+  // above. 
+
+  // Current solution: make tmps converts paths to strings
+  // before indexing. Alternative: preserve path structure
+  // but append an auxiliary field at the end to ensure
+  // everything is a struct.
+
+  // Still need to investigate if there are other overwriting
+  // issues, but since we're doing preorder traversals this
+  // may not occur.
+
+  // TODO: we still want to get rid of the empty A,B fields.
+  // Could be done in rt.stateful.ipdate, but there are
+  // conflicting demands from react-todo-app.html.
+  // (need to see if we can disambiguate)
+
+if (false) {
+
+  let rt = runtime
+  let fs = eval(`(inp => k => {
+      let tmp = {}
+      // --- tmp0 ---
+      rt.deepForIn(inp?.['data'], xxA => {
+        rt.update(tmp,0,'!'+xxA.join())
+        (rt.stateful.single(rt.deepGet(inp?.['data'],xxA)?.['B'],0))
+      })
+      console.dir(tmp, {depth:7})
+      // --- tmp1 ---
+      rt.deepForIn(inp?.['data'], xxA => {
+      for (let K0 in rt.singleton('BOO')) {
+        console.log("tmp0 "+xxA+" "+tmp?.[0]?.['!'+xxA.join()])
+        rt.update(tmp,1,'!'+xxA.join())
+        (rt.stateful.update({}, K0, tmp?.[0]?.['!'+xxA.join()]))
+      }
+      })
+      console.dir(tmp, {depth:7})
+      // --- tmp2 ---
+      rt.deepForIn(inp?.['data'], xxA => {
+        console.log("tmp1 "+xxA+" "+tmp?.[1]?.['!'+xxA.join()])
+        rt.update(tmp,2)
+        (rt.stateful.update({}, xxA, tmp?.[1]?.['!'+xxA.join()]))
+      })
+      console.dir(tmp, {depth:7})
+      // --- res ---
+      k(tmp?.[2])
+      })
+`)
+
+  let res2 = []
+  fs({data})((...ps) => {
+    res2.push(ps)
+  })
+  console.dir(res2, {depth:7})
+}
+
   let wrong = {
+    BOO: 8,
     A: {}, B : {},
     foo1: {
       BOO: 18,
       A: {}, B: {},
       foo2: {
+        BOO: 28,
         A: {}, B: {}
       } 
     }
   }
 
-  // expect(res).toEqual(wrong) // FIXME
+  expect(res).toEqual(wrong) // FIXME
 })
 
 
