@@ -840,6 +840,58 @@ L7JLJL-JLJLJL--JLJ.L`
   expect(res).toBe(10)
 })
 
+test("aoc-day14-part1", () => {
+  let input = `O....#....
+O.OO#....#
+.....##...
+OO.#O....O
+.O.....O#.
+O.#..O.#.#
+..O..#O..O
+.......O..
+#....###..
+#OO..#....`
+
+  let udf = {
+    getOrDefault: (o, k, cell) => o[k] == undefined ? 0 : o[k],
+    ...udf_stdlib
+  }
+
+  let lines = rh`.input | udf.split "\\n"`
+  let platform = rh`${lines} | .*line1 | udf.split "" | group *line1`
+  let n = rh`${lines} | count .*line2`
+
+  let whereCanIFall = rh`${platform} | .(state.row)
+                                     | ((udf.getOrDefault state.whereCanIFall (udf.toNum *col) .*col) + 1) * (udf.isEqual .*col "O") +
+                                       (state.row + 1) * (udf.isEqual .*col "#") +
+                                       (udf.getOrDefault state.whereCanIFall (udf.toNum *col) .*col) * (udf.isEqual .*col ".")`
+  
+  let load = rh`${platform} | .(state.row)
+                            | (${n} - (udf.getOrDefault state.whereCanIFall (udf.toNum *col) .*col)) * (udf.isEqual .*col "O")
+                            | sum`
+
+  let state = {
+    whereCanIFall: {},
+    load: 0,
+    row: 0,
+    n: Infinity
+  }
+
+  let query = {
+    whereCanIFall: [whereCanIFall],
+    load: rh`state.load + ${load}`,
+    row: rh`state.row + 1`,
+    n: n
+  }
+
+  let func = api.compile(query)
+  while (state.row < state.n) {
+    state = func({input, udf, state})
+  }
+  expect(state.load).toBe(136)
+})
+
+
 // 2022
 
 test("day1-A", () => {
