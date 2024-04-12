@@ -26,6 +26,7 @@ let udf_stdlib = {
   sqrt: n => Math.sqrt(n),
   floor: x => Math.floor(x),
   ceil: x => Math.ceil(x),
+  modulo: (x,y) => x % y,
   int2Char: x => String.fromCharCode(x),
   matchAll: (regex, flags) => x => [...x.matchAll(new RegExp(regex, flags))],
   logicalAnd: (x,y) => x && y,
@@ -451,6 +452,142 @@ humidity-to-location map:
   let res = func.c1({input, udf})
 
   expect(res).toBe(35)
+})
+
+test("day5-part2", () => {
+  let input = `seeds: 79 14 55 13
+
+seed-to-soil map:
+50 98 2
+52 50 48
+
+soil-to-fertilizer map:
+0 15 37
+37 52 2
+39 0 15
+
+fertilizer-to-water map:
+49 53 8
+0 11 42
+42 0 7
+57 7 4
+
+water-to-light map:
+88 18 7
+18 25 70
+
+light-to-temperature map:
+45 77 23
+81 45 19
+68 64 13
+
+temperature-to-humidity map:
+0 69 1
+1 0 69
+
+humidity-to-location map:
+60 56 37
+56 93 4`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    andThen: (a,b) => b, // just to add a as dependency
+    max: (a,b) => Math.max(a, b),
+    min: (a,b) => Math.min(a,b),
+    ...udf_stdlib
+  }
+
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+
+  let chunks = rh`.input | udf.split "\\n\\n"`
+
+  let seeds = rh`${chunks}.0 | udf.split ":" | .1 | udf.matchAll "\\\\d+" "g" | .*seed | udf.toNum`
+
+  let isEven = rh`udf.isEqual 0 (udf.modulo *seed 2)`
+
+  let isOdd = rh`udf.isEqual 1 (udf.modulo *seed 2)`
+
+  let starts = [rh`${seeds} | ${filterBy("*ev", isEven)}`]
+  let lengths = [rh`${seeds} | ${filterBy("*od", isOdd)}`]
+
+  let sources = [{
+    start: rh`${starts} | .*source | udf.toNum`,
+    end: rh`(${starts} | .*source | udf.toNum) + (${lengths} | .*source | udf.toNum) - 1`,
+  }]
+
+  let ranges = rh`${chunks} | udf.slice 1 | .*map | udf.split "\\n" | udf.slice 1 | .*range | udf.matchAll "\\\\d+" "g"`
+
+  let intervals = [{
+    start: rh`${ranges} | .1 | udf.toNum`,
+    end: rh`(${ranges} | .1 | udf.toNum) + (${ranges} | .2 | udf.toNum) - 1`,
+    diff: rh`(${ranges} | .0 | udf.toNum) - (${ranges} | .1 | udf.toNum)`
+  }]
+
+  let query = {
+    sources: sources,
+    maps: rh`${intervals} | group *map`
+  }
+
+  let f0 = api.compile(query)
+
+  // XXX: c1_opt (new codegen) and c2 (semantic) are correct, c1 (old codegen) behaves differently
+  let result = f0.c1_opt({input, udf})
+
+  let source = rh`.src | .*s`
+  let map = rh`.map`
+  let isUnder = rh`udf.isLessThan ${source}.start ${map}.start`
+  let isIn = rh`udf.isLessOrEqual (udf.max ${source}.start ${map}.start) (udf.min ${source}.end ${map}.end)`
+  let isAbove = rh`udf.isGreaterThan ${source}.end ${map}.end`
+
+  let underRange_ = {
+    start: rh`${source}.start`,
+    end: rh`udf.min (${map}.start - 1) ${source}.end`
+  }
+
+  let underRange = rh`${underRange_} | ${filterBy("*un", isUnder)}`
+
+  let inRange_ = {
+    start: rh`${map}.diff + (udf.max ${source}.start ${map}.start)`,
+    end: rh`${map}.diff + (udf.min ${source}.end ${map}.end)`
+  }
+
+  let inRange = rh`${inRange_} | ${filterBy("*in", isIn)}`
+
+  let aboveRange_ = {
+    start: rh`udf.max ${source}.start (${map}.end + 1)`,
+    end: rh`${source}.end`
+  }
+
+  let aboveRange = rh`${aboveRange_} | ${filterBy("*ab", isAbove)}`
+
+  let oldRanges = [underRange, aboveRange]
+
+  query = {
+    remaining:oldRanges,
+    new:[inRange]
+  }
+
+  // XXX: semantic version behaves differently
+  let f1 = api.compileFastPathOnly(query)
+
+  let src = result.sources
+  for (let m in result.maps) {
+    let overlaps = []
+    for (let map of result.maps[m]) {
+      let res = f1({src, map, udf})
+      src = res.remaining
+      overlaps = overlaps.concat(res.new)
+    }
+    src = src.concat(overlaps)
+  }
+
+  query = rh`.src | .*src | .start | min`
+
+  let f2 = api.compile(query)
+
+  let min = f2({src})
+
+  expect(min).toBe(46)
 })
 
 test("day6-part1", () => {
