@@ -101,7 +101,6 @@ test("groupTestNested1", () => {
         }
     }
 
-
     let func = compile(query1)
 
     // console.log(func.explain.pseudo)
@@ -123,8 +122,8 @@ test("groupTestNested1", () => {
         items: [[200]],
       }
     }
-    let bug = { 
-      // "total": 760, 
+    let bug = {
+      // "total": 760,
       "A": {
         // "subtotal": 1000,  // extra 110+330 !!!
         items: [[110, 330], [120], [110, 330]], // extra 110, 330 !!!
@@ -134,11 +133,55 @@ test("groupTestNested1", () => {
         items: [[200]],
       }
     }
-    expect(res).toEqual(expected)  
-
-    // NOTE: this is fixed now, albeit in a quite hacky way (so far)
-    // in 'emitCode'.
+    expect(res).toEqual(expected)
 })
+
+
+test("groupTestNested2", () => {
+    let query1 = {
+        // "total": api.sum(api.sum("data3.*.sub.*B")),
+        "data3.*.key": {
+          // "subtotal": rh`sum (udf.guard *B (sum data3.*.sub.*B))`,
+          "items": { "*B":  rh`array data3.*.sub.*B` }
+        }
+    }
+
+
+    let func = compile(query1)
+
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let res = func({ data3, udf: {guard: (x,y) => y }})
+
+    // console.dir(res, {depth:7})
+
+
+    let expected = {
+      // "total": 760,
+      "A": {
+        // "subtotal": 560,
+        items: { 0: [110, 330], 1: [120] },
+      },
+      "B": {
+        // "subtotal": 200,
+        items: { 0: [200] },
+      }
+    }
+    let bug = {
+      // "total": 760,
+      "A": {
+        // "subtotal": 560,
+        items: { 0: [110, 330], 1: [120] },
+      },
+      "B": {
+        // "subtotal": 200,
+        items: { 0: [200], 1: [] },
+      }
+    }
+    expect(res).toEqual(expected)
+})
+
 
 
 test("groupTestNested2_encoding1", () => {

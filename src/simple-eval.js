@@ -976,6 +976,17 @@ let codegen = q => {
   } else if (q.key == "ref") {
     let q1 = assignments[q.op]
     let xs = [String(q.op),...q1.real]
+    //
+    // XXX initial idea: 7 failing tests
+    //
+    // this is too aggressive: if any of the xs fails
+    // (the output dimensions of q) we *want* to
+    // return undefined -- there is genuinely no value
+    //
+    // if (q1.op == "array") {
+    //   // console.log("!!!")
+    //   return quoteIndexVars("tmp", xs)+"??[]"
+    // }
     return quoteIndexVarsXS("tmp", xs)
   } else if (q.key == "get" && isDeepVarExp(q.arg[1])) {
     let [e1,e2] = q.arg.map(codegen)
@@ -1080,6 +1091,23 @@ let emitFilters = (real) => buf => body => {
 
   let nesting = 0
 
+
+  // XXX DEBUG / remove
+  // for (let i in filters) {
+  //     let f = filters[i]
+  //     let v1 = f.arg[1].op
+  //     let g1 = f.arg[0]
+
+  //     // extra: vars not intended to iterate over
+  //     let extra = g1.free.filter(x => !vars[x]) // .free vs .real here?
+
+  //     if (extra.length != 0) {
+  //       buf0.push("// p1 "+extra+" in "+quoteVar(v1)+" <- "+pretty(g1))
+  //     }
+  // }
+
+
+
   // process filters
   while (next()) {
     for (let i of available) {
@@ -1168,6 +1196,32 @@ let emitCode = (q, order) => {
     buf.push("// --- tmp"+i+" ---")
 
     let fv = q.iter
+
+    if (q.op == "array") {
+
+      // XXX what is the right iteration space?
+      //
+      // 1. use fv2 = q.real
+      //
+      //    most intuitive: want precisely the space of
+      //
+      //    4 failing tests -- groupTestNested1, etc
+      //
+      //    there, we're loosing the correlation via * between *B and K2=data3.*.key
+      //
+      // 2. use fv2 = trans(q.real)
+      //
+      //    this seems to work on all tests -- explicitly include
+      //    any correlated variables
+
+      let fv2 = trans(q.real)
+      emitFilters(fv2)(buf)(() => {
+        let xs = [i,...q.real.map(quoteVar)] // free = real for assignments
+        let ys = xs.map(x => ","+x).join("")
+
+        buf.push("  rt.init(tmp"+ys+")\n  ("+ "[]" + ")")
+      })
+    }
 
     emitFilters(fv)(buf)(() => {
       let xs = [i,...q.real.map(quoteVar)] // free = real for assignments

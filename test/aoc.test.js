@@ -568,7 +568,7 @@ humidity-to-location map:
   }
 
   // XXX: semantic version behaves differently
-  let f1 = api.compileFastPathOnly(query)
+  let f1 = api.compile(query)
 
   let src = result.sources
   for (let m in result.maps) {

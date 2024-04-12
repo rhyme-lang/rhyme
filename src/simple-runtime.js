@@ -293,6 +293,31 @@ rt.update = (root,...path) => (fold) => {
   }
 }
 
+// update stateful tmp with a given reducer
+rt.init = (root,...path) => (init) => {
+  let obj = root
+  let c = 0
+  for (let ix of path.slice(0,path.length-1)) {
+    if (ix === undefined) return
+    if (ix instanceof Array) 
+      console.error("TODO: add deep update! "+ix)
+    obj[ix] ??= {}
+    obj = obj[ix]
+  }
+
+  let ix = path[path.length-1]
+  if (ix instanceof Array) {
+    // console.error("TODO: add deep update (red)! "+ix)
+    let v = rt.deepGet(obj, ix)
+    if (v === undefined)
+      rt.deepUpdate(obj, ix, fold.init())
+  } else {
+    obj[ix] ??= init
+    // obj[ix] = fold.next(obj[ix])
+  }
+}
+
+
 
 // deep vars (tree paths)
 
