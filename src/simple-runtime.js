@@ -111,6 +111,8 @@ rt.singleton = (x1) => { // 'mkset'
 //   may be either 'undefined' or some other default
 
 
+rt.stateful.sum_init = () => 0
+
 rt.stateful.sum = x => ({
   init: () => undefined, // XXX want 0 to start?
   next: s => {
@@ -120,6 +122,8 @@ rt.stateful.sum = x => ({
   }
 })
 
+rt.stateful.product_init = () => 1
+
 rt.stateful.product = x => ({
   init: () => undefined, // XXX want 1 to start?
   next: s => {
@@ -128,6 +132,8 @@ rt.stateful.product = x => ({
     return s * x
   }
 })
+
+rt.stateful.count_init = () => 0
 
 rt.stateful.count = x => ({
   init: () => undefined, // XXX want 0 to start?
@@ -198,6 +204,8 @@ rt.stateful.single = x => ({ // error if more than one
   }
 })
 
+rt.stateful.array_init = () => []
+
 rt.stateful.array = x => ({
   init: () => [], 
   next: s => {
@@ -206,6 +214,8 @@ rt.stateful.array = x => ({
     return s
   }
 })
+
+rt.stateful.mkset_init = () => ({})
 
 rt.stateful.mkset = x => ({
   init: () => ({}), 
@@ -237,6 +247,9 @@ rt.stateful.group = (x1,x2) => ({
   }
 })
 
+
+rt.stateful.update_init = (x0) => () => ({...x0})
+
 rt.stateful.update = (x0,x1,x2) => ({
   init: () => ({...x0}), // NOTE: preserve init value! 
                          // (see react-todo-app.html)
@@ -245,7 +258,7 @@ rt.stateful.update = (x0,x1,x2) => ({
   next: s => { 
     if (x1 === undefined) return s
     if (x2 === undefined) return s
-    if (s === undefined) s = {...x0}
+    if (s === undefined) s = {...x0} // needed by testPathGroup3?
     if (x1 instanceof Array) {
       // console.error("TODO: add deep update (group)! "+x1)
       s = rt.deepUpdate(s, x1, x2)
@@ -277,7 +290,7 @@ rt.update = (root,...path) => (fold) => {
     // console.error("TODO: add deep update (red)! "+ix)
     // XXX trouble with tmp path vars, see testPathGroup3
     ix = ix.join("-")+"-"
-    obj[ix] ??= fold.init()
+    // obj[ix] ??= fold.init()
     obj[ix] = fold.next(obj[ix])
   } else {
   // if (ix instanceof Array) {
@@ -288,7 +301,7 @@ rt.update = (root,...path) => (fold) => {
   //   else
   //     rt.deepUpdate(obj, ix, fold.next(v))
   // } else {
-    obj[ix] ??= fold.init()
+    // obj[ix] ??= fold.init()
     obj[ix] = fold.next(obj[ix])
   }
 }
@@ -310,9 +323,9 @@ rt.init = (root,...path) => (init) => {
     // console.error("TODO: add deep update (red)! "+ix)
     let v = rt.deepGet(obj, ix)
     if (v === undefined)
-      rt.deepUpdate(obj, ix, fold.init())
+      rt.deepUpdate(obj, ix, init())
   } else {
-    obj[ix] ??= init
+    obj[ix] ??= init()
     // obj[ix] = fold.next(obj[ix])
   }
 }

@@ -498,9 +498,13 @@ let inferBwd2 = out => q => {
     // NOTE: if we decorrelate aggressively here,
     // we need to add some vars to enclosing updates
 
+    q.iterInit = extra // init value is a constant
     q.iter = union(e1.real, extra)
     q.real = intersect(out, q.iter)
     q.free = q.real
+
+    q.iterInit = trans(q.real) // XXX -- more principled way?
+
   } else if (q.key == "update") {
     // q.out = out // debugging info vs cse
     // q.path = path
@@ -555,15 +559,22 @@ let inferBwd2 = out => q => {
     let e2 = inferBwd2(union(out, e1RealPre))(q.arg[2])
     path = save
 
+    // let V0 = e0.vars
+    // let extra0 = path.filter(x =>
+      // intersects(x.yyreal, V0)).flatMap(x => x.xxreal)
+
     // was trans(q.vars): this is to deal with K1
-    let V = unique([...e0.vars, ...e1.vars, ...e2.vars, ...e1Body.vars])
+    let V2 = unique([...e0.vars, ...e1.vars, ...e2.vars, ...e1Body.vars])
 
     let extra2 = path.filter(x => 
-      intersects(x.yyreal, V)).flatMap(x => x.xxreal)
+      intersects(x.yyreal, V2)).flatMap(x => x.xxreal)
 
+    // q.iterInit = unique([...e0.real, ...extra0])
     q.iter = unique([...e0.real, ...e1Real, ...e2.real, ...extra2])
-    q.real = intersect(q.iter, out)
+    q.real = intersect(out, q.iter)
     q.free = q.real
+
+    q.iterInit = trans(q.real) // XXX -- more principled way?
   } else {
     console.error("unknown op", q)
   }
@@ -976,17 +987,6 @@ let codegen = q => {
   } else if (q.key == "ref") {
     let q1 = assignments[q.op]
     let xs = [String(q.op),...q1.real]
-    //
-    // XXX initial idea: 7 failing tests
-    //
-    // this is too aggressive: if any of the xs fails
-    // (the output dimensions of q) we *want* to
-    // return undefined -- there is genuinely no value
-    //
-    // if (q1.op == "array") {
-    //   // console.log("!!!")
-    //   return quoteIndexVars("tmp", xs)+"??[]"
-    // }
     return quoteIndexVarsXS("tmp", xs)
   } else if (q.key == "get" && isDeepVarExp(q.arg[1])) {
     let [e1,e2] = q.arg.map(codegen)
@@ -1007,14 +1007,25 @@ let codegen = q => {
 }
 
 
+let emitStmInit = (q) => {
+  if (q.key == "stateful") {
+    return "rt.stateful."+q.op+"_init"
+  } else if (q.key == "update") {
+    let e0 = codegen(q.arg[0])
+    return "rt.stateful.update_init("+e0+")"
+  } else {
+    console.error("unknown op", q)
+  }
+}
+
 let emitStm = (q) => {
-  if (q.key == "stateful") {    
+  if (q.key == "stateful") {
     let [e1] = q.arg.map(codegen)
-    let extra = diff(q.arg[0].real, q.real)
-    return "rt.stateful."+q.op+"("+e1+","+extra.length+")"
+    return "rt.stateful."+q.op+"("+e1+")"
   } else if (q.key == "update") {
     let [e0,e1,e2] = q.arg.map(codegen)
-    return "rt.stateful.update("+e0+", "+e1+", "+e2+")"
+    // return "rt.stateful.update("+e0+", "+e1+", "+e2+")" // no init!
+    return "rt.stateful.update("+"null"+", "+e1+", "+e2+")"
   } else {
     console.error("unknown op", q)
   }
@@ -1191,26 +1202,16 @@ let emitCode = (q, order) => {
     let [i] = is
     let q = assignments[i]
     
-    // NOTE: it would be preferable to emit initialization up front (so that sum empty = 0)
-
     buf.push("// --- tmp"+i+" ---")
 
-    let fv = q.iter
-
-    let initVal = { // XXX add proper support in simple-runtime
-      array: "[]",
-      count: "0",
-      sum: "0",
-      product: "1",
-    }
-
-    if (q.op in initVal) {
+    // emit initialization first (so that sum empty = 0)
+    if (q.key == "stateful" && (q.op+"_init") in runtime.stateful || q.key == "update") {
 
       // XXX what is the right iteration space?
       //
       // 1. use fv2 = q.real
       //
-      //    most intuitive: want precisely the space of
+      //    most intuitive: want precisely the space of dimensions
       //
       //    4 failing tests -- groupTestNested1, etc
       //
@@ -1220,20 +1221,19 @@ let emitCode = (q, order) => {
       //
       //    this seems to work on all tests -- explicitly include
       //    any correlated variables
+      //
+      //    now done in inferBwd2 (could be refined there)
 
-      let fv2 = trans(q.real)
-      emitFilters(fv2)(buf)(() => {
+      let fv = q.iterInit
+      emitFilters(fv)(buf)(() => {
         let xs = [i,...q.real.map(quoteVar)] // free = real for assignments
         let ys = xs.map(x => ","+x).join("")
 
-        buf.push("  rt.init(tmp"+ys+")\n  ("+ initVal[q.op] + ")")
+        buf.push("  rt.init(tmp"+ys+")\n  ("+ emitStmInit(q) + ")")
       })
-    } else if (q.key == "update") {
-      // console.log("TODO: init object constructor")
-      //
-      // slightly nontrivial: iteration space depends on x0
     }
 
+    let fv = q.iter
     emitFilters(fv)(buf)(() => {
       let xs = [i,...q.real.map(quoteVar)] // free = real for assignments
       let ys = xs.map(x => ","+x).join("")

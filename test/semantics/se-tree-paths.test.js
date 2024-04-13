@@ -168,59 +168,20 @@ test("testPathGroup3", () => {
   // conflicting demands from react-todo-app.html.
   // (need to see if we can disambiguate)
 
-if (false) {
+  // XXX: now fixed with tightened initialization due
+  // to AOC 5/2 and 7
 
-  let rt = runtime
-  let fs = eval(`(inp => k => {
-      let tmp = {}
-      // --- tmp0 ---
-      rt.deepForIn(inp?.['data'], xxA => {
-        rt.update(tmp,0,'!'+xxA.join())
-        (rt.stateful.single(rt.deepGet(inp?.['data'],xxA)?.['B'],0))
-      })
-      console.dir(tmp, {depth:7})
-      // --- tmp1 ---
-      rt.deepForIn(inp?.['data'], xxA => {
-      for (let K0 in rt.singleton('BOO')) {
-        console.log("tmp0 "+xxA+" "+tmp?.[0]?.['!'+xxA.join()])
-        rt.update(tmp,1,'!'+xxA.join())
-        (rt.stateful.update({}, K0, tmp?.[0]?.['!'+xxA.join()]))
-      }
-      })
-      console.dir(tmp, {depth:7})
-      // --- tmp2 ---
-      rt.deepForIn(inp?.['data'], xxA => {
-        console.log("tmp1 "+xxA+" "+tmp?.[1]?.['!'+xxA.join()])
-        rt.update(tmp,2)
-        (rt.stateful.update({}, xxA, tmp?.[1]?.['!'+xxA.join()]))
-      })
-      console.dir(tmp, {depth:7})
-      // --- res ---
-      k(tmp?.[2])
-      })
-`)
-
-  let res2 = []
-  fs({data})((...ps) => {
-    res2.push(ps)
-  })
-  console.dir(res2, {depth:7})
-}
-
-  let wrong = {
+  let expected = {
     BOO: 8,
-    A: {}, B : {},
     foo1: {
       BOO: 18,
-      A: {}, B: {},
       foo2: {
         BOO: 28,
-        A: {}, B: {}
-      } 
+      }
     }
   }
 
-  expect(res).toEqual(wrong) // FIXME
+  expect(res).toEqual(expected)
 })
 
 
