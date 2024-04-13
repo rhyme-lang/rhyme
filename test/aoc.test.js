@@ -687,6 +687,50 @@ let udf = {
   expect(res).toBe(6440)
 })
 
+test("day7-part2", () => {
+  let input = `32T3K 765
+T55J5 684
+KK677 28
+KTJJT 220
+QQQJA 483`
+
+let ranks = {J:"a", 2:"b", 3:"c", 4:"d", 5:"e", 6:"f", 7:"g", 8:"h", 9:"i", T:"j", Q:"k", K:"l", A:"m"}
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    andThen: (a,b) => b, // just to add a as dependency,
+    cmpFreq: (a, b) => a - b,
+    cmpCard: (a, b) => {
+      if (a.score == b.score) return a.card.localeCompare(b.card)
+      else return b.score - a.score
+    },
+    getRank: x => ranks[x],
+    ...udf_stdlib
+  }
+
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+
+  let line = rh`.input | udf.split "\\n" | .*line | udf.split " "`
+
+  let card = rh`${line}.0 | udf.split "" | .*card`
+  let cardscore = [rh`${card} | udf.getRank`]
+  let freq_ = rh`${card} | ${filterBy(`*f0`, rh`udf.notEqual ${card} "J"`)} | count | group ${card}`
+  let jcount = rh`${card} | ${filterBy(`*f1`, rh`udf.isEqual ${card} "J"`)} | count`
+  let freq = rh`${freq_} | udf.values | udf.sort udf.cmpFreq`
+  let score = rh`(${freq} | udf.join "" | udf.toNum) + ${jcount}`
+  let bid = rh`${line}.1 | udf.toNum`
+
+  let stats = {card: rh`${cardscore} | udf.join ""`, score, bid}
+
+  let sortedCards = rh`${stats} | group *line | udf.values | udf.sort udf.cmpCard | .*sc`
+  let query = rh`((udf.toNum *sc) + 1) * ${sortedCards}.bid | sum`
+
+  // XXX FIXME: the semantic version gives incorrect result
+  let func = api.compileFastPathOnly(query)
+  let res = func({input, udf})
+  expect(res).toBe(5905)
+})
+
 test("day8-part1", () => {
   let input = `LLR
 
@@ -934,7 +978,7 @@ L7JLJL-JLJLJL--JLJ.L`
   let getInitialState = api.compile(initialState)
 
   let state = getInitialState({input, udf, connected})
-  
+
   let path = {}
   path[state.prev[0]] ??= {}
   path[state.prev[0]][state.prev[1]] = true
@@ -971,7 +1015,7 @@ L7JLJL-JLJLJL--JLJ.L`
   let pathQuery = rh`.path`
   let query = rh`${grid}.*row | udf.getEnclosedArray *row ${pathQuery} ${grid} | sum .*enclosed | group *row | sum .*`
   let func = api.compile(query)
-  
+
   let res = func({input, udf, connected, path})
 
   expect(res).toBe(10)
