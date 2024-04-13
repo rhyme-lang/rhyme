@@ -1197,7 +1197,14 @@ let emitCode = (q, order) => {
 
     let fv = q.iter
 
-    if (q.op == "array") {
+    let initVal = { // XXX add proper support in simple-runtime
+      array: "[]",
+      count: "0",
+      sum: "0",
+      product: "1",
+    }
+
+    if (q.op in initVal) {
 
       // XXX what is the right iteration space?
       //
@@ -1219,8 +1226,12 @@ let emitCode = (q, order) => {
         let xs = [i,...q.real.map(quoteVar)] // free = real for assignments
         let ys = xs.map(x => ","+x).join("")
 
-        buf.push("  rt.init(tmp"+ys+")\n  ("+ "[]" + ")")
+        buf.push("  rt.init(tmp"+ys+")\n  ("+ initVal[q.op] + ")")
       })
+    } else if (q.key == "update") {
+      // console.log("TODO: init object constructor")
+      //
+      // slightly nontrivial: iteration space depends on x0
     }
 
     emitFilters(fv)(buf)(() => {

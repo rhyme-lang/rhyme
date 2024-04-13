@@ -725,8 +725,7 @@ let ranks = {J:"a", 2:"b", 3:"c", 4:"d", 5:"e", 6:"f", 7:"g", 8:"h", 9:"i", T:"j
   let sortedCards = rh`${stats} | group *line | udf.values | udf.sort udf.cmpCard | .*sc`
   let query = rh`((udf.toNum *sc) + 1) * ${sortedCards}.bid | sum`
 
-  // XXX FIXME: the semantic version gives incorrect result
-  let func = api.compileFastPathOnly(query)
+  let func = api.compile(query)
   let res = func({input, udf})
   expect(res).toBe(5905)
 })

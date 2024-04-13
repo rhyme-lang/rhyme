@@ -132,12 +132,16 @@ test("generatorAsFilter", () => {
 
 
     // console.dir(func.explain.code)
-    let res = func({ data, udf }, true)
+    let res = func({ data, udf })
     expect(res).toEqual(expected)
 })
 
 
 // XXX temp -- with simple eval, the following work
+//
+// NOTE: we changed back initialization of sum to the
+//   old behavior and now we see the additional
+//   B: 0 entry again
 
 test("generatorAsFilter2", () => {
     let udf = {
@@ -150,13 +154,13 @@ test("generatorAsFilter2", () => {
         rh`sum(udf.andThen (udf.filter (udf.eq2 A data.*.key)).*F data.*.value)`
     }
 
-    let expected = { "A": 40 }
-    let func = api.compile(query).c2 // CS only!
+    let expected = { "A": 40, "B": 0 }
+    let func = api.compile(query)//.c2 // C2 only!
 
     // console.log(func.explain.pseudo)
     // console.log(func.explain.code)
 
-    let res = func({ data, udf }, true)
+    let res = func({ data, udf })
     expect(res).toEqual(expected)
 })
 
@@ -171,13 +175,13 @@ test("generatorAsFilter3", () => {
         rh`sum(udf.andThen (udf.tbl.(data.*.key)) data.*.value)`
     }
 
-    let expected = { "A": 40 }
-    let func = api.compile(query).c2 // C2 only!
+    let expected = { "A": 40, "B": 0 }
+    let func = api.compile(query).c2 // C2 only! relies on undef
 
     // console.log(func.explain.pseudo)
     // console.log(func.explain.code)
 
-    let res = func({ data, udf }, true)
+    let res = func({ data, udf })
     expect(res).toEqual(expected)
 })
 
