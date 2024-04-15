@@ -1027,8 +1027,8 @@ let emitStm = (q) => {
     return "rt.stateful."+q.op+"("+e1+")"
   } else if (q.key == "update") {
     let [e0,e1,e2] = q.arg.map(codegen)
-    // return "rt.stateful.update("+e0+", "+e1+", "+e2+")" // no init!
-    return "rt.stateful.update("+"null"+", "+e1+", "+e2+")"
+    return "rt.stateful.update("+e0+", "+e1+", "+e2+")" // XXX: init is still needed for tree paths
+    // return "rt.stateful.update("+"null"+", "+e1+", "+e2+")" // see testPathGroup4-2
   } else {
     console.error("unknown op", q)
   }

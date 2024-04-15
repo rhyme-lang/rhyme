@@ -185,6 +185,58 @@ test("testPathGroup3", () => {
 })
 
 
+test("testPathGroup4-1", () => {
+  let query = { "**A": { "C": rh`data.**A.A + data.**A.B` } }
+
+  let func = compile(query)
+  let res = func({data,other})
+
+  // console.log(func.explain.pseudo)
+  // console.log(func.explain.code)
+  // console.log(res)
+
+  let expected = {
+    C: 15,
+    foo1: {
+      C: 35,
+      foo2: {
+        C: 55,
+      }
+    }
+  }
+
+  expect(res).toEqual(expected)
+})
+
+test("testPathGroup4-2", () => {
+  // perform structural modifications -- add a computed A+B field 
+  // for every path that has A and B
+  let query = { "**A": rh`update data.**A "C" (data.**A.A + data.**A.B)` }
+
+  // FIXME: the following is not parsed correctly:
+  // let query = { "**A": rh` (data.**A.A + data.**A.B) | update data.**A "C"` }
+
+  let func = compile(query)
+  let res = func({data,other})
+
+  // console.log(func.explain.pseudo)
+  // console.log(func.explain.code)
+  // console.log(res)
+
+  // TODO: test with missing A/B key somewhere
+
+  let expected = {
+    A: 7, B: 8, C: 15,
+    foo1: {
+      A: 17, B: 18, C: 35,
+      foo2: {
+        A: 27, B: 28, C: 55,
+      }
+    }
+  }
+
+  expect(res).toEqual(expected)
+})
 // test shape-polymorphic arithmetic
 
 // the default + falls back string concat

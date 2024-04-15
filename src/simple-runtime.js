@@ -258,7 +258,11 @@ rt.stateful.update = (x0,x1,x2) => ({
   next: s => { 
     if (x1 === undefined) return s
     if (x2 === undefined) return s
-    if (s === undefined) s = {...x0} // needed by testPathGroup3?
+    if (s === undefined) {
+      // still needed for tree paths, even now with
+      // pre-init path (see testPathGroup3,4)
+      s = {...x0}
+    }
     if (x1 instanceof Array) {
       // console.error("TODO: add deep update (group)! "+x1)
       s = rt.deepUpdate(s, x1, x2)
