@@ -504,6 +504,7 @@ let inferBwd2 = out => q => {
     q.free = q.real
 
     q.iterInit = trans(q.real) // XXX -- more principled way?
+    // console.assert(subset(q.iterInit, q.iter)) // not true...
 
   } else if (q.key == "update") {
     // q.out = out // debugging info vs cse
@@ -936,6 +937,8 @@ let emitPseudo = (q) => {
       buf.push("  dim: " + q.dims)
     if (q.out?.length > 0)  
       buf.push("  out: " + q.out)
+    if (q.iterInit?.length > 0) 
+      buf.push("  it0: " + q.iterInit)
     if (q.iter?.length > 0) 
       buf.push("  itr: " + q.iter)
     if (q.free?.length > 0) 
