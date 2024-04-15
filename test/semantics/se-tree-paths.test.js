@@ -237,6 +237,38 @@ test("testPathGroup4-2", () => {
 
   expect(res).toEqual(expected)
 })
+
+test("testPathGroup4-3", () => {
+  // perform structural modifications -- add computed sum of all numbers
+  // for every node in the tree
+  let query = { "**A": rh`update data.**A "sum" (sum data.**A.*B)` }
+
+  // FIXME: the following is not parsed correctly:
+  // let query = { "**A": rh` (data.**A.A + data.**A.B) | update data.**A "C"` }
+
+  let func = compile(query)
+  let res = func({data,other})
+
+  // console.log(func.explain.pseudo)
+  // console.log(func.explain.code)
+  // console.log(res)
+
+  let expected = {
+    A: 7, B: 8, sum: 15,
+    foo1: {
+      A: 17, B: 18, sum: 35,
+      foo2: {
+        A: 27, B: 28, sum: 55,
+      }
+    }
+  }
+
+  expect(res).toEqual(expected)
+})
+
+
+
+
 // test shape-polymorphic arithmetic
 
 // the default + falls back string concat

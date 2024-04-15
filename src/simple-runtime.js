@@ -116,8 +116,9 @@ rt.stateful.sum_init = () => 0
 rt.stateful.sum = x => ({
   init: () => undefined, // XXX want 0 to start?
   next: s => {
-    if (x === undefined) return s
-    if (s === undefined) return x
+    // TODO: generalize NaN handling
+    if (x === undefined || Number.isNaN(Number(x))) return s
+    if (s === undefined || Number.isNaN(Number(s))) return x
     return s + x
   }
 })
