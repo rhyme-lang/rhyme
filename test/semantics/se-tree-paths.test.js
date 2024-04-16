@@ -267,6 +267,55 @@ test("testPathGroup4-3", () => {
 })
 
 
+test("testPathGroup4-4", () => {
+  // perform structural modifications -- add computed sum of all numbers
+  // for every node in the tree
+
+  // test cases where no numbers are present:
+  let data = {
+    hasNumbers: { A: 1, B: 2, C: "foo" },
+    hasNoNumbers: { U: "foo", V: "bar" },
+    hasNoEntriesAtAll: { }
+  }
+
+  let query = { "**A": rh`update data.**A "sum" (sum data.**A.*B)` }
+
+  let func = compile(query)
+  let res = func({data})
+
+  // console.log(func.explain.pseudo)
+  // console.log(func.explain.code)
+  // console.log(res)
+
+  // Either one of the following would be defensible,
+  // but we'd want to choose the default carefully:
+
+  let expected1 = {
+    hasNumbers: { A: 1, B: 2, C: "foo", sum: 3 },
+    hasNoNumbers: { U: "foo", V: "bar" },
+    hasNoEntriesAtAll: { }
+  }
+
+  let expected2 = {
+    hasNumbers: { A: 1, B: 2, C: "foo", sum: 3 },
+    hasNoNumbers: { U: "foo", V: "bar", sum: 0 },
+    hasNoEntriesAtAll: { sum: 0 },
+    sum: 0
+  }
+
+  // The actual result looks definitely wrong, though:
+
+  let bug = {
+    hasNumbers: { A: 1, B: 2, C: "foo", sum: 3 },
+  }
+
+  // NOTE: we get expected2 if we change **A to *A,
+  // a reasonable prior would be to stay consistent
+
+  expect(res).toEqual(bug)
+})
+
+
 
 
 // test shape-polymorphic arithmetic
