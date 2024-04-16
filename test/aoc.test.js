@@ -799,8 +799,7 @@ test("day9-part1", () => {
   let num = rh`.input | udf.split "\\n" | .*line | udf.split " " | .*num | udf.toNum`
   let q0 = {
     data:rh`${[num]} | group *line | udf.values`,
-    sum:0,
-    stop:0
+    sum:0
   }
 
   let f0 = api.compile(q0)
