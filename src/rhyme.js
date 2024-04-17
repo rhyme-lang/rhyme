@@ -191,6 +191,31 @@ api["compileFastPathOnly"] = (query) => {
     wrapper.explain_opt = c1_opt.explain
     return wrapper
 }
+api["compileNew"] = (query) => {
+  let rep = ir.createIR(query)
+  let c1 = new_codegen.generate(rep)
+  let c2 = compile(query)
+  let wrapper = (x) => {
+      let res1 = c1(x)
+      let res2 = c2(x)
+
+      let cmp = src => ({
+        toEqual: dst => {
+          let ssrc = JSON.stringify(src)
+          let sdst = JSON.stringify(dst)
+          console.assert(ssrc == sdst, "result mismatch")
+        }})
+      try { cmp = expect } catch (e) {} // use test runner if available
+
+      cmp(res2).toEqual(res1)
+      return res2
+  }
+  wrapper.c1 = c1
+  wrapper.c2 = c2
+  wrapper.explain = c1.explain
+  wrapper.explain2 = c2.explain
+  return wrapper
+}
 
 // displaying graphics/visualizations in the browser
 api["display"] = (o, domParent) => graphics.display(o, domParent)
