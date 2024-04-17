@@ -114,7 +114,7 @@ rt.singleton = (x1) => { // 'mkset'
 rt.stateful.sum_init = () => 0
 
 rt.stateful.sum = x => ({
-  init: () => undefined, // XXX want 0 to start?
+  init: () => 0,
   next: s => {
     // TODO: generalize NaN handling
     if (x === undefined || Number.isNaN(Number(x))) return s
@@ -126,7 +126,7 @@ rt.stateful.sum = x => ({
 rt.stateful.product_init = () => 1
 
 rt.stateful.product = x => ({
-  init: () => undefined, // XXX want 1 to start?
+  init: () => 1,
   next: s => {
     if (x === undefined) return s
     if (s === undefined) return x
@@ -137,7 +137,7 @@ rt.stateful.product = x => ({
 rt.stateful.count_init = () => 0
 
 rt.stateful.count = x => ({
-  init: () => undefined, // XXX want 0 to start?
+  init: () => 0,
   next: s => {
     if (x === undefined) return s
     if (s === undefined) return 1
@@ -256,13 +256,18 @@ rt.stateful.update = (x0,x1,x2) => ({
                          // (see react-todo-app.html)
                          // XXX: conflicting use-cases,
                          // see also testPathGroup3
-  next: s => { 
+  next: s => {
     if (x1 === undefined) return s
     if (x2 === undefined) return s
     if (s === undefined) {
       // still needed for tree paths, even now with
       // pre-init path (see testPathGroup3,4)
-      s = {...x0}
+      // XXX todo: ensure more generally that we're only
+      // updating proper objects
+      if (typeof x0 === "object")
+        s = {...x0}
+      else
+        s = x0
     }
     if (x1 instanceof Array) {
       // console.error("TODO: add deep update (group)! "+x1)
@@ -295,7 +300,10 @@ rt.update = (root,...path) => (fold) => {
     // console.error("TODO: add deep update (red)! "+ix)
     // XXX trouble with tmp path vars, see testPathGroup3
     ix = ix.join("-")+"-"
-    // obj[ix] ??= fold.init()
+    let s = fold.init()
+    // XXX hacky solution to distinguish cases in testPathGroup3/4
+    if (typeof(s) === "number")
+      obj[ix] ??= s
     obj[ix] = fold.next(obj[ix])
   } else {
   // if (ix instanceof Array) {

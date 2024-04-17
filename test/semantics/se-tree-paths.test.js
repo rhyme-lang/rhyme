@@ -293,7 +293,6 @@ test("testPathGroup4-4", () => {
   let expected1 = {
     hasNumbers: { A: 1, B: 2, C: "foo", sum: 3 },
     hasNoNumbers: { U: "foo", V: "bar" },
-    hasNoEntriesAtAll: { }
   }
 
   let expected2 = {
@@ -303,16 +302,35 @@ test("testPathGroup4-4", () => {
     sum: 0
   }
 
-  // The actual result looks definitely wrong, though:
+  // The initial result (before tweaking init
+  // rules further) was definitely wrong, though:
 
   let bug = {
     hasNumbers: { A: 1, B: 2, C: "foo", sum: 3 },
   }
 
-  // NOTE: we get expected2 if we change **A to *A,
-  // a reasonable prior would be to stay consistent
+  // NOTE: why were we dropping the entries? 
+  // The 'sum' fields ended up undefined, and
+  // adding an undefined entry appears to skip
+  // the entire object.
 
-  expect(res).toEqual(bug)
+  // NOTE: we get expected2 if we change **A to *A,
+  // a reasonable prior would be to seek consistency
+
+
+  // The actual result now drops hasNoEntriesAtAll.sum:
+  // presumaby, since there are no entries traverses,
+  // the init case in rt.stateful.update is never
+  // called.
+
+  let expected3 = {
+    hasNumbers: { A: 1, B: 2, C: "foo", sum: 3 },
+    hasNoNumbers: { U: "foo", V: "bar", sum: 0 },
+    hasNoEntriesAtAll: { /* sum: 0 */ },
+    sum: 0
+  }
+
+  expect(res).toEqual(expected3)
 })
 
 
