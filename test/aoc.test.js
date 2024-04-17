@@ -843,6 +843,68 @@ test("day9-part1", () => {
   expect(state.sum).toBe(114)
 })
 
+test("day9-part2", () => {
+  let input = `0 3 6 9 12 15
+1 3 6 10 15 21
+10 13 16 21 30 45`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    andThen: (a,b) => b, // just to add a as dependency,
+    ...udf_stdlib
+  }
+
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+
+  let num = rh`.input | udf.split "\\n" | .*line | udf.split " " | .*num | udf.toNum`
+  let q0 = {
+    data:rh`${[num]} | group *line | udf.values`,
+    sign:rh`1 | group *line | udf.values`,
+    sum:0
+  }
+
+  let f0 = api.compile(q0)
+  let state = f0({input, udf})
+
+  let data = rh`.state | .data`
+  let line = rh`${data} | .*line`
+  let val = rh`${line} | .*val`
+  let sign = rh`.state.sign | .*line`
+  let firsts = [rh`${val} | ${filterBy(`*f0`, rh`udf.isLessThan *val (${line}.length - 1)`)}`]
+  let seconds = [rh`${val} | ${filterBy(`*f1`, rh`udf.isGreaterThan *val 0 `)}`]
+  let first = rh`${firsts} | .*bind`
+  let second = rh`${seconds} | .*bind`
+  let diff_ = rh`${second} - ${first}`
+  let stat = {
+    diff:[diff_],
+    notallzero:rh`udf.notEqual ((udf.notEqual ${diff_} 0) | sum) 0`,
+    head: rh`(${val} | first) * ${sign}`,
+    newsign: rh`0 - ${sign}`
+  }
+  let stats = rh`${stat} | group *line`
+
+  let diff = rh`${stats} | .*s | .diff`
+  let notallzero = rh`${stats} | .*s | .notallzero`
+  let head = rh`${stats} | .*s | .head`
+  let newsign_ = rh`${stats} | .*s | .newsign`
+
+  let newdata = [rh`${diff} | ${filterBy(`*f2`, notallzero)}`]
+  let newsign = [rh`${newsign_} | ${filterBy(`*f2`, notallzero)}`]
+
+  let q1 = {
+    data:newdata,
+    sign:newsign,
+    sum:rh`.state.sum + (sum ${head})`
+  }
+  // XXX: in c1_opt (new codegen), the last *s loop is splitted into two loops.
+  // This is because we require strict ordering of assignments to one tmp.
+  let f1 = api.compile(q1)
+  while (state.data.length) {
+    state = f1({state, udf})
+  }
+  expect(state.sum).toBe(2)
+})
+
 test("day10-part1", () => {
   let input = `7-F7-
 .FJ|7
