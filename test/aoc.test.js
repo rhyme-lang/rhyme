@@ -1289,52 +1289,20 @@ O.#..O.#.#
 
     chain.push(platformStr)
 
-    // North
-    let state = {
-      whereCanIFall: {},
-      row: 0,
-      extentX: platform.n,
-      extentY: platform.m,
-      toNorth: inverse.N(platform.n - 1, platform.m - 1)
-    }
-    while (state.row < state.extentX) {
-      state = func({input, udf, state, platform})
-    }
-
-    // West
-    state = {
-      whereCanIFall: {},
-      row: 0,
-      extentX: platform.m,
-      extentY: platform.n,
-      toNorth: inverse.W(platform.m - 1, platform.n - 1)
-    }
-    while (state.row < state.extentX) {
-      state = func({input, udf, state, platform})
-    }
-
-    // South
-    state = {
-      whereCanIFall: {},
-      row: 0,
-      extentX: platform.n,
-      extentY: platform.m,
-      toNorth: inverse.S(platform.n - 1, platform.m - 1)
-    }
-    while (state.row < state.extentX) {
-      state = func({input, udf, state, platform})
-    }
-
-    // East
-    state = {
-      whereCanIFall: {},
-      row: 0,
-      extentX: platform.m,
-      extentY: platform.n,
-      toNorth: inverse.E(platform.m - 1, platform.n - 1)
-    }
-    while (state.row < state.extentX) {
-      state = func({input, udf, state, platform})
+    let directions = ["N", "W", "S", "E"]
+    for (let direction of directions) {
+      let extentX = direction == "N" || direction == "S" ? platform.n : platform.m
+      let extentY = direction == "N" || direction == "S" ? platform.m : platform.n
+      let state = {
+        whereCanIFall: {},
+        row: 0,
+        extentX: extentX,
+        extentY: extentY,
+        toNorth: inverse[direction](extentX - 1, extentY - 1)
+      }
+      while (state.row < state.extentX) {
+        state = func({input, udf, state, platform})
+      }
     }
 
     arr = []
