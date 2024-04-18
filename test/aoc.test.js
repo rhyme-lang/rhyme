@@ -1254,7 +1254,7 @@ O.#..O.#.#
   let whereCanIFall = rh`udf.range 0 state.extentY 1 | udf.rollUp platform.platform state.row (udf.toNum .*col) state.whereCanIFall state.toNorth`
 
   let load = rh`${lines} | .*line | udf.split ""
-                         | (state.platform.n - (udf.toNum *line)) * (udf.isEqual .*col "O")
+                         | (platform.n - (udf.toNum *line)) * (udf.isEqual .*col "O")
                          | sum
                          | group *line
                          | sum .*`
@@ -1345,13 +1345,8 @@ O.#..O.#.#
     count++;
   }
 
-  let state = {
-    platform: platform
-  }
-
-  
   func = api.compile(load)
-  let res = func({input: platformStr, udf, state})
+  let res = func({input: platformStr, udf, platform})
 
   expect(res).toBe(64)
 })
