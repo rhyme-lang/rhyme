@@ -1141,7 +1141,7 @@ L7JLJL-JLJLJL--JLJ.L`
   expect(res).toBe(10)
 })
 
-test("aoc-day14-part1", () => {
+test("day14-part1", () => {
   let input = `O....#....
 O.OO#....#
 .....##...
@@ -1192,6 +1192,169 @@ O.#..O.#.#
   expect(state.load).toBe(136)
 })
 
+test("day14-part2", () => {
+  let input = `O....#....
+O.OO#....#
+.....##...
+OO.#O....O
+.O.....O#.
+O.#..O.#.#
+..O..#O..O
+.......O..
+#....###..
+#OO..#....`
+
+  let udf = {
+    getOrDefault: (o, k) => o[k] ?? 0,
+    rollUp: (platform, x, y, whereCanIFall, toNorth) => {
+      let nCoord = toNorth(x, y)
+      let cell = platform[nCoord[0]][nCoord[1]]
+      switch (cell) {
+        case "O":
+          let fallX = udf.getOrDefault(whereCanIFall, y)
+          platform[nCoord[0]][nCoord[1]] = "."
+          tmp = toNorth(fallX, y)
+          platform[tmp[0]][tmp[1]] = "O"
+          return fallX + 1
+        case "#":
+          return x + 1
+        case ".":
+          return udf.getOrDefault(whereCanIFall, y)
+      }
+      return coord
+    },
+    ...udf_stdlib
+  }
+
+  let transform = {
+    N: (offsetX, offsetY) => (x, y) => [x, y],
+    W: (offsetX, offsetY) => (x, y) => [offsetY - y, x],
+    S: (offsetX, offsetY) => (x, y) => [offsetX - x, offsetY - y],
+    E: (offsetX, offsetY) => (x, y) => [y, offsetX - x]
+  }
+
+  let inverse = {
+    N: (offsetX, offsetY) => transform.N(offsetX, offsetY),
+    W: (offsetX, offsetY) => transform.W(offsetX, offsetY),
+    S: (offsetX, offsetY) => transform.S(offsetX, offsetY),
+    E: (offsetX, offsetY) => transform.E(offsetX, offsetY)
+  }
+
+  let lines = rh`.input | udf.split "\\n"`
+
+  let platformQuery = {
+    platform: rh`${lines} | .*line | udf.split "" | group *line`,
+    n: rh`${lines} | count .*line`,
+    m: rh`${lines}.0.length`
+  }
+
+  let getPlatform = api.compile(platformQuery)
+  let platform = getPlatform({input, udf})
+
+  let whereCanIFall = rh`udf.range 0 state.extentY 1 | udf.rollUp platform.platform state.row (udf.toNum .*col) state.whereCanIFall state.toNorth`
+
+  let load = rh`${lines} | .*line | udf.split ""
+                         | (state.platform.n - (udf.toNum *line)) * (udf.isEqual .*col "O")
+                         | sum
+                         | group *line
+                         | sum .*`
+
+  let query = {
+    whereCanIFall: [whereCanIFall],
+    row: rh`state.row + 1`,
+    extentX: rh`state.extentX`,
+    extentY: rh`state.extentY`,
+    toNorth: rh`state.toNorth`
+  }
+
+  let func = api.compile(query)
+
+  let count = 0
+
+  let chain = []
+  let arr = []
+  for (let row in platform.platform) {
+    arr.push(platform.platform[row].join(""))
+  }
+  let platformStr = arr.join("")
+  let times = 1_000_000_000
+  while (count < times) {
+    let idx = chain.findIndex(e => e == platformStr)
+    if (idx != -1) {
+      let cycleLength = chain.length - idx
+      let cycleIndex = (times - count) % cycleLength
+      platformStr = chain[cycleIndex + idx]
+      break
+    }
+
+    chain.push(platformStr)
+
+    // North
+    let state = {
+      whereCanIFall: {},
+      row: 0,
+      extentX: platform.n,
+      extentY: platform.m,
+      toNorth: inverse.N(platform.n - 1, platform.m - 1)
+    }
+    while (state.row < state.extentX) {
+      state = func({input, udf, state, platform})
+    }
+
+    // West
+    state = {
+      whereCanIFall: {},
+      row: 0,
+      extentX: platform.m,
+      extentY: platform.n,
+      toNorth: inverse.W(platform.m - 1, platform.n - 1)
+    }
+    while (state.row < state.extentX) {
+      state = func({input, udf, state, platform})
+    }
+
+    // South
+    state = {
+      whereCanIFall: {},
+      row: 0,
+      extentX: platform.n,
+      extentY: platform.m,
+      toNorth: inverse.S(platform.n - 1, platform.m - 1)
+    }
+    while (state.row < state.extentX) {
+      state = func({input, udf, state, platform})
+    }
+
+    // East
+    state = {
+      whereCanIFall: {},
+      row: 0,
+      extentX: platform.m,
+      extentY: platform.n,
+      toNorth: inverse.E(platform.m - 1, platform.n - 1)
+    }
+    while (state.row < state.extentX) {
+      state = func({input, udf, state, platform})
+    }
+
+    arr = []
+    for (let row in platform.platform) {
+      arr.push(platform.platform[row].join(""))
+    }
+    platformStr = arr.join("\n")
+    count++;
+  }
+
+  let state = {
+    platform: platform
+  }
+
+  
+  func = api.compile(load)
+  let res = func({input: platformStr, udf, state})
+
+  expect(res).toBe(64)
+})
 
 // 2022
 

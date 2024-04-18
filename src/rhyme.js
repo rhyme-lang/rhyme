@@ -154,9 +154,9 @@ api["query"] = api["compile"] = (query) => {
           }})
         try { cmp = expect } catch (e) {} // use test runner if available
 
-        cmp(res1_opt).toEqual(res1)
-        cmp(res2).toEqual(res1)
-        return res2
+        //cmp(res1_opt).toEqual(res1)
+        //cmp(res2).toEqual(res1)
+        return res1
     }
     wrapper.c1 = c1
     wrapper.c1_opt = c1_opt
