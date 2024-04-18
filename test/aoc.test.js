@@ -26,6 +26,7 @@ let udf_stdlib = {
   sqrt: n => Math.sqrt(n),
   floor: x => Math.floor(x),
   ceil: x => Math.ceil(x),
+  abs: x=> Math.abs(x),
   modulo: (x,y) => x % y,
   int2Char: x => String.fromCharCode(x),
   matchAll: (regex, flags) => x => [...x.matchAll(new RegExp(regex, flags))],
@@ -1139,6 +1140,105 @@ L7JLJL-JLJLJL--JLJ.L`
   let res = func({input, udf, connected, path})
 
   expect(res).toBe(10)
+})
+
+test("day11-part1", () => {
+  let input =
+`...#......
+.......#..
+#.........
+..........
+......#...
+.#........
+.........#
+..........
+.......#..
+#...#.....`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    andThen: (a,b) => b, // just to add a as dependency,
+    ...udf_stdlib
+  }
+
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+
+  let sym = rh`.input | udf.split "\\n" | .*row | udf.split "" | .*col`
+
+  let isEmpty = rh`udf.isEqual ((udf.isEqual ${sym} "#") | sum) 0`
+  let len_ = rh`(${isEmpty} | udf.toNum) + 1`
+  let rowlen = rh`${len_} | group *row`
+  let collen = rh`${len_} | group *col`
+  let rowbound = rh`udf.isLessOrEqual (udf.toNum *r1) (udf.toNum *r0)`
+  let rowSum = rh`(udf.andThen (${rowlen} | .*r0) (${rowlen} | .*r1)) | ${filterBy("*f0", rowbound)} | sum | group *r0`
+  let colbound = rh`udf.isLessOrEqual (udf.toNum *c1) (udf.toNum *c0)`
+  let colSum = rh`(udf.andThen (${collen} | .*c0) (${collen} | .*c1)) | ${filterBy("*f1", colbound)} | sum | group *c0`
+  let isGalaxy = rh`udf.isEqual ${sym} "#"`
+  let cords = {
+    row:rh`*row`,
+    col:rh`*col`
+  }
+  let galaxies = [rh`${cords} | ${filterBy("*f2", isGalaxy)}`]
+
+  let g1 = rh`${galaxies} | .*g1`
+  let g2 = rh`${galaxies} | .*g2`
+  let rowdis = rh`(${rowSum} | .${rh`${g1}.row`}) - (${rowSum} | .${rh`${g2}.row`}) | udf.abs`
+  let coldis = rh`(${colSum} | .${rh`${g1}.col`}) - (${colSum} | .${rh`${g2}.col`}) | udf.abs`
+  let dis = rh`${rowdis} + ${coldis}`
+  let query = rh`(${dis} | sum) / 2`
+  // XXX: old codegen generates incorrect code
+  let func = api.compileNew(query)
+  let res = func({input, udf})
+  expect(res).toBe(374)
+})
+
+test("day11-part2", () => {
+  let input =
+`...#......
+.......#..
+#.........
+..........
+......#...
+.#........
+.........#
+..........
+.......#..
+#...#.....`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    andThen: (a,b) => b, // just to add a as dependency,
+    ...udf_stdlib
+  }
+
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+
+  let sym = rh`.input | udf.split "\\n" | .*row | udf.split "" | .*col`
+
+  let isEmpty = rh`udf.isEqual ((udf.isEqual ${sym} "#") | sum) 0`
+  let len_ = rh`(${isEmpty} | udf.toNum) * 999999 + 1`
+  let rowlen = rh`${len_} | group *row`
+  let collen = rh`${len_} | group *col`
+  let rowbound = rh`udf.isLessOrEqual (udf.toNum *r1) (udf.toNum *r0)`
+  let rowSum = rh`(udf.andThen (${rowlen} | .*r0) (${rowlen} | .*r1)) | ${filterBy("*f0", rowbound)} | sum | group *r0`
+  let colbound = rh`udf.isLessOrEqual (udf.toNum *c1) (udf.toNum *c0)`
+  let colSum = rh`(udf.andThen (${collen} | .*c0) (${collen} | .*c1)) | ${filterBy("*f1", colbound)} | sum | group *c0`
+  let isGalaxy = rh`udf.isEqual ${sym} "#"`
+  let cords = {
+    row:rh`*row`,
+    col:rh`*col`
+  }
+  let galaxies = [rh`${cords} | ${filterBy("*f2", isGalaxy)}`]
+
+  let g1 = rh`${galaxies} | .*g1`
+  let g2 = rh`${galaxies} | .*g2`
+  let rowdis = rh`(${rowSum} | .${rh`${g1}.row`}) - (${rowSum} | .${rh`${g2}.row`}) | udf.abs`
+  let coldis = rh`(${colSum} | .${rh`${g1}.col`}) - (${colSum} | .${rh`${g2}.col`}) | udf.abs`
+  let dis = rh`${rowdis} + ${coldis}`
+  let query = rh`(${dis} | sum) / 2`
+  let func = api.compileNew(query)
+  let res = func({input, udf})
+  expect(res).toBe(82000210)
 })
 
 test("aoc-day14-part1", () => {
