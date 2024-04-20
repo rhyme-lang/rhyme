@@ -147,3 +147,72 @@ test("aggregateAsKey_encoded2b", () => {
   expect(res2).toEqual(e2_alt_string)
 })
 
+
+// ----- generatorAsFilter
+
+test("generatorAsFilter_encoded1", () => {
+
+  let data = [
+      { key: "A", value: 10 },
+      { key: "B", value: 20 },
+      { key: "A", value: 30 }
+  ]
+
+  let query = { "*K1":
+    rh`sum(mkset(data.*.key).*K1 & mkset(A).*K1 & data.*.value)`
+  }
+
+  // filtering *K1: drop B entry
+
+  let func = compile(query)
+  let res = func({data})
+
+  let expected = { "A": 40 }
+
+  expect(res).toEqual(expected)
+})
+
+test("generatorAsFilter_encoded1b", () => {
+
+  let data = [
+      { key: "A", value: 10 },
+      { key: "B", value: 20 },
+      { key: "A", value: 30 }
+  ]
+
+  let query = { "*K1":
+    rh`sum(mkset(mkset(A).(data.*.key) & data.*.key).*K1 & data.*.value)`
+  }
+
+  // filtering base set of *K1: drop B entry
+
+  let func = compile(query)
+  let res = func({data})
+
+  let expected = { "A": 40 }
+
+  expect(res).toEqual(expected)
+})
+
+
+test("generatorAsFilter_encoded2", () => {
+
+  let data = [
+      { key: "A", value: 10 },
+      { key: "B", value: 20 },
+      { key: "A", value: 30 }
+  ]
+
+  let query = { "*K1":
+    rh`sum(mkset(data.*.key).*K1 & mkset(A).(data.*.key) & data.*.value)`
+  }
+
+  // filtering data.*.key: with B = 0 entry
+
+  let func = compile(query)
+  let res = func({data})
+
+  let expected = { "A": 40, "B": 0 }
+
+  expect(res).toEqual(expected)
+})
