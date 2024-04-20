@@ -32,7 +32,7 @@ let other = {
 
 test("group_encoded1", () => {
   // let query = {"data.*.key": rh`sum(data.*.value)`}
-  let query = {"*K": rh`sum(mkset(data.*.key).*K & data.*.value)`}
+  let query = rh`*K & sum(mkset(data.*.key).*K & data.*.value)`
 
   let func = compile(query)
   let res = func({data})
@@ -48,7 +48,7 @@ test("group_encoded1", () => {
 
 test("group_encoded2", () => {
   // let query = {"data.*.key": rh`sum(data.*.value) / sum(data.*A.value)`}
-  let query = {"*K": rh`sum(mkset(data.*.key).*K & data.*.value) / sum(data.*.value)`}
+  let query = rh`*K & sum(mkset(data.*.key).*K & data.*.value) / sum(data.*.value)`
 
   // interestingly, we can use the same * as only the first sum is filtered by K
 
@@ -77,9 +77,9 @@ test("aggregateAsKey_encoded1", () => {
 
   // let q1 = { "data.*.A": { "sum(data.*.B)": true } }
 
-  let query = {"*K1": {"*K2": 
-    rh`mkset(sum(mkset(data.*.A).*K1 & data.*.B)).*K2 & true`
-  }}
+  let query = //{"*K1": {"*K2": 
+    rh`*K1 & *K2 & mkset(sum(mkset(data.*.A).*K1 & data.*.B)).*K2 & true`
+  // }}
 
   // this one is not correct:
   // rh`mkset(data.*.A).*K1 & mkset(sum(data.*.B)).*K2 & true`
@@ -105,9 +105,9 @@ test("aggregateAsKey_encoded2", () => {
 
   // let q1 = { "sum(data.*.B)": { "data.*.A": true } }
 
-  let query = {"*K1": {"*K2": 
-    rh`mkset(sum(data.*.B)).*K1 & mkset(data.*.A).*K2 & true`
-  }}
+  let query = //{"*K1": {"*K2": 
+    rh`*K1 & *K2 & mkset(sum(data.*.B)).*K1 & (mkset(data.*.A).*K2 & true)`
+  //}}
 
   let func = compile(query)
   let res2 = func({data})
@@ -129,9 +129,9 @@ test("aggregateAsKey_encoded2b", () => {
 
   // let q1 = { "sum(data.*.B)": { "data.*.A": true } }
 
-  let query = {"*K1": {"*K2": 
-    rh`mkset(mkset(sum(data.*.B)).*K1 & data.*.A).*K2 & true`
-  }}
+  let query = //{"*K1": {"*K2": 
+    rh`*K1 & *K2 & mkset(mkset(sum(data.*.B)).*K1 & data.*.A).*K2 & true`
+  // }}
 
   // alternative
 
@@ -158,9 +158,9 @@ test("generatorAsFilter_encoded1", () => {
       { key: "A", value: 30 }
   ]
 
-  let query = { "*K1":
-    rh`sum(mkset(data.*.key).*K1 & mkset(A).*K1 & data.*.value)`
-  }
+  let query = //{ "*K1":
+    rh`*K1 & sum(mkset(data.*.key).*K1 & mkset(A).*K1 & data.*.value)`
+  //}
 
   // filtering *K1: drop B entry
 
@@ -180,9 +180,9 @@ test("generatorAsFilter_encoded1b", () => {
       { key: "A", value: 30 }
   ]
 
-  let query = { "*K1":
-    rh`sum(mkset(mkset(A).(data.*.key) & data.*.key).*K1 & data.*.value)`
-  }
+  let query = //{ "*K1":
+    rh`*K1 & sum(mkset(mkset(A).(data.*.key) & data.*.key).*K1 & data.*.value)`
+  // }
 
   // filtering base set of *K1: drop B entry
 
@@ -203,9 +203,9 @@ test("generatorAsFilter_encoded2", () => {
       { key: "A", value: 30 }
   ]
 
-  let query = { "*K1":
-    rh`sum(mkset(data.*.key).*K1 & mkset(A).(data.*.key) & data.*.value)`
-  }
+  let query = //{ "*K1":
+    rh`*K1 & sum(mkset(data.*.key).*K1 & mkset(A).(data.*.key) & data.*.value)`
+  // }
 
   // filtering data.*.key: with B = 0 entry
 
@@ -226,8 +226,8 @@ test("eta3_encoded", () => { // BUG -- eta in key of group expr
         {product: "Galaxy", model: "S6", quantity: 20},
     ]
     let data0 = "data"
-    let data1 = {"*E": "data.*E"}
-    let q0 = {"*K": rh`sum(mkset(${data1}.*A.product).*K & ${data1}.*A.quantity)` }
+    let data1 = {"*E": "data.*E"} // need proper grouping here!
+    let q0 = rh`*K & sum(mkset(${data1}.*A.product).*K & ${data1}.*A.quantity)`
     let func = compile(q0)
     let res = func({ data })
 
