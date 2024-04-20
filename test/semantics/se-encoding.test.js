@@ -216,3 +216,30 @@ test("generatorAsFilter_encoded2", () => {
 
   expect(res).toEqual(expected)
 })
+
+
+// ----- eta expansion
+
+test("eta3_encoded", () => { // BUG -- eta in key of group expr
+    let data = [
+        {product: "iPhone", model: "7", quantity: 10},
+        {product: "Galaxy", model: "S6", quantity: 20},
+    ]
+    let data0 = "data"
+    let data1 = {"*E": "data.*E"}
+    let q0 = {"*K": rh`sum(mkset(${data1}.*A.product).*K & ${data1}.*A.quantity)` }
+    let func = compile(q0)
+    let res = func({ data })
+
+    // console.log(func.explain.pseudo0)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = {
+      "iPhone": 10,
+      "Galaxy": 20
+    }
+    expect(res).toEqual(expected)
+    // NOTE: requires recursion fix
+})
+
