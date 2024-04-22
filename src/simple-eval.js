@@ -442,7 +442,7 @@ let infer = q => {
     let [e0,e1,e2,e3] = q.arg.map(infer)
     e3 ??= { vars: [], mind: [], dims: [] }
     q.vars = unique([...e0.vars, ...e1.vars, ...e2.vars, ...e3.vars])
-    // treat e3 like a reduction: do not propagate it's mind/dims
+    // treat e3 like a reduction: do not propagate it's inner mind/dims
     q.mind = union(e0.mind, diff(e2.mind, e1.vars))
     q.dims = union(e0.dims, diff(e2.dims, e1.vars))
   } else {
@@ -521,7 +521,8 @@ let inferBwd2 = out => q => {
 
     let e1Body
     if (q.arg[3]) {
-      let e3 = inferBwd2(union(out, q.arg[3].mind))(q.arg[3]) // filter expr
+      let out3 = union(out,q.arg[3].dims)
+      let e3 = inferBwd2(out3)(q.arg[3]) // filter expr
       e1Body = e3.arg[0]
       console.assert(e3.key == "get")
       console.assert(e3.arg[1].key == "var" && e3.arg[1].op == e1.op)
@@ -530,48 +531,32 @@ let inferBwd2 = out => q => {
         vars: [], mind: [], dims: [], real: [] }
     }
 
-    let e1Real = [e1.op, ...diff(e1Body.real, out)]
-    // diff(.., out): this is the fix for day4-part1
-
     // generatorAsFilter vs aggregateAsKey:
     // if the key is correlated with the body, we need
     // to track its transitive vars, too. Otherwise not.
 
-    let keyAndBodyCorrelated = intersects(e1Real, q.arg[2].vars)
-
-    let e1RealPre = keyAndBodyCorrelated 
-      ? [e1.op, ...diff(e1Body.real, union(out,q.arg[2].vars))]
-      : [e1.op]
-
     let save = path
 
-    // NEEDED? WANTED?
-    path = path.filter(x => 
-      intersects(x.yyreal, q.arg[2].vars)// ||
-      && !trans(x.vars).includes(e1.op)
-    )
-    // difference between trans(x.vars) and xxreal?
+    let e1Real = [e1.op, ...diff(e1Body.real, out)] // diff(.., out) solved day4-part1 recursion?
+    let e1RealPre = [e1.op, ...diff(e1Body.real, q.arg[2].vars)]
 
-    e1.xxreal = e1RealPre
-    e1.yyreal = e1Real
+    e1.yyreal = e1Real // test this for overlap with e.vars of an inner expr e
+    e1.xxreal = e1RealPre // add deps that aren't already present
+
+    // TODO: rationale for the two diff ops?
 
     path = [...path,e1]
 
-    let e2 = inferBwd2(union(out, e1RealPre))(q.arg[2])
+    let e2 = inferBwd2(union(out, [e1.op]))(q.arg[2])
     path = save
 
-    // let V0 = e0.vars
-    // let extra0 = path.filter(x =>
-      // intersects(x.yyreal, V0)).flatMap(x => x.xxreal)
-
-    // was trans(q.vars): this is to deal with K1
-    let V2 = unique([...e0.vars, ...e1.vars, ...e2.vars, ...e1Body.vars])
-
+    // aggregation part of e3: add extra deps for enclosing groupings
+    let V2 = unique([e1.op, ...e1Body.vars]) // e3.vars
     let extra2 = path.filter(x => 
       intersects(x.yyreal, V2)).flatMap(x => x.xxreal)
 
     // q.iterInit = unique([...e0.real, ...extra0])
-    q.iter = unique([...e0.real, ...e1Real, ...e2.real, ...extra2])
+    q.iter = unique([...e0.real, ...e1.vars, ...e1Body.real, ...e2.real, ...extra2])
     q.real = intersect(out, q.iter)
     q.free = q.real
 
