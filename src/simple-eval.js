@@ -493,7 +493,7 @@ let inferBwd2 = out => q => {
     let [e1] = q.arg.map(inferBwd2(out1))
 
     let extra = path.filter(x => 
-      intersects(x.yyreal, e1.vars)).flatMap(x => x.xxreal)
+      intersects(x.xxMask, e1.vars)).flatMap(x => x.xxReal)
 
     // NOTE: if we decorrelate aggressively here,
     // we need to add some vars to enclosing updates
@@ -521,11 +521,12 @@ let inferBwd2 = out => q => {
 
     let e1Body
     if (q.arg[3]) {
-      let out3 = union(out,q.arg[3].dims)
+      let out3 = union(out, union([e1.op], q.arg[3].dims)) // e3 includes e1.op (left for clarity)
       let e3 = inferBwd2(out3)(q.arg[3]) // filter expr
-      e1Body = e3.arg[0]
       console.assert(e3.key == "get")
+      console.assert(e3.arg[0].key == "mkset")
       console.assert(e3.arg[1].key == "var" && e3.arg[1].op == e1.op)
+      e1Body = e3.arg[0].arg[0]
     } else {
       e1Body = { key: "const", op: "???", 
         vars: [], mind: [], dims: [], real: [] }
@@ -537,26 +538,27 @@ let inferBwd2 = out => q => {
 
     let save = path
 
-    let e1Real = [e1.op, ...diff(e1Body.real, out)] // diff(.., out) solved day4-part1 recursion?
-    let e1RealPre = [e1.op, ...diff(e1Body.real, q.arg[2].vars)]
+    let e1RealMask = [e1.op, ...diff(e1Body.real, out)] // diff(.., out) solved day4-part1 recursion?
+    let e1RealDeps = [e1.op, ...diff(e1Body.real, union(out, q.arg[2].vars))] // diff(.., out) not required here
 
-    e1.yyreal = e1Real // test this for overlap with e.vars of an inner expr e
-    e1.xxreal = e1RealPre // add deps that aren't already present
+    e1.xxMask = e1RealMask // test this for overlap with e.vars of an inner expr e
+    e1.xxReal = e1RealDeps // add deps that aren't already present
 
     // TODO: rationale for the two diff ops?
 
     path = [...path,e1]
 
     let e2 = inferBwd2(union(out, [e1.op]))(q.arg[2])
+
     path = save
 
     // aggregation part of e3: add extra deps for enclosing groupings
-    let V2 = unique([e1.op, ...e1Body.vars]) // e3.vars
-    let extra2 = path.filter(x => 
-      intersects(x.yyreal, V2)).flatMap(x => x.xxreal)
+    let e3Vars = unique([e1.op, ...e1Body.vars]) // e3.vars
+    let extra3 = path.filter(x =>
+      intersects(x.xxMask, e3Vars)).flatMap(x => x.xxReal)
 
     // q.iterInit = unique([...e0.real, ...extra0])
-    q.iter = unique([...e0.real, ...e1.vars, ...e1Body.real, ...e2.real, ...extra2])
+    q.iter = unique([...e0.real, ...e1.vars, ...e2.real, ...e1Body.real, ...extra3])
     q.real = intersect(out, q.iter)
     q.free = q.real
 
