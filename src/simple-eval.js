@@ -505,11 +505,16 @@ let inferBwd2 = out => q => {
     q.free = q.real
     q.bound = diff(q.iter, out)
 
+    let assertSame = (a,b,msg) => console.assert(same(a,b), msg+": "+a+" != "+b)
     // sanity check -- it also seems like we could compute
     // free and bound more directly (if we wanted to).
     // it is surprising that 'extra' doesn't seem to matter!
     console.assert(same(trans(e1.free), q.iter))
     console.assert(same(intersect(trans(e1.free),out), q.free))
+    // assertSame(e1.free, e1.real, "e1.free == e1.real") // see testCycles1
+
+    assertSame(intersect(trans(e1.free), out), intersect(e1.real, out), "A1")
+    assertSame(intersect(union(trans(e1.free),extra),out), q.free, "A2")
 
     q.iterInit = trans(q.real) // XXX -- more principled way?
     // console.assert(subset(q.iterInit, q.iter)) // not true...
