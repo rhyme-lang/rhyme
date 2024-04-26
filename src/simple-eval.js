@@ -658,7 +658,7 @@ let deno = q => k => {
 
 //
 // 5: Compute dependencies between vars
-//    - fill in vars[i].vars, based onq.vars
+//    - fill in vars[i].vars, based on q.vars
 //
 //    This runs between infer and inferBwd
 //
