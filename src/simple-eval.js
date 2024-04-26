@@ -459,6 +459,7 @@ let infer = q => {
 //    - real: variables actually in output
 //    - iter: iteration space for stms
 //    - free: free variables, anticipating conversion to loops
+//    - bound: bound variables, anticipating conversion to loops
 //
 //    Decorrelate paths and eliminate trivial recursion
 //
@@ -502,6 +503,7 @@ let inferBwd2 = out => q => {
     q.iter = union(e1.real, extra)
     q.real = intersect(out, q.iter)
     q.free = q.real
+    q.bound = diff(q.iter, out)
 
     q.iterInit = trans(q.real) // XXX -- more principled way?
     // console.assert(subset(q.iterInit, q.iter)) // not true...
@@ -561,6 +563,7 @@ let inferBwd2 = out => q => {
     q.iter = unique([...e0.real, ...e1.vars, ...e2.real, ...e1Body.real, ...extra3])
     q.real = intersect(out, q.iter)
     q.free = q.real
+    q.bound = diff(q.iter, out)
 
     q.iterInit = trans(q.real) // XXX -- more principled way?
   } else {
@@ -574,9 +577,12 @@ let inferBwd2 = out => q => {
 
   if (q.mode && q.mode != "reluctant")
     console.assert(subset(q.dims, q.real)) // can happen for lazy 'last'
-  if (q.key == "stateful" || q.key =="group" || q.key == "update")
+  if (q.key == "stateful" || q.key =="group" || q.key == "update") {
     console.assert(subset(q.real, q.iter), q.real+ "/"+ q.iter)
+    console.assert(same(q.iter, union(q.free, q.bound)))
+    console.assert(!intersects(q.free, q.bound))
   // console.assert(subset(q.free, q.real), q.free+ "/"+ q.real + " "+pretty(q))  no?
+  }
 
   return q
 }
