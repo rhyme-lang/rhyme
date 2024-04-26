@@ -1140,7 +1140,7 @@ let emitFilters = (real) => buf => body => {
             buf0.push("let gen"+i+quoteVar(v2)+" = {}")
             emitFilters(g1.free)(buf0)(() => { // .free vs .real here?
               buf0.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
-              buf0.push("  gen"+i+quoteVar(v2)+"["+quoteVar(v1)+"] = true //"+codegen(g1)+"?.["+quoteVar(v1)+"]")
+              buf0.push("  gen"+i+quoteVar(v2)+"["+quoteVar(v1)+"] = true")
             })
             // with the aux data structure in place, we're ready to
             // proceed with the main loop nest:
