@@ -54,6 +54,26 @@ test("testCycles1", () => {
   expect(res).toEqual({ 10: 340, 20: 330})
 })
 
+// *A depends on *B with *A in global scope
+test("testCycles1b", () => {
+  let data = { A: 10, B: 20, C: 30 }
+  let other = { 10: { A: 100, B:200 }, 20: { A:300 } }
+  let query = rh`*A & sum(data.*A) + sum(other.*B.*A)`
+
+  let func = compile(query)
+  let res = func({data, other}, true)
+
+  // console.log(func.explain.pseudo)
+
+  // revised semantics:
+  //
+  // - result indexed by *A
+  //    - both sums collapse over *B
+  //    - result indexed by *A only, not *B,*A!
+
+  expect(res).toEqual({ A: 410, B: 220})
+})
+
 
 // iterating over a temporary result
 test("testCycles2-0", () => {
