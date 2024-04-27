@@ -45,6 +45,21 @@ test("group_encoded1", () => {
   })
 })
 
+test("group_encoded1b", () => {
+  // let query = {"data.*.key": rh`sum(data.*.value)`}
+  let query = rh`mkset(data.*.key).* & sum(mkset(data.*.key).* & data.*.value)`
+
+  let func = compile(query)
+  let res = func({data})
+
+  // console.log(func.explain.pseudo)
+  // console.log(func.explain.code)
+
+  expect(res).toEqual({
+    U: 60, V: 10
+  })
+})
+
 
 test("group_encoded2", () => {
   // let query = {"data.*.key": rh`sum(data.*.value) / sum(data.*A.value)`}
