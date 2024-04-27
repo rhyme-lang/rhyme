@@ -496,6 +496,23 @@ let inferBwd2 = out => q => {
     let extra = path.filter(x => 
       intersects(x.xxMask, e1.vars)).flatMap(x => x.xxReal)
 
+
+    let assertSame = (a,b,msg) => console.assert(same(a,b), msg+": "+a+" != "+b)
+
+
+    let pExtra = path.filter(x => 
+      intersects(x.xxMask2, e1.free))
+
+    let trueExtra = diff(extra, trans(e1.free))
+    if (trueExtra.length) {
+      let extra2 = pExtra.flatMap(x => union(x.free, x.xxBody.free))
+      let trueExtra2 = diff(extra2, trans(e1.free))
+      assertSame(trueExtra, trueExtra2, "extra") // see generatorAsFilter
+    }
+
+
+
+
     // NOTE: if we decorrelate aggressively here,
     // we need to add some vars to enclosing updates
 
@@ -505,20 +522,22 @@ let inferBwd2 = out => q => {
     q.free = q.real
     q.bound = diff(q.iter, out)
 
-    let assertSame = (a,b,msg) => console.assert(same(a,b), msg+": "+a+" != "+b)
+
     // sanity check -- it also seems like we could compute
     // free and bound more directly (if we wanted to).
-    // it is surprising that 'extra' doesn't seem to matter!
-    console.assert(same(trans(e1.free), q.iter))
-    console.assert(same(intersect(trans(e1.free),out), q.free))
+    
     // assertSame(e1.free, e1.real, "e1.free == e1.real") // see testCycles1
 
     assertSame(intersect(trans(e1.free), out), intersect(e1.real, out), "A1")
     assertSame(intersect(union(trans(e1.free),extra),out), q.free, "A2")
 
+    assertSame(diff(union(e1.free,extra),out), q.bound, "A3")
+
+
+
+
     q.iterInit = trans(q.real) // XXX -- more principled way?
     // console.assert(subset(q.iterInit, q.iter)) // not true...
-
   } else if (q.key == "update") {
     // q.out = out // debugging info vs cse
     // q.path = path
@@ -542,7 +561,7 @@ let inferBwd2 = out => q => {
       e1Body = e3.arg[0].arg[0]
     } else {
       e1Body = { key: "const", op: "???", 
-        vars: [], mind: [], dims: [], real: [] }
+        vars: [], mind: [], dims: [], real: [], free: [] }
     }
 
     // generatorAsFilter vs aggregateAsKey:
@@ -556,6 +575,13 @@ let inferBwd2 = out => q => {
 
     e1.xxMask = e1RealMask // test this for overlap with e.vars of an inner expr e
     e1.xxReal = e1RealDeps // add deps that aren't already present
+    e1.xxBody = e1Body
+
+    e1.xxMask2 = diff(union(e1.free, e1Body.free), out)
+
+
+    if (e1Body === undefined)
+      console.error("!!!")
 
     // TODO: rationale for the two diff ops?
 
@@ -575,6 +601,11 @@ let inferBwd2 = out => q => {
     q.real = intersect(out, q.iter)
     q.free = q.real
     q.bound = diff(q.iter, out)
+
+    // sanity check
+    // let fv = unique([...e0.free, ...e2.free])
+    // console.assert(same(trans(fv), q.iter))
+    // console.assert(same(intersect(trans(fv),out), q.free))
 
     q.iterInit = trans(q.real) // XXX -- more principled way?
   } else {
