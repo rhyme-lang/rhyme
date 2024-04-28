@@ -494,7 +494,6 @@ let inferBwd2 = out => q => {
 
     q.iter = union(q.free, q.bound)
     q.iterInit = trans(q.free) // XXX -- more principled way?
-
   } else if (q.key == "update") {
     let e0 = inferBwd2(out)(q.arg[0]) // what are we extending
     let e1 = inferBwd2(out)(q.arg[1]) // key variable
@@ -554,10 +553,8 @@ let inferBwd2 = out => q => {
   if (q.mode && q.mode != "reluctant")
     console.assert(subset(q.dims, q.free)) // can happen for lazy 'last'
   if (q.key == "stateful" || q.key =="group" || q.key == "update") {
-    console.assert(subset(q.free, q.iter), q.free+ "/"+ q.iter)
     console.assert(same(q.iter, union(q.free, q.bound)))
     console.assert(!intersects(q.free, q.bound))
-  // console.assert(subset(q.free, q.real), q.free+ "/"+ q.real + " "+pretty(q))  no?
   }
 
   return q
@@ -759,7 +756,7 @@ let computeDependencies = () => {
 
 //
 // 10: Compute legal order of assignments
-//    - topological sort based on q.iter/q.real
+//    - topological sort based on q.iter/q.free
 //
 
 let computeOrder = q => {
@@ -1080,7 +1077,7 @@ let emitFilters = (real) => buf => body => {
   //     let g1 = f.arg[0]
 
   //     // extra: vars not intended to iterate over
-  //     let extra = g1.free.filter(x => !vars[x]) // .free vs .real here?
+  //     let extra = g1.free.filter(x => !vars[x])
 
   //     if (extra.length != 0) {
   //       buf0.push("// p1 "+extra+" in "+quoteVar(v1)+" <- "+pretty(g1))
@@ -1104,7 +1101,7 @@ let emitFilters = (real) => buf => body => {
       //
       // TODO: it would be much cleaner to extract this into a 
       // proper assignment statement
-      let extra = g1.free.filter(x => !vars[x]) // .free vs .real here?
+      let extra = g1.free.filter(x => !vars[x])
 
       if (extra.length != 0) {
         buf0.push("// pre-pre-gen "+extra+" in "+pretty(g1))
@@ -1112,7 +1109,7 @@ let emitFilters = (real) => buf => body => {
           if (buf0.indexOf("let gen"+i+quoteVar(v2)+" = {}") < 0) {
             buf0.push("// pre-gen "+v2)
             buf0.push("let gen"+i+quoteVar(v2)+" = {}")
-            emitFilters(g1.free)(buf0)(() => { // .free vs .real here?
+            emitFilters(g1.free)(buf0)(() => {
               buf0.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
               buf0.push("  gen"+i+quoteVar(v2)+"["+quoteVar(v1)+"] = true")
             })
