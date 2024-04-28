@@ -475,76 +475,27 @@ let assertSame = (a,b,msg) => console.assert(same(a,b), msg+": "+a+" != "+b)
 
 let inferBwd2 = out => q => {
   if (q.key == "input" || q.key == "const") {
-    q.real = []
     q.free = []
   } else if (q.key == "var") {
-    // we have transitive information now -- include 
-    // vars[q.op] if visible in out
-    let syms = unique([q.op, ...vars[q.op].vars])
-    // console.assert(out.includes(q.op), q.op) no?
-    q.real = intersect(syms, out)
     q.free = [q.op]
   } else if (q.key == "get" || q.key == "pure" || q.key == "mkset") {
-    // q.out = out
     let es = q.arg.map(inferBwd2(out))
-    q.real = unique(es.flatMap(x => x.real))
     q.free = unique(es.flatMap(x => x.free))
   } else if (q.key == "stateful") {
-    // q.out = out // debugging info vs cse
-    // q.path = path
     let out1 = union(out,q.arg[0].dims) // need to consider mode?
     let [e1] = q.arg.map(inferBwd2(out1))
 
+    // find correlated path keys
     let extra = path.filter(x => 
-      intersects(x.xxMask2, e1.free)).flatMap(x => x.xxFree)
+      intersects(x.xxFree, diff(e1.free, out))).flatMap(x => x.xxFree)
 
-    extra = diff(extra, trans(e1.free))
+    q.free = intersect(union(trans(e1.free),extra),out)
+    q.bound = diff(union(e1.free,extra),out)
 
+    q.iter = union(q.free, q.bound)
+    q.iterInit = trans(q.free) // XXX -- more principled way?
 
-
-
-    let pExtra = path.filter(x => 
-      intersects(x.xxMask2, e1.free))
-
-    let trueExtra = diff(extra, trans(e1.free))
-    if (trueExtra.length) {
-      // let extra2 = pExtra.flatMap(x => union(x.free, x.xxBody.free))
-      let extra2 = pExtra.flatMap(x => x.xxFree)
-      let trueExtra2 = diff(extra2, trans(e1.free))
-      assertSame(trueExtra, trueExtra2, "extra") // see generatorAsFilter
-    }
-
-
-
-
-    // NOTE: if we decorrelate aggressively here,
-    // we need to add some vars to enclosing updates
-
-    q.iterInit = extra // init value is a constant
-    q.iter = union(e1.real, extra)
-    q.real = intersect(out, q.iter)
-    q.free = q.real
-    q.bound = diff(q.iter, out)
-
-
-    // sanity check -- it also seems like we could compute
-    // free and bound more directly (if we wanted to).
-    
-    // assertSame(e1.free, e1.real, "e1.free == e1.real") // see testCycles1
-
-    assertSame(intersect(trans(e1.free), out), intersect(e1.real, out), "A1")
-    assertSame(intersect(union(trans(e1.free),extra),out), q.free, "FREE")
-    assertSame(diff(union(e1.free,extra),out), q.bound, "BOUND")
-
-
-
-
-    q.iterInit = trans(q.real) // XXX -- more principled way?
-    // console.assert(subset(q.iterInit, q.iter)) // not true...
   } else if (q.key == "update") {
-    // q.out = out // debugging info vs cse
-    // q.path = path
-
     let e0 = inferBwd2(out)(q.arg[0]) // what are we extending
     let e1 = inferBwd2(out)(q.arg[1]) // key variable
 
@@ -556,7 +507,7 @@ let inferBwd2 = out => q => {
 
     let e1Body
     if (q.arg[3]) {
-      let out3 = union(out, union([e1.op], q.arg[3].dims)) // e3 includes e1.op (left for clarity)
+      let out3 = union(out, union([e1.op], q.arg[3].dims)) // e3 includes e1.op (union left for clarity)
       let e3 = inferBwd2(out3)(q.arg[3]) // filter expr
       console.assert(e3.key == "get")
       console.assert(e3.arg[0].key == "mkset")
@@ -573,21 +524,7 @@ let inferBwd2 = out => q => {
 
     let save = path
 
-    // let e1RealMask = [e1.op, ...diff(e1Body.real, out)] // diff(.., out) solved day4-part1 recursion?
-    // let e1RealDeps = [e1.op, ...diff(e1Body.real, union(out, q.arg[2].vars))] // diff(.., out) not required here
-
-    // e1.xxMask = e1RealMask // test this for overlap with e.vars of an inner expr e
-    // e1.xxReal = e1RealDeps // add deps that aren't already present
-    // e1.xxBody = e1Body
-
     e1.xxFree = union(e1.free, e1Body.free)
-    e1.xxMask2 = diff(e1.xxFree, out)
-
-
-    // if (e1Body === undefined)
-      // console.error("!!!")
-
-    // TODO: rationale for the two diff ops?
 
     path = [...path,e1]
 
@@ -596,28 +533,15 @@ let inferBwd2 = out => q => {
     path = save
 
     // aggregation part of e3: add extra deps for enclosing groupings
-    let e3Vars = e1.xxFree // e3.vars
     let extra = path.filter(x => 
-      intersects(x.xxMask2, e3Vars)).flatMap(x => x.xxFree)
-
-    extra = diff(extra, trans(e3Vars))
-
-    // q.iterInit = unique([...e0.real, ...extra0])
-    q.iter = unique([...e0.real, ...e1.vars, ...e2.real, ...e1Body.real, ...extra])
-    q.real = intersect(out, q.iter)
-    q.free = q.real
-    q.bound = diff(q.iter, out)
+      intersects(x.xxFree, diff(e1.xxFree, out))).flatMap(x => x.xxFree)
 
     let fv = unique([...e0.free, ...e1.free, ...e2.free, ...e1Body.free])
-    assertSame(intersect(union(trans(fv),extra),out), q.free, "FREE")
-    assertSame(diff(union(fv,extra),out), q.bound, "BOUND")
+    q.free = intersect(union(trans(fv),extra),out)
+    q.bound = diff(union(fv,extra),out)
 
-    // sanity check
-    // let fv = unique([...e0.free, ...e2.free])
-    // console.assert(same(trans(fv), q.iter))
-    // console.assert(same(intersect(trans(fv),out), q.free))
-
-    q.iterInit = trans(q.real) // XXX -- more principled way?
+    q.iter = union(q.free, q.bound)    
+    q.iterInit = trans(q.free) // XXX -- more principled way?
   } else {
     console.error("unknown op", q)
   }
@@ -625,12 +549,12 @@ let inferBwd2 = out => q => {
   console.assert(subset(q.mind, q.dims))
   console.assert(subset(q.dims, q.vars))
   if (q.key != "var") 
-    console.assert(subset(q.mind, q.real), "mind !< real: "+q.mind+" / "+q.real+" at "+pretty(q))
+    console.assert(subset(q.mind, q.free), "mind !< free: "+q.mind+" / "+q.free+" at "+pretty(q))
 
   if (q.mode && q.mode != "reluctant")
-    console.assert(subset(q.dims, q.real)) // can happen for lazy 'last'
+    console.assert(subset(q.dims, q.free)) // can happen for lazy 'last'
   if (q.key == "stateful" || q.key =="group" || q.key == "update") {
-    console.assert(subset(q.real, q.iter), q.real+ "/"+ q.iter)
+    console.assert(subset(q.free, q.iter), q.free+ "/"+ q.iter)
     console.assert(same(q.iter, union(q.free, q.bound)))
     console.assert(!intersects(q.free, q.bound))
   // console.assert(subset(q.free, q.real), q.free+ "/"+ q.real + " "+pretty(q))  no?
@@ -638,8 +562,6 @@ let inferBwd2 = out => q => {
 
   return q
 }
-
-
 
 
 
@@ -867,7 +789,7 @@ let computeOrder = q => {
     let f = filters[i]
     let v = f.arg[1].op // var name
     f = f.arg[0] // skip dep on var itself
-    for (let w of f.real) deps.var2var[v][w] = true
+    for (let w of f.free) deps.var2var[v][w] = true
     for (let j of f.tmps) deps.var2tmp[v][j] = true
   }
 
@@ -917,7 +839,7 @@ let pretty = q => {
     return q.op
   } else if (q.key == "ref") {
     let e1 = assignments[q.op]
-    return "tmp"+q.op+prettyPath(e1.real)
+    return "tmp"+q.op+prettyPath(e1.free)
   } else if (q.key == "get") {
     let [e1,e2] = q.arg.map(pretty)
     if (e1 == "inp") return e2
@@ -954,7 +876,7 @@ let emitPseudo = (q) => {
     let q = filters[i]
     buf.push("gen"+i + ": " + pretty(q))
     if (q.vars.length)
-      buf.push("  " + q.vars + " / " + q.real + " / " + q.iter)
+      buf.push("  " + q.vars + " / " + q.free + " / " + q.iter)
   }
   buf.push("")
   let hi = buf.length
@@ -966,9 +888,9 @@ let emitPseudo = (q) => {
     buf.push("")
   for (let i in assignments) {
     let q = assignments[i]
-    buf.push("tmp"+i + prettyPath(q.real) + " = " + pretty(q))
-    // if (q.real?.length > 0)
-    //   buf.push("  rel: " + q.real)
+    buf.push("tmp"+i + prettyPath(q.free) + " = " + pretty(q))
+    // if (q.free?.length > 0)
+    //   buf.push("  rel: " + q.free)
     if (q.path?.length > 0) 
       buf.push("  pth: " + q.path.map(pretty))
     // buf.push("  = " + pretty(q))
@@ -990,8 +912,8 @@ let emitPseudo = (q) => {
       buf.push("  fre: " + q.free)
   }
   buf.push(pretty(q))
-  if (q.real?.length > 0)  
-    buf.push("  " + q.real)
+  if (q.free?.length > 0)  
+    buf.push("  " + q.free)
   return buf.join("\n")
 }
 
@@ -1034,7 +956,7 @@ let codegen = q => {
     return quoteVar(q.op)
   } else if (q.key == "ref") {
     let q1 = assignments[q.op]
-    let xs = [String(q.op),...q1.real]
+    let xs = [String(q.op),...q1.free]
     return quoteIndexVarsXS("tmp", xs)
   } else if (q.key == "get" && isDeepVarExp(q.arg[1])) {
     let [e1,e2] = q.arg.map(codegen)
@@ -1120,16 +1042,16 @@ let emitFilters = (real) => buf => body => {
 // But g1.vars isn't up to date anymore if the path contains
 // grouping. After extraction we may have (aggregateAsKey)
 //
-//    mkset(tmp1[K2])[K1] with mkset(tmp1[K2]).vars = D0 and .real = K2
+//    mkset(tmp1[K2])[K1] with mkset(tmp1[K2]).vars = D0 and .free = K2
 //
 // So it seems like we might want
 //
-// (2) let avail = g1.real.every(x => !vars[x] || seen[x])
+// (2) let avail = g1.free.every(x => !vars[x] || seen[x])
 //
 // But that also isn't quite right for some terms without
 // grouping. For nontrivial variable dependencies as in
 //
-//    data.*U.*V.*U  and thus  data.*U.real = *U,*V
+//    data.*U.*V.*U  and thus  data.*U.free = *U,*V
 //
 // (because of the second .*U dependency) we need to
 // emit data.*U, then data.*U.*V, etc. But data.*U.*V
@@ -1257,7 +1179,7 @@ let emitCode = (q, order) => {
 
       // XXX what is the right iteration space?
       //
-      // 1. use fv2 = q.real
+      // 1. use fv2 = q.free
       //
       //    most intuitive: want precisely the space of dimensions
       //
@@ -1265,7 +1187,7 @@ let emitCode = (q, order) => {
       //
       //    there, we're loosing the correlation via * between *B and K2=data3.*.key
       //
-      // 2. use fv2 = trans(q.real)
+      // 2. use fv2 = trans(q.free)
       //
       //    this seems to work on all tests -- explicitly include
       //    any correlated variables
@@ -1274,7 +1196,7 @@ let emitCode = (q, order) => {
 
       let fv = q.iterInit
       emitFilters(fv)(buf)(() => {
-        let xs = [i,...q.real.map(quoteVar)] // free = real for assignments
+        let xs = [i,...q.free.map(quoteVar)] // free = real for assignments
         let ys = xs.map(x => ","+x).join("")
 
         buf.push("  rt.init(tmp"+ys+")\n  ("+ emitStmInit(q) + ")")
@@ -1283,7 +1205,7 @@ let emitCode = (q, order) => {
 
     let fv = q.iter
     emitFilters(fv)(buf)(() => {
-      let xs = [i,...q.real.map(quoteVar)] // free = real for assignments
+      let xs = [i,...q.free.map(quoteVar)] // free = real for assignments
       let ys = xs.map(x => ","+x).join("")
 
       buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStm(q) + ")")
@@ -1291,9 +1213,8 @@ let emitCode = (q, order) => {
   }
 
   buf.push("// --- res ---")
-  console.assert(subset(q.free, q.real))
-  emitFilters(q.real)(buf)(() => {
-    let xs = q.real.map(quoteVar)
+  emitFilters(q.free)(buf)(() => {
+    let xs = q.free.map(quoteVar)
     let ys = xs.map(x => ","+x).join("")
     buf.push("k("+codegen(q)+ys+")")
   })
@@ -1383,10 +1304,10 @@ let compile = (q,{
   for (let ix in assignments) {
     let q = assignments[ix]
     // report a warning when triggered
-    let drop = union(q.real, q.iter).filter(x => vars[x].tmps.includes(Number(ix)))
+    let drop = union(q.free, q.iter).filter(x => vars[x].tmps.includes(Number(ix)))
     if (drop.length > 0)
       console.warn("trigger recursion fix (this should no longer be necessary):\n  "+drop+" dropping at\n  "+pretty(q))
-    q.real = q.real.filter(x => !vars[x].tmps.includes(Number(ix)))
+    q.free = q.free.filter(x => !vars[x].tmps.includes(Number(ix)))
     q.iter = q.iter.filter(x => !vars[x].tmps.includes(Number(ix)))
   }
 
