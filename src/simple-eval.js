@@ -470,6 +470,8 @@ let intersects = (a,b) => intersect(a,b).length > 0
 
 let overlaps = (a,b) => intersects(trans(a),trans(b))
 
+let assertSame = (a,b,msg) => console.assert(same(a,b), msg+": "+a+" != "+b)
+
 
 let inferBwd2 = out => q => {
   if (q.key == "input" || q.key == "const") {
@@ -494,10 +496,11 @@ let inferBwd2 = out => q => {
     let [e1] = q.arg.map(inferBwd2(out1))
 
     let extra = path.filter(x => 
-      intersects(x.xxMask, e1.vars)).flatMap(x => x.xxReal)
+      intersects(x.xxMask2, e1.free)).flatMap(x => x.xxFree)
+
+    extra = diff(extra, trans(e1.free))
 
 
-    let assertSame = (a,b,msg) => console.assert(same(a,b), msg+": "+a+" != "+b)
 
 
     let pExtra = path.filter(x => 
@@ -505,7 +508,8 @@ let inferBwd2 = out => q => {
 
     let trueExtra = diff(extra, trans(e1.free))
     if (trueExtra.length) {
-      let extra2 = pExtra.flatMap(x => union(x.free, x.xxBody.free))
+      // let extra2 = pExtra.flatMap(x => union(x.free, x.xxBody.free))
+      let extra2 = pExtra.flatMap(x => x.xxFree)
       let trueExtra2 = diff(extra2, trans(e1.free))
       assertSame(trueExtra, trueExtra2, "extra") // see generatorAsFilter
     }
@@ -529,9 +533,8 @@ let inferBwd2 = out => q => {
     // assertSame(e1.free, e1.real, "e1.free == e1.real") // see testCycles1
 
     assertSame(intersect(trans(e1.free), out), intersect(e1.real, out), "A1")
-    assertSame(intersect(union(trans(e1.free),extra),out), q.free, "A2")
-
-    assertSame(diff(union(e1.free,extra),out), q.bound, "A3")
+    assertSame(intersect(union(trans(e1.free),extra),out), q.free, "FREE")
+    assertSame(diff(union(e1.free,extra),out), q.bound, "BOUND")
 
 
 
@@ -570,18 +573,19 @@ let inferBwd2 = out => q => {
 
     let save = path
 
-    let e1RealMask = [e1.op, ...diff(e1Body.real, out)] // diff(.., out) solved day4-part1 recursion?
-    let e1RealDeps = [e1.op, ...diff(e1Body.real, union(out, q.arg[2].vars))] // diff(.., out) not required here
+    // let e1RealMask = [e1.op, ...diff(e1Body.real, out)] // diff(.., out) solved day4-part1 recursion?
+    // let e1RealDeps = [e1.op, ...diff(e1Body.real, union(out, q.arg[2].vars))] // diff(.., out) not required here
 
-    e1.xxMask = e1RealMask // test this for overlap with e.vars of an inner expr e
-    e1.xxReal = e1RealDeps // add deps that aren't already present
-    e1.xxBody = e1Body
+    // e1.xxMask = e1RealMask // test this for overlap with e.vars of an inner expr e
+    // e1.xxReal = e1RealDeps // add deps that aren't already present
+    // e1.xxBody = e1Body
 
-    e1.xxMask2 = diff(union(e1.free, e1Body.free), out)
+    e1.xxFree = union(e1.free, e1Body.free)
+    e1.xxMask2 = diff(e1.xxFree, out)
 
 
-    if (e1Body === undefined)
-      console.error("!!!")
+    // if (e1Body === undefined)
+      // console.error("!!!")
 
     // TODO: rationale for the two diff ops?
 
@@ -592,15 +596,21 @@ let inferBwd2 = out => q => {
     path = save
 
     // aggregation part of e3: add extra deps for enclosing groupings
-    let e3Vars = unique([e1.op, ...e1Body.vars]) // e3.vars
-    let extra3 = path.filter(x =>
-      intersects(x.xxMask, e3Vars)).flatMap(x => x.xxReal)
+    let e3Vars = e1.xxFree // e3.vars
+    let extra = path.filter(x => 
+      intersects(x.xxMask2, e3Vars)).flatMap(x => x.xxFree)
+
+    extra = diff(extra, trans(e3Vars))
 
     // q.iterInit = unique([...e0.real, ...extra0])
-    q.iter = unique([...e0.real, ...e1.vars, ...e2.real, ...e1Body.real, ...extra3])
+    q.iter = unique([...e0.real, ...e1.vars, ...e2.real, ...e1Body.real, ...extra])
     q.real = intersect(out, q.iter)
     q.free = q.real
     q.bound = diff(q.iter, out)
+
+    let fv = unique([...e0.free, ...e1.free, ...e2.free, ...e1Body.free])
+    assertSame(intersect(union(trans(fv),extra),out), q.free, "FREE")
+    assertSame(diff(union(fv,extra),out), q.bound, "BOUND")
 
     // sanity check
     // let fv = unique([...e0.free, ...e2.free])
