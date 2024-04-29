@@ -228,12 +228,12 @@ rt.stateful.mkset = x => ({
 })
 
 
-
-
 // sum, count, min, max, 
 // first, last, single, unique
-// array
+// array, mkset
 
+
+// group and update
 
 // these are dealt with somewhat specially
 rt.stateful.group = (x1,x2) => ({

@@ -338,3 +338,15 @@ test("testGroup2", () => {
 
 
 
+test("testGroupPrefixSum1", () => {
+  let query = {"data.*.key": rh`array(prefix_sum(data.*.value))`}
+
+  let func = compile(query)
+  let res = func({data, other})
+
+  expect(res).toEqual({
+    U: [40, 20], V: [10]
+  })
+})
+
+

@@ -261,6 +261,8 @@ let preproc = q => {
       return { key: "pure", op: op, arg: es2 }
     else if (op in runtime.stateful)
       return { key: "stateful", op: op, arg: es2 }
+    else if (op.startsWith("prefix_") && op.substring(7) in runtime.stateful)
+      return { key: "prefix", op: op.substring(7), arg: es2 }
     console.error("unknown op", q)
   } else {
     console.error("malformed op", q)
@@ -310,9 +312,6 @@ let extract0 = q => {
     e1 = extract0(e1)
     e2 = extract0(e2)
     return { ...q, arg: [e1,e2]}
-  } else if (q.key == "stateful") {
-    let es = q.arg.map(extract0)
-    return { ...q, arg: es }
   } else if (q.key == "group") {
     return extract0({...q, key:"update",
       arg: [{key:"const",op:{}}, ...q.arg]})
@@ -363,7 +362,7 @@ let extract2 = q => {
   if (!q.arg) return { ...q, tmps:[] }
   let es = q.arg.map(extract2)
   let tmps = unique(es.flatMap(x => x.tmps))
-  if (q.key == "stateful" || q.key == "update") {
+  if (q.key == "prefix" || q.key == "stateful" || q.key == "update") {
     let q1 = { ...q, arg: es, tmps }
     let str = JSON.stringify(q1) // extract & cse
     let ix = assignments.map(x => JSON.stringify(x)).indexOf(str)
@@ -416,7 +415,7 @@ let infer = q => {
     q.vars = [q.op]
     q.mind = [q.op]
     q.dims = [q.op]
-  } else if (q.key == "get" || q.key == "pure" || q.key == "mkset") {
+  } else if (q.key == "get" || q.key == "pure" || q.key == "mkset" || q.key == "prefix") {
     let es = q.arg.map(infer)
     q.vars = unique(es.flatMap(x => x.vars))
     q.mind = unique(es.flatMap(x => x.mind))
@@ -480,6 +479,12 @@ let inferBwd = out => q => {
   } else if (q.key == "get" || q.key == "pure" || q.key == "mkset") {
     let es = q.arg.map(inferBwd(out))
     q.free = unique(es.flatMap(x => x.free))
+  } else if (q.key == "prefix") {
+    let es = q.arg.map(inferBwd(out))
+    q.free = unique(es.flatMap(x => x.free))
+    q.bound = []
+    q.iter = q.free
+    q.iterInit = trans(q.free) // XXX -- more principled way?
   } else if (q.key == "stateful") {
     let out1 = union(out,q.arg[0].dims) // need to consider mode?
     let [e1] = q.arg.map(inferBwd(out1))
@@ -852,6 +857,9 @@ let pretty = q => {
   } else if (q.key == "mkset") {
     let [e1] = q.arg.map(pretty)
     return "mkset("+e1+")"
+  } else if (q.key == "prefix") {
+    let [e1] = q.arg.map(pretty)
+    return "prefix_"+q.op+"("+e1+")"
   } else if (q.key == "stateful") {
     let [e1] = q.arg.map(pretty)
     return q.op+"("+e1+")"
@@ -874,7 +882,7 @@ let emitPseudo = (q) => {
     let q = filters[i]
     buf.push("gen"+i + ": " + pretty(q))
     if (q.vars.length)
-      buf.push("  " + q.vars + " / " + q.free + " / " + q.iter)
+      buf.push("  " + q.vars + " / " + q.free)
   }
   buf.push("")
   let hi = buf.length
@@ -987,7 +995,10 @@ let emitStmInit = (q) => {
 }
 
 let emitStm = (q) => {
-  if (q.key == "stateful") {
+  if (q.key == "prefix") {
+    let [e1] = q.arg.map(codegen)
+    return "rt.stateful."+q.op+"("+e1+")"
+  } else if (q.key == "stateful") {
     let [e1] = q.arg.map(codegen)
     return "rt.stateful."+q.op+"("+e1+")"
   } else if (q.key == "update") {
