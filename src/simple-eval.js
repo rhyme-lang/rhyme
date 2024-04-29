@@ -456,10 +456,9 @@ let infer = q => {
 //
 // 6. Infer dependencies top down: 
 //    - out:  maximum allowed set of variables in output (provided as input arg)
-//    - real: variables actually in output
-//    - iter: iteration space for stms
 //    - free: free variables, anticipating conversion to loops
 //    - bound: bound variables, anticipating conversion to loops
+//    - iter: iteration space for stms (= free + bound)
 //
 //    Decorrelate paths and eliminate trivial recursion
 //
@@ -485,7 +484,7 @@ let inferBwd2 = out => q => {
     let out1 = union(out,q.arg[0].dims) // need to consider mode?
     let [e1] = q.arg.map(inferBwd2(out1))
 
-    // find correlated path keys
+    // find correlated path keys: check overlap with our own bound vars
     let extra = path.filter(x => 
       intersects(x.xxFree, diff(e1.free, out))).flatMap(x => x.xxFree)
 
@@ -531,11 +530,15 @@ let inferBwd2 = out => q => {
 
     path = save
 
-    // aggregation part of e3: add extra deps for enclosing groupings
+    // all free vars from subexpressions
+    let fv = unique([...e0.free, ...e1.free, ...e2.free, ...e1Body.free])
+
+    // find correlated path keys: check overlap with our own bound vars
+    // (only need to consider bound vars from key computation, 
+    // rest is taken care of through nested statements)
     let extra = path.filter(x => 
       intersects(x.xxFree, diff(e1.xxFree, out))).flatMap(x => x.xxFree)
 
-    let fv = unique([...e0.free, ...e1.free, ...e2.free, ...e1Body.free])
     q.free = intersect(union(trans(fv),extra),out)
     q.bound = diff(union(fv,extra),out)
 
@@ -547,9 +550,7 @@ let inferBwd2 = out => q => {
 
   console.assert(subset(q.mind, q.dims))
   console.assert(subset(q.dims, q.vars))
-  if (q.key != "var") 
-    console.assert(subset(q.mind, q.free), "mind !< free: "+q.mind+" / "+q.free+" at "+pretty(q))
-
+  console.assert(subset(q.mind, q.free), "mind !< free: "+q.mind+" / "+q.free+" at "+pretty(q))
   if (q.mode && q.mode != "reluctant")
     console.assert(subset(q.dims, q.free)) // can happen for lazy 'last'
   if (q.key == "stateful" || q.key =="group" || q.key == "update") {
