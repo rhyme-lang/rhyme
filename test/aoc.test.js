@@ -1294,15 +1294,15 @@ O.#..O.#.#
 
 test("day16-part1", () => {
   let input = `.|...\\....
- |.-.\\.....
- .....|-...
- ........|.
- ..........
- .........\\
- ..../.\\\\..
- .-.-/..|..
- .|....-|.\\
- ..//.|....`
+|.-.\\.....
+.....|-...
+........|.
+..........
+.........\\
+..../.\\\\..
+.-.-/..|..
+.|....-|.\\
+..//.|....`
  
   let udf = {
     filter: c => c ? { [c]: true } : {},
@@ -1312,10 +1312,21 @@ test("day16-part1", () => {
       let j = +point[1]
       return [[i - 1, j], [i + 1, j], [i, j - 1], [i, j + 1]]
     },
-    move: (curr, direction) => [curr[0] + direction[0], curr[1] + direction[1]],
+    dotNext: (curr, direction) => [[curr[0] + direction[0], curr[1] + direction[1]]],
+    dotDirection: (curr, direction) => [direction],
+    pipeNext: (curr, direction) => direction[0] == 0 ? [[curr[0] - 1, curr[1]], [curr[0] + 1, curr[1]]] : [[curr[0] + direction[0], curr[1] + direction[1]]],
+    pipeDirection: (cell, direction) => direction[0] == 0 ? [[-1, 0], [1, 0]] : [direction],
+    dashNext: (curr, direction) => direction[1] == 0 ? [[curr[0], curr[1] - 1], [curr[0], curr[1] + 1]] : [[curr[0] + direction[0], curr[1] + direction[1]]],
+    dashDirection: (cell, direction) => direction[1] == 0 ? [[0, -1], [0, 1]] : [direction],
+    slashNext: (curr, direction) => [[curr[0] - direction[1], curr[1] - direction[0]]],
+    slashDirection: (cell, direction) => [[-direction[1], -direction[0]]],
+    backslashNext: (curr, direction) => [[curr[0] + direction[1], curr[1] + direction[0]]],
+    backslashDirection: (cell, direction) => [[direction[1], direction[0]]],
     toCoord: (i, j) => [i, j],
-    splitOnPipe: (direction) => (cell) => {
-      return direction[0] == 0 ? [[-1, 0], [1, 0]] : direction
+    flat: (arr) => arr.flat(),
+    optionalChaining: (o, k) => o?.[k],
+    merge: (o1, o2) => {
+      return {...o1, ...o2}
     },
     ...udf_stdlib
   }
@@ -1326,6 +1337,8 @@ test("day16-part1", () => {
     "/": [[-1, 0], [0, 1]],
     "\\": [[-1, 0], [0, -1]]
   }
+
+  // console.log(input)
  
   let lines = rh`.input | udf.split "\\n"`
   let mat = rh`${lines} | .*line | udf.split "" | group *line`
@@ -1337,23 +1350,77 @@ test("day16-part1", () => {
   }
  
   let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+
+  let getCell = rh`udf.optionalChaining (udf.optionalChaining ${mat} (state.curr.*curr.0)) (state.curr.*curr.1)`
  
-  let isPipe = rh`udf.isEqual "|" ${mat}.(state.curr.*curr.0).(state.curr.*curr.1)`
-  let isDot = rh`udf.isEqual "." ${mat}.(state.curr.*curr.0).(state.curr.*curr.1)`
-  let pipes = rh`state.curr.*curr | ${filterBy("*fPipe", isPipe)}`
-  let dotsNext = rh`udf.move (state.curr.*curr | ${filterBy("*fPipe", isDot)}) state.direction.(*curr)`
-  let dotsDirection = rh`udf.andThen (state.curr.*curr | ${filterBy("*fPipe", isDot)}) state.direction.(*curr)`
+  let isDash = rh`udf.isEqual "-" ${getCell}`
+  let isPipe = rh`udf.isEqual "|" ${getCell}`
+  let isDot = rh`udf.isEqual "." ${getCell}`
+  let isSlash = rh`udf.isEqual "/" ${getCell}`
+  let isBackslash = rh`udf.isEqual "\\\\" ${getCell}`
+
+  let dotNext = rh`udf.dotNext (state.curr.*curr | ${filterBy("*fDot", isDot)}) state.direction.(*curr)`
+  let dotDirection = rh`udf.dotDirection (state.curr.*curr | ${filterBy("*fDot", isDot)}) state.direction.(*curr)`
+
+  let pipeNext = rh`udf.pipeNext (state.curr.*curr | ${filterBy("*fPipe", isPipe)}) state.direction.(*curr)`
+  let pipeDirection = rh`udf.pipeDirection (state.curr.*curr | ${filterBy("*fPipe", isPipe)}) state.direction.(*curr)`
+
+  let dashNext = rh`udf.dashNext (state.curr.*curr | ${filterBy("*fDash", isDash)}) state.direction.(*curr)`
+  let dashDirection = rh`udf.dashDirection (state.curr.*curr | ${filterBy("*fDash", isDash)}) state.direction.(*curr)`
+
+  let slashNext = rh`udf.slashNext (state.curr.*curr | ${filterBy("*fSlash", isSlash)}) state.direction.(*curr)`
+  let slashDirection = rh`udf.slashDirection (state.curr.*curr | ${filterBy("*fSlash", isSlash)}) state.direction.(*curr)`
+
+  let backslashNext = rh`udf.backslashNext (state.curr.*curr | ${filterBy("*fBackslash", isBackslash)}) state.direction.(*curr)`
+  let backslashDirection = rh`udf.backslashDirection (state.curr.*curr | ${filterBy("*fBackslash", isBackslash)}) state.direction.(*curr)`
+
+  let isInRangeAndVisited = rh`udf.optionalChaining (udf.optionalChaining state.visited (state.curr.*curr.0)) (state.curr.*curr.1)`
+  let count = rh`udf.andThen (state.curr.*curr | ${filterBy("*ftmp", getCell)}) 1 | sum`
+  // let visited = rh`udf.andThen (state.curr.*curr | ${filterBy("*fInRangeAndVisited", isInRangeAndVisited)} | group *fInRangeAndVisited) 1 | group state.curr.*curr.0 | group state.curr.*curr.1`
  
+  let isInRange = rh`udf.flat ${[dotNext, pipeNext, dashNext, slashNext, backslashNext]} | udf.optionalChaining (udf.optionalChaining ${mat} (.*new.0)) (.*new.1)`
+  let curr = [rh`udf.flat ${[dotNext, pipeNext, dashNext, slashNext, backslashNext]} | .*new | ${filterBy("*fInRange", isInRange)}`]
+  let direction = [rh`udf.flat ${[dotDirection, pipeDirection, dashDirection, slashDirection, backslashDirection]} | .*new | ${filterBy("*fInRange", isInRange)}`]
+
   let query = {
-    curr: [dotsNext],
-    direction: [dotsDirection]
+    curr: curr,
+    direction: direction,
+    count: rh`state.count + ${count}`,
   }
  
   let func = api.compile(query)
-  console.log(func.explain.code)
-  let res = func({input, udf, state})
-  console.log(res)
- })
+  // console.log(func.explain.code)
+  // console.log(state)
+  let visited = {'0': {'0': {'0': {'1': true}}}}
+  let prev = JSON.stringify(visited)
+  while (state.curr.length > 0) {
+    state = func({input, udf, state, visited})
+    // console.log(state)
+    for (let i in state.curr) {
+      let curr = state.curr[i]
+      let direction = state.direction[i]
+      visited[curr[0]] ??= {}
+      visited[curr[0]][curr[1]] ??= {}
+      visited[curr[0]][curr[1]][direction[0]] ??= {}
+      visited[curr[0]][curr[1]][direction[0]][direction[1]] = true
+    }
+    // console.log(visited)
+    let newVisited = JSON.stringify(visited)
+    if (newVisited == prev) {
+      break;
+    }
+    prev = newVisited
+  }
+
+  let res = 0
+  for (let i in visited) {
+    for (let j in visited[i]) {
+      res++
+    }
+  }
+
+  expect(res).toBe(46)
+})
 
 // 2022
 
