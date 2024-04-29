@@ -472,17 +472,17 @@ let overlaps = (a,b) => intersects(trans(a),trans(b))
 let assertSame = (a,b,msg) => console.assert(same(a,b), msg+": "+a+" != "+b)
 
 
-let inferBwd2 = out => q => {
+let inferBwd = out => q => {
   if (q.key == "input" || q.key == "const") {
     q.free = []
   } else if (q.key == "var") {
     q.free = [q.op]
   } else if (q.key == "get" || q.key == "pure" || q.key == "mkset") {
-    let es = q.arg.map(inferBwd2(out))
+    let es = q.arg.map(inferBwd(out))
     q.free = unique(es.flatMap(x => x.free))
   } else if (q.key == "stateful") {
     let out1 = union(out,q.arg[0].dims) // need to consider mode?
-    let [e1] = q.arg.map(inferBwd2(out1))
+    let [e1] = q.arg.map(inferBwd(out1))
 
     // find correlated path keys: check overlap with our own bound vars
     let extra = path.filter(x => 
@@ -494,8 +494,8 @@ let inferBwd2 = out => q => {
     q.iter = union(q.free, q.bound)
     q.iterInit = trans(q.free) // XXX -- more principled way?
   } else if (q.key == "update") {
-    let e0 = inferBwd2(out)(q.arg[0]) // what are we extending
-    let e1 = inferBwd2(out)(q.arg[1]) // key variable
+    let e0 = inferBwd(out)(q.arg[0]) // what are we extending
+    let e1 = inferBwd(out)(q.arg[1]) // key variable
 
     // constructs such as eta-expansion may introduce
     // recursive dependencies once statements are extracted.
@@ -506,7 +506,7 @@ let inferBwd2 = out => q => {
     let e1Body
     if (q.arg[3]) {
       let out3 = union(out, union([e1.op], q.arg[3].dims)) // e3 includes e1.op (union left for clarity)
-      let e3 = inferBwd2(out3)(q.arg[3]) // filter expr
+      let e3 = inferBwd(out3)(q.arg[3]) // filter expr
       console.assert(e3.key == "get")
       console.assert(e3.arg[0].key == "mkset")
       console.assert(e3.arg[1].key == "var" && e3.arg[1].op == e1.op)
@@ -522,11 +522,11 @@ let inferBwd2 = out => q => {
 
     let save = path
 
-    e1.xxFree = union(e1.free, e1Body.free)
+    let xxFree = union(e1.free, e1Body.free)
 
-    path = [...path,e1]
+    path = [...path,{xxFree}]
 
-    let e2 = inferBwd2(union(out, [e1.op]))(q.arg[2])
+    let e2 = inferBwd(union(out, [e1.op]))(q.arg[2])
 
     path = save
 
@@ -537,7 +537,7 @@ let inferBwd2 = out => q => {
     // (only need to consider bound vars from key computation, 
     // rest is taken care of through nested statements)
     let extra = path.filter(x => 
-      intersects(x.xxFree, diff(e1.xxFree, out))).flatMap(x => x.xxFree)
+      intersects(x.xxFree, diff(xxFree, out))).flatMap(x => x.xxFree)
 
     q.free = intersect(union(trans(fv),extra),out)
     q.bound = diff(union(fv,extra),out)
@@ -1190,7 +1190,7 @@ let emitCode = (q, order) => {
       //    this seems to work on all tests -- explicitly include
       //    any correlated variables
       //
-      //    now done in inferBwd2 (could be refined there)
+      //    now done in inferBwd (could be refined there)
 
       let fv = q.iterInit
       emitFilters(fv)(buf)(() => {
@@ -1272,12 +1272,14 @@ let compile = (q,{
   // 6. Backward pass to infer output dimensions
   if (singleResult) {
     // trace.assert(q.mind.length == 0)
-    q = inferBwd2(q.mind)(q)
+    q = inferBwd(q.mind)(q) // see joinSimpleTest1
   } else
-    q = inferBwd2(q.dims)(q)
+    q = inferBwd(q.dims)(q)
 
 // trace.log("---- AFTER INFER_BWD")
 // trace.log(emitPseudo(q))
+
+
 
   // ---- middle tier, imperative form ----
 
