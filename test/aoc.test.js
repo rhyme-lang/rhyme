@@ -1241,7 +1241,7 @@ test("day11-part2", () => {
   expect(res).toBe(82000210)
 })
 
-test("aoc-day14-part1", () => {
+test("day14-part1", () => {
   let input = `O....#....
 O.OO#....#
 .....##...
@@ -1292,6 +1292,68 @@ O.#..O.#.#
   expect(state.load).toBe(136)
 })
 
+test("day16-part1", () => {
+  let input = `.|...\\....
+ |.-.\\.....
+ .....|-...
+ ........|.
+ ..........
+ .........\\
+ ..../.\\\\..
+ .-.-/..|..
+ .|....-|.\\
+ ..//.|....`
+ 
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    andThen: (a,b) => b, // just to add a as dependency,
+    getAdj: point => {
+      let i = +point[0]
+      let j = +point[1]
+      return [[i - 1, j], [i + 1, j], [i, j - 1], [i, j + 1]]
+    },
+    move: (curr, direction) => [curr[0] + direction[0], curr[1] + direction[1]],
+    toCoord: (i, j) => [i, j],
+    splitOnPipe: (direction) => (cell) => {
+      return direction[0] == 0 ? [[-1, 0], [1, 0]] : direction
+    },
+    ...udf_stdlib
+  }
+ 
+  let connected = {
+    "|": [[-1, 0], [1, 0]],
+    "-": [[0, -1], [0, 1]],
+    "/": [[-1, 0], [0, 1]],
+    "\\": [[-1, 0], [0, -1]]
+  }
+ 
+  let lines = rh`.input | udf.split "\\n"`
+  let mat = rh`${lines} | .*line | udf.split "" | group *line`
+ 
+  let state = {
+    curr: [[0, 0]],      // top-left corner
+    direction: [[0, 1]], // right
+    count: 0
+  }
+ 
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+ 
+  let isPipe = rh`udf.isEqual "|" ${mat}.(state.curr.*curr.0).(state.curr.*curr.1)`
+  let isDot = rh`udf.isEqual "." ${mat}.(state.curr.*curr.0).(state.curr.*curr.1)`
+  let pipes = rh`state.curr.*curr | ${filterBy("*fPipe", isPipe)}`
+  let dotsNext = rh`udf.move (state.curr.*curr | ${filterBy("*fPipe", isDot)}) state.direction.(*curr)`
+  let dotsDirection = rh`udf.andThen (state.curr.*curr | ${filterBy("*fPipe", isDot)}) state.direction.(*curr)`
+ 
+  let query = {
+    curr: [dotsNext],
+    direction: [dotsDirection]
+  }
+ 
+  let func = api.compile(query)
+  console.log(func.explain.code)
+  let res = func({input, udf, state})
+  console.log(res)
+ })
 
 // 2022
 
