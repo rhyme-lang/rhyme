@@ -501,6 +501,9 @@ let inferBwd = out => q => {
 
     assertSame(q.bound, diff(union(e1.dims, extra2), out))
 
+    // this does NOT work!
+    // assertSame(q.free, intersect(union(trans(e1.dims),extra2),out))
+
     q.iter = union(q.free, q.bound)
     q.iterInit = trans(q.free) // XXX -- more principled way?
   } else if (q.key == "update") {
@@ -1216,7 +1219,7 @@ let emitCode = (q, order) => {
 
       let fv = q.iterInit
       emitFilters(fv)(buf)(() => {
-        let xs = [i,...q.free.map(quoteVar)] // free = real for assignments
+        let xs = [i,...q.free.map(quoteVar)]
         let ys = xs.map(x => ","+x).join("")
 
         buf.push("  rt.init(tmp"+ys+")\n  ("+ emitStmInit(q) + ")")
@@ -1225,7 +1228,7 @@ let emitCode = (q, order) => {
 
     let fv = q.iter
     emitFilters(fv)(buf)(() => {
-      let xs = [i,...q.free.map(quoteVar)] // free = real for assignments
+      let xs = [i,...q.free.map(quoteVar)]
       let ys = xs.map(x => ","+x).join("")
 
       buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStm(q) + ")")
