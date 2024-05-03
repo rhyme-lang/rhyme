@@ -496,6 +496,8 @@ let inferBwd = out => q => {
     q.free = intersect(union(trans(e1.free),extra),out)
     q.bound = diff(union(e1.free,extra),out)
 
+    assertSame(q.bound, diff(union(e1.dims, extra), out))
+
     q.iter = union(q.free, q.bound)
     q.iterInit = trans(q.free) // XXX -- more principled way?
   } else if (q.key == "update") {
@@ -546,6 +548,8 @@ let inferBwd = out => q => {
 
     q.free = intersect(union(trans(fv),extra),out)
     q.bound = diff(union(fv,extra),out)
+
+    assertSame(q.bound, diff(union(union(e1.vars, e1Body.dims), extra), out))
 
     q.iter = union(q.free, q.bound)    
     q.iterInit = trans(q.free) // XXX -- more principled way?
