@@ -493,10 +493,13 @@ let inferBwd = out => q => {
     let extra = path.filter(x => 
       intersects(x.xxFree, diff(e1.free, out))).flatMap(x => x.xxFree)
 
+    let extra2 = path.filter(x => 
+      intersects(x.xxDims, diff(e1.dims, out))).flatMap(x => x.xxDims)
+
     q.free = intersect(union(trans(e1.free),extra),out)
     q.bound = diff(union(e1.free,extra),out)
 
-    assertSame(q.bound, diff(union(e1.dims, extra), out))
+    assertSame(q.bound, diff(union(e1.dims, extra2), out))
 
     q.iter = union(q.free, q.bound)
     q.iterInit = trans(q.free) // XXX -- more principled way?
@@ -530,8 +533,9 @@ let inferBwd = out => q => {
     let save = path
 
     let xxFree = union(e1.free, e1Body.free)
+    let xxDims = union(e1.vars, e1Body.dims)
 
-    path = [...path,{xxFree}]
+    path = [...path,{xxFree,xxDims}]
 
     let e2 = inferBwd(union(out, [e1.op]))(q.arg[2])
 
@@ -546,10 +550,13 @@ let inferBwd = out => q => {
     let extra = path.filter(x => 
       intersects(x.xxFree, diff(xxFree, out))).flatMap(x => x.xxFree)
 
+    let extra2 = path.filter(x => 
+      intersects(x.xxDims, diff(union(e1.vars, e1Body.dims), out))).flatMap(x => x.xxDims)
+
     q.free = intersect(union(trans(fv),extra),out)
     q.bound = diff(union(fv,extra),out)
 
-    assertSame(q.bound, diff(union(union(e1.vars, e1Body.dims), extra), out))
+    assertSame(q.bound, diff(union(union(e1.vars, e1Body.dims), extra2), out))
 
     q.iter = union(q.free, q.bound)    
     q.iterInit = trans(q.free) // XXX -- more principled way?
