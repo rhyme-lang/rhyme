@@ -337,6 +337,16 @@ test("testGroup2", () => {
 })
 
 
+// ----- prefix sums
+
+test("testPrefixSum1", () => {
+  let query = ["prefix_sum(data.*.value)"]
+
+  let func = compile(query)
+  let res = func({data, other})
+
+  expect(res).toEqual([40,20,10])
+})
 
 test("testGroupPrefixSum1", () => {
   let query = {"data.*.key": rh`array(prefix_sum(data.*.value))`}
