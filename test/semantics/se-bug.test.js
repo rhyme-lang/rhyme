@@ -611,3 +611,24 @@ for (*E <- data)
 */
 
 
+// ----- test indirect correlation of group keys
+
+test("testIndirectCorrelation1", () => {
+  let other = {
+    0: { 0: 1 },
+    1: { 1: 1 },
+    2: { 2: 1 }
+  }
+
+  // Want: inner sum depends on key expr, and
+  // key expr needs q.free not just q.dims
+
+  let query = { "data.*A.key": rh`sum(other.*B.*A & data.*B.value)` }
+
+  let func = compile(query)
+  let res = func({data, other})
+
+  expect(res).toEqual({
+    A: 40, B: 20
+  })
+})
