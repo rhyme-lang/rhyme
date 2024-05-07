@@ -632,3 +632,43 @@ test("testIndirectCorrelation1", () => {
     A: 40, B: 20
   })
 })
+
+test("testIndirectCorrelation2", () => {
+  let other = {
+    0: { 0: 1 },
+    1: { 1: 1 },
+    2: { 2: 1 }
+  }
+
+  // Want: inner sum depends on key expr, and
+  // key expr needs q.free not just q.dims
+
+  let query = { "data.*A.key": rh`sum(data.*B.value)` }
+
+  let func = compile(rh`sum(other.*A.*B) & ${query}`)
+  let res = func({data, other})
+
+  expect(res).toEqual({
+    A: 60, B: 60 // XXX want 40, 20 as in testIndirectCorrelation1?
+  })
+})
+
+test("testIndirectCorrelation3", () => {
+  let other = {
+    0: { 0: 1 },
+    1: { 1: 1 },
+    2: { 2: 1 }
+  }
+
+  // Want: inner sum depends on key expr, and
+  // key expr needs q.free not just q.dims
+
+  let query = { "data.*A.key": rh`sum(data.*B.value)` }
+
+  let func = compile(rh`sum(other.*B.*A) & ${query}`)
+  let res = func({data, other})
+
+  expect(res).toEqual({
+    A: 60, B: 60 // XXX want 40, 20 as in testIndirectCorrelation1?
+  })
+})
