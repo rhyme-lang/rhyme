@@ -340,22 +340,25 @@ test("testGroup2", () => {
 // ----- prefix sums
 
 test("testPrefixSum1", () => {
-  let query = ["prefix_sum(data.*.value)"]
+  let query = "prefix_sum(data.*.value)"
 
   let func = compile(query)
   let res = func({data, other})
 
-  expect(res).toEqual([40,20,10])
+  console.log(func.explain.pseudo)
+  console.log(func.explain.code)
+
+  expect(res).toEqual([40,60,70])
 })
 
 test("testGroupPrefixSum1", () => {
-  let query = {"data.*.key": rh`array(prefix_sum(data.*.value))`}
+  let query = {"data.*.key": rh`prefix_sum(data.*.value)`}
 
   let func = compile(query)
   let res = func({data, other})
 
   expect(res).toEqual({
-    U: [40, 20], V: [10]
+    U: [40, 60], V: [10]
   })
 })
 

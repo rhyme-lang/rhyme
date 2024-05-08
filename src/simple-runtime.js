@@ -233,6 +233,19 @@ rt.stateful.mkset = x => ({
 // array, mkset
 
 
+rt.stateful.prefix = p => ({
+  init: () => [],
+  next: s => {
+    if (s && s.length)
+      s.push(p.next(s[s.length-1]))
+    else
+      s = [p.next(p.init())]
+    return s
+  }
+})
+
+
+
 // group and update
 
 // these are dealt with somewhat specially

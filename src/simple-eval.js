@@ -415,12 +415,12 @@ let infer = q => {
     q.vars = [q.op]
     q.mind = [q.op]
     q.dims = [q.op]
-  } else if (q.key == "get" || q.key == "pure" || q.key == "mkset" || q.key == "prefix") {
+  } else if (q.key == "get" || q.key == "pure" || q.key == "mkset") {
     let es = q.arg.map(infer)
     q.vars = unique(es.flatMap(x => x.vars))
     q.mind = unique(es.flatMap(x => x.mind))
     q.dims = unique(es.flatMap(x => x.dims))
-  } else if (q.key == "stateful") {
+  } else if (q.key == "stateful" || q.key == "prefix") {
     let [e1] = q.arg.map(infer)
 
     // NOTE: wo do not include vars/tmps/dims information from path,
@@ -479,13 +479,13 @@ let inferBwd = out => q => {
   } else if (q.key == "get" || q.key == "pure" || q.key == "mkset") {
     let es = q.arg.map(inferBwd(out))
     q.free = unique(es.flatMap(x => x.free))
-  } else if (q.key == "prefix") {
-    let es = q.arg.map(inferBwd(out))
-    q.free = unique(es.flatMap(x => x.free))
-    q.bound = []
-    q.iter = q.free
-    q.iterInit = trans(q.free) // XXX -- more principled way?
-  } else if (q.key == "stateful") {
+  // } else if (q.key == "prefix") {
+  //   let es = q.arg.map(inferBwd(out))
+  //   q.free = unique(es.flatMap(x => x.free))
+  //   q.bound = []
+  //   q.iter = q.free
+  //   q.iterInit = trans(q.free) // XXX -- more principled way?
+  } else if (q.key == "stateful" || q.key == "prefix") {
     let out1 = union(out,q.arg[0].dims) // need to consider mode?
     let [e1] = q.arg.map(inferBwd(out1))
 
