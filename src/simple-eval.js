@@ -930,6 +930,8 @@ let emitPseudo = (q) => {
       buf.push("  itr: " + q.iter)
     if (q.free?.length > 0) 
       buf.push("  fre: " + q.free)
+    if (q.bound?.length > 0) 
+      buf.push("  bnd: " + q.bound)
   }
   buf.push(pretty(q))
   if (q.free?.length > 0)  
