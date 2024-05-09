@@ -345,9 +345,6 @@ test("testPrefixSum1", () => {
   let func = compile(query)
   let res = func({data, other})
 
-  console.log(func.explain.pseudo)
-  console.log(func.explain.code)
-
   expect(res).toEqual([40,60,70])
 })
 
