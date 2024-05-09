@@ -1013,7 +1013,7 @@ let emitStmInit = (q) => {
 let emitStm = (q) => {
   if (q.key == "prefix") {
     let [e1] = q.arg.map(codegen)
-    return "rt.stateful."+q.op+"("+e1+")"
+    return "rt.stateful.prefix(rt.stateful."+q.op+"("+e1+"))"
   } else if (q.key == "stateful") {
     let [e1] = q.arg.map(codegen)
     return "rt.stateful."+q.op+"("+e1+")"
