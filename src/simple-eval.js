@@ -348,7 +348,7 @@ let extract1 = q => {
   } else if (q.key == "get") {
     let [e1,e2] = q.arg
     if (e2.key == "var") {
-      vars[e2.op].vars = union(vars[e2.op].vars, e1.vars)
+      vars[e2.op].vars = union(vars[e2.op].vars, e1.dims) // was: e1.vars
     }
   }
 }
@@ -493,11 +493,32 @@ let inferBwd = out => q => {
     let extra = path.filter(x => 
       intersects(x.xxFree, diff(e1.free, out))).flatMap(x => x.xxFree)
 
-    let extra2 = path.filter(x => 
-      intersects(x.xxDims, diff(e1.dims, out))).flatMap(x => x.xxDims)
+    let f = (dims,vars) => union(dims, diff(trans(dims), vars))
 
-    q.free = intersect(union(trans(e1.free),extra),out)
-    q.bound = diff(union(e1.free,extra),out)
+    let mask = union(e1.dims,
+      diff(trans(e1.dims), e1.vars)) /// WHY ??? 
+    // take only transitive deps that do not occur directly in a sub term
+    mask = f(e1.dims, e1.vars)
+
+
+    let extra2 = path.filter(x => 
+      intersects(f(x.xxDims,x.xxVars), diff(f(e1.dims,e1.vars), out))).flatMap(x => x.xxDims)
+
+    if (false && !same(extra, extra2)) {
+      console.log("q: ", pretty(q))
+      console.log("path[0].xxFree: ", path[0].xxFree, trans(path[0].xxFree))
+      console.log("path[0].xxDims: ", path[0].xxDims, trans(path[0].xxDims))
+      console.log("e1.dims: ", e1.dims, trans(e1.dims))
+      console.log("extra: ", extra, extra2, " / out ", out)
+    }
+
+    // XXX for groupTestNested1,
+    // should not pick up D0 in q.bound
+    //
+    // but B depends on D0 -- via dims
+
+    q.free = intersect(union(trans(e1.free),extra2),out)
+    q.bound = diff(union(e1.free,extra2),out)
 
     assertSame(q.bound, diff(union(e1.dims, extra2), out))
 
@@ -537,8 +558,9 @@ let inferBwd = out => q => {
 
     let xxFree = union(e1.free, e1Body.free)
     let xxDims = union(e1.vars, e1Body.dims)
+    let xxVars = union(e1.vars, e1Body.vars)
 
-    path = [...path,{xxFree,xxDims}]
+    path = [...path,{xxFree,xxDims,xxVars}]
 
     let e2 = inferBwd(union(out, [e1.op]))(q.arg[2])
 
@@ -553,13 +575,20 @@ let inferBwd = out => q => {
     let extra = path.filter(x => 
       intersects(x.xxFree, diff(xxFree, out))).flatMap(x => x.xxFree)
 
+    let f = (dims,vars) => union(dims, diff(trans(dims), vars))
+
+    // let extra2 = path.filter(x => 
+      // intersects(diff(trans(x.xxDims),x.xxVars), diff(trans(e1.dims), out))).flatMap(x => x.xxDims)
+
+    let e1dims = xxDims
+    let e1vars = xxVars
     let extra2 = path.filter(x => 
-      intersects(x.xxDims, diff(union(e1.vars, e1Body.dims), out))).flatMap(x => x.xxDims)
+      intersects(f(x.xxDims,x.xxVars), diff(f(e1dims,e1vars), out))).flatMap(x => x.xxDims)
 
-    q.free = intersect(union(trans(fv),extra),out)
-    q.bound = diff(union(fv,extra),out)
+    q.free = intersect(union(trans(fv),extra2),out)
+    q.bound = diff(union(fv,extra2),out)
 
-    assertSame(q.bound, diff(union(union(e1.vars, e1Body.dims), extra2), out))
+    assertSame(q.bound, diff(union(e1dims, extra2), out))
 
     q.iter = union(q.free, q.bound)    
     q.iterInit = trans(q.free) // XXX -- more principled way?
@@ -1013,6 +1042,7 @@ let emitStmInit = (q) => {
 let emitStm = (q) => {
   if (q.key == "prefix") {
     let [e1] = q.arg.map(codegen)
+    // XXX TODO: add prefix wrapper?
     return "rt.stateful.prefix(rt.stateful."+q.op+"("+e1+"))"
   } else if (q.key == "stateful") {
     let [e1] = q.arg.map(codegen)
