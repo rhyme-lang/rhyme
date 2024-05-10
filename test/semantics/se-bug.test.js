@@ -79,7 +79,7 @@ test("groupTest3", () => { // BUG!!!
 
 // These simple cases above are fixed by considering if
 // sum(q) actually does any dimensionality reduction.
-// If not, codgen makes the sum acts as a no-op.
+// If not, codegen makes the sum act as a no-op.
 
 // Now what about cases where we're removing *some* 
 // variables, but not all.
@@ -92,12 +92,67 @@ let data3 = [
 ]
 
 
+test("groupTestNested_pre1", () => {
+    let query1 = {
+        "data3.*.key": rh`array(*B)`
+    }
+    let query2 = rh`count(data3.*.sub.*B) & ${query1}`
+    let func = compile(query2)
+
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let res = func({ data3 })
+
+    let expected = { 
+        A: [ "0", "1", "0" ], 
+        B: [ "0" ] 
+    }
+    expect(res).toEqual(expected)
+
+})
+
+test("groupTestNested_pre2", () => {
+    let query1 = {
+        "data3.*D.key": rh`array(*B & array(data3.*D.sub.*B))`
+    }
+    let func = compile(query1)
+
+    //  gen0: data3[*D]
+    //  gen1: data3[*D][sub][*B]
+    //  gen2: mkset(data3[*D][key])[K0]
+    //
+    //  tmp0[*B,K0] = array(data3[*D][sub][*B])
+    //    fre: *B,K0
+    //    bnd: *D
+    //  tmp1[K0] = array(and(*B, tmp0[*B,K0]))
+    //    fre: K0
+    //    bnd: *B,*D  <--- *D !!! removed again by 
+    //  tmp2[] = {}{ K0: tmp1[K0] } / mkset(data3[*D][key])[K0]
+    //    bnd: K0,*D
+    //  tmp2[]
+
+
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let res = func({ data3 })
+
+    let expected = { 
+        A: [ [110, 330], [120] ], 
+        B: [ [200] ] 
+    }
+    expect(res).toEqual(expected)
+
+})
+
+
 test("groupTestNested1", () => {
     let query1 = {
         // "total": api.sum(api.sum("data3.*.sub.*B")),
         "data3.*.key": {
           // "subtotal": rh`sum (udf.guard *B (sum data3.*.sub.*B))`,
-          "items": rh`array (udf.guard *B (array data3.*.sub.*B))`
+          "items": rh`array (*B & (array data3.*.sub.*B))`
         }
     }
 
