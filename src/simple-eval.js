@@ -495,14 +495,9 @@ let inferBwd = out => q => {
 
     let f = (dims,vars) => union(dims, diff(trans(dims), vars))
 
-    let mask = union(e1.dims,
-      diff(trans(e1.dims), e1.vars)) /// WHY ??? 
     // take only transitive deps that do not occur directly in a sub term
-    mask = f(e1.dims, e1.vars)
-
-
     let extra2 = path.filter(x => 
-      intersects(f(x.xxDims,x.xxVars), diff(f(e1.dims,e1.vars), out))).flatMap(x => x.xxDims)
+      intersects(f(x.xxDims,x.xxVars), diff(f(e1.dims,e1.allBound), out))).flatMap(x => x.xxDims)
 
     if (false && !same(extra, extra2)) {
       console.log("q: ", pretty(q))
@@ -547,7 +542,7 @@ let inferBwd = out => q => {
       e1Body = e3.arg[0].arg[0]
     } else {
       e1Body = { key: "const", op: "???", 
-        vars: [], mind: [], dims: [], real: [], free: [] }
+        vars: [], mind: [], dims: [], real: [], free: [], allBound: [] }
     }
 
     // generatorAsFilter vs aggregateAsKey:
@@ -558,7 +553,7 @@ let inferBwd = out => q => {
 
     let xxFree = union(e1.free, e1Body.free)
     let xxDims = union(e1.vars, e1Body.dims)
-    let xxVars = union(e1.vars, e1Body.vars)
+    let xxVars = e1Body.allBound //union(e1.vars, e1Body.vars)
 
     path = [...path,{xxFree,xxDims,xxVars}]
 
@@ -595,6 +590,11 @@ let inferBwd = out => q => {
   } else {
     console.error("unknown op", q)
   }
+
+  if (q.arg !== undefined)
+    q.allBound = union(q.bound??[], unique(q.arg.flatMap(x => x.allBound)))
+  else
+    q.allBound = []
 
   console.assert(subset(q.mind, q.dims))
   console.assert(subset(q.dims, q.vars))
