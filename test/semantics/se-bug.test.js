@@ -858,9 +858,10 @@ test("day5-part2-debug", () => {
   let starts0 = [rh`(udf.filter ${isEven("*seed")}).*ev & extra.seeds.*seed`]
   let lengths0 = [rh`(udf.filter ${isOdd("*seed")}).*od & extra.seeds.*seed`]
 
+  // ev,od --> seed
 
   // NOTE: the problem is using *seed twice, for starts and lengths.
-  // if we use to different variables, e.g. *seedE and *seedO, then
+  // if we use two different variables, e.g. *seedE and *seedO, then
   // it works.
 
   let starts1 = rh`${starts0}.*A`
@@ -870,6 +871,25 @@ test("day5-part2-debug", () => {
 
   let res = f0({udf, extra})
 
+/* desired pattern:
+
+    let starts = []
+    let lengths = []
+
+    for (*seed <- extra.seeds)
+      for (*ev <- filter (*seed % 2 == 0))
+        starts .push (extra.seeds.*seed)
+      for (*od <- filter (*seed % 2 == 1))
+        lengths .push (extra.seeds.*seed)
+
+    let res = []
+    for (*A <- starts /\ lengths)
+      res .push ({ start: starts.*A, length: lengths.*A })
+
+    return res
+*/
+
+  console.log(f0.explain.pseudo)
   console.log(res)
 
   expect(res).toEqual([ 
