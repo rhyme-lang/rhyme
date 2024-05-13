@@ -839,6 +839,12 @@ test("day5-part2-debug", () => {
     andThen: (a,b) => b, // just to add a as dependency
     modulo: (x,y) => x % y,
     isEqual: (x,y) => x === y,
+
+    isEven: x => (Number(x) % 2) === 0,
+    isOdd: x => (Number(x) % 2) === 1,
+
+    filterEven: x => (x % 2) === 0 ? {1:1} : {},
+    filterOdd: x => (x % 2) === 1 ? {1:1} : {},
   }
 
   let filterBy = (p, gen, x) => rh`(udf.filter ${p}).${gen} & ${x}`
@@ -849,14 +855,14 @@ test("day5-part2-debug", () => {
 
   // this works
   // let starts0 = [rh`(mkset (udf.modulo *seed 2)).0 & extra.seeds.*seed`]
-  // let lengths0 = [rh`(mkset (udf.modulo *seed1 2)).1 & extra.seeds.*seed1`]
+  // let lengths0 = [rh`(mkset (udf.modulo *seed 2)).1 & extra.seeds.*seed`]
 
   // this also works
   // let starts0 = [rh`(mkset 0).(udf.modulo *seed 2) & extra.seeds.*seed`]
-  // let lengths0 = [rh`(mkset 1).(udf.modulo *seed1 2) & extra.seeds.*seed1`]
+  // let lengths0 = [rh`(mkset 1).(udf.modulo *seed 2) & extra.seeds.*seed`]
 
-  let starts0 = [rh`(udf.filter ${isEven("*seed")}).*ev & extra.seeds.*seed`]
-  let lengths0 = [rh`(udf.filter ${isOdd("*seed")}).*od & extra.seeds.*seed`]
+  let starts0 = [rh`(udf.filterEven *seed).*ev & extra.seeds.*seed`]
+  let lengths0 = [rh`(udf.filterOdd *seed).*od & extra.seeds.*seed`]
 
   // ev,od --> seed
 

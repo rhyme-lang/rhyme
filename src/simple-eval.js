@@ -1220,9 +1220,9 @@ let emitFilters2 = iter => buf => body => {
   // 2. is it OK to take the ordering of iter, or
   //    do we need to compute topological order?
 
-  buf.push("")
-  buf.push("// XXX "+iter+" -> "+full)
+  // buf.push("")
   buf.push("{")
+  buf.push("// PROJECT "+full+" -> "+iter)
   buf.push("let proj = {}")
 
   emitFilters(full)(buf)(() => {
@@ -1231,6 +1231,8 @@ let emitFilters2 = iter => buf => body => {
     let ys = xs.map(x => ","+x).join("")
     buf.push("  rt.initTemp(proj"+ys+")(() => true)")
   })
+
+  buf.push("// TRAVERSE "+iter)
 
   let nesting = 0
   let prefix = "proj"
