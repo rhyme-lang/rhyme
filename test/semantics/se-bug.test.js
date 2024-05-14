@@ -870,6 +870,13 @@ test("day5-part2-debug", () => {
   // if we use two different variables, e.g. *seedE and *seedO, then
   // it works.
 
+  // PROBLEM: index space of *A -- *A depends on both *ev and *od, 
+  // codegen reconstructs loops over *ev AND *od, so we end up
+  // trying to filter *seed for both even AND odd indexes.
+
+  // POSSIBLE SOLUTION: take *A only from the respective tmp,
+  // the filtering on *ev/*od has already been done. 
+
   let starts1 = rh`${starts0}.*A`
   let lengths1 = rh`${lengths0}.*A`
 
@@ -896,6 +903,7 @@ test("day5-part2-debug", () => {
 */
 
   console.log(f0.explain.pseudo)
+  console.log(f0.explain.code)
   console.log(res)
 
   expect(res).toEqual([ 
