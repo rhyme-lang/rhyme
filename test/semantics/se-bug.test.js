@@ -704,8 +704,10 @@ test("testIndirectCorrelation2", () => {
   let res = func({data, other})
 
   expect(res).toEqual({
-    A: 40, B: 20 // XXX want 40, 20 as in testIndirectCorrelation1?
+    A: 40, B: 20
   })
+  // Want 40, 20 as in testIndirectCorrelation1,
+  // this needs indirect correlation.
 })
 
 test("testIndirectCorrelation3", () => {
@@ -724,6 +726,8 @@ test("testIndirectCorrelation3", () => {
   let res = func({data, other})
 
   expect(res).toEqual({
-    A: 40, B: 20 // XXX want 40, 20 as in testIndirectCorrelation1?
+    A: 40, B: 20
   })
+  // Want 40, 20 as in testIndirectCorrelation1,
+  // this needs indirect correlation.
 })
