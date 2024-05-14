@@ -360,3 +360,28 @@ test("testGroupPrefixSum1", () => {
 })
 
 
+
+// ----- outer joins
+
+// want: left outer joins (observe failure) ...
+
+test("testOuterJoin_pre1", () => {
+  let data = [ 
+    {key: 'A', val: 10}, 
+    {key: 'B', val: 20}, 
+    {key: 'A', val: 30} 
+  ]
+
+  let other = { 1: 7 }
+
+  // *inner* join behavior works ok
+  let query = rh`mkset(*A).*B & other.*B & data.*A.val`
+
+  let func = compile(query)
+  let res = func({data, other})
+
+
+  expect(res).toEqual({
+    1: { 1: 20 }
+  })
+})
