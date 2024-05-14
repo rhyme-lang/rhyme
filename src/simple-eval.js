@@ -349,6 +349,7 @@ let extract1 = q => {
     let [e1,e2] = q.arg
     if (e2.key == "var") {
       vars[e2.op].vars = union(vars[e2.op].vars, e1.dims) // was: e1.vars
+      // getting recursion fix and filter ordering errors when relaxed again
     }
   }
 }
