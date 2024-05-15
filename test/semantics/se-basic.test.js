@@ -385,3 +385,25 @@ test("testOuterJoin_pre1", () => {
     1: { 1: 20 }
   })
 })
+
+
+test("testOuterJoin_pre2", () => {
+  let data = [ 
+    {key: 'A', val: 10}, 
+    {key: 'B', val: 20}, 
+    {key: 'A', val: 30} 
+  ]
+
+  let other = { 'A': 7 }
+
+  // *inner* join behavior works ok
+  let query = rh`other.(data.*A.key)` // || -1 (not found)
+
+  let func = compile(query)
+  let res = func({data, other})
+
+
+  expect(res).toEqual({
+    0: 7, 2: 7
+  })
+})
