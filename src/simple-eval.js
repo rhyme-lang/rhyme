@@ -1212,7 +1212,7 @@ let emitFilters2 = iter => buf => body => {
   // 2. iterate over projection map to compute
   //    desired result
 
-  let full = trans(iter) // OK ?
+  let full = transViaFilters(iter) // XX simpler way to compute?
 
   // Questions: 
   // 1. does trans(iter) do the right thing, or
@@ -1257,6 +1257,37 @@ let emitFilters2 = iter => buf => body => {
 }
 
 
+let transViaFilters = real => {
+  let vars = {}
+
+  // remember the set of iteration vars
+  for (let v of real) vars[v] = true
+
+  // transitive closure
+  let done = false
+  while (!done) {
+    done = true
+    for (let i in filters) {
+      let f = filters[i]
+      let v1 = f.arg[1].op
+      let g1 = f.arg[0]
+      if (vars[v1]) { // not interested in this? skip
+        for (v2 of g1.fre) {
+          if (!vars[v2]) {
+            vars[v2] = true
+            done = false
+          }
+        }
+      }
+    }
+  }
+
+
+  let res = []
+  for (let v in vars)
+    res.push(v)
+  return res
+}
 
 
 let emitFilters = (real) => buf => body => {

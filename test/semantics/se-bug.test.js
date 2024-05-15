@@ -902,9 +902,9 @@ test("day5-part2-debug", () => {
     return res
 */
 
-  console.log(f0.explain.pseudo)
-  console.log(f0.explain.code)
-  console.log(res)
+  // console.log(f0.explain.pseudo)
+  // console.log(f0.explain.code)
+  // console.log(res)
 
   expect(res).toEqual([ 
     { start: 79, length: 14 }, 
