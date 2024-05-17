@@ -431,10 +431,10 @@ let infer = q => {
     // information yet. Specifically, transitive var dependencies are
     // only available after infer.
 
-    q.vars = [...e1.vars]
+    q.vars = e1.vars
     q.mind = [] // can always reduce to one elem
     if (q.mode == "reluctant") {
-      q.dims = [...e1.dims] // but prefer not to
+      q.dims = e1.dims // but prefer not to
     } else {
       q.dims = []
     }
