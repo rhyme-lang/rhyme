@@ -494,11 +494,11 @@ let inferBwd = out => q => {
     let extra = path.filter(x => 
       intersects(x.xxFree, diff(e1.free, out))).flatMap(x => x.xxFree)
 
-    let f = (dims,vars) => union(dims, diff(trans(dims), vars))
+    let f = (dims,allBound) => union(dims, diff(trans(dims), allBound))
 
     // take only transitive deps that do not occur directly in a sub term
     let extra2 = path.filter(x => 
-      intersects(f(x.xxDims,x.xxVars), diff(f(e1.dims,e1.allBound), out))).flatMap(x => x.xxDims)
+      intersects(f(x.xxDims,x.xxAllBound), diff(f(e1.dims,e1.allBound), out))).flatMap(x => x.xxDims)
 
     if (false && !same(extra, extra2)) {
       console.log("q: ", pretty(q))
@@ -554,9 +554,9 @@ let inferBwd = out => q => {
 
     let xxFree = union(e1.free, e1Body.free)
     let xxDims = union(e1.vars, e1Body.dims)
-    let xxVars = e1Body.allBound //union(e1.vars, e1Body.vars)
+    let xxAllBound = e1Body.allBound //union(e1.vars, e1Body.vars)
 
-    path = [...path,{xxFree,xxDims,xxVars}]
+    path = [...path,{xxFree,xxDims,xxAllBound}]
 
     let e2 = inferBwd(union(out, [e1.op]))(q.arg[2])
 
@@ -574,12 +574,12 @@ let inferBwd = out => q => {
     let f = (dims,vars) => union(dims, diff(trans(dims), vars))
 
     // let extra2 = path.filter(x => 
-      // intersects(diff(trans(x.xxDims),x.xxVars), diff(trans(e1.dims), out))).flatMap(x => x.xxDims)
+      // intersects(diff(trans(x.xxDims),x.xxAllBound), diff(trans(e1.dims), out))).flatMap(x => x.xxDims)
 
     let e1dims = xxDims
-    let e1vars = xxVars
+    let e1allBound = xxAllBound
     let extra2 = path.filter(x => 
-      intersects(f(x.xxDims,x.xxVars), diff(f(e1dims,e1vars), out))).flatMap(x => x.xxDims)
+      intersects(f(x.xxDims,x.xxAllBound), diff(f(e1dims,e1allBound), out))).flatMap(x => x.xxDims)
 
     q.free = intersect(union(trans(fv),extra2),out)
     q.bound = diff(union(fv,extra2),out)
