@@ -601,6 +601,8 @@ let inferBwd = out => q => {
   else
     q.allBound = []
 
+  console.assert(!intersects(q.free, q.allBound))
+
   console.assert(subset(q.mind, q.dims))
   console.assert(subset(q.dims, q.vars))
   console.assert(subset(q.mind, q.free), "mind !< free: "+q.mind+" / "+q.free+" at "+pretty(q))
