@@ -505,6 +505,9 @@ let inferBwd = out => q => {
     let extra2 = path.filter(x => 
       intersects(x.xxFootprint, diff(e1footprint, out))).flatMap(x => x.xxDims)
 
+    // NOTE: some level of decorrelation is essential: eta-expansion
+    // leads to recursive deps which need to be eliminated
+
     if (false && !same(extra, extra2)) {
       console.log("q: ", pretty(q))
       console.log("path[0].xxFree: ", path[0].xxFree, trans(path[0].xxFree))
