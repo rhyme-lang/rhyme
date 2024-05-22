@@ -1375,7 +1375,6 @@ test("day16-part1", () => {
   let backslashDirection = rh`udf.backslashDirection (state.curr.*curr | ${filterBy("*fBackslash", isBackslash)}) state.direction.(*curr)`
 
   let isInRangeAndVisited = rh`udf.optionalChaining (udf.optionalChaining state.visited (state.curr.*curr.0)) (state.curr.*curr.1)`
-  let count = rh`udf.andThen (state.curr.*curr | ${filterBy("*ftmp", getCell)}) 1 | sum`
   // let visited = rh`udf.andThen (state.curr.*curr | ${filterBy("*fInRangeAndVisited", isInRangeAndVisited)} | group *fInRangeAndVisited) 1 | group state.curr.*curr.0 | group state.curr.*curr.1`
  
   let isInRange = rh`udf.flat ${[dotNext, pipeNext, dashNext, slashNext, backslashNext]} | udf.optionalChaining (udf.optionalChaining ${mat} (.*new.0)) (.*new.1)`
@@ -1384,8 +1383,7 @@ test("day16-part1", () => {
 
   let query = {
     curr: curr,
-    direction: direction,
-    count: rh`state.count + ${count}`,
+    direction: direction
   }
  
   let func = api.compile(query)
