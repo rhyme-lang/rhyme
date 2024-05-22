@@ -291,7 +291,7 @@ let canonicalVarName = e1 => {
 }
 
 let extractFlex0 = q => {
-  if (q.key == "stateful" || q.key == "group" || q.key == "update")
+  if (q.key == "stateful" || q.key == "group" || q.key == "update") // prefix?
     return extract0(q)
   else
     return extract0({ key:"stateful", op: "single", mode: "reluctant", arg:[q] })
@@ -323,13 +323,13 @@ let extract0 = q => {
       let prefix = { key:"mkset", arg:[e1] }
       let v1 = { key: "var", op: canonicalVarName(prefix) }
       let v2 = { key: "var", op: canonicalVarName(prefix) }
-      return { ...q, arg: [e0, v1, e2, { key: "get", arg: [prefix, v2] }] }
+      return { ...q, arg: [e0, v1, e2, { key: "get", arg: [prefix, v2] }], mode: e2.mode }
       // return { ...q, arg: [v1,
       //   { key:"stateful", op: "single", mode: "reluctant", arg:[
       //     { key: "pure", op: "and", arg:[
       //       { key: "get", arg: [prefix, v2] }, e2]}]} ]}
     } else
-      return { ...q, arg: [e0,e1,e2] }
+      return { ...q, arg: [e0,e1,e2], mode: e2.mode }
   } else if (q.arg) {
     let es = q.arg.map(extract0)
     return { ...q, arg: es }
@@ -609,9 +609,10 @@ let inferBwd = out => q => {
   console.assert(subset(q.mind, q.dims))
   console.assert(subset(q.dims, q.vars))
   console.assert(subset(q.mind, q.free), "mind !< free: "+q.mind+" / "+q.free+" at "+pretty(q))
-  if (q.mode && q.mode != "reluctant")
-    console.assert(subset(q.dims, q.free)) // can happen for lazy 'last'
-  if (q.key == "stateful" || q.key =="group" || q.key == "update") {
+  console.assert(subset(intersect(q.dims,out), q.free), pretty(q))
+  if (q.key == "stateful" || q.key == "prefix" || q.key =="group" || q.key == "update") {
+    if (q.mode != "reluctant")
+      console.assert(subset(q.dims, q.free)) // can happen for lazy 'single'
     console.assert(same(q.iter, union(q.free, q.bound)))
     console.assert(!intersects(q.free, q.bound))
   }
