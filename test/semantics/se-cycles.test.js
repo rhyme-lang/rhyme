@@ -12,7 +12,7 @@ test("testCycles0", () => {
   let query = rh`sum(data.*A) + sum(other.*B.*A)`
 
   let func = compile(query)
-  let res = func({data, other},true)
+  let res = func({data, other})
 
   // console.log(func.explain.code)
 
@@ -34,7 +34,7 @@ test("testCycles1", () => {
   let query = rh`sum(data.*A) + *B + sum(other.*B.*A)`
 
   let func = compile(query)
-  let res = func({data, other}, true)
+  let res = func({data, other})
 
   // console.log(func.explain.pseudo)
 
@@ -61,7 +61,7 @@ test("testCycles1b", () => {
   let query = rh`*A & sum(data.*A) + sum(other.*B.*A)`
 
   let func = compile(query)
-  let res = func({data, other}, true)
+  let res = func({data, other})
 
   // console.log(func.explain.pseudo)
 
@@ -191,7 +191,7 @@ test("testCycles3-2", () => {
   // console.log(func.explain.pseudo)
   // console.log(func.explain.code)
 
-  let res = func({data, other}, true)
+  let res = func({data, other})
   // console.log(res)
 
   expect(res).toEqual(41)
