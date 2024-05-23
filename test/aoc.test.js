@@ -1292,6 +1292,173 @@ O.#..O.#.#
   expect(state.load).toBe(136)
 })
 
+test("aoc-day15-part1", () => {
+
+  let udf = {
+      ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
+      charCode: (string, index) => string.charCodeAt(index),
+      filter: c => c ? { [c]: true } : {},
+      andThen: (a,b) => b, // just to add a as dependency
+      ...udf_stdlib
+  };
+
+  let input = "rn=1,cm-,qp=3,cm=2,qp-,pc=4,ot=9,ab=5,pc-,pc=6,ot=7";
+
+  let parseInput = api.compile(api.array({
+      string: rh`.input | udf.split "," | .*group`,
+      hash: 0
+  }));
+
+  let state = {
+      strings: parseInput({input, udf}),
+      index: 0,
+      sum: 0,
+  };
+
+  let stringObj = api.array({
+      string: rh`state.strings.*.string`,
+      hash: rh`(
+          17 * (state.strings.*.hash + (
+              udf.charCode (state.strings.*.string) (state.index)
+          ))
+      ) % 256`
+  });
+
+  let updateStrings = rh`${stringObj} | .*strings`;
+
+  let partSum = rh`sum(${updateStrings} | udf.ifThenElse (udf.isEqual (.string.length) (state.index+1)) .hash 0)`
+
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+  let filterStrings = rh`${updateStrings} | ${filterBy("*f", rh`udf.notEqual state.strings.*strings.string.length (state.index+1)`)}`
+
+  let run = api.compile({
+      strings: api.array(filterStrings),
+      index: rh`state.index + 1`,
+      sum: rh`state.sum + ${partSum}`
+  });
+
+  while(state.strings.length > 0) {
+      state = run({state, udf});
+  }
+
+  expect(state.sum).toEqual(1320);
+});
+
+test("aoc-day15-part2", () => {
+
+  let udf = {
+      ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
+      charCode: (string, index) => string.charCodeAt(index),
+      filter: c => c ? { [c]: true } : {},
+      andThen: (a, b) => b, // just to add a as dependency
+      andThenB: (a) => (b) => b,
+      andThenA: (a) => (b) => a, // hack to add pipe as dependency without utilizing it's data.
+      merge: (a, b, c) => [...a, b, ...c],
+      pushBack: (a, b) => [...a, b],
+      ...udf_stdlib
+  };
+
+  let ifElsePred = (predicate, thenBr, elseBr) => rh`udf.ifThenElse ${predicate} ${thenBr} ${elseBr}`;
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`;
+
+  let input = "rn=1,cm-,qp=3,cm=2,qp-,pc=4,ot=9,ab=5,pc-,pc=6,ot=7";
+
+  let steps = api.array(rh`.input | udf.split "," | .*group`);
+
+  let instrs = ifElsePred(rh`udf.isEqual (${steps}.*.(${steps}.*.length - 1)) "-"`, {
+      type: "deletion",
+      key: rh`${steps}.* | udf.split "-" | .0`,
+      hash: 0,
+  }, {
+      type: "insertion",
+      key: rh`${steps}.* | udf.split "=" | .0`,
+      value: rh`${steps}.* | udf.split "=" | .1 | udf.toNum`,
+      hash: 0,
+  })
+
+  let parseInput = api.compile({
+      instrs: api.array(instrs),
+      maxIndex: api.max(rh`${steps}.*.length - 1`),
+      index: 0
+  });
+
+  let hashState = parseInput({input, udf});
+
+  let runHash = api.compile({
+      instrs: api.array({
+          type: "state.instrs.*.type",
+          key: "state.instrs.*.key",
+          value: "state.instrs.*.value", // Could be undefined, but that's fine.
+          hash: ifElsePred(rh`udf.isGreaterOrEqual state.index state.instrs.*.key.length`, "state.instrs.*.hash",
+              rh`(
+                  17 * (state.instrs.*.hash + (
+                      udf.charCode (state.instrs.*.key) (state.index)
+                  ))
+              ) % 256`
+          )
+      }),
+      maxIndex: ".state.maxIndex",
+      index: rh`.state.index + 1`
+  });
+
+  while(hashState.index < hashState.maxIndex) {
+      hashState = runHash({state: hashState, udf});
+  }
+
+  let symIndex = 0;
+  let freshSym = (name) => ("*" + name + (symIndex++));
+
+  let subListPre = (arr, indexSym, to) => api.array(rh`${arr} | ${filterBy(freshSym("f"), rh`udf.isLessThan ${indexSym} ${to}`)}`);
+  let subListPost = (arr, indexSym, from) => api.array(rh`${arr} | ${filterBy(freshSym("f"), rh`udf.isGreaterThan ${indexSym} ${from}`)}`);
+  let replaceArrItem = (arr, indexSym, index, newItem) =>
+      rh`udf.merge ${subListPre(arr, indexSym, index)} ${newItem} ${subListPost(arr, indexSym, index)}`;
+
+  // TODO: Find alternative to "udf.andThenA"
+  // Right now it's used to return "valueToFind" while utilizing the piped in filter to filter results.
+  let findValue = (arr, predicate, valueToFind) => api.first(rh`${arr} | ${filterBy(freshSym("find"), predicate)} | udf.andThenA (${valueToFind})`);
+
+  let insertion = ifElsePred(
+      // If a lens with the same key doesn't exist,
+      rh`udf.isEqual 0 ${api.array(rh`.hashMap.(instr.hash).*sameLens | ${filterBy("*sameLensFilter", rh`udf.isEqual .hashMap.(instr.hash).*sameLens.key .instr.key`)}`)}.length`,
+      // Then add it to the end.
+      rh`udf.pushBack ${api.array(".hashMap.(instr.hash).*copyLens")} ${{
+          key: ".instr.key",
+          value: ".instr.value"
+      }}`,
+      // Otherwise replace it.
+      replaceArrItem(rh`.hashMap.(instr.hash).*replaceLens`, "*replaceLens", findValue(
+          rh`.hashMap.(instr.hash).*findSameLens`,
+          rh`udf.isEqual (.hashMap.(instr.hash).*findSameLens.key) (.instr.key)`,
+          "*findSameLens"
+      ), {
+          key: ".instr.key",
+          value: ".instr.value"
+      }),
+  );
+
+  let newList = ifElsePred(
+      rh`udf.isEqual .instr.type "deletion"`,
+      api.array(rh`.hashMap.(instr.hash).*delLens | ${filterBy("*del", rh`udf.notEqual (.hashMap.(instr.hash).*delLens.key) (.instr.key)`)}`),
+      insertion
+  )
+
+  let run = api.compile(replaceArrItem(rh`.hashMap.*box`, "*box", ".instr.hash", newList));
+
+  let hashMap = new Array(256).fill([]);
+
+  // Run each instruction to either insert or delete in hash map.
+  for(let instr of hashState.instrs) {
+      hashMap = run({hashMap, instr, udf});
+  }
+
+  // Loop variables using "index in array" syntax are strings, so must be converted to numbers to avoid string concatenation.
+  // Probably want to change this, given a generator index is a number.
+  let getFocusingPower = api.compile(api.sum(rh`.hashMap.*a.*b.value * ((udf.toNum *a) + 1) * ((udf.toNum *b) + 1)`));
+  let focusPower = getFocusingPower({hashMap, udf});
+
+  expect(focusPower).toEqual(145);
+});
+
 
 // 2022
 
