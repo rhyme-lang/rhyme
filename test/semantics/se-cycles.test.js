@@ -31,13 +31,12 @@ test("testCycles0", () => {
 test("testCycles1", () => {
   let data = { A: 10, B: 20, C: 30 }
   let other = { 10: { A: 100, B:200 }, 20: { A:300 } }
-  let query = rh`sum(data.*A) + *B + sum(other.*B.*A)`
+  let query = rh`*B & sum(data.*A) + sum(other.*B.*A)`
 
   let func = compile(query)
   let res = func({data, other})
 
   // console.log(func.explain.pseudo)
-
 
   // revised semantics:
   //
@@ -46,12 +45,10 @@ test("testCycles1", () => {
   //    - first sum can't collapse over *B
   //    - so want result relative to *B
 
+  // 10+20 + 100+200 = 330
+  // 10 + 300 = 310
 
-
-  // 10+20 + 10 + 100+200 = 340
-  // 10 + 20 + 300 = 330
-
-  expect(res).toEqual({ 10: 340, 20: 330})
+  expect(res).toEqual({ 10: 330, 20: 310})
 })
 
 // *A depends on *B with *A in global scope

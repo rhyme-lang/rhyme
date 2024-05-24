@@ -521,6 +521,8 @@ let inferBwd = out => q => {
     //
     // but B depends on D0 -- via dims
 
+    // NOTE: trans(..) is necessary below for testCycles1
+
     q.free = intersect(union(trans(e1.free),extra2),out)
     q.bound = diff(union(e1.free,extra2),out)
 
