@@ -532,6 +532,58 @@ let inferBwd0 = out => q => {
   return q
 }
 
+// infer free vars (simple mode)
+let inferBwd1 = out => q => {
+  if (q.key == "input" || q.key == "const") {
+    q.fre = []
+  } else if (q.key == "var") {
+    q.fre = [q.op]
+  } else if (q.key == "get" || q.key == "pure" || q.key == "mkset") {
+    let es = q.arg.map(inferBwd1(out))
+    q.fre = unique(es.flatMap(x => x.fre))
+  } else if (q.key == "stateful" || q.key == "prefix") {
+    let out1 = union(out,q.arg[0].dims) // need to consider mode?
+    let [e1] = q.arg.map(inferBwd1(out1))
+
+    q.fre = diff(e1.fre, q.bnd)
+  } else if (q.key == "update") {
+    let e0 = inferBwd1(out)(q.arg[0]) // what are we extending
+    let e1 = inferBwd1(out)(q.arg[1]) // key variable
+
+    let e1Body
+    if (q.arg[3]) {
+      let out3 = union(out, union([e1.op], q.arg[3].dims)) // e3 includes e1.op (union left for clarity)
+      let e3 = inferBwd1(out3)(q.arg[3]) // filter expr
+      console.assert(e3.key == "get")
+      console.assert(e3.arg[0].key == "mkset")
+      console.assert(e3.arg[1].key == "var" && e3.arg[1].op == e1.op)
+      e1Body = e3.arg[0].arg[0]
+    } else {
+      e1Body = { key: "const", op: "???", 
+        vars: [], mind: [], dims: [], fre: [] }
+    }
+
+    let e2 = inferBwd1(union(out, [e1.op]))(q.arg[2])
+
+    let fv = unique([...e0.fre, ...e1.fre, ...e2.fre, ...diff(e1Body.fre, q.e1BodyBnd)])
+
+    q.fre = diff(fv, q.bnd)
+  } else {
+    console.error("unknown op", q)
+  }
+
+  // q.bnd = []
+  // q.allBnd = []
+
+  console.assert(subset(q.mind, q.dims))
+  console.assert(subset(q.dims, q.vars))
+
+  // console.assert(!intersects(q.fre, q.bnd))
+  // console.assert(!intersects(q.fre, q.allBnd))
+
+  return q
+}
+
 let inferBwd = out => q => {
   if (q.key == "input" || q.key == "const") {
     q.free = []
@@ -1030,7 +1082,9 @@ let emitPseudo = (q) => {
     if (q.bound?.length > 0) 
       buf.push("  bnd: " + q.bound)
     if (q.bnd?.length > 0) 
-      buf.push("  bn0: " + q.bnd)
+      buf.push("  bn1: " + q.bnd)
+    if (q.fre?.length > 0) 
+      buf.push("  fr1: " + q.fre)
   }
   buf.push(pretty(q))
   if (q.free?.length > 0)  
@@ -1400,12 +1454,14 @@ let compile = (q,{
   if (singleResult) {
     // trace.assert(q.mind.length == 0)
     q = inferBwd0(q.mind)(q) // see joinSimpleTest1
+    q = inferBwd1(q.mind)(q) // see joinSimpleTest1
     q = inferBwd(q.mind)(q) // see joinSimpleTest1
   } else {
     q = inferBwd0(q.dims)(q) // see joinSimpleTest1
+    q = inferBwd1(q.dims)(q) // see joinSimpleTest1
     q = inferBwd(q.dims)(q)
   }
-  
+
 // trace.log("---- AFTER INFER_BWD")
 // trace.log(emitPseudo(q))
 
