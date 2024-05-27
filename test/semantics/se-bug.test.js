@@ -675,6 +675,8 @@ test("testIndirectCorrelation1", () => {
     2: { 2: 1 }
   }
 
+  // (test direct correlation first)
+
   // Want: inner sum depends on key expr, and
   // key expr needs q.free not just q.dims
 
@@ -730,4 +732,63 @@ test("testIndirectCorrelation3", () => {
   })
   // Want 40, 20 as in testIndirectCorrelation1,
   // this needs indirect correlation.
+})
+
+// tests above exercise a 1:1 mapping ("other"), now
+// we consider a many:few mapping
+
+test("testIndirectCorrelation4", () => {
+  let data = {
+    Osaka:    { region: "Asia" },
+    Shanghai: { region: "Asia" },
+    Hamburg:  { region: "Europe" },
+  }
+  let partner = {
+    Osaka:    { Hamburg: 1 },
+    Shanghai: { Hamburg: 1 },    
+    Hamburg:  { Osaka: 1, Shanghai: 1 } // (symmetry not strictly needed)
+  }
+
+  // (test direct correlation first)
+
+  // Want: inner aggregation binds both A and B
+
+  let query = { "data.*A.region": rh`array(partner.*A.*B & *B)` }
+
+  let func = compile(query)
+  let res = func({data, partner})
+
+  expect(res).toEqual({
+    Europe: ["Osaka", "Shanghai"],
+    Asia: ["Hamburg", "Hamburg"],   // implicitly iterating over A,    
+  })                                // so duplicate result is expected
+})
+
+
+test("testIndirectCorrelation5", () => {
+  let data = {
+    Osaka:    { region: "Asia" },
+    Shanghai: { region: "Asia" },
+    Hamburg:  { region: "Europe" },
+  }
+  let partner = {
+    Osaka:    { Hamburg: 1 },
+    Shanghai: { Hamburg: 1 },
+    Hamburg:  { Osaka: 1, Shanghai: 1 } // (symmetry not strictly needed)
+  }
+
+  // Want: inner aggregation now only binds B,
+  // as A,B dependency moved elsewhere
+
+  let query = { "data.*A.region": rh`array(*B)` }
+
+  let func = compile(rh`sum(partner.*A.*B) & ${query}`)
+  let res = func({data, partner})
+
+  expect(res).toEqual({
+    Europe: ["Osaka", "Shanghai"],
+    Asia: ["Hamburg", "Hamburg"],   // XXX: DO WE WANT THIS?
+  })                                // duplication much harder
+                                    // to rationalize here
+  // BUG / FIXME ?
 })
