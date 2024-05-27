@@ -1321,9 +1321,7 @@ U 2 (#7a21e3)`
 
   // no need to process input in every iteration
   let getDigplan = api.compile(digPlanQuery)
-
   let digPlan = getDigplan({input, udf})
-  console.log(digPlan)
 
   let state = {
     curr: 0,
