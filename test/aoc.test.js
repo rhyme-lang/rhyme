@@ -1870,6 +1870,86 @@ U 2 (#7a21e3)`
   expect(state.area).toBe(62)
 })
 
+test("day18-part2", () => {
+  let input = `R 6 (#70c710)
+D 5 (#0dc571)
+L 2 (#5713f0)
+D 2 (#d2c081)
+R 2 (#59c680)
+D 2 (#411b91)
+L 5 (#8ceee2)
+U 2 (#caa173)
+L 1 (#1b58a2)
+U 2 (#caa171)
+R 2 (#7807d2)
+U 3 (#a77fa3)
+L 2 (#015232)
+U 2 (#7a21e3)`
+
+  let udf = {
+    extractDirAndLen: (hex) => [hex.substring(0, 5), hex.substring(5)],
+    ...udf_stdlib
+  }
+
+  let steps = rh`.input | udf.split "\\n" | .*line
+                        | udf.matchAll "[a-z0-9]{6}" "g" | .0.0
+                        | udf.extractDirAndLen | udf.toNum ("0x" + .*part)
+                        | group *part | group *line`
+  let n = rh`.input | udf.split "\\n" | .length`
+
+  let digPlanQuery = {
+    steps, n
+  }
+
+  // no need to process input in every iteration
+  let getDigplan = api.compile(digPlanQuery)
+  let digPlan = getDigplan({input, udf})
+
+  let state = {
+    curr: 0,
+    x: 0,
+    y: 0,
+    area: 1
+  }
+
+  let dir = rh`digPlan.steps.(state.curr).1`
+  let len = rh`udf.toNum digPlan.steps.(state.curr).0`
+
+  let isRight = rh`udf.isEqual ${dir} 0`
+  let rightX = rh`(state.x + ${len}) * ${isRight}`
+  let rightY = rh`state.y * ${isRight}`
+  let rightArea = rh`(state.area + ${len}) * ${isRight}`
+
+  let isDown = rh`udf.isEqual ${dir} 1`
+  let downX = rh`state.x * ${isDown}`
+  let downY = rh`(state.y + ${len}) * ${isDown}`
+  let downArea = rh`(state.area + (state.x + 1) * ${len}) * ${isDown}`
+
+  let isLeft = rh`udf.isEqual ${dir} 2`
+  let leftX = rh`(state.x - ${len}) * ${isLeft}`
+  let leftY = rh`state.y * ${isLeft}`
+  let leftArea = rh`state.area * ${isLeft}`
+
+  let isUp = rh`udf.isEqual ${dir} 3`
+  let upX = rh`state.x * ${isUp}`
+  let upY = rh`(state.y - ${len}) * ${isUp}`
+  let upArea = rh`(state.area - state.x * ${len}) * ${isUp}` 
+
+  let x = rh`${rightX} + ${downX} + ${leftX} + ${upX}`
+  let y = rh`${rightY} + ${downY} + ${leftY} + ${upY}`
+  let area = rh`${rightArea} + ${downArea} + ${leftArea} + ${upArea}`
+
+  let query = {
+    curr: rh`state.curr + 1`,
+    x, y, area
+  }
+
+  let func = api.compile(query)
+  while (state.curr < digPlan.n) {
+    state = func({digPlan, udf, state})
+  }
+  expect(state.area).toBe(952408144115)
+})
 
 // 2022
 
