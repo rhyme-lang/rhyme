@@ -516,7 +516,7 @@ let inferBwd0 = out => q => {
 
     let e2 = inferBwd0(union(out, [e1.op]))(q.arg[2])
 
-    q.bnd = diff([e1.op], out)
+    q.bnd = diff(union([e1.op], e1Body.dims), out)
     q.allBnd = unique([...q.bnd, ...e0.allBnd, ...e1.allBnd, ...e2.allBnd, ...e1Body.allBnd])
 
   } else {
@@ -537,7 +537,9 @@ let inferBwd1 = out => q => {
   if (q.key == "input" || q.key == "const") {
     q.fre = []
   } else if (q.key == "var") {
-    q.fre = [q.op]
+    q.fre = [q.op] 
+    // q.fre = trans([q.op])
+    // q.fre = intersect(trans([q.op]),out)
   } else if (q.key == "get" || q.key == "pure" || q.key == "mkset") {
     let es = q.arg.map(inferBwd1(out))
     q.fre = unique(es.flatMap(x => x.fre))
@@ -545,7 +547,12 @@ let inferBwd1 = out => q => {
     let out1 = union(out,q.arg[0].dims) // need to consider mode?
     let [e1] = q.arg.map(inferBwd1(out1))
 
-    q.fre = diff(e1.fre, q.bnd)
+    // find correlated path keys: check overlap with our own bound vars
+    let extra = path.filter(x => 
+      intersects(x.xxFree, trans(q.bnd))).flatMap(x => x.xxFree)
+
+    q.fre = intersect(union(trans(e1.fre), extra), out)
+
   } else if (q.key == "update") {
     let e0 = inferBwd1(out)(q.arg[0]) // what are we extending
     let e1 = inferBwd1(out)(q.arg[1]) // key variable
@@ -563,11 +570,20 @@ let inferBwd1 = out => q => {
         vars: [], mind: [], dims: [], fre: [] }
     }
 
+    let save = path
+
+    let xxFree = union(e1.vars, e1Body.fre)
+    let xxDims = union(e1.vars, e1Body.dims)
+
+    path = [...path,{xxFree,xxDims}]
+
     let e2 = inferBwd1(union(out, [e1.op]))(q.arg[2])
+
+    path = save
 
     let fv = unique([...e0.fre, ...e1.fre, ...e2.fre, ...diff(e1Body.fre, q.e1BodyBnd)])
 
-    q.fre = diff(fv, q.bnd)
+    q.fre = diff(diff(fv, q.bnd), q.e1BodyBnd)
   } else {
     console.error("unknown op", q)
   }
@@ -697,8 +713,8 @@ let inferBwd = out => q => {
     let extra2 = path.filter(x => 
       intersects(x.xxFootprint, diff(e1footprint, out))).flatMap(x => x.xxDims)
 
-    q.free = intersect(union(trans(fv),extra2),out)
-    q.bound = diff(union(fv,extra2),out)
+    q.free = intersect(union(trans(fv),extra2),out) // "how much of out"
+    q.bound = diff(union(fv,extra2),out) // "how much in addition to out"
 
     assertSame(q.bound, diff(union(e1dims, extra2), out))
 
@@ -1079,12 +1095,12 @@ let emitPseudo = (q) => {
       buf.push("  itr: " + q.iter)
     if (q.free?.length > 0) 
       buf.push("  fre: " + q.free)
+    if (q.fre?.length > 0) 
+      buf.push("  fr1: " + q.fre)
     if (q.bound?.length > 0) 
       buf.push("  bnd: " + q.bound)
     if (q.bnd?.length > 0) 
       buf.push("  bn1: " + q.bnd)
-    if (q.fre?.length > 0) 
-      buf.push("  fr1: " + q.fre)
   }
   buf.push(pretty(q))
   if (q.free?.length > 0)  
