@@ -71,6 +71,32 @@ test("testCycles1b", () => {
   expect(res).toEqual({ A: 410, B: 220})
 })
 
+// version of testCycles1 within grouping key
+// *A depends on *B with *B in global scope
+test("testCyclesGroup1", () => {
+  let data = { A: 10, B: 20, C: 30 }
+  let other = { 10: { A: 100, B:200 }, 20: { A:300 } }
+  let third = { 10: 10, 20: 20 }
+  let query = rh`*B & sum(other.*B.*A) & (group sum(data.*A) sum(third.*B))`
+
+  let func = compile(query)
+  let res = func({data, other, third})
+
+  // console.log(func.explain.pseudo)
+
+  // revised semantics:
+  //
+  // - tricky one!!
+  // - result indexed by *B
+  //    - first sum can't collapse over *B
+  //    - so want result relative to *B
+
+  // 10: { (10+20) : 10 }
+  // 20: { 10      : 20 }
+
+  expect(res).toEqual({ 10: {30: 10}, 20: {10:20}})
+})
+
 
 // iterating over a temporary result
 test("testCycles2-0", () => {
