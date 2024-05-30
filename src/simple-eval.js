@@ -487,6 +487,7 @@ let inferBwd0 = out => q => {
     q.allBnd = []
   } else if (q.key == "get" || q.key == "pure" || q.key == "mkset") {
     let es = q.arg.map(inferBwd0(out))
+    q.bnd = []
     q.allBnd = unique(es.flatMap(x => x.allBnd))
   } else if (q.key == "stateful" || q.key == "prefix") {
     let out1 = union(out,q.arg[0].dims) // need to consider mode?
