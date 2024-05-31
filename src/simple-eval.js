@@ -730,6 +730,7 @@ let inferBwd = out => q => {
   else
     q.allBound = []
 
+  console.assert(subset(q.bnd, q.bound??[]))
   console.assert(!intersects(q.free, q.allBound))
 
   console.assert(subset(q.mind, q.dims))
