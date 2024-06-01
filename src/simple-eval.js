@@ -1198,6 +1198,47 @@ let emitStm = (q) => {
   }
 }
 
+
+let emitFilters2 = iter => buf => body => {
+  // approach: build explicit projection first
+  // 1. iterate over transitive iter space to
+  //    build projection map
+  // 2. iterate over projection map to compute
+  //    desired result
+
+  let full = trans(iter) // OK ?
+
+  // Questions: 
+  // 1. does trans(iter) do the right thing, or
+  //    do we need to use q.free?
+  // 2. is it OK to take the ordering of iter, or
+  //    do we need to compute topological order?
+
+  buf.push("")
+  buf.push("// XXX "+iter+" -> "+full)
+  buf.push("{")
+  buf.push("let proj = {}")
+
+  emitFilters(full)(buf)(() => {
+    // (logic taken from caller)
+    let xs = [...iter.map(quoteVar)]
+    let ys = xs.map(x => ","+x).join("")
+    buf.push("  rt.init(proj"+ys+")(() => true)")
+  })
+
+  let prefix = "proj"
+  for (let x of iter) {
+    buf.push("for (let "+quoteVar(x)+" in "+prefix+")")
+    prefix += "["+quoteVar(x)+"]"
+  }
+  body()
+
+  buf.push("}")
+}
+
+
+
+
 let emitFilters = (real) => buf => body => {
 
   let watermark = buf.length
@@ -1400,13 +1441,23 @@ let emitCode = (q, order) => {
       })
     }
 
-    let fv = q.iter
-    emitFilters(fv)(buf)(() => {
+    let fv = union(q.fre, q.bnd)
+    emitFilters2(fv)(buf)(() => {
       let xs = [i,...q.free.map(quoteVar)]
       let ys = xs.map(x => ","+x).join("")
 
       buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStm(q) + ")")
     })
+
+    // let fv = q.iter
+    // emitFilters(fv)(buf)(() => {
+    //   let xs = [i,...q.free.map(quoteVar)]
+    //   let ys = xs.map(x => ","+x).join("")
+
+    //   buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStm(q) + ")")
+    // })
+
+    buf.push("")
   }
 
   buf.push("// --- res ---")
