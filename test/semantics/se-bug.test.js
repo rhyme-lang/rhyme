@@ -77,13 +77,13 @@ test("groupTest3", () => { // BUG!!!
     expect(res).toEqual(expected)
 })
 
+
 // These simple cases above are fixed by considering if
 // sum(q) actually does any dimensionality reduction.
 // If not, codegen makes the sum act as a no-op.
 
 // Now what about cases where we're removing *some* 
 // variables, but not all.
-
 
 let data3 = [
     { key: "A", sub: [110, 120] }, // 230
@@ -105,7 +105,7 @@ test("groupTestNested_pre1", () => {
     let res = func({ data3 })
 
     let expected = { 
-        A: [ "0", "1", "0" ], 
+        A: [ "0", "1" /*, "0" */ ], // XXX: now implicitly grouping
         B: [ "0" ] 
     }
     expect(res).toEqual(expected)
