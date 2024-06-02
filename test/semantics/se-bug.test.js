@@ -734,6 +734,8 @@ test("testIndirectCorrelation3", () => {
   // this needs indirect correlation.
 })
 
+
+
 // tests above exercise a 1:1 mapping ("other"), now
 // we consider a many:few mapping
 
@@ -785,10 +787,14 @@ test("testIndirectCorrelation5", () => {
   let func = compile(rh`sum(partner.*A.*B) & ${query}`)
   let res = func({data, partner})
 
+  let bug = {
+    Europe: ["Osaka", "Shanghai"],
+    Asia: ["Hamburg", "Hamburg"],   // duplication much harder
+                                    // to rationalize here
+  }
+
   expect(res).toEqual({
     Europe: ["Osaka", "Shanghai"],
-    Asia: ["Hamburg", "Hamburg"],   // XXX: DO WE WANT THIS?
-  })                                // duplication much harder
-                                    // to rationalize here
-  // BUG / FIXME ?
+    Asia: ["Hamburg"],   // only once!
+  })
 })
