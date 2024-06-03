@@ -550,7 +550,7 @@ let inferBwd1 = out => q => {
 
     // find correlated path keys: check overlap with our own bound vars
     let extra = path.filter(x => 
-      intersects(x.xxFree, trans(q.bnd))).flatMap(x => x.xxFree)
+      intersects(trans(x.xxFree), trans(q.bnd))).flatMap(x => x.xxFree)
 
     q.fre = intersect(union(trans(e1.fre), extra), out)
 
