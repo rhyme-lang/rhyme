@@ -582,9 +582,15 @@ let inferBwd1 = out => q => {
 
     path = save
 
+    // find correlated path keys: check overlap with our own bound vars
+    let extra = path.filter(x => 
+      intersects(trans(x.xxFree), trans(q.bnd))).flatMap(x => x.xxFree)
+
     let fv = unique([...e0.fre, ...e1.fre, ...e2.fre, ...diff(e1Body.fre, q.e1BodyBnd)])
 
-    q.fre = diff(diff(fv, q.bnd), q.e1BodyBnd)
+    // q.fre = diff(diff(fv, q.bnd), q.e1BodyBnd)
+    q.fre = intersect(union(trans(fv), extra), out)
+
   } else {
     console.error("unknown op", q)
   }
