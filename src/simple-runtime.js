@@ -339,9 +339,9 @@ rt.init = (root,...path) => (init) => {
   for (let ix of path.slice(0,path.length-1)) {
     if (ix === undefined) return
     if (ix instanceof Array) 
-      console.error("TODO: add deep update! "+ix)
     obj[ix] ??= {}
     obj = obj[ix]
+      console.error("TODO: add deep init! ",path)
   }
 
   let ix = path[path.length-1]
