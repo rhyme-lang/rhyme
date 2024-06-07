@@ -357,7 +357,6 @@ rt.init = (root,...path) => (init) => {
 }
 
 
-
 // deep vars (tree paths)
 
 rt.deepGet = (root, a) => {
@@ -365,7 +364,7 @@ rt.deepGet = (root, a) => {
     if (a.length > 0) {
       let [hd,...tl] = a
       if (hd instanceof Array)
-        console.error("TODO: two-level nesting")
+        console.error("TODO: two-level nesting: ", a)
       return rt.deepGet(root?.[hd], tl)
     } else {
       return root
@@ -408,7 +407,7 @@ rt.deepIfIn = (root, a, f) => {
     if (a.length > 0) {
       let [hd,...tl] = a
       if (hd instanceof Array)
-        console.error("TODO: two-level nesting")
+        console.error("TODO: two-level nesting: ", a)
       if (root && hd in root)
         rt.deepIfIn(root[hd], tl, f)
     } else {
