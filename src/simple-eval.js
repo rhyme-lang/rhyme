@@ -1229,15 +1229,27 @@ let emitFilters2 = iter => buf => body => {
     // (logic taken from caller)
     let xs = [...iter.map(quoteVar)]
     let ys = xs.map(x => ","+x).join("")
-    buf.push("  rt.init(proj"+ys+")(() => true)")
+    buf.push("  rt.initTemp(proj"+ys+")(() => true)")
   })
 
+  let nesting = 0
   let prefix = "proj"
   for (let x of iter) {
-    buf.push("for (let "+quoteVar(x)+" in "+prefix+")")
-    prefix += "["+quoteVar(x)+"]"
+    if (isDeepVarStr(x)) { // ok, just emit current
+      buf.push("rt.deepForInTemp("+prefix+", ("+quoteVar(x)+"_key, "+quoteVar(x)+") => {")
+      prefix += "["+quoteVar(x)+"_key]"
+      nesting++
+    } else {
+      buf.push("for (let "+quoteVar(x)+" in "+prefix+")")
+      prefix += "["+quoteVar(x)+"]"
+    }
   }
+
   body()
+
+  for (let i = 0; i < nesting; i++)
+    buf.push("})")
+
 
   buf.push("}")
 }

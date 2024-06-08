@@ -420,5 +420,37 @@ rt.deepIfIn = (root, a, f) => {
 }
 
 
+// XXX new support for 'temp' encoding
+// (flatten nested keys for 'deep' vars)
 
+rt.encodeTemp = x => {
+  if (x instanceof Array) return JSON.stringify(x)
+  return x
+}
+rt.decodeTemp = x => {
+  if (x.startsWith("[")) return JSON.parse(x)
+  return x
+}
+
+
+// update stateful tmp with a given reducer
+rt.initTemp = (root,...path) => (init) => {
+  let obj = root
+  let c = 0
+  for (let ix of path.slice(0,path.length-1)) {
+    ix = rt.encodeTemp(ix)
+    obj[ix] ??= {}
+    obj = obj[ix]
+  }
+
+  let ix = path[path.length-1]
+  ix = rt.encodeTemp(ix)
+  obj[ix] ??= init()
+}
+
+rt.deepForInTemp = (root, f) => {
+  for (let k in root) {
+    f(k,rt.decodeTemp(k))
+  }
+}
 
