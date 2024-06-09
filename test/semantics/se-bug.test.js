@@ -798,3 +798,33 @@ test("testIndirectCorrelation5", () => {
     Asia: ["Hamburg"],   // only once!
   })
 })
+
+
+// should we be able to compute group keys indirectly?
+
+// sum(mkset(data.*A.key).*K) & { *K: sum(data.*A.value) }
+
+// sum(mkset(data.*A.key).*K) & sum(other.*A.*B) & { *K: sum(data.*B.value) }
+
+
+
+
+// test("testXX", () => {
+//   let other = {
+//     0: { 0: 1 },
+//     1: { 1: 1 },
+//     2: { 2: 1 }
+//   }
+
+//   // Want: inner sum depends on key expr, and
+//   // key expr needs q.free not just q.dims
+
+//   let query = { "*K": rh`sum(data.*A.value)` }
+
+//   let func = compile(rh`sum(mkset(data.*A.key).*K) & ${query}`)
+//   let res = func({data, other})
+
+//   expect(res).toEqual({
+//     A: 40, B: 20
+//   })
+// })
