@@ -828,3 +828,48 @@ test("testIndirectCorrelation5", () => {
 //     A: 40, B: 20
 //   })
 // })
+
+
+
+test("day5-part2-debug", () => {
+  let extra = { seeds: [79, 14, 55, 13] }
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    andThen: (a,b) => b, // just to add a as dependency
+    modulo: (x,y) => x % y,
+    isEqual: (x,y) => x === y,
+  }
+
+  let filterBy = (p, gen) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+
+  let isEven = rh`udf.isEqual 0 (udf.modulo *seed 2)`
+
+  let isOdd = rh`udf.isEqual 1 (udf.modulo *seed 2)`
+
+  let starts0 = [rh`extra.seeds.*seed | ${filterBy(isEven, "*ev")}`]
+  let lengths0 = [rh`extra.seeds.*seed | ${filterBy(isOdd, "*od")}`]
+
+  let starts1 = rh`${starts0}.*A`
+  let lengths1 = rh`${lengths0}.*A`
+
+  let f0 = compile([{start: starts1, length: lengths1}])
+
+  let res = f0({udf, extra})
+
+  console.log(res)
+
+  expect(res).toEqual([ 
+    { start: 79, length: 14 }, 
+    { start: 55, length: 13 } 
+  ])
+
+
+  // let r1 = f0.c1({udf, extra})
+  // let r1b = f0.c1_opt({udf, extra})
+  // let r2 = f0.c2({udf, extra})
+
+  // console.log(r1)
+  // console.log(r1b)
+  // console.log(r2)
+})
