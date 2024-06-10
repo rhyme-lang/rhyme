@@ -850,6 +850,10 @@ test("day5-part2-debug", () => {
   let starts0 = [rh`extra.seeds.*seed | ${filterBy(isEven, "*ev")}`]
   let lengths0 = [rh`extra.seeds.*seed | ${filterBy(isOdd, "*od")}`]
 
+  // NOTE: the problem is using *seed twice, for starts and lengths.
+  // if we use to different variables, e.g. *seedE and *seedO, then
+  // it works.
+
   let starts1 = rh`${starts0}.*A`
   let lengths1 = rh`${lengths0}.*A`
 
