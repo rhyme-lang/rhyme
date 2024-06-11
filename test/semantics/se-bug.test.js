@@ -841,14 +841,23 @@ test("day5-part2-debug", () => {
     isEqual: (x,y) => x === y,
   }
 
-  let filterBy = (p, gen) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+  let filterBy = (p, gen, x) => rh`(udf.filter ${p}).${gen} & ${x}`
 
-  let isEven = rh`udf.isEqual 0 (udf.modulo *seed 2)`
+  let isEven = x => rh`udf.isEqual 0 (udf.modulo ${x} 2)`
 
-  let isOdd = rh`udf.isEqual 1 (udf.modulo *seed 2)`
+  let isOdd = x => rh`udf.isEqual 1 (udf.modulo ${x} 2)`
 
-  let starts0 = [rh`extra.seeds.*seed | ${filterBy(isEven, "*ev")}`]
-  let lengths0 = [rh`extra.seeds.*seed | ${filterBy(isOdd, "*od")}`]
+  // this works
+  // let starts0 = [rh`(mkset (udf.modulo *seed 2)).0 & extra.seeds.*seed`]
+  // let lengths0 = [rh`(mkset (udf.modulo *seed1 2)).1 & extra.seeds.*seed1`]
+
+  // this also works
+  // let starts0 = [rh`(mkset 0).(udf.modulo *seed 2) & extra.seeds.*seed`]
+  // let lengths0 = [rh`(mkset 1).(udf.modulo *seed1 2) & extra.seeds.*seed1`]
+
+  let starts0 = [rh`(udf.filter ${isEven("*seed")}).*ev & extra.seeds.*seed`]
+  let lengths0 = [rh`(udf.filter ${isOdd("*seed")}).*od & extra.seeds.*seed`]
+
 
   // NOTE: the problem is using *seed twice, for starts and lengths.
   // if we use to different variables, e.g. *seedE and *seedO, then
