@@ -1216,7 +1216,7 @@ let emitFilters2 = iter => buf => body => {
 
   // Questions: 
   // 1. does trans(iter) do the right thing, or
-  //    do we need to use q.free?
+  //    do we need to use q.free? (XX: had to use .fre)
   // 2. is it OK to take the ordering of iter, or
   //    do we need to compute topological order?
 
