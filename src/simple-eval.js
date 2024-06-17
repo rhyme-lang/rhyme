@@ -1225,7 +1225,7 @@ let emitFilters2 = iter => buf => body => {
   buf.push("// PROJECT "+full+" -> "+iter)
   buf.push("let proj = {}")
 
-  emitFilters(full)(buf)(() => {
+  emitFilters1(full)(buf)(() => {
     // (logic taken from caller)
     let xs = [...iter.map(quoteVar)]
     let ys = xs.map(x => ","+x).join("")
@@ -1290,7 +1290,107 @@ let transViaFilters = real => {
 }
 
 
-let emitFilters = (real) => buf => body => {
+let emitFilters1 = (real) => buf => body => {
+
+  let watermark = buf.length
+  let buf0 = buf
+  let buf1 = []
+
+  let vars = {}
+  let seen = {}
+
+  // remember the set of iteration vars
+  for (let v of real) vars[v] = true
+
+  // only consider filters contributing to iteration vars=
+  let pending = []
+  for (let i in filters) {
+    let f = filters[i]
+    let v1 = f.arg[1].op
+    let g1 = f.arg[0]
+    if (vars[v1]) // not interested in this? skip
+      pending.push(i)
+  }
+
+  // compute next set of available filters:
+  // all dependent iteration vars have been seen (emitted before)
+  let available
+  let next = () => {
+    let p = pending
+    available = []
+    pending = []
+    for (let i of p) {
+      let f = filters[i]
+      let v1 = f.arg[1].op
+      let g1 = f.arg[0]
+
+      let avail = g1.free.every(x => seen[x]) 
+      // XXX: .fre leads to filter ordering problem?
+      // but it's only a bunch of warnings in aoc day4-part2
+
+      if (avail)
+        available.push(i)
+      else
+        pending.push(i)
+    }
+    return available.length > 0
+  }
+
+  let nesting = 0
+
+  // process filters
+  while (next()) {
+    for (let i of available) {
+      let f = filters[i]
+      let v1 = f.arg[1].op
+      let g1 = f.arg[0]
+
+      // Contract: input is already transitively closed, so we don't
+      // depend on any variables that we don't want to iterate over.
+      // (sanity check!)
+      let extra = g1.free.filter(x => !vars[x])
+      if (extra.length != 0) {
+        console.error("extra dependencie: "+extra)
+      }
+
+      if (isDeepVarStr(v1)) { // ok, just emit current
+        if (!seen[v1]) {
+          buf1.push("rt.deepForIn("+codegen(g1)+", "+quoteVar(v1)+" => {")
+        } else {
+          buf1.push("rt.deepIfIn("+codegen(g1)+", "+quoteVar(v1)+", () => {")
+        }
+        seen[v1] = true
+        nesting += 1
+      } else { // ok, just emit current
+        if (!seen[v1]) {
+          buf1.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
+        } else {
+          buf1.push("if ("+quoteVar(v1)+" in "+codegen(g1)+")")
+        }
+        seen[v1] = true
+      }
+    }
+  }
+
+  if (pending.length > 0) {
+    let problem = pending.map(i => pretty(filters[i])).join(", ")
+    console.warn("unsolved filter ordering problem: couldn't emit "+problem)
+  }
+
+  // combine buffers
+  if (buf.length > watermark) buf.push("// main loop")
+  buf.push(...buf1)
+
+  body()
+
+  for (let i = 0; i < nesting; i++)
+    buf.push("})")
+}
+
+// OLD VERSION -- with built-in recursive projection
+// trying to phase it out, currently still used for
+// init pass and top-level results
+let emitFilters0 = (real) => buf => body => {
 
   let watermark = buf.length
   let buf0 = buf
@@ -1401,7 +1501,7 @@ let emitFilters = (real) => buf => body => {
           if (buf0.indexOf("let gen"+i+quoteVar(v2)+" = {}") < 0) {
             buf0.push("// pre-gen "+v2)
             buf0.push("let gen"+i+quoteVar(v2)+" = {}")
-            emitFilters(g1.free)(buf0)(() => {
+            emitFilters0(g1.free)(buf0)(() => {
               buf0.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
               buf0.push("  gen"+i+quoteVar(v2)+"["+quoteVar(v1)+"] = true")
             })
@@ -1448,7 +1548,6 @@ let emitFilters = (real) => buf => body => {
     buf.push("})")
 }
 
-
 let emitCode = (q, order) => {
   let buf = []
   buf.push("(inp => k => {")
@@ -1484,7 +1583,7 @@ let emitCode = (q, order) => {
       //    now done in inferBwd (could be refined there)
 
       let fv = q.iterInit
-      emitFilters(fv)(buf)(() => {
+      emitFilters0(fv)(buf)(() => {
         let xs = [i,...q.free.map(quoteVar)]
         let ys = xs.map(x => ","+x).join("")
 
@@ -1512,7 +1611,7 @@ let emitCode = (q, order) => {
   }
 
   buf.push("// --- res ---")
-  emitFilters(q.free)(buf)(() => {
+  emitFilters0(q.free)(buf)(() => {
     let xs = q.free.map(quoteVar)
     let ys = xs.map(x => ","+x).join("")
     buf.push("k("+codegen(q)+ys+")")
