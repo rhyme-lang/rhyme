@@ -1582,7 +1582,7 @@ let emitCode = (q, order) => {
       //
       //    now done in inferBwd (could be refined there)
 
-      let fv = q.iterInit
+      let fv = trans(q.free) //q.iterInit
       emitFilters0(fv)(buf)(() => {
         let xs = [i,...q.free.map(quoteVar)]
         let ys = xs.map(x => ","+x).join("")
