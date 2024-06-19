@@ -1029,7 +1029,7 @@ let pretty = q => {
     return q.op
   } else if (q.key == "ref") {
     let e1 = assignments[q.op]
-    return "tmp"+q.op+prettyPath(e1.free)
+    return "tmp"+q.op+prettyPath(e1.fre)
   } else if (q.key == "get") {
     let [e1,e2] = q.arg.map(pretty)
     if (e1 == "inp") return e2
@@ -1069,7 +1069,7 @@ let emitPseudo = (q) => {
     let q = filters[i]
     buf.push("gen"+i + ": " + pretty(q))
     if (q.vars.length)
-      buf.push("  " + q.vars + " / " + q.free)
+      buf.push("  " + q.vars + " / " + q.fre)
   }
   buf.push("")
   let hi = buf.length
@@ -1081,7 +1081,7 @@ let emitPseudo = (q) => {
     buf.push("")
   for (let i in assignments) {
     let q = assignments[i]
-    buf.push("tmp"+i + prettyPath(q.free) + " = " + pretty(q))
+    buf.push("tmp"+i + prettyPath(q.fre) + " = " + pretty(q))
     // if (q.free?.length > 0)
     //   buf.push("  rel: " + q.free)
     if (q.path?.length > 0) 
@@ -1111,8 +1111,8 @@ let emitPseudo = (q) => {
       buf.push("  bn1: " + q.bnd)
   }
   buf.push(pretty(q))
-  if (q.free?.length > 0)  
-    buf.push("  " + q.free)
+  if (q.fre?.length > 0)  
+    buf.push("  " + q.fre)
   return buf.join("\n")
 }
 
@@ -1388,8 +1388,7 @@ let emitFilters1 = (real) => buf => body => {
 }
 
 // OLD VERSION -- with built-in recursive projection
-// trying to phase it out, currently still used for
-// init pass and top-level results
+// (no longer used)
 let emitFilters0 = (real) => buf => body => {
 
   let watermark = buf.length
@@ -1582,9 +1581,9 @@ let emitCode = (q, order) => {
       //
       //    now done in inferBwd (could be refined there)
 
-      let fv = trans(q.free) //q.iterInit
-      emitFilters0(fv)(buf)(() => {
         let xs = [i,...q.free.map(quoteVar)]
+      let fv = q.fre
+      emitFilters2(fv)(buf)(() => {
         let ys = xs.map(x => ","+x).join("")
 
         buf.push("  rt.init(tmp"+ys+")\n  ("+ emitStmInit(q) + ")")
@@ -1611,8 +1610,9 @@ let emitCode = (q, order) => {
   }
 
   buf.push("// --- res ---")
-  emitFilters0(q.free)(buf)(() => {
-    let xs = q.free.map(quoteVar)
+  let fv = q.fre
+  emitFilters2(fv)(buf)(() => {
+    let xs = q.fre.map(quoteVar)
     let ys = xs.map(x => ","+x).join("")
     buf.push("k("+codegen(q)+ys+")")
   })
