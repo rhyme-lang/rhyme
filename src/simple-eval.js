@@ -979,7 +979,7 @@ let computeOrder = q => {
     let f = filters[i]
     let v = f.arg[1].op // var name
     f = f.arg[0] // skip dep on var itself
-    for (let w of f.free) deps.var2var[v][w] = true
+    for (let w of f.fre) deps.var2var[v][w] = true
     for (let j of f.tmps) deps.var2tmp[v][j] = true
   }
 
@@ -1155,7 +1155,7 @@ let codegen = q => {
     return quoteVar(q.op)
   } else if (q.key == "ref") {
     let q1 = assignments[q.op]
-    let xs = [String(q.op),...q1.free]
+    let xs = [String(q.op),...q1.free] // TODO FREE
     return quoteIndexVarsXS("tmp", xs)
   } else if (q.key == "get" && isDeepVarExp(q.arg[1])) {
     let [e1,e2] = q.arg.map(codegen)
@@ -1325,7 +1325,7 @@ let emitFilters1 = (real) => buf => body => {
       let g1 = f.arg[0]
 
       let avail = g1.free.every(x => seen[x]) 
-      // XXX: .fre leads to filter ordering problem?
+      // XXX (TODO FREE): .fre leads to filter ordering problem?
       // but it's only a bunch of warnings in aoc day4-part2
 
       if (avail)
@@ -1348,7 +1348,7 @@ let emitFilters1 = (real) => buf => body => {
       // Contract: input is already transitively closed, so we don't
       // depend on any variables that we don't want to iterate over.
       // (sanity check!)
-      let extra = g1.free.filter(x => !vars[x])
+      let extra = g1.free.filter(x => !vars[x]) // TODO FREE
       if (extra.length != 0) {
         console.error("extra dependencie: "+extra)
       }
@@ -1581,9 +1581,9 @@ let emitCode = (q, order) => {
       //
       //    now done in inferBwd (could be refined there)
 
-        let xs = [i,...q.free.map(quoteVar)]
       let fv = q.fre
       emitFilters2(fv)(buf)(() => {
+        let xs = [i,...q.free.map(quoteVar)] // TODO FREE
         let ys = xs.map(x => ","+x).join("")
 
         buf.push("  rt.init(tmp"+ys+")\n  ("+ emitStmInit(q) + ")")
@@ -1592,7 +1592,7 @@ let emitCode = (q, order) => {
 
     let fv = union(q.fre, q.bnd)
     emitFilters2(fv)(buf)(() => {
-      let xs = [i,...q.free.map(quoteVar)]
+      let xs = [i,...q.free.map(quoteVar)] // TODO FREE
       let ys = xs.map(x => ","+x).join("")
 
       buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStm(q) + ")")
