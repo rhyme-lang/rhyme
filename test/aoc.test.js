@@ -1292,6 +1292,66 @@ O.#..O.#.#
   expect(state.load).toBe(136)
 })
 
+test("day20-part1", () => {
+  let input = `broadcaster -> a
+%a -> inv, con
+&inv -> b
+%b -> con
+&con -> output`
+
+  let udf = {
+    ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
+    ifThen: (predicate, thenBr) => predicate ? thenBr : undefined,
+    removePrefix: (str) => str.substring(1),
+    emptyObject: () => { return {} },
+    ...udf_stdlib
+  }
+
+  let lines = rh`.input | udf.split "\\n"`
+
+  let node = rh`${lines}.*line | udf.split " -> " 
+                              | udf.ifThenElse (udf.isEqual .0 "broadcaster") .0 (udf.removePrefix .0)`
+  let dest = rh`${lines}.*line | udf.split " -> " | .1
+                               | udf.split ", "`
+
+  let inDegree = rh`count ${dest}.*dest | group ${dest}.*dest`
+
+  let stateQuery = {
+    type: rh`${lines}.*line | udf.split " -> " | udf.ifThenElse (udf.isEqual .0 "broadcaster") .0 .0.0`,
+    state: rh`${lines}.*line | udf.split " -> " | udf.ifThen (udf.notEqual .0 "broadcaster") (udf.ifThenElse (udf.isEqual .0.0 "%") 0 (udf.emptyObject 0))`,
+    adj: dest
+  }
+
+  let graphQuery = {
+    nodes: rh`${stateQuery} | group ${node}`,
+    inDegree
+  }
+
+  let getGraph = api.compile(graphQuery)
+
+  let graph = getGraph({input, udf})
+  console.log(graph)
+
+  let pulses = [{
+    src: "button",
+    dest: "broadcaster",
+    pulse: 0
+  }]
+
+  let broadcaster = {
+    src: rh`pulses.*pulse.dest`,
+    pulse: rh`pulses.*pulse.pulse`,
+    dest: rh`graph.nodes.(pulses.*pulse.2).adj.*adj`
+  }
+
+  let query = [rh`udf.ifThen (udf.isEqual pulses.*pulse.dest) ${broadcaster}`]
+
+  let func = api.compile(query)
+  console.log(func.explain.code)
+
+  let res = func({input, udf, pulses, graph})
+  console.log(res)
+})
 
 // 2022
 
