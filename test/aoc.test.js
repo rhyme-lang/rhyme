@@ -1289,6 +1289,32 @@ O.#..O.#.#
   expect(state.load).toBe(136)
 })
 
+test("day22-part1", () => {
+  let input = `1,0,1~1,2,1
+0,0,2~2,0,2
+0,2,3~2,2,3
+0,0,4~0,2,4
+2,0,5~2,2,5
+0,1,6~2,1,6
+1,1,8~1,1,9`
+
+  let udf = udf_stdlib
+
+  let lines = [rh`.input | udf.split "\\n" | .*line
+                         | udf.split "~" | .*endpoint
+                         | udf.split "," | .*coord
+                         | group *coord | group *endpoint`]
+
+  let func = api.compile(lines)
+  console.log(func.explain.code)
+  let res = func({input, udf})
+
+  res.sort((a, b) => {
+    return Math.min(a[0][2], a[1][2]) - Math.min(b[0][2], b[1][2])
+  })
+  console.log(res)
+})
+
 
 // 2022
 
