@@ -978,12 +978,10 @@ test("day4-part1-debug2", () => {
   let func1 = compile(q1)
   let func2 = compile(q2)
 
-  console.log(func2.explain.pseudo)
-
   let res1 = func1({xs})
   let res2 = func2({xs})
   
   expect(res1).toEqual(expected)
-  expect(res2).toEqual(bug) // BUG
+  expect(res2).toEqual(expected)
 
 })

@@ -303,7 +303,7 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
 
   // let query = {"*line": lineRes}
 
-  let func = api.compileFastPathOnly(query)
+  let func = api.compile(query)
   // console.log(func.explain2.pseudo)
   // console.log(func.explain2.code)
   let res = func({input, udf})
@@ -366,7 +366,7 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
                                   | last | group *lineRes
                                   | sum .*`
 
-  let func = api.compileFastPathOnly(query)
+  let func = api.compileFastPathOnly(query) // XX TEMP: turn this back on
   let res = func.c1({input, udf})
   expect(res).toBe(30)
 })

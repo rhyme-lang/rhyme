@@ -453,6 +453,7 @@ let infer = q => {
   return q
 }
 
+
 //
 // 6. Infer dependencies top down: 
 //    - out:  maximum allowed set of variables in output (provided as input arg)
@@ -573,7 +574,7 @@ let inferBwd1 = out => q => {
 
     let save = path
 
-    let xxFree = union(e1.vars, e1Body.fre)
+    let xxFree = e1.vars //union(e1.vars, e1Body.fre) // want only the var! see day4-part1
     let xxDims = union(e1.vars, e1Body.dims)
 
     path = [...path,{xxFree,xxDims}]
