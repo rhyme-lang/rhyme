@@ -920,3 +920,70 @@ test("day5-part2-debug", () => {
   // console.log(r1b)
   // console.log(r2)
 })
+
+
+test("day4-part1-debug1", () => {
+
+  let xs = [1,2,3,4,3,2,1]
+
+  let ys1 = rh`xs`
+  let q1 = rh`${ys1}.* | count | group ${ys1}.*`
+
+  let ys2 = rh`xs.*`
+  let q2 = rh`${ys2} | count | group ${ys2}`
+
+  let ys3 = rh`(array xs.*).*`
+  let q3 = rh`${ys3} | count | group ${ys3}`
+
+  let ys4 = rh`(array xs.*)`
+  let q4 = rh`${ys4}.* | count | group ${ys4}.*`
+
+  let expected = { 
+    1: 2, 2: 2, 3: 2, 4: 1 
+  }
+
+  let func1 = compile(q1)
+  let func2 = compile(q2)
+  let func3 = compile(q3)
+  let func4 = compile(q4)
+
+  let res1 = func1({xs})
+  let res2 = func2({xs})
+  let res3 = func3({xs})
+  let res4 = func4({xs})
+  
+  expect(res1).toEqual(expected)
+  expect(res2).toEqual(expected)
+  expect(res3).toEqual(expected)
+  expect(res4).toEqual(expected)
+
+})
+
+test("day4-part1-debug2", () => {
+
+  let xs = [[1,2,3,4,3,2,1]]
+
+  let ys1 = rh`xs.*line.*num`
+  let q1 = {"*line": rh`count ${ys1} | group ${ys1}`}
+
+  let ys2 = rh`(array xs.*line.*).*num`
+  let q2 = {"*line": rh`count ${ys2} | group ${ys2}`}
+
+  let expected = {
+    0: { 1: 2, 2: 2, 3: 2, 4: 1 }
+  }
+
+  let bug = { 0: {} }
+
+  let func1 = compile(q1)
+  let func2 = compile(q2)
+
+  console.log(func2.explain.pseudo)
+
+  let res1 = func1({xs})
+  let res2 = func2({xs})
+  
+  expect(res1).toEqual(expected)
+  expect(res2).toEqual(bug) // BUG
+
+})
