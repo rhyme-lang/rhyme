@@ -1365,7 +1365,7 @@ let emitFilters1 = (real) => buf => body => {
         if (!seen[v1]) {
           buf1.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
         } else {
-          buf1.push("if ("+quoteVar(v1)+" in "+codegen(g1)+")")
+          buf1.push("if ("+quoteVar(v1)+" in ("+codegen(g1)+"??[]))")
         }
         seen[v1] = true
       }

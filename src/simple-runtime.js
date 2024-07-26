@@ -414,7 +414,7 @@ rt.deepIfIn = (root, a, f) => {
       f()
     }
   } else {
-    if (a in root)
+    if (root && a in root)
       f()
   }
 }
