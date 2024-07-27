@@ -1289,7 +1289,7 @@ O.#..O.#.#
   expect(state.load).toBe(136)
 })
 
-test("aoc-day24-part1", () => {
+test("day24-part1", () => {
   let input = `19, 13, 30 @ -2, 1, -2
 18, 19, 22 @ -1, -1, -2
 20, 25, 34 @ -2, -2, -4
