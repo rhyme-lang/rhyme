@@ -354,7 +354,8 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
     "count": 1
   }
 
-  let matchCountObj = rh`${lineRes} | group ${id}`
+  let matchCountObj = rh`${lineRes} | last | group ${id}` // XXX the 'last' is neccessary (eager
+                                                          // vs reluctant use of free variables)
 
   // For each line i in the matchCountObject, it will look through the matchCountObject
   // to find every other line j that satisfies j.id > i.id and j.id <= i.id + i.match.
@@ -366,8 +367,8 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
                                   | last | group *lineRes
                                   | sum .*`
 
-  let func = api.compileFastPathOnly(query) // XX TEMP: turn this back on
-  let res = func.c1({input, udf})
+  let func = api.compile(query)
+  let res = func({input, udf})
   expect(res).toBe(30)
 })
 
