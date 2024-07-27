@@ -1289,6 +1289,68 @@ O.#..O.#.#
   expect(state.load).toBe(136)
 })
 
+test("aoc-day24-part1", () => {
+  let input = `19, 13, 30 @ -2, 1, -2
+18, 19, 22 @ -1, -1, -2
+20, 25, 34 @ -2, -2, -4
+12, 31, 28 @ -1, -2, -1
+20, 19, 15 @ 1, -5, -3`
+
+  let udf = {
+    ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
+    logicalAnd1: (a, b) => a && b ? 1 : 0,
+    toCoord: (x, y) => [x, y],
+    ...udf_stdlib
+  }
+
+  let hailstones = [rh`.input | udf.split "\\n" | .*line
+                              | udf.split " @ " | .*part
+                              | udf.split ", " | udf.toNum .*axis
+                              | group *axis | group *part`]
+  
+  let x_1 = rh`${hailstones}.*hailstone1.0.0`
+  let y_1 = rh`${hailstones}.*hailstone1.0.1`
+
+  let x_2 = rh`${hailstones}.*hailstone2.0.0`
+  let y_2 = rh`${hailstones}.*hailstone2.0.1`
+
+  let vx_1 = rh`${hailstones}.*hailstone1.1.0`
+  let vy_1 = rh`${hailstones}.*hailstone1.1.1`
+
+  let vx_2 = rh`${hailstones}.*hailstone2.1.0`
+  let vy_2 = rh`${hailstones}.*hailstone2.1.1`
+  
+  let a_1 = vy_1
+  let b_1 = rh`0 - ${vx_1}`
+  let c_1 = rh`${vx_1} * ${y_1} - ${vy_1} * ${x_1}`
+
+  let a_2 = vy_2
+  let b_2 = rh`0 - ${vx_2}`
+  let c_2 = rh`${vx_2} * ${y_2} - ${vy_2} * ${x_2}`
+
+  let denominator = rh`${a_1} * ${b_2} - ${a_2} * ${b_1}`
+
+  let intersection_x = rh`(${b_1} * ${c_2} - ${b_2} * ${c_1}) / ${denominator}`
+  let intersection_y = rh`(${c_1} * ${a_2} - ${c_2} * ${a_1}) / ${denominator}`
+
+  let time_1 = rh`udf.ifThenElse ${vx_1} ((${intersection_x} - ${x_1}) / ${vx_1}) ((${intersection_y} - ${y_1}) / ${vy_1})`
+  let time_2 = rh`udf.ifThenElse ${vx_2} ((${intersection_x} - ${x_2}) / ${vx_2}) ((${intersection_y} - ${y_2}) / ${vy_2})`
+
+  let intersect_within_area = rh`udf.logicalAnd (udf.isGreaterOrEqual ${intersection_x} 7) (udf.isLessOrEqual ${intersection_x} 27)`
+  let intersect_in_the_future = rh`udf.logicalAnd (udf.isGreaterOrEqual ${time_1} 0) (udf.isGreaterOrEqual ${time_2} 0)`
+
+  let will_intersect = rh`udf.logicalAnd1 ${intersect_within_area} ${intersect_in_the_future}`
+  
+  let will_intersect_all = [rh`udf.ifThenElse (udf.isLessThan *hailstone1 *hailstone2) (udf.ifThenElse ${denominator} (${will_intersect}) 0) 0`]
+
+  let query = rh`${will_intersect_all} | sum .*`
+
+  let func = api.compile(query)
+  let res = func({input, udf})
+
+  expect(res).toBe(2)
+})
+
 
 // 2022
 
