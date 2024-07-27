@@ -1303,6 +1303,7 @@ test("day24-part1", () => {
     ...udf_stdlib
   }
 
+  // parse input
   let hailstones = [rh`.input | udf.split "\\n" | .*line
                               | udf.split " @ " | .*part
                               | udf.split ", " | udf.toNum .*axis
@@ -1328,21 +1329,28 @@ test("day24-part1", () => {
   let b_2 = rh`0 - ${vx_2}`
   let c_2 = rh`${vx_2} * ${y_2} - ${vy_2} * ${x_2}`
 
+  // if denominator is 0, then the two lines are parallel so they won't intersect
   let denominator = rh`${a_1} * ${b_2} - ${a_2} * ${b_1}`
 
+  // calculate the intersection
   let intersection_x = rh`(${b_1} * ${c_2} - ${b_2} * ${c_1}) / ${denominator}`
   let intersection_y = rh`(${c_1} * ${a_2} - ${c_2} * ${a_1}) / ${denominator}`
 
+  // calculate the time the hailstones reach the intersection
   let time_1 = rh`udf.ifThenElse ${vx_1} ((${intersection_x} - ${x_1}) / ${vx_1}) ((${intersection_y} - ${y_1}) / ${vy_1})`
   let time_2 = rh`udf.ifThenElse ${vx_2} ((${intersection_x} - ${x_2}) / ${vx_2}) ((${intersection_y} - ${y_2}) / ${vy_2})`
 
+  // check if the intersection is within the desired area
   let intersect_within_area = rh`udf.logicalAnd (udf.isGreaterOrEqual ${intersection_x} 7) (udf.isLessOrEqual ${intersection_x} 27)`
+  // check if the intersection is in the future
   let intersect_in_the_future = rh`udf.logicalAnd (udf.isGreaterOrEqual ${time_1} 0) (udf.isGreaterOrEqual ${time_2} 0)`
 
+  // the two hailstones will intersect if both are true
   let will_intersect = rh`udf.logicalAnd1 ${intersect_within_area} ${intersect_in_the_future}`
   
   let will_intersect_all = [rh`udf.ifThenElse (udf.isLessThan *hailstone1 *hailstone2) (udf.ifThenElse ${denominator} (${will_intersect}) 0) 0`]
 
+  // count the number of intersections
   let query = rh`${will_intersect_all} | sum .*`
 
   let func = api.compile(query)
