@@ -301,11 +301,7 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
 
   let query = rh`${lineRes} | group *line | sum .*`
 
-  // let query = {"*line": lineRes}
-
   let func = api.compile(query)
-  // console.log(func.explain2.pseudo)
-  // console.log(func.explain2.code)
   let res = func({input, udf})
   expect(res).toBe(13)
 })
