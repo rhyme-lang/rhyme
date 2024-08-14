@@ -31,6 +31,7 @@ let udf_stdlib = {
   int2Char: x => String.fromCharCode(x),
   matchAll: (regex, flags) => x => [...x.matchAll(new RegExp(regex, flags))],
   logicalAnd: (x,y) => x && y,
+  logicalOr: (x,y) => x || y,
   range: (start, stop, step) =>
       Array.from({ length: (stop - start + step - 1) / step }, (_, i) => start + (i * step)),
   slice: start => x => x.slice(start),
@@ -1298,21 +1299,93 @@ test("day22-part1", () => {
 0,1,6~2,1,6
 1,1,8~1,1,9`
 
-  let udf = udf_stdlib
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    andThen: (a,b) => b, // just to add a as dependency,
+    ifThenElse: (pred, thenBr, elseBr) => pred ? thenBr : elseBr,
+    moveDown: (brick) => {
+      // copy original brick and modify
+      let newBrick = {"0": {...brick[0]}, "1": {...brick[1]}}
+      newBrick[0][2] -= 1
+      newBrick[1][2] -= 1
+      return newBrick
+    },
+    // use rhyme for this function later
+    collides: (a, b) => {
+      let xOverlaps = (a, b) => {
+        let minX = Math.min(a[0][0], a[1][0])
+        let maxX = Math.max(a[0][0], a[1][0])
+        let otherMinX = Math.min(b[0][0], b[1][0])
+        let otherMaxX = Math.max(b[0][0], b[1][0])
+        return maxX >= otherMinX && otherMaxX >= minX
+      }
+      let yOverlaps = (a, b) => {
+        let minY = Math.min(a[0][1], a[1][1])
+        let maxY = Math.max(a[0][1], a[1][1])
+        let otherMinY = Math.min(b[0][1], b[1][1])
+        let otherMaxY = Math.max(b[0][1], b[1][1])
+        return maxY >= otherMinY && otherMaxY >= minY
+      }
+      let zOverlaps = (a, b) => {
+        let minZ = Math.min(a[0][2], a[1][2])
+        let maxZ = Math.max(a[0][2], a[1][2])
+        let otherMinZ = Math.min(b[0][2], b[1][2])
+        let otherMaxZ = Math.max(b[0][2], b[1][2])
+        return maxZ >= otherMinZ && otherMaxZ >= minZ
+      }
+      return xOverlaps(a, b) && yOverlaps(a, b) && zOverlaps(a, b)
+    },
+    prepend: (value, arr) => [value, ...arr],
+    cmpFn: (a, b) => {
+      return Math.min(a[0][2], a[1][2]) - Math.min(b[0][2], b[1][2])
+    },
+    toSet: (arr) => new Set(arr),
+    ...udf_stdlib
+  }
+
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
 
   let lines = [rh`.input | udf.split "\\n" | .*line
                          | udf.split "~" | .*endpoint
                          | udf.split "," | .*coord
                          | group *coord | group *endpoint`]
+  
+  let bricksQuery = rh`${lines} | udf.sort udf.cmpFn`
 
-  let func = api.compile(lines)
-  console.log(func.explain.code)
-  let res = func({input, udf})
+  let getBricks = api.compile(bricksQuery)
+  let bricks = getBricks({input, udf})
 
-  res.sort((a, b) => {
-    return Math.min(a[0][2], a[1][2]) - Math.min(b[0][2], b[1][2])
-  })
-  console.log(res)
+  let state = {
+    bricks,
+    droppedBricksKeys: [],
+    droppedBricksValues: []
+  }
+
+  let brickMovedDown = rh`udf.moveDown state.bricks.0`
+  let collides = rh`udf.collides state.droppedBricksKeys.*brick ${brickMovedDown}`
+  let collisions = [rh`state.droppedBricksKeys.*brick | ${filterBy("*f", collides)}`]
+  let collideWithGround = rh`udf.logicalOr (udf.isEqual ${brickMovedDown}.0.2 0) (udf.isEqual ${brickMovedDown}.1.2 0)`
+  let collideWithGroundOrBrick = rh`udf.logicalOr (udf.notEqual ${collisions}.length 0) ${collideWithGround}`
+  let nextState = {
+    bricks: rh`udf.ifThenElse ${collideWithGroundOrBrick} (state.bricks | udf.slice 1) (udf.prepend ${brickMovedDown} (state.bricks | udf.slice 1))`,
+    droppedBricksKeys: rh`udf.ifThenElse ${collideWithGroundOrBrick} (udf.prepend state.bricks.0 state.droppedBricksKeys) state.droppedBricksKeys`,
+    droppedBricksValues: rh`udf.ifThenElse ${collideWithGroundOrBrick} (udf.prepend ${collisions} state.droppedBricksValues) state.droppedBricksValues`
+  } 
+
+  let next = api.compile(nextState)
+
+  while (state.bricks.length > 0) {
+    state = next({input, udf, state})
+  }
+
+  let onlyOneSupportingBrick = rh`udf.isEqual state.droppedBricksValues.*.length 1`
+  let nonDisintegrableBricks = [rh`state.droppedBricksValues.*.0  | ${filterBy("*f", onlyOneSupportingBrick)}`]
+  let query = rh`bricks.length - (udf.toSet ${nonDisintegrableBricks}).size`
+
+  let func = api.compile(query)
+  let res = func({input, udf, state, bricks})
+
+  expect(res).toBe(5)
 })
 
 
