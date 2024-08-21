@@ -12,7 +12,7 @@ test("testCycles0", () => {
   let query = rh`sum(data.*A) + sum(other.*B.*A)`
 
   let func = compile(query)
-  let res = func({data, other},true)
+  let res = func({data, other})
 
   // console.log(func.explain.code)
 
@@ -31,13 +31,12 @@ test("testCycles0", () => {
 test("testCycles1", () => {
   let data = { A: 10, B: 20, C: 30 }
   let other = { 10: { A: 100, B:200 }, 20: { A:300 } }
-  let query = rh`sum(data.*A) + *B + sum(other.*B.*A)`
+  let query = rh`*B & sum(data.*A) + sum(other.*B.*A)`
 
   let func = compile(query)
-  let res = func({data, other}, true)
+  let res = func({data, other})
 
   // console.log(func.explain.pseudo)
-
 
   // revised semantics:
   //
@@ -46,12 +45,10 @@ test("testCycles1", () => {
   //    - first sum can't collapse over *B
   //    - so want result relative to *B
 
+  // 10+20 + 100+200 = 330
+  // 10 + 300 = 310
 
-
-  // 10+20 + 10 + 100+200 = 340
-  // 10 + 20 + 300 = 330
-
-  expect(res).toEqual({ 10: 340, 20: 330})
+  expect(res).toEqual({ 10: 330, 20: 310})
 })
 
 // *A depends on *B with *A in global scope
@@ -61,7 +58,7 @@ test("testCycles1b", () => {
   let query = rh`*A & sum(data.*A) + sum(other.*B.*A)`
 
   let func = compile(query)
-  let res = func({data, other}, true)
+  let res = func({data, other})
 
   // console.log(func.explain.pseudo)
 
@@ -72,6 +69,32 @@ test("testCycles1b", () => {
   //    - result indexed by *A only, not *B,*A!
 
   expect(res).toEqual({ A: 410, B: 220})
+})
+
+// version of testCycles1 within grouping key
+// *A depends on *B with *B in global scope
+test("testCyclesGroup1", () => {
+  let data = { A: 10, B: 20, C: 30 }
+  let other = { 10: { A: 100, B:200 }, 20: { A:300 } }
+  let third = { 10: 10, 20: 20 }
+  let query = rh`*B & sum(other.*B.*A) & (group sum(data.*A) sum(third.*B))`
+
+  let func = compile(query)
+  let res = func({data, other, third})
+
+  // console.log(func.explain.pseudo)
+
+  // revised semantics:
+  //
+  // - tricky one!!
+  // - result indexed by *B
+  //    - first sum can't collapse over *B
+  //    - so want result relative to *B
+
+  // 10: { (10+20) : 10 }
+  // 20: { 10      : 20 }
+
+  expect(res).toEqual({ 10: {30: 10}, 20: {10:20}})
 })
 
 
@@ -191,7 +214,7 @@ test("testCycles3-2", () => {
   // console.log(func.explain.pseudo)
   // console.log(func.explain.code)
 
-  let res = func({data, other}, true)
+  let res = func({data, other})
   // console.log(res)
 
   expect(res).toEqual(41)

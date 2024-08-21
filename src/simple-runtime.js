@@ -303,7 +303,7 @@ rt.update = (root,...path) => (fold) => {
   for (let ix of path.slice(0,path.length-1)) {
     if (ix === undefined) return
     if (ix instanceof Array) 
-      console.error("TODO: add deep update! "+ix)
+      console.error("TODO: add deep update! ", path)
     obj[ix] ??= {}
     obj = obj[ix]
   }
@@ -338,8 +338,8 @@ rt.init = (root,...path) => (init) => {
   let c = 0
   for (let ix of path.slice(0,path.length-1)) {
     if (ix === undefined) return
-    if (ix instanceof Array) 
-      console.error("TODO: add deep update! "+ix)
+    if (ix instanceof Array)
+      console.error("TODO: add deep init! ", path)
     obj[ix] ??= {}
     obj = obj[ix]
   }
@@ -357,7 +357,6 @@ rt.init = (root,...path) => (init) => {
 }
 
 
-
 // deep vars (tree paths)
 
 rt.deepGet = (root, a) => {
@@ -365,7 +364,7 @@ rt.deepGet = (root, a) => {
     if (a.length > 0) {
       let [hd,...tl] = a
       if (hd instanceof Array)
-        console.error("TODO: two-level nesting")
+        console.error("TODO: two-level nesting: ", a)
       return rt.deepGet(root?.[hd], tl)
     } else {
       return root
@@ -408,18 +407,50 @@ rt.deepIfIn = (root, a, f) => {
     if (a.length > 0) {
       let [hd,...tl] = a
       if (hd instanceof Array)
-        console.error("TODO: two-level nesting")
+        console.error("TODO: two-level nesting: ", a)
       if (root && hd in root)
         rt.deepIfIn(root[hd], tl, f)
     } else {
       f()
     }
   } else {
-    if (a in root)
+    if (root && a in root)
       f()
   }
 }
 
 
+// XXX new support for 'temp' encoding
+// (flatten nested keys for 'deep' vars)
 
+rt.encodeTemp = x => {
+  if (x instanceof Array) return JSON.stringify(x)
+  return x
+}
+rt.decodeTemp = x => {
+  if (x.startsWith("[")) return JSON.parse(x)
+  return x
+}
+
+
+// update stateful tmp with a given reducer
+rt.initTemp = (root,...path) => (init) => {
+  let obj = root
+  let c = 0
+  for (let ix of path.slice(0,path.length-1)) {
+    ix = rt.encodeTemp(ix)
+    obj[ix] ??= {}
+    obj = obj[ix]
+  }
+
+  let ix = path[path.length-1]
+  ix = rt.encodeTemp(ix)
+  obj[ix] ??= init()
+}
+
+rt.deepForInTemp = (root, f) => {
+  for (let k in root) {
+    f(k,rt.decodeTemp(k))
+  }
+}
 
