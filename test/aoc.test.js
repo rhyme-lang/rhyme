@@ -1289,6 +1289,82 @@ O.#..O.#.#
   expect(state.load).toBe(136)
 })
 
+test("day18-part1", () => {
+  let input = `R 6 (#70c710)
+D 5 (#0dc571)
+L 2 (#5713f0)
+D 2 (#d2c081)
+R 2 (#59c680)
+D 2 (#411b91)
+L 5 (#8ceee2)
+U 2 (#caa173)
+L 1 (#1b58a2)
+U 2 (#caa171)
+R 2 (#7807d2)
+U 3 (#a77fa3)
+L 2 (#015232)
+U 2 (#7a21e3)`
+
+  let udf = udf_stdlib
+  
+  let steps = rh`.input | udf.split "\\n" | .*line
+                        | udf.split " " | .*part
+                        | group *part | group *line`
+  let n = rh`.input | udf.split "\\n" | .length`
+
+  let digPlanQuery = {
+    steps, n
+  }
+
+  // no need to process input in every iteration
+  let getDigplan = api.compile(digPlanQuery)
+  let digPlan = getDigplan({input, udf})
+
+  let state = {
+    curr: 0,
+    x: 0,
+    y: 0,
+    area: 1
+  }
+
+  let dir = rh`digPlan.steps.(state.curr).0`
+  let len = rh`udf.toNum digPlan.steps.(state.curr).1`
+
+  let isRight = rh`udf.isEqual ${dir} "R"`
+  let rightX = rh`(state.x + ${len}) * ${isRight}`
+  let rightY = rh`state.y * ${isRight}`
+  let rightArea = rh`(state.area + ${len}) * ${isRight}`
+
+  let isDown = rh`udf.isEqual ${dir} "D"`
+  let downX = rh`state.x * ${isDown}`
+  let downY = rh`(state.y + ${len}) * ${isDown}`
+  let downArea = rh`(state.area + (state.x + 1) * ${len}) * ${isDown}`
+
+  let isLeft = rh`udf.isEqual ${dir} "L"`
+  let leftX = rh`(state.x - ${len}) * ${isLeft}`
+  let leftY = rh`state.y * ${isLeft}`
+  let leftArea = rh`state.area * ${isLeft}`
+
+  let isUp = rh`udf.isEqual ${dir} "U"`
+  let upX = rh`state.x * ${isUp}`
+  let upY = rh`(state.y - ${len}) * ${isUp}`
+  let upArea = rh`(state.area - state.x * ${len}) * ${isUp}` 
+
+  let x = rh`${rightX} + ${downX} + ${leftX} + ${upX}`
+  let y = rh`${rightY} + ${downY} + ${leftY} + ${upY}`
+  let area = rh`${rightArea} + ${downArea} + ${leftArea} + ${upArea}`
+
+  let query = {
+    curr: rh`state.curr + 1`,
+    x, y, area
+  }
+
+  let func = api.compile(query)
+  while (state.curr < digPlan.n) {
+    state = func({digPlan, udf, state})
+  }
+  expect(state.area).toBe(62)
+})
 
 // 2022
 
