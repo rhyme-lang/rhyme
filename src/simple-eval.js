@@ -1308,5 +1308,227 @@ let compile = (q,{
 }
 
 
+
+
+let emitCodeDeep = (q) => {
+  let buf = []
+  buf.push("(inp => k => {")
+  buf.push("let tmp = {}")
+
+  let stmCount = 0
+
+  let codegen = q => {
+    // TODO: recurse and emit in-place (following codegen(q))
+    // ...
+    if (q.key == "input") {
+      return "inp"
+    } else if (q.key == "const") {
+      if (typeof q.op === "string")
+        return "'"+q.op+"'"
+      else if (typeof q.op === "object" && Object.keys(q.op).length == 0)
+        return "{}"
+      else
+        return String(q.op)
+    } else if (q.key == "var") {
+      return quoteVar(q.op)
+    // } else if (q.key == "ref") {
+    //   let q1 = assignments[q.op]
+    //   let xs = [String(q.op),...q1.fre]
+    //   return quoteIndexVarsXS("tmp", xs)
+    } else if (q.key == "get" && isDeepVarExp(q.arg[1])) {
+      let [e1,e2] = q.arg.map(codegen)
+      return "rt.deepGet("+e1+","+e2+")"
+    } else if (q.key == "get") {
+      let [e1,e2] = q.arg.map(codegen)
+      return e1+quoteIndex(e2)
+    } else if (q.key == "pure") {
+      let es = q.arg.map(codegen)
+      return "rt.pure."+q.op+"("+es.join(",")+")"
+    } else if (q.key == "mkset") {
+      let [e1] = q.arg.map(codegen)
+      return "rt.singleton("+e1+")"      
+    } else if (q.key == "stateful" || q.key == "prefix" || q.key == "update") {
+ 
+      let i = stmCount++
+      let tmpkey = '"tmpval"' // indirection into tmpN var -- TODO: eliminate
+
+      buf.push("let tmp"+i+" = {}")
+      buf.push("/* --- begin "+q.key+"_"+i+" --- */ {")
+
+      let emitStmInit = (q) => {
+        if (q.key == "stateful") {
+          return "rt.stateful."+q.op+"_init"
+        } else if (q.key == "update") {
+          let e0 = codegen(q.arg[0])
+          return "rt.stateful.update_init("+e0+")"
+        } else {
+          console.error("unknown op", q)
+        }
+      }
+
+      let emitStm = (q) => {
+        if (q.key == "prefix") {
+          let [e1] = q.arg.map(codegen)
+          // XXX TODO: add prefix wrapper?
+          return "rt.stateful.prefix(rt.stateful."+q.op+"("+e1+"))"
+        } else if (q.key == "stateful") {
+          let [e1] = q.arg.map(codegen)
+          return "rt.stateful."+q.op+"("+e1+")"
+        } else if (q.key == "update") {
+          let [e0,e1,e2] = q.arg.map(codegen)
+          return "rt.stateful.update("+e0+", "+e1+", "+e2+")" // XXX: init is still needed for tree paths
+          // return "rt.stateful.update("+"null"+", "+e1+", "+e2+")" // see testPathGroup4-2
+        } else {
+          console.error("unknown op", q)
+        }
+      }
+
+
+      // emit initialization
+      if (q.key == "stateful" && (q.op+"_init") in runtime.stateful || q.key == "update") {
+
+        buf.push("// --- init ---")
+        let fv = q.fre
+        emitFilters1(fv)(buf, codegen)(() => {
+          let xs = [tmpkey,...q.fre.map(quoteVar)]
+          let ys = xs.map(x => ","+x).join("")
+
+          buf.push("  rt.init(tmp"+i+ys+")\n  ("+ emitStmInit(q) + ")")
+        })
+
+      }
+
+      // emit main computation
+      buf.push("// --- main ---")
+      let fv = union(q.fre, q.bnd)
+      emitFilters1(fv)(buf, codegen)(() => {
+        let xs = [tmpkey,...q.fre.map(quoteVar)]
+        let ys = xs.map(x => ","+x).join("")
+
+        buf.push("  rt.update(tmp"+i+ys+")\n  ("+ emitStm(q) + ")")
+      })
+
+      buf.push("} /* --- end "+q.key+"_"+i+" */")
+
+      // return reference
+      let xs = [tmpkey,...q.fre]
+      return quoteIndexVarsXS("tmp"+i, xs)
+
+    } else {
+      console.error("unknown op", pretty(q))
+      return "<?"+q.key+"?>"
+    }
+    return q
+  }
+
+  buf.push("// --- res ---")
+  let fv = q.fre
+  emitFilters1(fv)(buf, codegen)(() => {
+    let xs = q.fre.map(quoteVar)
+    let ys = xs.map(x => ","+x).join("")
+    buf.push("k("+codegen(q)+ys+")")
+  })
+  buf.push("})")
+
+  return buf.join("\n")
+}
+
+
+let interpret = (q,{
+  singleResult = true // TODO: elim flag?
+}={}) => {
+
+  reset()
+
+  let trace = { 
+    log: () => {} 
+    // log: console.log
+  }
+
+  // ---- front end ----
+
+  // 1. Preprocess (after parse, desugar)
+  q = preproc(q)
+  let src = q
+
+
+  // 2. Extract
+  q = extract0(q) // basic massaging
+
+
+  // ---- middle tier ----
+
+  // 3. Infer dependencies bottom up
+  q = infer(q)
+
+  // 4. Extract var->var dependencies due to filters
+  extract1(q)
+
+  // 5. Calculate transitive var->var dependencies
+  computeDependencies()
+
+  // 6. Backward pass to infer output dimensions
+  let out = singleResult ? q.mind : q.dims
+  q = inferBwd0(out)(q)
+  q = inferBwd1(out)(q)
+
+
+  // ---- middle tier, imperative form ----
+
+  // 7. Extract assignments
+  //q = extract2(q)
+
+  // 8. Extract filters
+  //for (let e of assignments)
+  //  extract3(e)
+  extract3(q)
+
+  // 9. Compute legal order of assignments
+  //let order = computeOrder(q)
+
+
+  // ---- back end ----
+
+  // 10. Pretty print (debug out)
+  let pseudo = emitPseudo(q)
+
+  // 11. Codegen
+  let code = emitCodeDeep(q/*,order*/)
+
+  code = fixIndent(code)
+
+  trace.log(pseudo)
+  trace.log(code)
+
+
+  // ---- link / eval ----
+
+  let rt = runtime // make available in scope for generated code
+  let func = eval(code)
+
+  let wrap = (input) => {
+    let res
+    func(input)((x,...path) => res = rt.deepUpdate(res,path,x))
+    // alternative: discard path and collect into an array
+    return res
+  }
+
+  wrap.explain = {
+    src,
+    ir: {filters, assignments, vars}, 
+    pseudo, code 
+  }
+  return wrap
+}
+
+
+
+
 exports.compile = compile
+
+exports.interpret = interpret
+
+// exports.compile = interpret // TEMP
+
+
 
