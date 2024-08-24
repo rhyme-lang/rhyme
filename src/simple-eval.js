@@ -1198,7 +1198,19 @@ let emitCode = (q, order) => {
 }
 
 
-
+let fixIndent = s => {
+  let lines = s.split("\n")
+  let out = []
+  let indent = 0
+  for (let str of lines) {
+    if (str.trim() == "") continue
+    if (str.indexOf("}") == 0) indent--
+    out.push("".padEnd(indent * 4, ' ') + str.trim())
+    if (str.indexOf("{") >= 0) indent++
+    if (str.indexOf("}") > 0) indent--
+  }
+  return out.join("\n")
+}
 
 
 let compile = (q,{
@@ -1209,7 +1221,7 @@ let compile = (q,{
   reset()
 
   let trace = { 
-    log: () => {} 
+    log: () => {}
     // log: console.log
   }
 
@@ -1273,7 +1285,9 @@ let compile = (q,{
   // 11. Codegen
   let code = emitCode(q,order)
 
-  // trace.log(pseudo)
+  code = fixIndent(code)
+
+  trace.log(pseudo)
   trace.log(code)
 
 
