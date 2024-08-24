@@ -983,7 +983,7 @@ let transViaFiltersFree = iter => {
   return res
 }
 
-let emitFilters1 = iter => buf => body => {
+let emitFilters1 = iter => (buf, codegen) => body => {
   // approach: build explicit projection first
   // 1. iterate over transitive iter space to
   //    build projection map
@@ -998,12 +998,12 @@ let emitFilters1 = iter => buf => body => {
   // 2. is it OK to take the ordering of iter, or
   //    do we need to compute topological order?
 
-  // buf.push("")
+  let closing = "}"
   buf.push("{")
   buf.push("// PROJECT "+full+" -> "+iter)
   buf.push("let proj = {}")
 
-  emitFilters2(full)(buf)(() => {
+  emitFilters2(full)(buf, codegen)(() => {
     // (logic taken from caller)
     let xs = [...iter.map(quoteVar)]
     let ys = xs.map(x => ","+x).join("")
@@ -1012,30 +1012,26 @@ let emitFilters1 = iter => buf => body => {
 
   buf.push("// TRAVERSE "+iter)
 
-  let nesting = 0
   let prefix = "proj"
   for (let x of iter) {
     if (isDeepVarStr(x)) { // ok, just emit current
       buf.push("rt.deepForInTemp("+prefix+", ("+quoteVar(x)+"_key, "+quoteVar(x)+") => {")
       prefix += "["+quoteVar(x)+"_key]"
-      nesting++
+      closing = "})\n"+closing
     } else {
-      buf.push("for (let "+quoteVar(x)+" in "+prefix+")")
+      buf.push("for (let "+quoteVar(x)+" in "+prefix+") {")
       prefix += "["+quoteVar(x)+"]"
+      closing = "}\n"+closing
     }
   }
 
   body()
 
-  for (let i = 0; i < nesting; i++)
-    buf.push("})")
-
-
-  buf.push("}")
+  buf.push(closing)
 }
 
 
-let emitFilters2 = iter => buf => body => {
+let emitFilters2 = iter => (buf, codegen) => body => {
 
   let watermark = buf.length
   let buf0 = buf
@@ -1079,7 +1075,7 @@ let emitFilters2 = iter => buf => body => {
     return available.length > 0
   }
 
-  let nesting = 0
+  let closing = ""
 
   // process filters
   while (next()) {
@@ -1103,14 +1099,15 @@ let emitFilters2 = iter => buf => body => {
           buf1.push("rt.deepIfIn("+codegen(g1)+", "+quoteVar(v1)+", () => {")
         }
         seen[v1] = true
-        nesting += 1
+        closing = "})\n"+closing
       } else { // ok, just emit current
         if (!seen[v1]) {
-          buf1.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+")")
+          buf1.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+") {")
         } else {
-          buf1.push("if ("+quoteVar(v1)+" in ("+codegen(g1)+"??[]))")
+          buf1.push("if ("+quoteVar(v1)+" in ("+codegen(g1)+"??[])) {")
         }
         seen[v1] = true
+        closing = "}\n"+closing
       }
     }
   }
@@ -1126,8 +1123,7 @@ let emitFilters2 = iter => buf => body => {
 
   body()
 
-  for (let i = 0; i < nesting; i++)
-    buf.push("})")
+  buf.push(closing)
 }
 
 
@@ -1166,7 +1162,7 @@ let emitCode = (q, order) => {
       //    now done in inferBwd (could be refined there)
 
       let fv = q.fre
-      emitFilters1(fv)(buf)(() => {
+      emitFilters1(fv)(buf, codegen)(() => {
         let xs = [i,...q.fre.map(quoteVar)]
         let ys = xs.map(x => ","+x).join("")
 
@@ -1175,7 +1171,7 @@ let emitCode = (q, order) => {
     }
 
     let fv = union(q.fre, q.bnd)
-    emitFilters1(fv)(buf)(() => {
+    emitFilters1(fv)(buf, codegen)(() => {
       let xs = [i,...q.fre.map(quoteVar)]
       let ys = xs.map(x => ","+x).join("")
 
@@ -1187,7 +1183,7 @@ let emitCode = (q, order) => {
 
   buf.push("// --- res ---")
   let fv = q.fre
-  emitFilters1(fv)(buf)(() => {
+  emitFilters1(fv)(buf, codegen)(() => {
     let xs = q.fre.map(quoteVar)
     let ys = xs.map(x => ","+x).join("")
     buf.push("k("+codegen(q)+ys+")")
