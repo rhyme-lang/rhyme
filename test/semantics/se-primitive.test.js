@@ -286,7 +286,7 @@ test("testGroup0", () => {
 })
 
 test("testGroup0-a", () => {
-  let query = {"data.*.key": rh`array(data.*.value)`}
+  let query = {"data.*D.key": rh`array(data.*D.value)`}
 
   let func = compile(query)
   let res = func({data, other})
@@ -297,7 +297,7 @@ test("testGroup0-a", () => {
 })
 
 test("testGroup0-b", () => {
-  let query = [{"data.*.key": rh`data.*.value`}]
+  let query = [{"data.*D.key": rh`data.*D.value`}]
 
   let func = compile(query)
   let res = func({data, other})

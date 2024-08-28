@@ -786,10 +786,12 @@ let emitCodeDeep = (q) => {
           let [e1] = q.arg.map(codegen2)
           return "rt.stateful."+q.op+"("+e1+")"
         } else if (q.key == "update") {
-          let [e0,e1,e2] = q.arg.map(codegen2) // XXX env1 not for e1 !!
+          let e0 = codegen2(q.arg[0])
+          let e2 = codegen2(q.arg[2])
+          //let [e0,e1,e2] = q.arg.map(codegen2) // XXX env1 not for e1 !!
           // XXX multiple vars: prefix done outside, so only last one here
           let e1s = q.arg[1].vars.map(quoteVar)
-          e1 = e1s[e1s.length-1]
+          let e1 = e1s[e1s.length-1]
           return "rt.stateful.update("+e0+", "+e1+", "+e2+")" // XXX: init is still needed for tree paths
           // return "rt.stateful.update("+"null"+", "+e1+", "+e2+")" // see testPathGroup4-2
         } else {
@@ -860,8 +862,8 @@ let compile = (q,{
   reset()
 
   let trace = { 
-    // log: () => {} 
-    log: console.log
+    log: () => {} 
+    // log: console.log
   }
 
   // ---- front end ----
