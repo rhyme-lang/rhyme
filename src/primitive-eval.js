@@ -527,15 +527,10 @@ let emitFiltersC1 = (iter, scope) => (buf, codegen) => body => {
   // 2. iterate over projection map to compute
   //    desired result
 
-  // XXX dep on .fre here!
-  let full = transViaFiltersDimsC(union(iter,scope)) // XX simpler way to compute?
+  if (iter.length == 0) return body()
 
-  // if (same(full, iter)) {
-    // return emitFiltersC2(full, scope)(buf, codegen)(body)
-  // }
-  if (same(iter, [])) {
-    return emitFiltersC2(iter, scope)(buf, codegen)(body)
-  }
+  // XXX dep on .fre here!
+  let full = transViaFiltersDimsC(union(scope,iter)) // XX simpler way to compute?
 
   // Questions: 
   // 1. does trans(iter) do the right thing, or
@@ -585,11 +580,13 @@ let emitFiltersC2 = (iter, scope) => (buf, codegen) => body => {
   let vars = {}
   let seen = {}
 
+  if (iter.length == 0)
+    return body()
+
   // remember the set of iteration vars
   for (let v of iter) vars[v] = true
   for (let v of scope) vars[v] = true
 
-  // XXXXX PROBLEM 
   // record current scope
   for (let v of scope) seen[v] = true
 
@@ -628,9 +625,6 @@ let emitFiltersC2 = (iter, scope) => (buf, codegen) => body => {
 
   let closing = ""
 
-
-  if (iter.length == 0)
-    return body()
 
   // XXX SHORTCUT -- known vars & range ...
   for (let v of iter) {
@@ -805,12 +799,12 @@ let emitCodeDeep = (q) => {
 
         // buf.push("// --- init ---")
         let fv = []//q.fre
-        emitFiltersC1(fv,env)(buf, codegen)(() => {
+        // emitFiltersC1(fv,env)(buf, codegen)(() => {
           let xs = [tmpkey/*,...q.fre.map(quoteVar)*/]
           let ys = xs.map(x => ","+x).join("")
           // env1 = union(env,fv)
           buf.push("  rt.init(tmp"+i+ys+")("+ emitStmInit(q) + ")")
-        })
+        // })
 
       }
 
@@ -844,11 +838,11 @@ let emitCodeDeep = (q) => {
 
   // buf.push("// --- res ---")
   let fv = []//q.fre
-  emitFiltersC1(fv,[])(buf, codegen)(() => {
+  // emitFiltersC1(fv,[])(buf, codegen)(() => {
     let xs = []//q.fre.map(quoteVar)
     let ys = xs.map(x => ","+x).join("")
     buf.push("k("+codegen(q,fv)+ys+")")
-  })
+  // })
   buf.push("})")
 
   return buf.join("\n")
