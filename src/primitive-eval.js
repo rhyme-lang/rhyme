@@ -529,7 +529,6 @@ let emitFiltersC1 = (iter, scope) => (buf, codegen) => body => {
 
   if (iter.length == 0) return body()
 
-  // XXX dep on .fre here!
   let full = transViaFiltersDimsC(union(scope,iter)) // XX simpler way to compute?
 
   // Questions: 
@@ -574,8 +573,6 @@ let emitFiltersC1 = (iter, scope) => (buf, codegen) => body => {
 let emitFiltersC2 = (iter, scope) => (buf, codegen) => body => {
 
   let watermark = buf.length
-  let buf0 = buf
-  let buf1 = buf //[]
 
   let vars = {}
   let seen = {}
@@ -628,7 +625,7 @@ let emitFiltersC2 = (iter, scope) => (buf, codegen) => body => {
 
   // XXX SHORTCUT -- known vars & range ...
   for (let v of iter) {
-    buf1.push("for (let "+quoteVar(v)+" of [0,1,2,3,4,'A','B','C','D','E','F','G','H','U','V','W','X','Y','Z']) {")
+    buf.push("for (let "+quoteVar(v)+" of [0,1,2,3,4,'A','B','C','D','E','F','G','H','U','V','W','X','Y','Z']) {")
     seen[v] = true
     closing = "}\n"+closing
   }
@@ -657,17 +654,17 @@ let emitFiltersC2 = (iter, scope) => (buf, codegen) => body => {
 
       if (isDeepVarStr(v1)) { // ok, just emit current
         if (!seen[v1]) {
-          buf1.push("rt.deepForIn("+codegen(g1,available)+", "+quoteVar(v1)+" => {")
+          buf.push("rt.deepForIn("+codegen(g1,available)+", "+quoteVar(v1)+" => {")
         } else {
-          buf1.push("rt.deepIfIn("+codegen(g1,available)+", "+quoteVar(v1)+", () => {")
+          buf.push("rt.deepIfIn("+codegen(g1,available)+", "+quoteVar(v1)+", () => {")
         }
         seen[v1] = true
         closing = "})\n"+closing
       } else { // ok, just emit current
         if (!seen[v1]) {
-          buf1.push("for (let "+quoteVar(v1)+" in "+codegen(g1,available)+") {")
+          buf.push("for (let "+quoteVar(v1)+" in "+codegen(g1,available)+") {")
         } else {
-          buf1.push("if ("+quoteVar(v1)+" in ("+codegen(g1,available)+"??[])) {")
+          buf.push("if ("+quoteVar(v1)+" in ("+codegen(g1,available)+"??[])) {")
         }
         seen[v1] = true
         closing = "}\n"+closing
@@ -683,10 +680,6 @@ let emitFiltersC2 = (iter, scope) => (buf, codegen) => body => {
     }
   }
 
-  // combine buffers
-  // if (buf.length > watermark) buf.push("// main loop")
-  // buf.push(...buf1)
-
   body()
 
   buf.push(closing)
@@ -695,8 +688,7 @@ let emitFiltersC2 = (iter, scope) => (buf, codegen) => body => {
 let emitCodeDeep = (q) => {
   let buf = []
   buf.push("// "+pretty(q))
-  buf.push("(inp => k => {")
-  buf.push("let tmp = {}")
+  buf.push("(inp => {")
 
   let stmCount = 0
 
@@ -719,10 +711,6 @@ let emitCodeDeep = (q) => {
         console.error("// ERROR: var '"+q.op+"' not defined")
       }
       return quoteVar(q.op)
-    // } else if (q.key == "ref") {
-    //   let q1 = assignments[q.op]
-    //   let xs = [String(q.op),...q1.fre]
-    //   return quoteIndexVarsXS("tmp", xs)
     } else if (q.key == "get" && isDeepVarExp(q.arg[1])) {
       let [e1,e2] = q.arg.map(codegen1)
       return "rt.deepGet("+e1+","+e2+")"
@@ -738,18 +726,15 @@ let emitCodeDeep = (q) => {
     } else if (q.key == "stateful" || q.key == "prefix" || q.key == "update") {
  
       let i = stmCount++
-      let tmpkey = '"tmpval"' // indirection into tmpN var -- TODO: eliminate
 
       let bound
-      if (q.key == "update") {
+      if (q.key == "update")
         bound = q.arg[1].vars // explicit var
-      }
       else
         bound = diff(q.arg[0].dims, env)
 
       buf.push("/* --- begin "+q.key+"_"+i+" --- "+pretty(q)+" ---*/")
       buf.push("// env: "+env+" dims: "+q.dims+" bound: "+bound)
-      buf.push("let tmp"+i+" = {}")
 
       let env1 = union(env, bound)
       let codegen2 = q => codegen(q, env1)
@@ -768,7 +753,6 @@ let emitCodeDeep = (q) => {
       let emitStm = (q) => {
         if (q.key == "prefix") {
           let [e1] = q.arg.map(codegen2)
-          // XXX TODO: add prefix wrapper?
           return "rt.stateful.prefix(rt.stateful."+q.op+"("+e1+"))"
         } else if (q.key == "stateful") {
           let [e1] = q.arg.map(codegen2)
@@ -776,12 +760,8 @@ let emitCodeDeep = (q) => {
         } else if (q.key == "update") {
           let e0 = codegen2(q.arg[0])
           let e2 = codegen2(q.arg[2])
-          //let [e0,e1,e2] = q.arg.map(codegen2) // XXX env1 not for e1 !!
-          // XXX multiple vars: prefix done outside, so only last one here
-          let e1s = q.arg[1].vars.map(quoteVar)
-          let e1 = e1s[e1s.length-1]
-          return "rt.stateful.update("+e0+", "+e1+", "+e2+")" // XXX: init is still needed for tree paths
-          // return "rt.stateful.update("+"null"+", "+e1+", "+e2+")" // see testPathGroup4-2
+          let e1 = q.arg[1].vars.map(quoteVar)
+          return "rt.stateful.update("+e0+", ["+e1+"], "+e2+")" // XXX: init is still needed for tree paths
         } else {
           console.error("unknown op", q)
         }
@@ -790,53 +770,29 @@ let emitCodeDeep = (q) => {
 
       // emit initialization
       if (q.key == "stateful" && (q.op+"_init") in runtime.stateful || q.key == "update") {
-
-        // buf.push("// --- init ---")
-        let fv = []//q.fre
-        // emitFiltersC1(fv,env)(buf, codegen)(() => {
-          let xs = [tmpkey/*,...q.fre.map(quoteVar)*/]
-          let ys = xs.map(x => ","+x).join("")
-          // env1 = union(env,fv)
-          buf.push("  rt.init(tmp"+i+ys+")("+ emitStmInit(q) + ")")
-        // })
-
+          buf.push("let tmp"+i+" = "+ emitStmInit(q)+"()")
+      } else {
+          buf.push("let tmp"+i)
       }
 
       // emit main computation
-      // buf.push("// --- main ---")
-      let fv = bound // union(q.fre, q.bnd)
-      emitFiltersC1(fv,env)(buf, codegen)(() => {
-        let xs = [tmpkey/*,...q.fre.map(quoteVar)*/]
-        // XXX: group with multiple keys
-        if (q.key == "update" && q.arg[1].vars.length > 1) {
-          let prefix = q.arg[1].vars.slice(0,-1)
-          xs = [...xs,...prefix.map(quoteVar)]
-        }
-        let ys = xs.map(x => ","+x).join("")
-        // env1 = union(env,fv)
-        buf.push("  rt.update(tmp"+i+ys+")("+ emitStm(q) + ")")
+      emitFiltersC1(bound,env)(buf, codegen)(() => {
+        buf.push("tmp"+i+" = "+emitStm(q) + ".next(tmp"+i+")")
       })
 
       buf.push("/* --- end "+q.key+"_"+i+" */")
 
       // return reference
-      let xs = [tmpkey/*,...q.fre*/]
-      return quoteIndexVarsXS("tmp"+i, xs)
+      return "tmp"+i
 
     } else {
       console.error("unknown op", pretty(q))
       return "<?"+q.key+"?>"
     }
-    return q
   }
 
   // buf.push("// --- res ---")
-  let fv = []//q.fre
-  // emitFiltersC1(fv,[])(buf, codegen)(() => {
-    let xs = []//q.fre.map(quoteVar)
-    let ys = xs.map(x => ","+x).join("")
-    buf.push("k("+codegen(q,fv)+ys+")")
-  // })
+    buf.push("return "+codegen(q,[])+"")
   buf.push("})")
 
   return buf.join("\n")
@@ -844,15 +800,16 @@ let emitCodeDeep = (q) => {
 
 
 let compile = (q,{
-  // singleResult = true // TODO: elim flag?
+  // add flags here ...
 }={}) => {
 
   reset()
 
   let trace = { 
-    // log: () => {}
-    log: console.log
+    log: () => {}
+    // log: console.log
   }
+
 
   // ---- front end ----
 
@@ -915,22 +872,19 @@ let compile = (q,{
   let func = eval(code)
 
   let wrap = (input) => {
-    let res
-    func(input)((x,...path) => res = rt.deepUpdate(res,path,x))
-    // alternative: discard path and collect into an array
-    return res
+    return func(input)
   }
 
   wrap.explain = {
     src,
-    filters,
+    ir: { filters },
     pseudo, code 
   }
   return wrap
 }
 
 
-exports.compile = compile // TEMP
+exports.compile = compile
 
 
 
