@@ -51,7 +51,7 @@ let nestedB = {
 
 
 test("testScalar0", () => {
-  let query = rh`group *D data.*D.value`
+  let query = rh`data.*.value`
 
   let func = compile(query)
   let res = func({data, other})
@@ -77,7 +77,7 @@ test("testScalar1", () => {
 // ----- multiple uses of the same var
 
 test("testZipScalar2", () => {
-  let query = rh`group *A (data.*A.value + other.*A.value)`
+  let query = rh`data.*A.value + other.*A.value`
 
   let func = compile(query)
   let res = func({data, other})
@@ -101,7 +101,7 @@ test("testZipScalar3", () => {
 })
 
 test("testZipScalar4", () => {
-  let query = rh`group *A ((sum data.*A.value) + other.*A.value)` 
+  let query = rh`(sum data.*A.value) + other.*A.value` 
   // NONSENSICAL? SHAPE ERROR? -- no, can just take sum of single element...
 
   let func = compile(query)
@@ -116,7 +116,7 @@ test("testZipScalar4", () => {
 // ----- multiple vars
 
 test("testJoinScalar2", () => {
-  let query = rh`group *A (group *B (data.*A.value + other.*B.value))`
+  let query = rh`data.*A.value + other.*B.value`
   let func = compile(query)
   let res = func({data, other})
 
@@ -147,7 +147,7 @@ test("testJoinScalar3", () => {
 })
 
 test("testJoinScalar4", () => {
-  let query = rh`group *B ((sum data.*A.value) + other.*B.value)` 
+  let query = rh`(sum data.*A.value) + other.*B.value` 
 
   let func = compile(query)
   let res = func({data, other})
@@ -161,7 +161,7 @@ test("testJoinScalar4", () => {
 // ----- dependent vars
 
 test("testNested0", () => {
-  let query = rh`group *A (group *B nested.*A.*B.value)`
+  let query = rh`nested.*A.*B.value` 
 // debug = true
   let func = compile(query)
   let res = func({nested, other})
@@ -193,7 +193,7 @@ test("testNested1", () => {
 })
 
 test("testZipNested2", () => {
-  let query = rh`group *A (group *B (nested.*A.*B.value + other.*B.value))`
+  let query = rh`nested.*A.*B.value + other.*B.value` 
 // debug = true
   let func = compile(query)
   let res = func({nested, other})
@@ -218,7 +218,7 @@ test("testZipNested2", () => {
 // REASON: add an entry for each *A key before knowing which are filtered due to *B
 
 test("testZipNested3", () => {
-  let query = rh`group *ANY (((nested.*A.*B.value + nestedB.*C.*B.value)))` // neither *B dominates!
+  let query = rh`nested.*A.*B.value + nestedB.*C.*B.value` // neither *B dominates!
 // debug = true
   let func = compile(query)
   let res = func({nested, nestedB})
@@ -244,7 +244,7 @@ test("testZipNestedRec3", () => {
 
   // match A (E/F) A, B (G/H) B
 
-  let query = rh`group *U (group *V data.*U.*V.*U.value)` // recursive dependency!
+  let query = rh`data.*U.*V.*U.value` // recursive dependency!
 // debug = true
   let func = compile(query)
   let res = func({data})
@@ -264,7 +264,7 @@ test("testZipNestedRec3", () => {
 
 
 test("testGroup0", () => {
-  let query = { "*D": {"data.*D.key": rh`data.*D.value`}}
+  let query = {"data.*.key": rh`data.*.value`}
 
   let func = compile(query, {singleResult:false})
   let res = func({data, other})
@@ -286,7 +286,7 @@ test("testGroup0", () => {
 })
 
 test("testGroup0-a", () => {
-  let query = {"data.*D.key": rh`array(data.*D.value)`}
+  let query = {"data.*.key": rh`array(data.*.value)`}
 
   let func = compile(query)
   let res = func({data, other})
@@ -297,7 +297,7 @@ test("testGroup0-a", () => {
 })
 
 test("testGroup0-b", () => {
-  let query = [{"data.*D.key": rh`data.*D.value`}]
+  let query = [{"data.*.key": rh`data.*.value`}]
 
   let func = compile(query)
   let res = func({data, other})
@@ -426,7 +426,7 @@ test("testOuterJoin_pre1", () => {
   let other = { 1: 7 }
 
   // *inner* join behavior works ok
-  let query = {"*ANY": rh`mkset(*A).*B & other.*B & data.*A.val`}
+  let query = rh`mkset(*A).*B & other.*B & data.*A.val`
 
   let func = compile(query)
   let res = func({data, other})
@@ -448,7 +448,7 @@ test("testOuterJoin_pre2", () => {
   let other = { 'A': 7 }
 
   // *inner* join behavior works ok
-  let query = {"*A": rh`other.(data.*A.key)`} // || -1 (not found)
+  let query = rh`other.(data.*A.key)` // || -1 (not found)
 
   let func = compile(query)
   let res = func({data, other})

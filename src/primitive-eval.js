@@ -742,13 +742,7 @@ let emitCodeDeep = (q) => {
 
       let bound
       if (q.key == "update") {
-        // XXX group with multiple keys
-        if (q.arg[1].op == "*ANY") {// XXX HARDCODED CHECK
-          let real = diff(q.arg[2].dims, env)
-          q.arg[1] = { key: "pure", op: "list", arg: [], vars: real }
-          bound = real
-        } else
-          bound = [q.arg[1].op] // explicit var
+        bound = q.arg[1].vars // explicit var
       }
       else
         bound = diff(q.arg[0].dims, env)
@@ -850,14 +844,14 @@ let emitCodeDeep = (q) => {
 
 
 let compile = (q,{
-  singleResult = true // TODO: elim flag?
+  // singleResult = true // TODO: elim flag?
 }={}) => {
 
   reset()
 
   let trace = { 
-    log: () => {} 
-    // log: console.log
+    // log: () => {}
+    log: console.log
   }
 
   // ---- front end ----
@@ -875,6 +869,26 @@ let compile = (q,{
 
   // 3. Infer dependencies bottom up
   q = infer(q)
+
+  if (q.dims.length > 0) {
+    // wrap as (group (vars q.dims) q)
+    q = {
+     key: "update",
+     arg: [
+      { key: "const", op: {}, arg: [], vars: [], dims: [] },
+      { key: "pure", op: "vars",
+        arg: q.dims.map(x => ({ key: "var", op: x, arg:[] })),
+        vars: q.dims, dims: q.dims },
+      q],
+     vars: [],
+     dims: []
+    }
+    // NOTE: compared to adding it earlier and
+    //       following desugaring pipeline:
+    //  1: no embedded 'single' (not needed)
+    //  2: multiple vars encoded using (vars *A *B *C)
+  }
+
 
   // ---- middle tier, imperative form ----
 
