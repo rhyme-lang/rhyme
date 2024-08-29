@@ -1304,7 +1304,7 @@ test("day13-part1", () => {
   expect(res).toBe(405)
 })
 
-test("aoc-day14-part1", () => {
+test("day14-part1", () => {
   let input = `O....#....
 O.OO#....#
 .....##...
@@ -1355,343 +1355,7 @@ O.#..O.#.#
   expect(state.load).toBe(136)
 })
 
-test("day19-A", () => {
-    let input = `px{a<2006:qkq,m>2090:A,rfg}
-pv{a>1716:R,A}
-lnx{m>1548:A,A}
-rfg{s<537:gd,x>2440:R,A}
-qs{s>3448:A,lnx}
-qkq{x<1416:A,crn}
-crn{x>2662:A,R}
-in{s<1351:px,qqz}
-qqz{s>2770:qs,m<1801:hdj,R}
-gd{a>3333:R,R}
-hdj{m>838:A,pv}
-
-{x=787,m=2655,a=1222,s=2876}
-{x=1679,m=44,a=2067,s=496}
-{x=2036,m=264,a=79,s=2244}
-{x=2461,m=1339,a=466,s=291}
-{x=2127,m=1623,a=2188,s=1013}`;
-
-    let udf = {
-        ...udf_stdlib,
-        splitNN: x => x.split("\n\n"),
-        splitN: x => x.split("\n"),
-        getValue: x => x.substring(2),
-        decurly: x => x.substring(1, x.length - 1),
-        ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
-        getCharAt: (x) => (str) => str == undefined ? undefined : str.charAt(x),
-        filter: c => c ? { [c]: true } : {},
-        andThen: (a,b) => b, // just to add a as dependency
-      };
-
-    let symInd = 0;
-    let freshSym = () => ("*tmp" + (symInd++));
-    let arrayGroupBy = (group, obj) =>
-        api.array(rh`${{
-            [group]: obj
-        }} | .${freshSym()}`);
-    let ifElsePred = (predicate, thenBr, elseBr) => rh`udf.ifThenElse ${predicate} ${thenBr} ${elseBr}`;
-    let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
-    
-    // Get each workflow.
-    let workflow_str = rh`.input | udf.splitNN | .0 | udf.splitN | .*workflow_str`;
-    // Identify the different paths inside of it.
-    let options = arrayGroupBy("*options", rh`${workflow_str} | udf.split "{" | .1 | udf.split "}" | .0 | udf.split "," | .*options`);
-    // Create objects for each workflow, containing the array of paths.
-    let workflows = arrayGroupBy("*workflow_str", {
-        name: rh`${workflow_str} | udf.split "{" | .0`,
-        options: options
-    });
-
-    let parsePredicate = (predStr) => ({
-        op: rh`${predStr} | udf.getCharAt 1`,
-        key: rh`${predStr} | udf.getCharAt 0`,
-        value: rh`${predStr} | udf.getValue | udf.toNum`
-    });
-
-    // Separate workflows into multiple "subworkflows" that check a single condiiton and go to a specific state based on the result.
-    // This allows simpler running by flattening the workflows into singular operations.
-    let workflow_split = {
-        "-": api.keyval(api.plus(rh`${workflows}.*wf.name`, "*opt"), (
-            // Check if there is a predicate before the transition state.
-            ifElsePred(rh`udf.isEqual (${workflows}.*wf.options.*opt | udf.split ":" | .length) 1`, {
-                // A predicate isn't there, so create a fake one.
-                predicate: {op: "\">\"", key: "a", value: "0"},
-                trueBranch: rh`${workflows}.*wf.options.*opt + "0"`,
-                falseBranch: rh`${workflows}.*wf.options.*opt + "0"`
-            }, {
-                // A preedicate is there, so parse it.
-                predicate: parsePredicate(rh`${workflows}.*wf.options.*opt | udf.split ":" | .0`),
-                // If true, go to the state for it.
-                trueBranch: rh`(${workflows}.*wf.options.*opt | udf.split ":" | .1) + "0"`,
-                // Otherwise continue on the current workflow.
-                falseBranch: rh`${workflows}.*wf.name + ((udf.toNum *opt) + 1)`
-            })
-        ))
-    };
-
-    // Parse each line of parts
-    let part_str = rh`.input | udf.splitNN | .1 | udf.splitN | .*part_str`;
-    let parts_arr = rh`${part_str} | udf.decurly | udf.split "," | .*part_arr`;
-    
-    let partsObj = {
-        "*part_str": {
-            // Initial state is "in", at index 0 of the workflow.
-            "state": "in0",
-            "attrs": {
-                // Parse values for x, m, a, and s as object properties.
-                "-" : api.keyval(rh`${parts_arr} | udf.split "=" | .0`, 
-                    rh`${parts_arr} | udf.split "=" | .1 | udf.toNum`
-                )
-            }
-        }
-    };
-
-    let parse = api.compile({
-        workflows: workflow_split,
-        parts: partsObj
-    });
-
-    let parsedInput = parse({input, udf});
-
-    // Now that the workflow and parts are parsed, running is simply iterating on the input state.
-    let state = {
-        transitions: parsedInput.workflows,
-        parts: Object.values(parsedInput.parts),
-        acceptedSum: 0,
-    };
-
-    // Get current state for each part.
-    let currentState = api.get(".input.transitions", rh`.input.parts.*part.state`);
-    // Determine the next state based on whether it passes the predicate.
-    let nextState = ifElsePred(
-        rh`udf.isEqual ${currentState}.predicate.op ">"`,
-        ifElsePred(
-            rh`udf.isGreaterThan ${api.get(rh`.input.parts.*part.attrs`, rh`${currentState}.predicate.key`)} ${currentState}.predicate.value`,
-            rh`${currentState}.trueBranch`,
-            rh`${currentState}.falseBranch`,
-        ),
-        ifElsePred(
-            rh`udf.isLessThan ${api.get(rh`.input.parts.*part.attrs`, rh`${currentState}.predicate.key`)} ${currentState}.predicate.value`,
-            rh`${currentState}.trueBranch`,
-            rh`${currentState}.falseBranch`,
-        )
-    );
-
-    let newParts = arrayGroupBy("*part", {
-        state: nextState,
-        attrs: rh`.input.parts.*part.attrs`,
-    });
-    
-    // Filter for all accepted states.
-    let acceptedStates = api.array(rh`${newParts} | .*parts | ${filterBy("*acc", rh`udf.isEqual ${newParts}.*parts.state "A0"`)}`);
-    
-    // Filter for all state that are neither accepted nor rejected.
-    let notAcceptedStates = api.array(rh`${newParts} | .*parts | ${filterBy("*acc1", rh`udf.notEqual ${newParts}.*parts.state "A0"`)}`);
-    let filteredStates = rh`${notAcceptedStates} | .*partsNotAccepted | ${filterBy("*rej", rh`udf.notEqual ${notAcceptedStates}.*partsNotAccepted.state "R0"`)}`;
-
-    let run = api.compile({
-        transitions: rh`.input.transitions`,
-        // Continue work on states not accepted or rejected.
-        parts: api.array(filteredStates),
-        // Accumulate all accepted states' values.
-        acceptedSum: api.plus(".input.acceptedSum", api.sum(rh`${acceptedStates}.*part4.attrs.*attr`)),
-    });
-
-    while(state.parts.length > 0) {
-        state = run({input: state, udf});
-    }
-
-    expect(state.acceptedSum).toBe(19114);
-
-});
-
-test("day19-B", () => {
-    let input = `px{a<2006:qkq,m>2090:A,rfg}
-pv{a>1716:R,A}
-lnx{m>1548:A,A}
-rfg{s<537:gd,x>2440:R,A}
-qs{s>3448:A,lnx}
-qkq{x<1416:A,crn}
-crn{x>2662:A,R}
-in{s<1351:px,qqz}
-qqz{s>2770:qs,m<1801:hdj,R}
-gd{a>3333:R,R}
-hdj{m>838:A,pv}
-
-{x=787,m=2655,a=1222,s=2876}
-{x=1679,m=44,a=2067,s=496}
-{x=2036,m=264,a=79,s=2244}
-{x=2461,m=1339,a=466,s=291}
-{x=2127,m=1623,a=2188,s=1013}`;
-
-    let udf = {
-        ...udf_stdlib,
-        splitNN: x => x.split("\n\n"),
-        splitN: x => x.split("\n"),
-        getValue: x => x.substring(2),
-        decurly: x => x.substring(1, x.length - 1),
-        ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
-        getCharAt: (x) => (str) => str == undefined ? undefined : str.charAt(x),
-        filter: c => c ? { [c]: true } : {},
-        andThen: (a,b) => b, // just to add a as dependency
-        min: (a, b) => a < b ? a : b,
-        max: (a, b) => a > b ? a : b,
-        join: (a, b) => ({...a, ...b}),
-    };
-
-    /*
-     * Taken from day19-A
-     */
-    let symInd = 0;
-    let freshSym = () => ("*tmp" + (symInd++));
-    let arrayGroupBy = (group, obj) =>
-        api.array(rh`${{
-            [group]: obj
-        }} | .${freshSym()}`);
-    let ifElsePred = (predicate, thenBr, elseBr) => rh`udf.ifThenElse ${predicate} ${thenBr} ${elseBr}`;
-    let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
-
-    let workflow_str = rh`.input | udf.splitNN | .0 | udf.splitN | .*workflow_str`;
-    let options = arrayGroupBy("*options", rh`${workflow_str} | udf.split "{" | .1 | udf.split "}" | .0 | udf.split "," | .*options`);
-    let workflows = arrayGroupBy("*workflow_str", {
-        name: rh`${workflow_str} | udf.split "{" | .0`,
-        options: options
-    });
-
-    let parsePredicate = (predStr) => ({
-        op: rh`${predStr} | udf.getCharAt 1`,
-        key: rh`${predStr} | udf.getCharAt 0`,
-        value: rh`${predStr} | udf.getValue | udf.toNum`
-    });
-
-    let workflow_split = {
-        "-": api.keyval(api.plus(rh`${workflows}.*wf.name`, "*opt"), (
-            ifElsePred(rh`udf.isEqual (${workflows}.*wf.options.*opt | udf.split ":" | .length) 1`, {
-                // A predicate is expected, so make a random one and have both branches go to the same place.
-                predicate: {op: "\">\"", key: "a", value: "0"},
-                trueBranch: rh`${workflows}.*wf.options.*opt + "0"`,
-                falseBranch: rh`${workflows}.*wf.options.*opt + "0"`
-            }, {
-                predicate: parsePredicate(rh`${workflows}.*wf.options.*opt | udf.split ":" | .0`),
-                trueBranch: rh`(${workflows}.*wf.options.*opt | udf.split ":" | .1) + "0"`,
-                falseBranch: rh`${workflows}.*wf.name + ((udf.toNum *opt) + 1)`
-            })
-        ))
-    };
-
-    // Since parts don't need to be parsed, they can safely be ignored.
-    let parse = api.compile(workflow_split);
-
-    let parsedInput = parse({input, udf});
-    let state = {
-        transitions: parsedInput,
-        // Keep track of parts as "categories" with specific constraints
-        // At each predicate, branch into different states for each possibility.
-        parts: [{
-            state: "in0",
-            attrs: {
-                x: {min: 1, max: 4000},
-                m: {min: 1, max: 4000},
-                a: {min: 1, max: 4000},
-                s: {min: 1, max: 4000},
-            }
-        }],
-        acceptedAmt: 0,
-    };
-
-    let join = (a, b) => rh`udf.join ${a} ${b}`;
-
-    let currentState = api.get(".input.transitions", rh`.input.parts.*part.state`);
-    let attrValue = api.get(rh`.input.parts.*part.attrs`, rh`${currentState}.predicate.key`);
-
-    // Function to join previous attributes with the new overwritten attributes.
-    let setMinsMaxes = (attr) => join(".input.parts.*part.attrs", {
-        "-": api.keyval(rh`${currentState}.predicate.key`, attr)
-    });
-    // Reject state.
-    const reject = {
-        state: '"R0"',
-        attrs: {x: {min: 0, max: 0}, m: {min: 0, max: 0}, a: {min: 0, max: 0}, s: {min: 0, max: 0}},
-    };
-    // Determine the new state and attributes for when the predicate evaluates to true.
-    let trueBranch = ifElsePred(
-        rh`udf.isEqual ${currentState}.predicate.op ">"`,
-        // Verify there is some overlap.
-        ifElsePred(rh`udf.isGreaterThan ${attrValue}.max ${currentState}.predicate.value`, {
-            state: rh`${currentState}.trueBranch`,
-            attrs: setMinsMaxes({
-                // Set new mins and maxes based on overlap between predicate and current range.
-                min: rh`udf.max (${currentState}.predicate.value + 1) ${attrValue}.min`,
-                max: rh`${attrValue}.max`
-            })
-        }, reject), // If there is no overlap, immediately reject.
-        ifElsePred(rh`udf.isLessThan ${attrValue}.min ${currentState}.predicate.value`, {
-            state: rh`${currentState}.trueBranch`,
-            attrs: setMinsMaxes({
-                min: rh`${attrValue}.min`,
-                max: rh`udf.min (${currentState}.predicate.value - 1) ${attrValue}.max`
-            })
-        }, reject),
-    );
-    let falseBranch = ifElsePred(
-        rh`udf.isEqual ${currentState}.predicate.op ">"`,
-        ifElsePred(rh`udf.isLessOrEqual ${attrValue}.min ${currentState}.predicate.value`, {
-            state: rh`${currentState}.falseBranch`,
-            attrs: setMinsMaxes({
-                min: rh`${attrValue}.min`,
-                max: rh`udf.min (${currentState}.predicate.value) ${attrValue}.max`
-            })
-        }, reject),
-        ifElsePred(rh`udf.isGreaterOrEqual ${attrValue}.max ${currentState}.predicate.value`, {
-            state: rh`${currentState}.falseBranch`,
-            attrs: setMinsMaxes({
-                min: rh`udf.max (${currentState}.predicate.value) ${attrValue}.min`,
-                max: rh`${attrValue}.max`,
-            })
-        }, reject),
-    );
-
-    let trueBranches = arrayGroupBy("*part", trueBranch);
-    let falseBranches = arrayGroupBy("*part", falseBranch);
-
-    // Combine and accumulate all true and false branches from list of current states.
-    let newParts = api.array(rh`${[trueBranches, falseBranches]} | .*a.*b`);
-    
-    // Filter for accepted states.
-    let acceptedStates = api.array(rh`${newParts} | .*parts | ${filterBy("*acc", rh`udf.isEqual ${newParts}.*parts.state "A0"`)}`);
-    
-    // Filter for states neither accepted nor rejected.
-    let notAcceptedStates = api.array(rh`${newParts} | .*parts | ${filterBy("*n_acc", rh`udf.notEqual ${newParts}.*parts.state "A0"`)}`);
-    let filteredStates = rh`${notAcceptedStates} | .*partsNotAccepted | ${filterBy("*rej", rh`udf.notEqual ${notAcceptedStates}.*partsNotAccepted.state "R0"`)}`;
-    
-    let attrs = rh`${acceptedStates}.*part4.attrs`;
-
-    let run = api.compile({
-        transitions: rh`.input.transitions`,
-        parts: api.array(filteredStates),
-        // For all accepted states, sum the total number of potential parts accepted. (product of ranges)
-        acceptedAmt: api.plus(".input.acceptedAmt", 
-            api.sum(rh`
-                (${attrs}.x.max - ${attrs}.x.min + 1)*
-                (${attrs}.m.max - ${attrs}.m.min + 1)*
-                (${attrs}.a.max - ${attrs}.a.min + 1)*
-                (${attrs}.s.max - ${attrs}.s.min + 1)
-            `)
-        ),
-    });
-
-    while(state.parts.length > 0) {
-        state = run({input: state, udf});
-    }
-
-    expect(state.acceptedAmt).toBe(167409079868000);
-
-});
-
-test("aoc-day15-part1", () => {
+test("day15-part1", () => {
 
   let udf = {
       ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
@@ -1743,7 +1407,7 @@ test("aoc-day15-part1", () => {
   expect(state.sum).toEqual(1320);
 });
 
-test("aoc-day15-part2", () => {
+test("day15-part2", () => {
 
   let udf = {
       ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
@@ -2016,6 +1680,342 @@ U 2 (#7a21e3)`
   }
   expect(state.area).toBe(952408144115)
 })
+
+test("day19-part1", () => {
+  let input = `px{a<2006:qkq,m>2090:A,rfg}
+pv{a>1716:R,A}
+lnx{m>1548:A,A}
+rfg{s<537:gd,x>2440:R,A}
+qs{s>3448:A,lnx}
+qkq{x<1416:A,crn}
+crn{x>2662:A,R}
+in{s<1351:px,qqz}
+qqz{s>2770:qs,m<1801:hdj,R}
+gd{a>3333:R,R}
+hdj{m>838:A,pv}
+
+{x=787,m=2655,a=1222,s=2876}
+{x=1679,m=44,a=2067,s=496}
+{x=2036,m=264,a=79,s=2244}
+{x=2461,m=1339,a=466,s=291}
+{x=2127,m=1623,a=2188,s=1013}`;
+
+  let udf = {
+      ...udf_stdlib,
+      splitNN: x => x.split("\n\n"),
+      splitN: x => x.split("\n"),
+      getValue: x => x.substring(2),
+      decurly: x => x.substring(1, x.length - 1),
+      ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
+      getCharAt: (x) => (str) => str == undefined ? undefined : str.charAt(x),
+      filter: c => c ? { [c]: true } : {},
+      andThen: (a,b) => b, // just to add a as dependency
+    };
+
+  let symInd = 0;
+  let freshSym = () => ("*tmp" + (symInd++));
+  let arrayGroupBy = (group, obj) =>
+      api.array(rh`${{
+          [group]: obj
+      }} | .${freshSym()}`);
+  let ifElsePred = (predicate, thenBr, elseBr) => rh`udf.ifThenElse ${predicate} ${thenBr} ${elseBr}`;
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+  
+  // Get each workflow.
+  let workflow_str = rh`.input | udf.splitNN | .0 | udf.splitN | .*workflow_str`;
+  // Identify the different paths inside of it.
+  let options = arrayGroupBy("*options", rh`${workflow_str} | udf.split "{" | .1 | udf.split "}" | .0 | udf.split "," | .*options`);
+  // Create objects for each workflow, containing the array of paths.
+  let workflows = arrayGroupBy("*workflow_str", {
+      name: rh`${workflow_str} | udf.split "{" | .0`,
+      options: options
+  });
+
+  let parsePredicate = (predStr) => ({
+      op: rh`${predStr} | udf.getCharAt 1`,
+      key: rh`${predStr} | udf.getCharAt 0`,
+      value: rh`${predStr} | udf.getValue | udf.toNum`
+  });
+
+  // Separate workflows into multiple "subworkflows" that check a single condiiton and go to a specific state based on the result.
+  // This allows simpler running by flattening the workflows into singular operations.
+  let workflow_split = {
+      "-": api.keyval(api.plus(rh`${workflows}.*wf.name`, "*opt"), (
+          // Check if there is a predicate before the transition state.
+          ifElsePred(rh`udf.isEqual (${workflows}.*wf.options.*opt | udf.split ":" | .length) 1`, {
+              // A predicate isn't there, so create a fake one.
+              predicate: {op: "\">\"", key: "a", value: "0"},
+              trueBranch: rh`${workflows}.*wf.options.*opt + "0"`,
+              falseBranch: rh`${workflows}.*wf.options.*opt + "0"`
+          }, {
+              // A preedicate is there, so parse it.
+              predicate: parsePredicate(rh`${workflows}.*wf.options.*opt | udf.split ":" | .0`),
+              // If true, go to the state for it.
+              trueBranch: rh`(${workflows}.*wf.options.*opt | udf.split ":" | .1) + "0"`,
+              // Otherwise continue on the current workflow.
+              falseBranch: rh`${workflows}.*wf.name + ((udf.toNum *opt) + 1)`
+          })
+      ))
+  };
+
+  // Parse each line of parts
+  let part_str = rh`.input | udf.splitNN | .1 | udf.splitN | .*part_str`;
+  let parts_arr = rh`${part_str} | udf.decurly | udf.split "," | .*part_arr`;
+  
+  let partsObj = {
+      "*part_str": {
+          // Initial state is "in", at index 0 of the workflow.
+          "state": "in0",
+          "attrs": {
+              // Parse values for x, m, a, and s as object properties.
+              "-" : api.keyval(rh`${parts_arr} | udf.split "=" | .0`, 
+                  rh`${parts_arr} | udf.split "=" | .1 | udf.toNum`
+              )
+          }
+      }
+  };
+
+  let parse = api.compile({
+      workflows: workflow_split,
+      parts: partsObj
+  });
+
+  let parsedInput = parse({input, udf});
+
+  // Now that the workflow and parts are parsed, running is simply iterating on the input state.
+  let state = {
+      transitions: parsedInput.workflows,
+      parts: Object.values(parsedInput.parts),
+      acceptedSum: 0,
+  };
+
+  // Get current state for each part.
+  let currentState = api.get(".input.transitions", rh`.input.parts.*part.state`);
+  // Determine the next state based on whether it passes the predicate.
+  let nextState = ifElsePred(
+      rh`udf.isEqual ${currentState}.predicate.op ">"`,
+      ifElsePred(
+          rh`udf.isGreaterThan ${api.get(rh`.input.parts.*part.attrs`, rh`${currentState}.predicate.key`)} ${currentState}.predicate.value`,
+          rh`${currentState}.trueBranch`,
+          rh`${currentState}.falseBranch`,
+      ),
+      ifElsePred(
+          rh`udf.isLessThan ${api.get(rh`.input.parts.*part.attrs`, rh`${currentState}.predicate.key`)} ${currentState}.predicate.value`,
+          rh`${currentState}.trueBranch`,
+          rh`${currentState}.falseBranch`,
+      )
+  );
+
+  let newParts = arrayGroupBy("*part", {
+      state: nextState,
+      attrs: rh`.input.parts.*part.attrs`,
+  });
+  
+  // Filter for all accepted states.
+  let acceptedStates = api.array(rh`${newParts} | .*parts | ${filterBy("*acc", rh`udf.isEqual ${newParts}.*parts.state "A0"`)}`);
+  
+  // Filter for all state that are neither accepted nor rejected.
+  let notAcceptedStates = api.array(rh`${newParts} | .*parts | ${filterBy("*acc1", rh`udf.notEqual ${newParts}.*parts.state "A0"`)}`);
+  let filteredStates = rh`${notAcceptedStates} | .*partsNotAccepted | ${filterBy("*rej", rh`udf.notEqual ${notAcceptedStates}.*partsNotAccepted.state "R0"`)}`;
+
+  let run = api.compile({
+      transitions: rh`.input.transitions`,
+      // Continue work on states not accepted or rejected.
+      parts: api.array(filteredStates),
+      // Accumulate all accepted states' values.
+      acceptedSum: api.plus(".input.acceptedSum", api.sum(rh`${acceptedStates}.*part4.attrs.*attr`)),
+  });
+
+  while(state.parts.length > 0) {
+      state = run({input: state, udf});
+  }
+
+  expect(state.acceptedSum).toBe(19114);
+
+});
+
+test("day19-part2", () => {
+  let input = `px{a<2006:qkq,m>2090:A,rfg}
+pv{a>1716:R,A}
+lnx{m>1548:A,A}
+rfg{s<537:gd,x>2440:R,A}
+qs{s>3448:A,lnx}
+qkq{x<1416:A,crn}
+crn{x>2662:A,R}
+in{s<1351:px,qqz}
+qqz{s>2770:qs,m<1801:hdj,R}
+gd{a>3333:R,R}
+hdj{m>838:A,pv}
+
+{x=787,m=2655,a=1222,s=2876}
+{x=1679,m=44,a=2067,s=496}
+{x=2036,m=264,a=79,s=2244}
+{x=2461,m=1339,a=466,s=291}
+{x=2127,m=1623,a=2188,s=1013}`;
+
+  let udf = {
+      ...udf_stdlib,
+      splitNN: x => x.split("\n\n"),
+      splitN: x => x.split("\n"),
+      getValue: x => x.substring(2),
+      decurly: x => x.substring(1, x.length - 1),
+      ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
+      getCharAt: (x) => (str) => str == undefined ? undefined : str.charAt(x),
+      filter: c => c ? { [c]: true } : {},
+      andThen: (a,b) => b, // just to add a as dependency
+      min: (a, b) => a < b ? a : b,
+      max: (a, b) => a > b ? a : b,
+      join: (a, b) => ({...a, ...b}),
+  };
+
+  /*
+   * Taken from day19-A
+   */
+  let symInd = 0;
+  let freshSym = () => ("*tmp" + (symInd++));
+  let arrayGroupBy = (group, obj) =>
+      api.array(rh`${{
+          [group]: obj
+      }} | .${freshSym()}`);
+  let ifElsePred = (predicate, thenBr, elseBr) => rh`udf.ifThenElse ${predicate} ${thenBr} ${elseBr}`;
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+
+  let workflow_str = rh`.input | udf.splitNN | .0 | udf.splitN | .*workflow_str`;
+  let options = arrayGroupBy("*options", rh`${workflow_str} | udf.split "{" | .1 | udf.split "}" | .0 | udf.split "," | .*options`);
+  let workflows = arrayGroupBy("*workflow_str", {
+      name: rh`${workflow_str} | udf.split "{" | .0`,
+      options: options
+  });
+
+  let parsePredicate = (predStr) => ({
+      op: rh`${predStr} | udf.getCharAt 1`,
+      key: rh`${predStr} | udf.getCharAt 0`,
+      value: rh`${predStr} | udf.getValue | udf.toNum`
+  });
+
+  let workflow_split = {
+      "-": api.keyval(api.plus(rh`${workflows}.*wf.name`, "*opt"), (
+          ifElsePred(rh`udf.isEqual (${workflows}.*wf.options.*opt | udf.split ":" | .length) 1`, {
+              // A predicate is expected, so make a random one and have both branches go to the same place.
+              predicate: {op: "\">\"", key: "a", value: "0"},
+              trueBranch: rh`${workflows}.*wf.options.*opt + "0"`,
+              falseBranch: rh`${workflows}.*wf.options.*opt + "0"`
+          }, {
+              predicate: parsePredicate(rh`${workflows}.*wf.options.*opt | udf.split ":" | .0`),
+              trueBranch: rh`(${workflows}.*wf.options.*opt | udf.split ":" | .1) + "0"`,
+              falseBranch: rh`${workflows}.*wf.name + ((udf.toNum *opt) + 1)`
+          })
+      ))
+  };
+
+  // Since parts don't need to be parsed, they can safely be ignored.
+  let parse = api.compile(workflow_split);
+
+  let parsedInput = parse({input, udf});
+  let state = {
+      transitions: parsedInput,
+      // Keep track of parts as "categories" with specific constraints
+      // At each predicate, branch into different states for each possibility.
+      parts: [{
+          state: "in0",
+          attrs: {
+              x: {min: 1, max: 4000},
+              m: {min: 1, max: 4000},
+              a: {min: 1, max: 4000},
+              s: {min: 1, max: 4000},
+          }
+      }],
+      acceptedAmt: 0,
+  };
+
+  let join = (a, b) => rh`udf.join ${a} ${b}`;
+
+  let currentState = api.get(".input.transitions", rh`.input.parts.*part.state`);
+  let attrValue = api.get(rh`.input.parts.*part.attrs`, rh`${currentState}.predicate.key`);
+
+  // Function to join previous attributes with the new overwritten attributes.
+  let setMinsMaxes = (attr) => join(".input.parts.*part.attrs", {
+      "-": api.keyval(rh`${currentState}.predicate.key`, attr)
+  });
+  // Reject state.
+  const reject = {
+      state: '"R0"',
+      attrs: {x: {min: 0, max: 0}, m: {min: 0, max: 0}, a: {min: 0, max: 0}, s: {min: 0, max: 0}},
+  };
+  // Determine the new state and attributes for when the predicate evaluates to true.
+  let trueBranch = ifElsePred(
+      rh`udf.isEqual ${currentState}.predicate.op ">"`,
+      // Verify there is some overlap.
+      ifElsePred(rh`udf.isGreaterThan ${attrValue}.max ${currentState}.predicate.value`, {
+          state: rh`${currentState}.trueBranch`,
+          attrs: setMinsMaxes({
+              // Set new mins and maxes based on overlap between predicate and current range.
+              min: rh`udf.max (${currentState}.predicate.value + 1) ${attrValue}.min`,
+              max: rh`${attrValue}.max`
+          })
+      }, reject), // If there is no overlap, immediately reject.
+      ifElsePred(rh`udf.isLessThan ${attrValue}.min ${currentState}.predicate.value`, {
+          state: rh`${currentState}.trueBranch`,
+          attrs: setMinsMaxes({
+              min: rh`${attrValue}.min`,
+              max: rh`udf.min (${currentState}.predicate.value - 1) ${attrValue}.max`
+          })
+      }, reject),
+  );
+  let falseBranch = ifElsePred(
+      rh`udf.isEqual ${currentState}.predicate.op ">"`,
+      ifElsePred(rh`udf.isLessOrEqual ${attrValue}.min ${currentState}.predicate.value`, {
+          state: rh`${currentState}.falseBranch`,
+          attrs: setMinsMaxes({
+              min: rh`${attrValue}.min`,
+              max: rh`udf.min (${currentState}.predicate.value) ${attrValue}.max`
+          })
+      }, reject),
+      ifElsePred(rh`udf.isGreaterOrEqual ${attrValue}.max ${currentState}.predicate.value`, {
+          state: rh`${currentState}.falseBranch`,
+          attrs: setMinsMaxes({
+              min: rh`udf.max (${currentState}.predicate.value) ${attrValue}.min`,
+              max: rh`${attrValue}.max`,
+          })
+      }, reject),
+  );
+
+  let trueBranches = arrayGroupBy("*part", trueBranch);
+  let falseBranches = arrayGroupBy("*part", falseBranch);
+
+  // Combine and accumulate all true and false branches from list of current states.
+  let newParts = api.array(rh`${[trueBranches, falseBranches]} | .*a.*b`);
+  
+  // Filter for accepted states.
+  let acceptedStates = api.array(rh`${newParts} | .*parts | ${filterBy("*acc", rh`udf.isEqual ${newParts}.*parts.state "A0"`)}`);
+  
+  // Filter for states neither accepted nor rejected.
+  let notAcceptedStates = api.array(rh`${newParts} | .*parts | ${filterBy("*n_acc", rh`udf.notEqual ${newParts}.*parts.state "A0"`)}`);
+  let filteredStates = rh`${notAcceptedStates} | .*partsNotAccepted | ${filterBy("*rej", rh`udf.notEqual ${notAcceptedStates}.*partsNotAccepted.state "R0"`)}`;
+  
+  let attrs = rh`${acceptedStates}.*part4.attrs`;
+
+  let run = api.compile({
+      transitions: rh`.input.transitions`,
+      parts: api.array(filteredStates),
+      // For all accepted states, sum the total number of potential parts accepted. (product of ranges)
+      acceptedAmt: api.plus(".input.acceptedAmt", 
+          api.sum(rh`
+              (${attrs}.x.max - ${attrs}.x.min + 1)*
+              (${attrs}.m.max - ${attrs}.m.min + 1)*
+              (${attrs}.a.max - ${attrs}.a.min + 1)*
+              (${attrs}.s.max - ${attrs}.s.min + 1)
+          `)
+      ),
+  });
+
+  while(state.parts.length > 0) {
+      state = run({input: state, udf});
+  }
+
+  expect(state.acceptedAmt).toBe(167409079868000);
+
+});
 
 // 2022
 
