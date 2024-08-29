@@ -37,6 +37,7 @@ let udf_stdlib = {
   join: delim => array => array.join(delim),
   sort: cmpFn => array => array.sort(cmpFn),
   values: o => Object.values(o),
+  ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
 }
 
 
@@ -1255,18 +1256,52 @@ test("day13-part1", () => {
 ..##..###
 #....#..#`
 
-  let udf = udf_stdlib
+  let udf = {
+    andThen: (a,b) => b,
+    reverse: (arr) => arr.reverse(),
+    zip: (a, b) => [a, b],
+    ...udf_stdlib
+  }
 
-  let pattern = rh`.input | udf.split "\\n\\n" | .*pattern
-                          | udf.split "\\n" | .*line
-                          | udf.split "" | .*tile
-                          | group *tile | group *line | group *pattern`
+  let pattern = {
+    pattern: rh`.input | udf.split "\\n\\n" | .*chunk
+                       | udf.split "\\n" | .*line
+                       | udf.split "" | .*char
+                       | group *char | group *line`,
+    n: rh`.input | udf.split "\\n\\n" | .*chunk
+                 | udf.split "\\n" | .length`
+  }
 
-  let func = api.compile(pattern)
-  console.log(func.explain.code)
+  let transposedPattern = {
+    pattern: rh`.input | udf.split "\\n\\n" | .*chunk
+                       | udf.split "\\n" | .*line
+                       | udf.split "" | .*char
+                       | group *line | group *char`,
+    n: rh`.input | udf.split "\\n\\n" | .*chunk
+                 | udf.split "\\n" | .0.length`
+  }
 
+  let patterns = rh`${pattern} | group *chunk`
+  let transposedPatterns = rh`${transposedPattern} | group *chunk`
+
+  let upper = rh`udf.range 0 (${patterns}.*pattern.n - 1) 1 | udf.andThen .*rowSplitted (udf.reverse (udf.range 0 ((udf.toNum *rowSplitted) + 1) 1)) | ${patterns}.*pattern.pattern.(.*idx).*tile`
+  let lower = rh`udf.range 0 (${patterns}.*pattern.n - 1) 1 | udf.andThen .*rowSplitted (udf.range ((udf.toNum *rowSplitted) + 1) (${patterns}.*pattern.n) 1) | ${patterns}.*pattern.pattern.(.*idx).*tile`
+
+  let findHorizontal = rh`udf.toNum (udf.isEqual ${upper} ${lower}) | product`
+  let horizontal = rh`udf.ifThenElse ${findHorizontal} ((udf.toNum(*rowSplitted) + 1) * 100) 0 | group *rowSplitted | group *pattern | sum .*a.*b`
+
+  let left = rh`udf.range 0 (${transposedPatterns}.*pattern.n - 1) 1 | udf.andThen .*rowSplittedT (udf.reverse (udf.range 0 ((udf.toNum *rowSplittedT) + 1) 1)) | ${transposedPatterns}.*pattern.pattern.(.*idxT).*tileT`
+  let right = rh`udf.range 0 (${transposedPatterns}.*pattern.n - 1) 1 | udf.andThen .*rowSplittedT (udf.range ((udf.toNum *rowSplittedT) + 1) (${transposedPatterns}.*pattern.n) 1) | ${transposedPatterns}.*pattern.pattern.(.*idxT).*tileT`
+
+  let findVertical = rh`udf.toNum (udf.isEqual ${left} ${right}) | product`
+  let vertical = rh`udf.ifThenElse ${findVertical} (udf.toNum(*rowSplittedT) + 1) 0 | group *rowSplittedT | group *pattern | sum .*aT.*bT`
+
+  let query = rh`${horizontal} + ${vertical}`
+
+  let func = api.compileNew(query)
   let res = func({input, udf})
-  console.log(res)
+
+  expect(res).toBe(405)
 })
 
 test("aoc-day14-part1", () => {
