@@ -300,77 +300,6 @@ let infer = q => {
 }
 
 
-//
-// 6. Infer dependencies top down: 
-//    - out:  maximum allowed set of variables in output (provided as input arg)
-//    - free: free variables, anticipating conversion to loops
-//    - bound: bound variables, anticipating conversion to loops (allBound: incl deep in subterms)
-//    - (iter: iteration space for stms (= free + bound))
-//
-//    Decorrelate paths and eliminate trivial recursion
-//
-
-let trans = ps => unique([...ps,...ps.flatMap(x => vars[x].vars)])
-
-let intersects = (a,b) => intersect(a,b).length > 0
-
-let overlaps = (a,b) => intersects(trans(a),trans(b))
-
-let assertSame = (a,b,msg) => console.assert(same(a,b), msg+": "+a+" != "+b)
-
-
-// infer bound vars (simple mode)
-let inferBwd0 = out => q => {
-  if (q.key == "input" || q.key == "const") {
-    q.bnd = []
-    q.allBnd = []
-  } else if (q.key == "var") {
-    q.bnd = []
-    q.allBnd = []
-  } else if (q.key == "get" || q.key == "pure" || q.key == "mkset") {
-    let es = q.arg.map(inferBwd0(out))
-    q.bnd = []
-    q.allBnd = unique(es.flatMap(x => x.allBnd))
-  } else if (q.key == "stateful" || q.key == "prefix") {
-    let out1 = union(out,q.arg[0].dims) // need to consider mode?
-    let [e1] = q.arg.map(inferBwd0(out1))
-
-    q.bnd = diff(e1.dims, out)
-    q.allBnd = union(q.bnd, e1.allBnd)
-  } else if (q.key == "update") {
-    let e0 = inferBwd0(out)(q.arg[0]) // what are we extending
-    let e1 = inferBwd0(out)(q.arg[1]) // key variable
-
-    let e1Body
-    if (q.arg[3]) {
-      let out3 = union(out, union([e1.op], q.arg[3].dims)) // e3 includes e1.op (union left for clarity)
-      let e3 = inferBwd0(out3)(q.arg[3]) // filter expr
-      console.assert(e3.key == "get")
-      console.assert(e3.arg[0].key == "mkset")
-      console.assert(e3.arg[1].key == "var" && e3.arg[1].op == e1.op)
-      e1Body = e3.arg[0].arg[0]
-    } else {
-      e1Body = { key: "const", op: "???", 
-        vars: [], mind: [], dims: [], bnd: [], allBnd: [] }
-    }
-
-    q.e1BodyBnd = diff(e1Body.dims, out)
-
-    let e2 = inferBwd0(union(out, [e1.op]))(q.arg[2])
-
-    q.bnd = diff(union([e1.op], e1Body.dims), out)
-    q.allBnd = unique([...q.bnd, ...e0.allBnd, ...e1.allBnd, ...e2.allBnd, ...e1Body.allBnd])
-
-  } else {
-    console.error("unknown op", q)
-  }
-
-  console.assert(subset(q.mind, q.dims))
-  console.assert(subset(q.dims, q.vars))
-
-  return q
-}
-
 
 
 // ----- back end -----
@@ -520,7 +449,7 @@ let transViaFiltersDimsC = iter => {
 
 
 
-let emitFiltersC1 = (iter, scope) => (buf, codegen) => body => {
+let emitFiltersC1 = (scope, iter) => (buf, codegen) => body => {
   // approach: build explicit projection first
   // 1. iterate over transitive iter space to
   //    build projection map
@@ -531,18 +460,12 @@ let emitFiltersC1 = (iter, scope) => (buf, codegen) => body => {
 
   let full = transViaFiltersDimsC(union(scope,iter)) // XX simpler way to compute?
 
-  // Questions: 
-  // 1. does trans(iter) do the right thing, or
-  //    do we need to use q.free? (XX: had to use .fre)
-  // 2. is it OK to take the ordering of iter, or
-  //    do we need to compute topological order?
-
   let closing = "}"
   buf.push("{")
   buf.push("// PROJECT "+full+" -> "+iter)
   buf.push("let proj = {}")
 
-  emitFiltersC2(diff(full,scope), scope)(buf, codegen)(() => {
+  emitFiltersC2(scope, diff(full,scope))(buf, codegen)(() => {
     // (logic taken from caller)
     let xs = [...iter.map(quoteVar)]
     let ys = xs.map(x => ","+x).join("")
@@ -570,7 +493,7 @@ let emitFiltersC1 = (iter, scope) => (buf, codegen) => body => {
 }
 
 
-let emitFiltersC2 = (iter, scope) => (buf, codegen) => body => {
+let emitFiltersC2 = (scope, iter) => (buf, codegen) => body => {
 
   let watermark = buf.length
 
@@ -736,9 +659,6 @@ let emitCodeDeep = (q) => {
       buf.push("/* --- begin "+q.key+"_"+i+" --- "+pretty(q)+" ---*/")
       buf.push("// env: "+env+" dims: "+q.dims+" bound: "+bound)
 
-      let env1 = union(env, bound)
-      let codegen2 = q => codegen(q, env1)
-
       let emitStmInit = (q) => {
         if (q.key == "stateful") {
           return "rt.stateful."+q.op+"_init"
@@ -749,6 +669,9 @@ let emitCodeDeep = (q) => {
           console.error("unknown op", q)
         }
       }
+
+      let env1 = union(env, bound)
+      let codegen2 = q => codegen(q, env1)
 
       let emitStm = (q) => {
         if (q.key == "prefix") {
@@ -776,7 +699,7 @@ let emitCodeDeep = (q) => {
       }
 
       // emit main computation
-      emitFiltersC1(bound,env)(buf, codegen)(() => {
+      emitFiltersC1(env, bound)(buf, codegen)(() => {
         buf.push("tmp"+i+" = "+emitStm(q) + ".next(tmp"+i+")")
       })
 
@@ -791,7 +714,6 @@ let emitCodeDeep = (q) => {
     }
   }
 
-  // buf.push("// --- res ---")
     buf.push("return "+codegen(q,[])+"")
   buf.push("})")
 
