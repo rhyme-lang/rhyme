@@ -880,7 +880,7 @@ let compile = (q,{
         arg: q.dims.map(x => ({ key: "var", op: x, arg:[] })),
         vars: q.dims, dims: q.dims },
       q],
-     vars: [],
+     vars: q.vars,
      dims: []
     }
     // NOTE: compared to adding it earlier and
