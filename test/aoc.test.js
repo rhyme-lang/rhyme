@@ -1238,6 +1238,37 @@ test("day11-part2", () => {
   expect(res).toBe(82000210)
 })
 
+test("day13-part1", () => {
+  let input =`#.##..##.
+..#.##.#.
+##......#
+##......#
+..#.##.#.
+..##..##.
+#.#.##.#.
+
+#...##..#
+#....#..#
+..##..###
+#####.##.
+#####.##.
+..##..###
+#....#..#`
+
+  let udf = udf_stdlib
+
+  let pattern = rh`.input | udf.split "\\n\\n" | .*pattern
+                          | udf.split "\\n" | .*line
+                          | udf.split "" | .*tile
+                          | group *tile | group *line | group *pattern`
+
+  let func = api.compile(pattern)
+  console.log(func.explain.code)
+
+  let res = func({input, udf})
+  console.log(res)
+})
+
 test("aoc-day14-part1", () => {
   let input = `O....#....
 O.OO#....#
