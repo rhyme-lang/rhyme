@@ -2029,8 +2029,6 @@ test("day20-part1", () => {
     ifThen: (predicate, thenBr) => predicate ? thenBr : undefined,
     removePrefix: (str) => str.substring(1),
     emptyObject: () => { return {} },
-    filter: c => c ? { [c]: true } : {},
-    andThen: (a,b) => b, // just to add a as dependency,
     copyAndUpdate: (o, k, v) => {
       let res = {...o}
       res[k] = v
@@ -2040,6 +2038,7 @@ test("day20-part1", () => {
     getObjSize: (o) => Object.keys(o).length,
     optionalChaining: (o, k) => o?.[k],
     getAdjOrDefault: (o) => o ? o["adj"] : [],
+    mergeArrays: (a, b) => [...a, ...b],
     ...udf_stdlib
   }
 
@@ -2052,90 +2051,91 @@ test("day20-part1", () => {
 
   let inDegree = rh`count ${dest}.*dest | group ${dest}.*dest`
 
-  let stateQuery = {
+  let nodeObj = {
     type: rh`${lines}.*line | udf.split " -> " | udf.ifThenElse (udf.isEqual .0 "broadcaster") .0 .0.0`,
     adj: dest
   }
 
-  let state = rh`${lines}.*line | udf.split " -> " | udf.ifThen (udf.notEqual .0 "broadcaster") (udf.ifThenElse (udf.isEqual .0.0 "%") 0 (udf.emptyObject 0))`
+  let initialNodeState = rh`${lines}.*line | udf.split " -> " | udf.ifThen (udf.notEqual .0 "broadcaster") (udf.ifThenElse (udf.isEqual .0.0 "%") 0 (udf.emptyObject 0))`
 
   let graphQuery = {
-    nodes: rh`${stateQuery} | group ${node}`,
+    nodes: rh`${nodeObj} | group ${node}`,
     inDegree,
-    state: rh`${state} | group ${node}`,
+    nodeStates: rh`${initialNodeState} | group ${node}`,
   }
 
   let getGraph = api.compile(graphQuery)
   let graph = getGraph({input, udf})
   
-  graph.countHigh = graph.countLow = 0
-
-  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
-  
   let broadcaster = {
-    src: rh`pulses.0.dest`,
-    dest: rh`(udf.getAdjOrDefault graph.nodes.(pulses.0.dest)).*adj`,
-    pulse: rh`pulses.0.pulse`
+    src: rh`state.pulses.0.dest`,
+    dest: rh`(udf.getAdjOrDefault state.graph.nodes.(state.pulses.0.dest)).*adj`,
+    pulse: rh`state.pulses.0.pulse`
   }
 
   let flipFlop = {
-    src: rh`pulses.0.dest`,
-    dest: rh`(udf.getAdjOrDefault graph.nodes.(pulses.0.dest)).*adj`,
-    pulse: rh`udf.flip graph.state.(pulses.0.dest)`
+    src: rh`state.pulses.0.dest`,
+    dest: rh`(udf.getAdjOrDefault state.graph.nodes.(state.pulses.0.dest)).*adj`,
+    pulse: rh`udf.flip state.graph.nodeStates.(state.pulses.0.dest)`
   }
 
-  let stateCopy = rh`udf.copyAndUpdate graph.state.(pulses.0.dest) pulses.0.src pulses.0.pulse`
+  let stateCopy = rh`udf.copyAndUpdate state.graph.nodeStates.(state.pulses.0.dest) state.pulses.0.src state.pulses.0.pulse`
   let conj = {
-    src: rh`pulses.0.dest`,
-    dest: rh`(udf.getAdjOrDefault graph.nodes.(pulses.0.dest)).*adj`,
-    pulse: rh`udf.flip (udf.toNum (udf.logicalAnd (product ${stateCopy}.*input) (udf.isEqual graph.inDegree.(pulses.0.dest) (udf.getObjSize ${stateCopy}))))`
+    src: rh`state.pulses.0.dest`,
+    dest: rh`(udf.getAdjOrDefault state.graph.nodes.(state.pulses.0.dest)).*adj`,
+    pulse: rh`udf.flip (udf.toNum (udf.logicalAnd (product ${stateCopy}.*input) (udf.isEqual state.graph.inDegree.(state.pulses.0.dest) (udf.getObjSize ${stateCopy}))))`
   }
 
-  let isBroadCaster = rh`udf.isEqual pulses.0.dest "broadcaster"`
-  let broadcasters = rh`${broadcaster} | ${filterBy("*f0", isBroadCaster)}`
+  let isBroadcaster = rh`udf.isEqual state.pulses.0.dest "broadcaster"`
+  let isFlipFlop = rh`udf.isEqual (udf.optionalChaining state.graph.nodes.(state.pulses.0.dest) "type") "%"`
+  let isConj = rh`udf.isEqual (udf.optionalChaining state.graph.nodes.(state.pulses.0.dest) "type") "&"`
 
-  let isFlipFlop = rh`udf.logicalAnd (udf.isEqual (udf.optionalChaining graph.nodes.(pulses.0.dest) "type") "%") (udf.isEqual pulses.0.pulse 0)`
-  let flipFlops = rh`${flipFlop} | ${filterBy("*f1", isFlipFlop)}`
+  let newPulses = [rh`udf.ifThenElse ${isBroadcaster} ${broadcaster} (udf.ifThenElse ${isFlipFlop} (udf.ifThen (udf.isEqual state.pulses.0.pulse 0) ${flipFlop}) ${conj})`]
 
-  let isConj = rh`udf.isEqual (udf.optionalChaining graph.nodes.(pulses.0.dest) "type") "&"`
-  let conjs = rh`${conj} | ${filterBy("*f2", isConj)}`
-
-  let stateUpdated = [rh`pulses.0.dest | ${filterBy("*f2", isConj)}`]
   let query = {
-    pulses: rh`.pulses | udf.slice 1`,
-    new: [broadcasters, flipFlops, conjs],
-    flipped: [rh`pulses.0.dest | ${filterBy("*f1", isFlipFlop)}`],
-    stateUpdated: [rh`pulses.0 | ${filterBy("*f2", isConj)}`],
-    countLow: rh`graph.countLow + (sum (udf.toNum (udf.isEqual pulses.0.pulse 0)))`,
-    countHigh: rh`graph.countHigh + (sum (udf.toNum (udf.isEqual pulses.0.pulse 1)))`
+    graph: rh`state.graph`,
+    pulses: rh`udf.mergeArrays (state.pulses | udf.slice 1) ${newPulses}`,
+    flipped: rh`udf.ifThen (udf.logicalAnd ${isFlipFlop} (udf.isEqual state.pulses.0.pulse 0)) state.pulses.0.dest`,
+    stateUpdated: rh`udf.ifThen ${isConj} state.pulses.0`,
+    countLowPulse: rh`state.countLowPulse + (udf.toNum (udf.isEqual state.pulses.0.pulse 0))`,
+    countHighPulse: rh`state.countHighPulse + (udf.toNum (udf.isEqual state.pulses.0.pulse 1))`
+  }
+
+  let state = {
+    graph: graph,
+    pulses: [{
+      src: "button",
+      dest: "broadcaster",
+      pulse: 0
+    }],
+    countLowPulse: 0,
+    countHighPulse: 0,
   }
 
   let func = api.compileNew(query)
 
   let i = 0;
   while (i < 1000) {
-    let pulses = [{
+    state.pulses = [{
       src: "button",
       dest: "broadcaster",
       pulse: 0
     }]
 
-    while (pulses.length > 0) {
-      let next = func({input, udf, pulses, graph})
-      pulses = [...next.pulses, ...next.new]
-      graph.countLow = next.countLow
-      graph.countHigh = next.countHigh
-      for (let i in next.flipped) {
-        graph.state[next.flipped[i]] ^= 1
+    while (state.pulses.length > 0) {
+      state = func({input, udf, state})
+      // Update state manually
+      if (state.flipped) {
+        state.graph.nodeStates[state.flipped] ^= 1
       }
-      for (let i in next.stateUpdated) {
-        graph.state[next.stateUpdated[i]["dest"]][next.stateUpdated[i]["src"]] = next.stateUpdated[i]["pulse"]
+      if (state.stateUpdated) {
+        state.graph.nodeStates[state.stateUpdated["dest"]][state.stateUpdated["src"]] = state.stateUpdated["pulse"]
       }
     }
     i++
   }
 
-  let res = graph.countHigh * graph.countLow
+  let res = state.countLowPulse * state.countHighPulse
   expect(res).toBe(11687500)
 })
 
