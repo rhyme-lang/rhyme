@@ -77,13 +77,13 @@ test("groupTest3", () => { // BUG!!!
     expect(res).toEqual(expected)
 })
 
+
 // These simple cases above are fixed by considering if
 // sum(q) actually does any dimensionality reduction.
 // If not, codegen makes the sum act as a no-op.
 
 // Now what about cases where we're removing *some* 
 // variables, but not all.
-
 
 let data3 = [
     { key: "A", sub: [110, 120] }, // 230
@@ -105,7 +105,7 @@ test("groupTestNested_pre1", () => {
     let res = func({ data3 })
 
     let expected = { 
-        A: [ "0", "1", "0" ], 
+        A: [ "0", "1" /*, "0" */ ], // XXX: now implicitly grouping
         B: [ "0" ] 
     }
     expect(res).toEqual(expected)
@@ -675,6 +675,8 @@ test("testIndirectCorrelation1", () => {
     2: { 2: 1 }
   }
 
+  // (test direct correlation first)
+
   // Want: inner sum depends on key expr, and
   // key expr needs q.free not just q.dims
 
@@ -730,4 +732,256 @@ test("testIndirectCorrelation3", () => {
   })
   // Want 40, 20 as in testIndirectCorrelation1,
   // this needs indirect correlation.
+})
+
+
+
+// tests above exercise a 1:1 mapping ("other"), now
+// we consider a many:few mapping
+
+test("testIndirectCorrelation4", () => {
+  let data = {
+    Osaka:    { region: "Asia" },
+    Shanghai: { region: "Asia" },
+    Hamburg:  { region: "Europe" },
+  }
+  let partner = {
+    Osaka:    { Hamburg: 1 },
+    Shanghai: { Hamburg: 1 },    
+    Hamburg:  { Osaka: 1, Shanghai: 1 } // (symmetry not strictly needed)
+  }
+
+  // (test direct correlation first)
+
+  // Want: inner aggregation binds both A and B
+
+  let query = { "data.*A.region": rh`array(partner.*A.*B & *B)` }
+
+  let func = compile(query)
+  let res = func({data, partner})
+
+  expect(res).toEqual({
+    Europe: ["Osaka", "Shanghai"],
+    Asia: ["Hamburg", "Hamburg"],   // implicitly iterating over A,    
+  })                                // so duplicate result is expected
+})
+
+
+test("testIndirectCorrelation5", () => {
+  let data = {
+    Osaka:    { region: "Asia" },
+    Shanghai: { region: "Asia" },
+    Hamburg:  { region: "Europe" },
+  }
+  let partner = {
+    Osaka:    { Hamburg: 1 },
+    Shanghai: { Hamburg: 1 },
+    Hamburg:  { Osaka: 1, Shanghai: 1 } // (symmetry not strictly needed)
+  }
+
+  // Want: inner aggregation now only binds B,
+  // as A,B dependency moved elsewhere
+
+  let query = { "data.*A.region": rh`array(*B)` }
+
+  let func = compile(rh`sum(partner.*A.*B) & ${query}`)
+  let res = func({data, partner})
+
+  let bug = {
+    Europe: ["Osaka", "Shanghai"],
+    Asia: ["Hamburg", "Hamburg"],   // duplication much harder
+                                    // to rationalize here
+  }
+
+  expect(res).toEqual({
+    Europe: ["Osaka", "Shanghai"],
+    Asia: ["Hamburg"],   // only once!
+  })
+})
+
+
+// should we be able to compute group keys indirectly?
+
+// sum(mkset(data.*A.key).*K) & { *K: sum(data.*A.value) }
+
+// sum(mkset(data.*A.key).*K) & sum(other.*A.*B) & { *K: sum(data.*B.value) }
+
+
+
+
+// test("testXX", () => {
+//   let other = {
+//     0: { 0: 1 },
+//     1: { 1: 1 },
+//     2: { 2: 1 }
+//   }
+
+//   // Want: inner sum depends on key expr, and
+//   // key expr needs q.free not just q.dims
+
+//   let query = { "*K": rh`sum(data.*A.value)` }
+
+//   let func = compile(rh`sum(mkset(data.*A.key).*K) & ${query}`)
+//   let res = func({data, other})
+
+//   expect(res).toEqual({
+//     A: 40, B: 20
+//   })
+// })
+
+
+
+test("day5-part2-debug", () => {
+  let extra = { seeds: [79, 14, 55, 13] }
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    andThen: (a,b) => b, // just to add a as dependency
+    modulo: (x,y) => x % y,
+    isEqual: (x,y) => x === y,
+
+    isEven: x => (Number(x) % 2) === 0,
+    isOdd: x => (Number(x) % 2) === 1,
+
+    filterEven: x => (x % 2) === 0 ? {1:1} : {},
+    filterOdd: x => (x % 2) === 1 ? {1:1} : {},
+  }
+
+  let filterBy = (p, gen, x) => rh`(udf.filter ${p}).${gen} & ${x}`
+
+  let isEven = x => rh`udf.isEqual 0 (udf.modulo ${x} 2)`
+
+  let isOdd = x => rh`udf.isEqual 1 (udf.modulo ${x} 2)`
+
+  // this works
+  // let starts0 = [rh`(mkset (udf.modulo *seed 2)).0 & extra.seeds.*seed`]
+  // let lengths0 = [rh`(mkset (udf.modulo *seed 2)).1 & extra.seeds.*seed`]
+
+  // this also works
+  // let starts0 = [rh`(mkset 0).(udf.modulo *seed 2) & extra.seeds.*seed`]
+  // let lengths0 = [rh`(mkset 1).(udf.modulo *seed 2) & extra.seeds.*seed`]
+
+  let starts0 = [rh`(udf.filterEven *seed).*ev & extra.seeds.*seed`]
+  let lengths0 = [rh`(udf.filterOdd *seed).*od & extra.seeds.*seed`]
+
+  // ev,od --> seed
+
+  // NOTE: the problem is using *seed twice, for starts and lengths.
+  // if we use two different variables, e.g. *seedE and *seedO, then
+  // it works.
+
+  // PROBLEM: index space of *A -- *A depends on both *ev and *od, 
+  // codegen reconstructs loops over *ev AND *od, so we end up
+  // trying to filter *seed for both even AND odd indexes.
+
+  // POSSIBLE SOLUTION: take *A only from the respective tmp,
+  // the filtering on *ev/*od has already been done. 
+
+  let starts1 = rh`${starts0}.*A`
+  let lengths1 = rh`${lengths0}.*A`
+
+  let f0 = compile([{start: starts1, length: lengths1}])
+
+  let res = f0({udf, extra})
+
+/* desired pattern:
+
+    let starts = []
+    let lengths = []
+
+    for (*seed <- extra.seeds)
+      for (*ev <- filter (*seed % 2 == 0))
+        starts .push (extra.seeds.*seed)
+      for (*od <- filter (*seed % 2 == 1))
+        lengths .push (extra.seeds.*seed)
+
+    let res = []
+    for (*A <- starts /\ lengths)
+      res .push ({ start: starts.*A, length: lengths.*A })
+
+    return res
+*/
+
+  // console.log(f0.explain.pseudo)
+  // console.log(f0.explain.code)
+  // console.log(res)
+
+  expect(res).toEqual([ 
+    { start: 79, length: 14 }, 
+    { start: 55, length: 13 } 
+  ])
+
+
+  // let r1 = f0.c1({udf, extra})
+  // let r1b = f0.c1_opt({udf, extra})
+  // let r2 = f0.c2({udf, extra})
+
+  // console.log(r1)
+  // console.log(r1b)
+  // console.log(r2)
+})
+
+
+test("day4-part1-debug1", () => {
+
+  let xs = [1,2,3,4,3,2,1]
+
+  let ys1 = rh`xs`
+  let q1 = rh`${ys1}.* | count | group ${ys1}.*`
+
+  let ys2 = rh`xs.*`
+  let q2 = rh`${ys2} | count | group ${ys2}`
+
+  let ys3 = rh`(array xs.*).*`
+  let q3 = rh`${ys3} | count | group ${ys3}`
+
+  let ys4 = rh`(array xs.*)`
+  let q4 = rh`${ys4}.* | count | group ${ys4}.*`
+
+  let expected = { 
+    1: 2, 2: 2, 3: 2, 4: 1 
+  }
+
+  let func1 = compile(q1)
+  let func2 = compile(q2)
+  let func3 = compile(q3)
+  let func4 = compile(q4)
+
+  let res1 = func1({xs})
+  let res2 = func2({xs})
+  let res3 = func3({xs})
+  let res4 = func4({xs})
+  
+  expect(res1).toEqual(expected)
+  expect(res2).toEqual(expected)
+  expect(res3).toEqual(expected)
+  expect(res4).toEqual(expected)
+
+})
+
+test("day4-part1-debug2", () => {
+
+  let xs = [[1,2,3,4,3,2,1]]
+
+  let ys1 = rh`xs.*line.*num`
+  let q1 = {"*line": rh`count ${ys1} | group ${ys1}`}
+
+  let ys2 = rh`(array xs.*line.*).*num`
+  let q2 = {"*line": rh`count ${ys2} | group ${ys2}`}
+
+  let expected = {
+    0: { 1: 2, 2: 2, 3: 2, 4: 1 }
+  }
+
+  let bug = { 0: {} }
+
+  let func1 = compile(q1)
+  let func2 = compile(q2)
+
+  let res1 = func1({xs})
+  let res2 = func2({xs})
+  
+  expect(res1).toEqual(expected)
+  expect(res2).toEqual(expected)
+
 })

@@ -37,6 +37,7 @@ let udf_stdlib = {
   join: delim => array => array.join(delim),
   sort: cmpFn => array => array.sort(cmpFn),
   values: o => Object.values(o),
+  ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
 }
 
 
@@ -301,11 +302,7 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
 
   let query = rh`${lineRes} | group *line | sum .*`
 
-  // let query = {"*line": lineRes}
-
   let func = api.compile(query)
-  // console.log(func.explain2.pseudo)
-  // console.log(func.explain2.code)
   let res = func({input, udf})
   expect(res).toBe(13)
 })
@@ -354,7 +351,8 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
     "count": 1
   }
 
-  let matchCountObj = rh`${lineRes} | group ${id}`
+  let matchCountObj = rh`${lineRes} | last | group ${id}` // XXX the 'last' is neccessary (eager
+                                                          // vs reluctant use of free variables)
 
   // For each line i in the matchCountObject, it will look through the matchCountObject
   // to find every other line j that satisfies j.id > i.id and j.id <= i.id + i.match.
@@ -367,7 +365,7 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
                                   | sum .*`
 
   let func = api.compile(query)
-  let res = func.c1({input, udf})
+  let res = func({input, udf})
   expect(res).toBe(30)
 })
 
@@ -1241,7 +1239,72 @@ test("day11-part2", () => {
   expect(res).toBe(82000210)
 })
 
-test("aoc-day14-part1", () => {
+test("day13-part1", () => {
+  let input =`#.##..##.
+..#.##.#.
+##......#
+##......#
+..#.##.#.
+..##..##.
+#.#.##.#.
+
+#...##..#
+#....#..#
+..##..###
+#####.##.
+#####.##.
+..##..###
+#....#..#`
+
+  let udf = {
+    andThen: (a,b) => b,
+    reverse: (arr) => arr.reverse(),
+    zip: (a, b) => [a, b],
+    ...udf_stdlib
+  }
+
+  let pattern = {
+    pattern: rh`.input | udf.split "\\n\\n" | .*chunk
+                       | udf.split "\\n" | .*line
+                       | udf.split "" | .*char
+                       | group *char | group *line`,
+    n: rh`.input | udf.split "\\n\\n" | .*chunk
+                 | udf.split "\\n" | .length`
+  }
+
+  let transposedPattern = {
+    pattern: rh`.input | udf.split "\\n\\n" | .*chunk
+                       | udf.split "\\n" | .*line
+                       | udf.split "" | .*char
+                       | group *line | group *char`,
+    n: rh`.input | udf.split "\\n\\n" | .*chunk
+                 | udf.split "\\n" | .0.length`
+  }
+
+  let patterns = rh`${pattern} | group *chunk`
+  let transposedPatterns = rh`${transposedPattern} | group *chunk`
+
+  let upper = rh`udf.range 0 (${patterns}.*pattern.n - 1) 1 | udf.andThen .*rowSplitted (udf.reverse (udf.range 0 ((udf.toNum *rowSplitted) + 1) 1)) | ${patterns}.*pattern.pattern.(.*idx).*tile`
+  let lower = rh`udf.range 0 (${patterns}.*pattern.n - 1) 1 | udf.andThen .*rowSplitted (udf.range ((udf.toNum *rowSplitted) + 1) (${patterns}.*pattern.n) 1) | ${patterns}.*pattern.pattern.(.*idx).*tile`
+
+  let findHorizontal = rh`udf.toNum (udf.isEqual ${upper} ${lower}) | product`
+  let horizontal = rh`udf.ifThenElse ${findHorizontal} ((udf.toNum(*rowSplitted) + 1) * 100) 0 | group *rowSplitted | group *pattern | sum .*a.*b`
+
+  let left = rh`udf.range 0 (${transposedPatterns}.*pattern.n - 1) 1 | udf.andThen .*rowSplittedT (udf.reverse (udf.range 0 ((udf.toNum *rowSplittedT) + 1) 1)) | ${transposedPatterns}.*pattern.pattern.(.*idxT).*tileT`
+  let right = rh`udf.range 0 (${transposedPatterns}.*pattern.n - 1) 1 | udf.andThen .*rowSplittedT (udf.range ((udf.toNum *rowSplittedT) + 1) (${transposedPatterns}.*pattern.n) 1) | ${transposedPatterns}.*pattern.pattern.(.*idxT).*tileT`
+
+  let findVertical = rh`udf.toNum (udf.isEqual ${left} ${right}) | product`
+  let vertical = rh`udf.ifThenElse ${findVertical} (udf.toNum(*rowSplittedT) + 1) 0 | group *rowSplittedT | group *pattern | sum .*aT.*bT`
+
+  let query = rh`${horizontal} + ${vertical}`
+
+  let func = api.compileNew(query)
+  let res = func({input, udf})
+
+  expect(res).toBe(405)
+})
+
+test("day14-part1", () => {
   let input = `O....#....
 O.OO#....#
 .....##...
@@ -1291,6 +1354,669 @@ O.#..O.#.#
   }
   expect(state.load).toBe(136)
 })
+
+
+test("day15-part1", () => {
+
+  let udf = {
+      ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
+      charCode: (string, index) => string.charCodeAt(index),
+      filter: c => c ? { [c]: true } : {},
+      andThen: (a,b) => b, // just to add a as dependency
+      ...udf_stdlib
+  };
+
+  let input = "rn=1,cm-,qp=3,cm=2,qp-,pc=4,ot=9,ab=5,pc-,pc=6,ot=7";
+
+  let parseInput = api.compile(api.array({
+      string: rh`.input | udf.split "," | .*group`,
+      hash: 0
+  }));
+
+  let state = {
+      strings: parseInput({input, udf}),
+      index: 0,
+      sum: 0,
+  };
+
+  let stringObj = api.array({
+      string: rh`state.strings.*.string`,
+      hash: rh`(
+          17 * (state.strings.*.hash + (
+              udf.charCode (state.strings.*.string) (state.index)
+          ))
+      ) % 256`
+  });
+
+  let updateStrings = rh`${stringObj} | .*strings`;
+
+  let partSum = rh`sum(${updateStrings} | udf.ifThenElse (udf.isEqual (.string.length) (state.index+1)) .hash 0)`
+
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+  let filterStrings = rh`${updateStrings} | ${filterBy("*f", rh`udf.notEqual state.strings.*strings.string.length (state.index+1)`)}`
+
+  let run = api.compile({
+      strings: api.array(filterStrings),
+      index: rh`state.index + 1`,
+      sum: rh`state.sum + ${partSum}`
+  });
+
+  while(state.strings.length > 0) {
+      state = run({state, udf});
+  }
+
+  expect(state.sum).toEqual(1320);
+});
+
+test("day15-part2", () => {
+
+  let udf = {
+      ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
+      charCode: (string, index) => string.charCodeAt(index),
+      filter: c => c ? { [c]: true } : {},
+      andThen: (a, b) => b, // just to add a as dependency
+      andThenB: (a) => (b) => b,
+      andThenA: (a) => (b) => a, // hack to add pipe as dependency without utilizing it's data.
+      merge: (a, b, c) => [...a, b, ...c],
+      pushBack: (a, b) => [...a, b],
+      ...udf_stdlib
+  };
+
+  let ifElsePred = (predicate, thenBr, elseBr) => rh`udf.ifThenElse ${predicate} ${thenBr} ${elseBr}`;
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`;
+
+  let input = "rn=1,cm-,qp=3,cm=2,qp-,pc=4,ot=9,ab=5,pc-,pc=6,ot=7";
+
+  let steps = api.array(rh`.input | udf.split "," | .*group`);
+
+  let instrs = ifElsePred(rh`udf.isEqual (${steps}.*.(${steps}.*.length - 1)) "-"`, {
+      type: "deletion",
+      key: rh`${steps}.* | udf.split "-" | .0`,
+      hash: 0,
+  }, {
+      type: "insertion",
+      key: rh`${steps}.* | udf.split "=" | .0`,
+      value: rh`${steps}.* | udf.split "=" | .1 | udf.toNum`,
+      hash: 0,
+  })
+
+  let parseInput = api.compile({
+      instrs: api.array(instrs),
+      maxIndex: api.max(rh`${steps}.*.length - 1`),
+      index: 0
+  });
+
+  let hashState = parseInput({input, udf});
+
+  let runHash = api.compile({
+      instrs: api.array({
+          type: "state.instrs.*.type",
+          key: "state.instrs.*.key",
+          value: "state.instrs.*.value", // Could be undefined, but that's fine.
+          hash: ifElsePred(rh`udf.isGreaterOrEqual state.index state.instrs.*.key.length`, "state.instrs.*.hash",
+              rh`(
+                  17 * (state.instrs.*.hash + (
+                      udf.charCode (state.instrs.*.key) (state.index)
+                  ))
+              ) % 256`
+          )
+      }),
+      maxIndex: ".state.maxIndex",
+      index: rh`.state.index + 1`
+  });
+
+  while(hashState.index < hashState.maxIndex) {
+      hashState = runHash({state: hashState, udf});
+  }
+
+  let symIndex = 0;
+  let freshSym = (name) => ("*" + name + (symIndex++));
+
+  let subListPre = (arr, indexSym, to) => api.array(rh`${arr} | ${filterBy(freshSym("f"), rh`udf.isLessThan ${indexSym} ${to}`)}`);
+  let subListPost = (arr, indexSym, from) => api.array(rh`${arr} | ${filterBy(freshSym("f"), rh`udf.isGreaterThan ${indexSym} ${from}`)}`);
+  let replaceArrItem = (arr, indexSym, index, newItem) =>
+      rh`udf.merge ${subListPre(arr, indexSym, index)} ${newItem} ${subListPost(arr, indexSym, index)}`;
+
+  // TODO: Find alternative to "udf.andThenA"
+  // Right now it's used to return "valueToFind" while utilizing the piped in filter to filter results.
+  let findValue = (arr, predicate, valueToFind) => api.first(rh`${arr} | ${filterBy(freshSym("find"), predicate)} | udf.andThenA (${valueToFind})`);
+
+  let insertion = ifElsePred(
+      // If a lens with the same key doesn't exist,
+      rh`udf.isEqual 0 ${api.array(rh`.hashMap.(instr.hash).*sameLens | ${filterBy("*sameLensFilter", rh`udf.isEqual .hashMap.(instr.hash).*sameLens.key .instr.key`)}`)}.length`,
+      // Then add it to the end.
+      rh`udf.pushBack ${api.array(".hashMap.(instr.hash).*copyLens")} ${{
+          key: ".instr.key",
+          value: ".instr.value"
+      }}`,
+      // Otherwise replace it.
+      replaceArrItem(rh`.hashMap.(instr.hash).*replaceLens`, "*replaceLens", findValue(
+          rh`.hashMap.(instr.hash).*findSameLens`,
+          rh`udf.isEqual (.hashMap.(instr.hash).*findSameLens.key) (.instr.key)`,
+          "*findSameLens"
+      ), {
+          key: ".instr.key",
+          value: ".instr.value"
+      }),
+  );
+
+  let newList = ifElsePred(
+      rh`udf.isEqual .instr.type "deletion"`,
+      api.array(rh`.hashMap.(instr.hash).*delLens | ${filterBy("*del", rh`udf.notEqual (.hashMap.(instr.hash).*delLens.key) (.instr.key)`)}`),
+      insertion
+  )
+
+  let run = api.compile(replaceArrItem(rh`.hashMap.*box`, "*box", ".instr.hash", newList));
+
+  let hashMap = new Array(256).fill([]);
+
+  // Run each instruction to either insert or delete in hash map.
+  for(let instr of hashState.instrs) {
+      hashMap = run({hashMap, instr, udf});
+  }
+
+  // Loop variables using "index in array" syntax are strings, so must be converted to numbers to avoid string concatenation.
+  // Probably want to change this, given a generator index is a number.
+  let getFocusingPower = api.compile(api.sum(rh`.hashMap.*a.*b.value * ((udf.toNum *a) + 1) * ((udf.toNum *b) + 1)`));
+  let focusPower = getFocusingPower({hashMap, udf});
+
+  expect(focusPower).toEqual(145);
+});
+
+
+test("day18-part1", () => {
+  let input = `R 6 (#70c710)
+D 5 (#0dc571)
+L 2 (#5713f0)
+D 2 (#d2c081)
+R 2 (#59c680)
+D 2 (#411b91)
+L 5 (#8ceee2)
+U 2 (#caa173)
+L 1 (#1b58a2)
+U 2 (#caa171)
+R 2 (#7807d2)
+U 3 (#a77fa3)
+L 2 (#015232)
+U 2 (#7a21e3)`
+
+  let udf = udf_stdlib
+  
+  let steps = rh`.input | udf.split "\\n" | .*line
+                        | udf.split " " | .*part
+                        | group *part | group *line`
+  let n = rh`.input | udf.split "\\n" | .length`
+
+  let digPlanQuery = {
+    steps, n
+  }
+
+  // no need to process input in every iteration
+  let getDigplan = api.compile(digPlanQuery)
+  let digPlan = getDigplan({input, udf})
+
+  let state = {
+    curr: 0,
+    x: 0,
+    y: 0,
+    area: 1
+  }
+
+  let dir = rh`digPlan.steps.(state.curr).0`
+  let len = rh`udf.toNum digPlan.steps.(state.curr).1`
+
+  let isRight = rh`udf.isEqual ${dir} "R"`
+  let rightX = rh`(state.x + ${len}) * ${isRight}`
+  let rightY = rh`state.y * ${isRight}`
+  let rightArea = rh`(state.area + ${len}) * ${isRight}`
+
+  let isDown = rh`udf.isEqual ${dir} "D"`
+  let downX = rh`state.x * ${isDown}`
+  let downY = rh`(state.y + ${len}) * ${isDown}`
+  let downArea = rh`(state.area + (state.x + 1) * ${len}) * ${isDown}`
+
+  let isLeft = rh`udf.isEqual ${dir} "L"`
+  let leftX = rh`(state.x - ${len}) * ${isLeft}`
+  let leftY = rh`state.y * ${isLeft}`
+  let leftArea = rh`state.area * ${isLeft}`
+
+  let isUp = rh`udf.isEqual ${dir} "U"`
+  let upX = rh`state.x * ${isUp}`
+  let upY = rh`(state.y - ${len}) * ${isUp}`
+  let upArea = rh`(state.area - state.x * ${len}) * ${isUp}` 
+
+  let x = rh`${rightX} + ${downX} + ${leftX} + ${upX}`
+  let y = rh`${rightY} + ${downY} + ${leftY} + ${upY}`
+  let area = rh`${rightArea} + ${downArea} + ${leftArea} + ${upArea}`
+
+  let query = {
+    curr: rh`state.curr + 1`,
+    x, y, area
+  }
+
+  let func = api.compile(query)
+  while (state.curr < digPlan.n) {
+    state = func({digPlan, udf, state})
+  }
+  expect(state.area).toBe(62)
+})
+
+test("day18-part2", () => {
+  let input = `R 6 (#70c710)
+D 5 (#0dc571)
+L 2 (#5713f0)
+D 2 (#d2c081)
+R 2 (#59c680)
+D 2 (#411b91)
+L 5 (#8ceee2)
+U 2 (#caa173)
+L 1 (#1b58a2)
+U 2 (#caa171)
+R 2 (#7807d2)
+U 3 (#a77fa3)
+L 2 (#015232)
+U 2 (#7a21e3)`
+
+  let udf = {
+    extractDirAndLen: (hex) => [hex.substring(0, 5), hex.substring(5)],
+    ...udf_stdlib
+  }
+
+  let steps = rh`.input | udf.split "\\n" | .*line
+                        | udf.matchAll "[a-z0-9]{6}" "g" | .0.0
+                        | udf.extractDirAndLen | udf.toNum ("0x" + .*part)
+                        | group *part | group *line`
+  let n = rh`.input | udf.split "\\n" | .length`
+
+  let digPlanQuery = {
+    steps, n
+  }
+
+  // no need to process input in every iteration
+  let getDigplan = api.compile(digPlanQuery)
+  let digPlan = getDigplan({input, udf})
+
+  let state = {
+    curr: 0,
+    x: 0,
+    y: 0,
+    area: 1
+  }
+
+  let dir = rh`digPlan.steps.(state.curr).1`
+  let len = rh`udf.toNum digPlan.steps.(state.curr).0`
+
+  let isRight = rh`udf.isEqual ${dir} 0`
+  let rightX = rh`(state.x + ${len}) * ${isRight}`
+  let rightY = rh`state.y * ${isRight}`
+  let rightArea = rh`(state.area + ${len}) * ${isRight}`
+
+  let isDown = rh`udf.isEqual ${dir} 1`
+  let downX = rh`state.x * ${isDown}`
+  let downY = rh`(state.y + ${len}) * ${isDown}`
+  let downArea = rh`(state.area + (state.x + 1) * ${len}) * ${isDown}`
+
+  let isLeft = rh`udf.isEqual ${dir} 2`
+  let leftX = rh`(state.x - ${len}) * ${isLeft}`
+  let leftY = rh`state.y * ${isLeft}`
+  let leftArea = rh`state.area * ${isLeft}`
+
+  let isUp = rh`udf.isEqual ${dir} 3`
+  let upX = rh`state.x * ${isUp}`
+  let upY = rh`(state.y - ${len}) * ${isUp}`
+  let upArea = rh`(state.area - state.x * ${len}) * ${isUp}` 
+
+  let x = rh`${rightX} + ${downX} + ${leftX} + ${upX}`
+  let y = rh`${rightY} + ${downY} + ${leftY} + ${upY}`
+  let area = rh`${rightArea} + ${downArea} + ${leftArea} + ${upArea}`
+
+  let query = {
+    curr: rh`state.curr + 1`,
+    x, y, area
+  }
+
+  let func = api.compile(query)
+  while (state.curr < digPlan.n) {
+    state = func({digPlan, udf, state})
+  }
+  expect(state.area).toBe(952408144115)
+})
+
+test("day19-part1", () => {
+  let input = `px{a<2006:qkq,m>2090:A,rfg}
+pv{a>1716:R,A}
+lnx{m>1548:A,A}
+rfg{s<537:gd,x>2440:R,A}
+qs{s>3448:A,lnx}
+qkq{x<1416:A,crn}
+crn{x>2662:A,R}
+in{s<1351:px,qqz}
+qqz{s>2770:qs,m<1801:hdj,R}
+gd{a>3333:R,R}
+hdj{m>838:A,pv}
+
+{x=787,m=2655,a=1222,s=2876}
+{x=1679,m=44,a=2067,s=496}
+{x=2036,m=264,a=79,s=2244}
+{x=2461,m=1339,a=466,s=291}
+{x=2127,m=1623,a=2188,s=1013}`;
+
+  let udf = {
+      ...udf_stdlib,
+      splitNN: x => x.split("\n\n"),
+      splitN: x => x.split("\n"),
+      getValue: x => x.substring(2),
+      decurly: x => x.substring(1, x.length - 1),
+      ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
+      getCharAt: (x) => (str) => str == undefined ? undefined : str.charAt(x),
+      filter: c => c ? { [c]: true } : {},
+      andThen: (a,b) => b, // just to add a as dependency
+    };
+
+  let symInd = 0;
+  let freshSym = () => ("*tmp" + (symInd++));
+  let arrayGroupBy = (group, obj) =>
+      api.array(rh`${{
+          [group]: obj
+      }} | .${freshSym()}`);
+  let ifElsePred = (predicate, thenBr, elseBr) => rh`udf.ifThenElse ${predicate} ${thenBr} ${elseBr}`;
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+  
+  // Get each workflow.
+  let workflow_str = rh`.input | udf.splitNN | .0 | udf.splitN | .*workflow_str`;
+  // Identify the different paths inside of it.
+  let options = arrayGroupBy("*options", rh`${workflow_str} | udf.split "{" | .1 | udf.split "}" | .0 | udf.split "," | .*options`);
+  // Create objects for each workflow, containing the array of paths.
+  let workflows = arrayGroupBy("*workflow_str", {
+      name: rh`${workflow_str} | udf.split "{" | .0`,
+      options: options
+  });
+
+  let parsePredicate = (predStr) => ({
+      op: rh`${predStr} | udf.getCharAt 1`,
+      key: rh`${predStr} | udf.getCharAt 0`,
+      value: rh`${predStr} | udf.getValue | udf.toNum`
+  });
+
+  // Separate workflows into multiple "subworkflows" that check a single condiiton and go to a specific state based on the result.
+  // This allows simpler running by flattening the workflows into singular operations.
+  let workflow_split = {
+      "-": api.keyval(api.plus(rh`${workflows}.*wf.name`, "*opt"), (
+          // Check if there is a predicate before the transition state.
+          ifElsePred(rh`udf.isEqual (${workflows}.*wf.options.*opt | udf.split ":" | .length) 1`, {
+              // A predicate isn't there, so create a fake one.
+              predicate: {op: "\">\"", key: "a", value: "0"},
+              trueBranch: rh`${workflows}.*wf.options.*opt + "0"`,
+              falseBranch: rh`${workflows}.*wf.options.*opt + "0"`
+          }, {
+              // A preedicate is there, so parse it.
+              predicate: parsePredicate(rh`${workflows}.*wf.options.*opt | udf.split ":" | .0`),
+              // If true, go to the state for it.
+              trueBranch: rh`(${workflows}.*wf.options.*opt | udf.split ":" | .1) + "0"`,
+              // Otherwise continue on the current workflow.
+              falseBranch: rh`${workflows}.*wf.name + ((udf.toNum *opt) + 1)`
+          })
+      ))
+  };
+
+  // Parse each line of parts
+  let part_str = rh`.input | udf.splitNN | .1 | udf.splitN | .*part_str`;
+  let parts_arr = rh`${part_str} | udf.decurly | udf.split "," | .*part_arr`;
+  
+  let partsObj = {
+      "*part_str": {
+          // Initial state is "in", at index 0 of the workflow.
+          "state": "in0",
+          "attrs": {
+              // Parse values for x, m, a, and s as object properties.
+              "-" : api.keyval(rh`${parts_arr} | udf.split "=" | .0`, 
+                  rh`${parts_arr} | udf.split "=" | .1 | udf.toNum`
+              )
+          }
+      }
+  };
+
+  let parse = api.compile({
+      workflows: workflow_split,
+      parts: partsObj
+  });
+
+  let parsedInput = parse({input, udf});
+
+  // Now that the workflow and parts are parsed, running is simply iterating on the input state.
+  let state = {
+      transitions: parsedInput.workflows,
+      parts: Object.values(parsedInput.parts),
+      acceptedSum: 0,
+  };
+
+  // Get current state for each part.
+  let currentState = api.get(".input.transitions", rh`.input.parts.*part.state`);
+  // Determine the next state based on whether it passes the predicate.
+  let nextState = ifElsePred(
+      rh`udf.isEqual ${currentState}.predicate.op ">"`,
+      ifElsePred(
+          rh`udf.isGreaterThan ${api.get(rh`.input.parts.*part.attrs`, rh`${currentState}.predicate.key`)} ${currentState}.predicate.value`,
+          rh`${currentState}.trueBranch`,
+          rh`${currentState}.falseBranch`,
+      ),
+      ifElsePred(
+          rh`udf.isLessThan ${api.get(rh`.input.parts.*part.attrs`, rh`${currentState}.predicate.key`)} ${currentState}.predicate.value`,
+          rh`${currentState}.trueBranch`,
+          rh`${currentState}.falseBranch`,
+      )
+  );
+
+  let newParts = arrayGroupBy("*part", {
+      state: nextState,
+      attrs: rh`.input.parts.*part.attrs`,
+  });
+  
+  // Filter for all accepted states.
+  let acceptedStates = api.array(rh`${newParts} | .*parts | ${filterBy("*acc", rh`udf.isEqual ${newParts}.*parts.state "A0"`)}`);
+  
+  // Filter for all state that are neither accepted nor rejected.
+  let notAcceptedStates = api.array(rh`${newParts} | .*parts | ${filterBy("*acc1", rh`udf.notEqual ${newParts}.*parts.state "A0"`)}`);
+  let filteredStates = rh`${notAcceptedStates} | .*partsNotAccepted | ${filterBy("*rej", rh`udf.notEqual ${notAcceptedStates}.*partsNotAccepted.state "R0"`)}`;
+
+  let run = api.compile({
+      transitions: rh`.input.transitions`,
+      // Continue work on states not accepted or rejected.
+      parts: api.array(filteredStates),
+      // Accumulate all accepted states' values.
+      acceptedSum: api.plus(".input.acceptedSum", api.sum(rh`${acceptedStates}.*part4.attrs.*attr`)),
+  });
+
+  while(state.parts.length > 0) {
+      state = run({input: state, udf});
+  }
+
+  expect(state.acceptedSum).toBe(19114);
+
+});
+
+test("day19-part2", () => {
+  let input = `px{a<2006:qkq,m>2090:A,rfg}
+pv{a>1716:R,A}
+lnx{m>1548:A,A}
+rfg{s<537:gd,x>2440:R,A}
+qs{s>3448:A,lnx}
+qkq{x<1416:A,crn}
+crn{x>2662:A,R}
+in{s<1351:px,qqz}
+qqz{s>2770:qs,m<1801:hdj,R}
+gd{a>3333:R,R}
+hdj{m>838:A,pv}
+
+{x=787,m=2655,a=1222,s=2876}
+{x=1679,m=44,a=2067,s=496}
+{x=2036,m=264,a=79,s=2244}
+{x=2461,m=1339,a=466,s=291}
+{x=2127,m=1623,a=2188,s=1013}`;
+
+  let udf = {
+      ...udf_stdlib,
+      splitNN: x => x.split("\n\n"),
+      splitN: x => x.split("\n"),
+      getValue: x => x.substring(2),
+      decurly: x => x.substring(1, x.length - 1),
+      ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
+      getCharAt: (x) => (str) => str == undefined ? undefined : str.charAt(x),
+      filter: c => c ? { [c]: true } : {},
+      andThen: (a,b) => b, // just to add a as dependency
+      min: (a, b) => a < b ? a : b,
+      max: (a, b) => a > b ? a : b,
+      join: (a, b) => ({...a, ...b}),
+  };
+
+  /*
+   * Taken from day19-A
+   */
+  let symInd = 0;
+  let freshSym = () => ("*tmp" + (symInd++));
+  let arrayGroupBy = (group, obj) =>
+      api.array(rh`${{
+          [group]: obj
+      }} | .${freshSym()}`);
+  let ifElsePred = (predicate, thenBr, elseBr) => rh`udf.ifThenElse ${predicate} ${thenBr} ${elseBr}`;
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+
+  let workflow_str = rh`.input | udf.splitNN | .0 | udf.splitN | .*workflow_str`;
+  let options = arrayGroupBy("*options", rh`${workflow_str} | udf.split "{" | .1 | udf.split "}" | .0 | udf.split "," | .*options`);
+  let workflows = arrayGroupBy("*workflow_str", {
+      name: rh`${workflow_str} | udf.split "{" | .0`,
+      options: options
+  });
+
+  let parsePredicate = (predStr) => ({
+      op: rh`${predStr} | udf.getCharAt 1`,
+      key: rh`${predStr} | udf.getCharAt 0`,
+      value: rh`${predStr} | udf.getValue | udf.toNum`
+  });
+
+  let workflow_split = {
+      "-": api.keyval(api.plus(rh`${workflows}.*wf.name`, "*opt"), (
+          ifElsePred(rh`udf.isEqual (${workflows}.*wf.options.*opt | udf.split ":" | .length) 1`, {
+              // A predicate is expected, so make a random one and have both branches go to the same place.
+              predicate: {op: "\">\"", key: "a", value: "0"},
+              trueBranch: rh`${workflows}.*wf.options.*opt + "0"`,
+              falseBranch: rh`${workflows}.*wf.options.*opt + "0"`
+          }, {
+              predicate: parsePredicate(rh`${workflows}.*wf.options.*opt | udf.split ":" | .0`),
+              trueBranch: rh`(${workflows}.*wf.options.*opt | udf.split ":" | .1) + "0"`,
+              falseBranch: rh`${workflows}.*wf.name + ((udf.toNum *opt) + 1)`
+          })
+      ))
+  };
+
+  // Since parts don't need to be parsed, they can safely be ignored.
+  let parse = api.compile(workflow_split);
+
+  let parsedInput = parse({input, udf});
+  let state = {
+      transitions: parsedInput,
+      // Keep track of parts as "categories" with specific constraints
+      // At each predicate, branch into different states for each possibility.
+      parts: [{
+          state: "in0",
+          attrs: {
+              x: {min: 1, max: 4000},
+              m: {min: 1, max: 4000},
+              a: {min: 1, max: 4000},
+              s: {min: 1, max: 4000},
+          }
+      }],
+      acceptedAmt: 0,
+  };
+
+  let join = (a, b) => rh`udf.join ${a} ${b}`;
+
+  let currentState = api.get(".input.transitions", rh`.input.parts.*part.state`);
+  let attrValue = api.get(rh`.input.parts.*part.attrs`, rh`${currentState}.predicate.key`);
+
+  // Function to join previous attributes with the new overwritten attributes.
+  let setMinsMaxes = (attr) => join(".input.parts.*part.attrs", {
+      "-": api.keyval(rh`${currentState}.predicate.key`, attr)
+  });
+  // Reject state.
+  const reject = {
+      state: '"R0"',
+      attrs: {x: {min: 0, max: 0}, m: {min: 0, max: 0}, a: {min: 0, max: 0}, s: {min: 0, max: 0}},
+  };
+  // Determine the new state and attributes for when the predicate evaluates to true.
+  let trueBranch = ifElsePred(
+      rh`udf.isEqual ${currentState}.predicate.op ">"`,
+      // Verify there is some overlap.
+      ifElsePred(rh`udf.isGreaterThan ${attrValue}.max ${currentState}.predicate.value`, {
+          state: rh`${currentState}.trueBranch`,
+          attrs: setMinsMaxes({
+              // Set new mins and maxes based on overlap between predicate and current range.
+              min: rh`udf.max (${currentState}.predicate.value + 1) ${attrValue}.min`,
+              max: rh`${attrValue}.max`
+          })
+      }, reject), // If there is no overlap, immediately reject.
+      ifElsePred(rh`udf.isLessThan ${attrValue}.min ${currentState}.predicate.value`, {
+          state: rh`${currentState}.trueBranch`,
+          attrs: setMinsMaxes({
+              min: rh`${attrValue}.min`,
+              max: rh`udf.min (${currentState}.predicate.value - 1) ${attrValue}.max`
+          })
+      }, reject),
+  );
+  let falseBranch = ifElsePred(
+      rh`udf.isEqual ${currentState}.predicate.op ">"`,
+      ifElsePred(rh`udf.isLessOrEqual ${attrValue}.min ${currentState}.predicate.value`, {
+          state: rh`${currentState}.falseBranch`,
+          attrs: setMinsMaxes({
+              min: rh`${attrValue}.min`,
+              max: rh`udf.min (${currentState}.predicate.value) ${attrValue}.max`
+          })
+      }, reject),
+      ifElsePred(rh`udf.isGreaterOrEqual ${attrValue}.max ${currentState}.predicate.value`, {
+          state: rh`${currentState}.falseBranch`,
+          attrs: setMinsMaxes({
+              min: rh`udf.max (${currentState}.predicate.value) ${attrValue}.min`,
+              max: rh`${attrValue}.max`,
+          })
+      }, reject),
+  );
+
+  let trueBranches = arrayGroupBy("*part", trueBranch);
+  let falseBranches = arrayGroupBy("*part", falseBranch);
+
+  // Combine and accumulate all true and false branches from list of current states.
+  let newParts = api.array(rh`${[trueBranches, falseBranches]} | .*a.*b`);
+  
+  // Filter for accepted states.
+  let acceptedStates = api.array(rh`${newParts} | .*parts | ${filterBy("*acc", rh`udf.isEqual ${newParts}.*parts.state "A0"`)}`);
+  
+  // Filter for states neither accepted nor rejected.
+  let notAcceptedStates = api.array(rh`${newParts} | .*parts | ${filterBy("*n_acc", rh`udf.notEqual ${newParts}.*parts.state "A0"`)}`);
+  let filteredStates = rh`${notAcceptedStates} | .*partsNotAccepted | ${filterBy("*rej", rh`udf.notEqual ${notAcceptedStates}.*partsNotAccepted.state "R0"`)}`;
+  
+  let attrs = rh`${acceptedStates}.*part4.attrs`;
+
+  let run = api.compile({
+      transitions: rh`.input.transitions`,
+      parts: api.array(filteredStates),
+      // For all accepted states, sum the total number of potential parts accepted. (product of ranges)
+      acceptedAmt: api.plus(".input.acceptedAmt", 
+          api.sum(rh`
+              (${attrs}.x.max - ${attrs}.x.min + 1)*
+              (${attrs}.m.max - ${attrs}.m.min + 1)*
+              (${attrs}.a.max - ${attrs}.a.min + 1)*
+              (${attrs}.s.max - ${attrs}.s.min + 1)
+          `)
+      ),
+  });
+
+  while(state.parts.length > 0) {
+      state = run({input: state, udf});
+  }
+
+  expect(state.acceptedAmt).toBe(167409079868000);
+
+});
 
 test("day20-part1", () => {
   let input = `broadcaster -> a
