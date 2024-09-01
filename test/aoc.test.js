@@ -2067,56 +2067,51 @@ test("day20-part1", () => {
   }
 
   let getGraph = api.compile(graphQuery)
-
   let graph = getGraph({input, udf})
   
-
   graph.countHigh = graph.countLow = 0
-  console.log(graph)
 
   let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
-
-  // pulses = [ { src: 'broadcaster', pulse: 0, dest: 'a' } ]
   
   let broadcaster = {
-    src: rh`pulses.*pulse.dest`,
-    dest: rh`(udf.getAdjOrDefault graph.nodes.(pulses.*pulse.dest)).*adj`,
-    pulse: rh`pulses.*pulse.pulse`
+    src: rh`pulses.0.dest`,
+    dest: rh`(udf.getAdjOrDefault graph.nodes.(pulses.0.dest)).*adj`,
+    pulse: rh`pulses.0.pulse`
   }
 
   let flipFlop = {
-    src: rh`pulses.*pulse.dest`,
-    dest: rh`(udf.getAdjOrDefault graph.nodes.(pulses.*pulse.dest)).*adj`,
-    pulse: rh`udf.flip graph.state.(pulses.*pulse.dest)`
+    src: rh`pulses.0.dest`,
+    dest: rh`(udf.getAdjOrDefault graph.nodes.(pulses.0.dest)).*adj`,
+    pulse: rh`udf.flip graph.state.(pulses.0.dest)`
   }
 
-  let stateCopy = rh`udf.copyAndUpdate graph.state.(pulses.*pulse.dest) pulses.*pulse.src pulses.*pulse.pulse`
+  let stateCopy = rh`udf.copyAndUpdate graph.state.(pulses.0.dest) pulses.0.src pulses.0.pulse`
   let conj = {
-    src: rh`pulses.*pulse.dest`,
-    dest: rh`(udf.getAdjOrDefault graph.nodes.(pulses.*pulse.dest)).*adj`,
-    pulse: rh`udf.flip (udf.toNum (udf.logicalAnd (product ${stateCopy}.*input) (udf.isEqual graph.inDegree.(pulses.*pulse.dest) (udf.getObjSize ${stateCopy}))))`
+    src: rh`pulses.0.dest`,
+    dest: rh`(udf.getAdjOrDefault graph.nodes.(pulses.0.dest)).*adj`,
+    pulse: rh`udf.flip (udf.toNum (udf.logicalAnd (product ${stateCopy}.*input) (udf.isEqual graph.inDegree.(pulses.0.dest) (udf.getObjSize ${stateCopy}))))`
   }
 
-  let isBroadCaster = rh`udf.isEqual pulses.*pulse.dest "broadcaster"`
+  let isBroadCaster = rh`udf.isEqual pulses.0.dest "broadcaster"`
   let broadcasters = rh`${broadcaster} | ${filterBy("*f0", isBroadCaster)}`
 
-  let isFlipFlop = rh`udf.logicalAnd (udf.isEqual (udf.optionalChaining graph.nodes.(pulses.*pulse.dest) "type") "%") (udf.isEqual pulses.*pulse.pulse 0)`
+  let isFlipFlop = rh`udf.logicalAnd (udf.isEqual (udf.optionalChaining graph.nodes.(pulses.0.dest) "type") "%") (udf.isEqual pulses.0.pulse 0)`
   let flipFlops = rh`${flipFlop} | ${filterBy("*f1", isFlipFlop)}`
 
-  let isConj = rh`udf.isEqual (udf.optionalChaining graph.nodes.(pulses.*pulse.dest) "type") "&"`
+  let isConj = rh`udf.isEqual (udf.optionalChaining graph.nodes.(pulses.0.dest) "type") "&"`
   let conjs = rh`${conj} | ${filterBy("*f2", isConj)}`
 
-  let stateUpdated = [rh`pulses.*pulse.dest | ${filterBy("*f2", isConj)}`]
+  let stateUpdated = [rh`pulses.0.dest | ${filterBy("*f2", isConj)}`]
   let query = {
-    pulses: [broadcasters, flipFlops, conjs],
-    flipped: [rh`pulses.*pulse.dest | ${filterBy("*f1", isFlipFlop)}`],
-    stateUpdated: [rh`pulses.*pulse | ${filterBy("*f2", isConj)}`],
-    countLow: rh`graph.countLow + (sum (udf.toNum (udf.isEqual pulses.*pulse.pulse 0)))`,
-    countHigh: rh`graph.countHigh + (sum (udf.toNum (udf.isEqual pulses.*pulse.pulse 1)))`
+    pulses: rh`.pulses | udf.slice 1`,
+    new: [broadcasters, flipFlops, conjs],
+    flipped: [rh`pulses.0.dest | ${filterBy("*f1", isFlipFlop)}`],
+    stateUpdated: [rh`pulses.0 | ${filterBy("*f2", isConj)}`],
+    countLow: rh`graph.countLow + (sum (udf.toNum (udf.isEqual pulses.0.pulse 0)))`,
+    countHigh: rh`graph.countHigh + (sum (udf.toNum (udf.isEqual pulses.0.pulse 1)))`
   }
 
   let func = api.compileNew(query)
-  console.log(func.explain.code)
 
   let i = 0;
   while (i < 1000) {
@@ -2128,7 +2123,7 @@ test("day20-part1", () => {
 
     while (pulses.length > 0) {
       let next = func({input, udf, pulses, graph})
-      pulses = next.pulses
+      pulses = [...next.pulses, ...next.new]
       graph.countLow = next.countLow
       graph.countHigh = next.countHigh
       for (let i in next.flipped) {
@@ -2137,7 +2132,6 @@ test("day20-part1", () => {
       for (let i in next.stateUpdated) {
         graph.state[next.stateUpdated[i]["dest"]][next.stateUpdated[i]["src"]] = next.stateUpdated[i]["pulse"]
       }
-      // console.log(next)
     }
     i++
   }
