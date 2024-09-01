@@ -1355,7 +1355,6 @@ O.#..O.#.#
   expect(state.load).toBe(136)
 })
 
-
 test("day15-part1", () => {
 
   let udf = {
