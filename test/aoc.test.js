@@ -1522,6 +1522,55 @@ test("day15-part2", () => {
   expect(focusPower).toEqual(145);
 });
 
+test("day17-part1", () => {
+  let input = `2413432311323
+3215453535623
+3255245654254
+3446585845452
+4546657867536
+1438598798454
+4457876987766
+3637877979653
+4654967986887
+4564679986453
+1224686865563
+2546548887735
+4322674655533`
+
+  let udf = udf_stdlib
+  
+  let lines = rh`.input | udf.split "\\n" | .*line
+                        | udf.split "" | .*char
+                        | group *char | group *line`
+  let n = rh`.input | udf.split "\\n" | .length`
+  let m = rh`.input | udf.split "\\n" | .0.length`
+
+  let gridQuery = {
+    grid: lines, n, m
+  }
+
+  // no need to process input in every iteration
+  let getGrid = api.compile(gridQuery)
+  let grid = getGrid({input, udf})
+
+  console.log(grid)
+
+  let state = {
+    visiting: {pos: [0, 0], dir: "E", streak: 0},
+    minHeatLoss: new Map()
+  }
+
+  state.minHeatLoss.set(state.visiting, 0)
+
+  console.log(state.minHeatLoss)
+
+  // Get the list of possible next positions
+  // Caldulate the heat loss for each of them
+  // Get the next position to be visited (min in the queue)
+
+  // Need a priority queue implementation?
+
+})
 
 test("day18-part1", () => {
   let input = `R 6 (#70c710)
