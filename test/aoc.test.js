@@ -2017,6 +2017,128 @@ hdj{m>838:A,pv}
 
 });
 
+test("day20-part1", () => {
+  let input = `broadcaster -> a
+%a -> inv, con
+&inv -> b
+%b -> con
+&con -> output`
+
+  let udf = {
+    ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
+    ifThen: (predicate, thenBr) => predicate ? thenBr : undefined,
+    removePrefix: (str) => str.substring(1),
+    emptyObject: () => { return {} },
+    copyAndUpdate: (o, k, v) => {
+      let res = {...o}
+      res[k] = v
+      return res
+    },
+    flip: (n) => n ^= 1,
+    getObjSize: (o) => Object.keys(o).length,
+    optionalChaining: (o, k) => o?.[k],
+    getAdjOrDefault: (o) => o ? o["adj"] : [],
+    mergeArrays: (a, b) => [...a, ...b],
+    ...udf_stdlib
+  }
+
+  let lines = rh`.input | udf.split "\\n"`
+
+  let node = rh`${lines}.*line | udf.split " -> " 
+                               | udf.ifThenElse (udf.isEqual .0 "broadcaster") .0 (udf.removePrefix .0)`
+  let dest = rh`${lines}.*line | udf.split " -> " | .1
+                               | udf.split ", "`
+
+  let inDegree = rh`count ${dest}.*dest | group ${dest}.*dest`
+
+  let nodeObj = {
+    type: rh`${lines}.*line | udf.split " -> " | udf.ifThenElse (udf.isEqual .0 "broadcaster") .0 .0.0`,
+    adj: dest
+  }
+
+  let initialNodeState = rh`${lines}.*line | udf.split " -> " | udf.ifThen (udf.notEqual .0 "broadcaster") (udf.ifThenElse (udf.isEqual .0.0 "%") 0 (udf.emptyObject 0))`
+
+  let graphQuery = {
+    nodes: rh`${nodeObj} | group ${node}`,
+    inDegree,
+    nodeStates: rh`${initialNodeState} | group ${node}`,
+  }
+
+  let getGraph = api.compile(graphQuery)
+  let graph = getGraph({input, udf})
+  
+  let broadcaster = {
+    src: rh`state.pulses.0.dest`,
+    dest: rh`(udf.getAdjOrDefault state.graph.nodes.(state.pulses.0.dest)).*adj`,
+    pulse: rh`state.pulses.0.pulse`
+  }
+
+  let flipFlop = {
+    src: rh`state.pulses.0.dest`,
+    dest: rh`(udf.getAdjOrDefault state.graph.nodes.(state.pulses.0.dest)).*adj`,
+    pulse: rh`udf.flip state.graph.nodeStates.(state.pulses.0.dest)`
+  }
+
+  let stateCopy = rh`udf.copyAndUpdate state.graph.nodeStates.(state.pulses.0.dest) state.pulses.0.src state.pulses.0.pulse`
+  let conj = {
+    src: rh`state.pulses.0.dest`,
+    dest: rh`(udf.getAdjOrDefault state.graph.nodes.(state.pulses.0.dest)).*adj`,
+    pulse: rh`udf.flip (udf.toNum (udf.logicalAnd (product ${stateCopy}.*input) (udf.isEqual state.graph.inDegree.(state.pulses.0.dest) (udf.getObjSize ${stateCopy}))))`
+  }
+
+  let isBroadcaster = rh`udf.isEqual state.pulses.0.dest "broadcaster"`
+  let isFlipFlop = rh`udf.isEqual (udf.optionalChaining state.graph.nodes.(state.pulses.0.dest) "type") "%"`
+  let isConj = rh`udf.isEqual (udf.optionalChaining state.graph.nodes.(state.pulses.0.dest) "type") "&"`
+
+  let newPulses = [rh`udf.ifThenElse ${isBroadcaster} ${broadcaster} (udf.ifThenElse ${isFlipFlop} (udf.ifThen (udf.isEqual state.pulses.0.pulse 0) ${flipFlop}) ${conj})`]
+
+  let query = {
+    graph: rh`state.graph`,
+    pulses: rh`udf.mergeArrays (state.pulses | udf.slice 1) ${newPulses}`,
+    flipped: rh`udf.ifThen (udf.logicalAnd ${isFlipFlop} (udf.isEqual state.pulses.0.pulse 0)) state.pulses.0.dest`,
+    stateUpdated: rh`udf.ifThen ${isConj} state.pulses.0`,
+    countLowPulse: rh`state.countLowPulse + (udf.toNum (udf.isEqual state.pulses.0.pulse 0))`,
+    countHighPulse: rh`state.countHighPulse + (udf.toNum (udf.isEqual state.pulses.0.pulse 1))`
+  }
+
+  let state = {
+    graph: graph,
+    pulses: [{
+      src: "button",
+      dest: "broadcaster",
+      pulse: 0
+    }],
+    countLowPulse: 0,
+    countHighPulse: 0,
+  }
+
+  let func = api.compileNew(query)
+
+  let i = 0;
+  while (i < 1000) {
+    state.pulses = [{
+      src: "button",
+      dest: "broadcaster",
+      pulse: 0
+    }]
+
+    while (state.pulses.length > 0) {
+      state = func({input, udf, state})
+      // Update state manually
+      if (state.flipped) {
+        state.graph.nodeStates[state.flipped] ^= 1
+      }
+      if (state.stateUpdated) {
+        state.graph.nodeStates[state.stateUpdated["dest"]][state.stateUpdated["src"]] = state.stateUpdated["pulse"]
+      }
+    }
+    i++
+  }
+
+  let res = state.countLowPulse * state.countHighPulse
+  expect(res).toBe(11687500)
+})
+
 // 2022
 
 test("day1-A", () => {
