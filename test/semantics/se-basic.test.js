@@ -50,6 +50,35 @@ let nestedB = {
 }
 
 
+test("testTrivial0", () => {
+  let query = rh`1 + 4`
+
+  let func = compile(query, { newCodegen: true })
+
+  console.log(func.explain.code.join("\n"))
+
+  let res = func({data, other})
+
+
+  expect(res).toEqual(5)
+  // expect(res).toEqual([40,20,10])
+})
+
+test("testTrivial1", () => {
+  let query = rh`data.A.value`
+
+  let func = compile(query, { newCodegen: true })
+
+  console.log(func.explain.code.join("\n"))
+
+  let res = func({data, other})
+
+  // console.log(res)
+
+  expect(res).toEqual("unknown op: data[A][value]")
+  // expect(res).toEqual([40,20,10])
+})
+
 test("testScalar0", () => {
   let query = rh`data.*.value`
 

@@ -1,6 +1,7 @@
 const { api } = require('./rhyme')
 const { parse } = require('./parser')
 const { scc } = require('./scc')
+const { generate } = require('./new-codegen')
 const { runtime } = require('./simple-runtime')
 
 // DONE
@@ -1209,9 +1210,67 @@ let fixIndent = s => {
 }
 
 
+let translateToNewCodegen = q => {
+
+  let assignmentStms = []
+  let generatorStms = []
+  let tmpVarWriteRank = {} 
+
+
+  let expr = (txt, ...args) => ({ txt, deps: args })
+  function assign(lhs, op, rhs) {
+      let e = expr(lhs.txt + " " + op + " " + rhs.txt, ...lhs.deps, ...rhs.deps)
+      e.lhs = lhs
+      e.op = op
+      e.rhs = rhs
+      e.writeSym = lhs.root
+      e.deps = e.deps.filter(e1 => e1 != e.writeSym) // remove cycles
+      // update sym to rank dep map
+      tmpVarWriteRank[e.writeSym] ??= 1
+      e.writeRank = tmpVarWriteRank[e.writeSym]
+      // if (e.op != "+=") // do not increment for idempotent ops? (XX todo opt)
+      tmpVarWriteRank[e.writeSym] += 1
+      assignmentStms.push(e)
+  }
+
+
+  let trans = q => {
+    if (q.key == "const") {
+      return expr(q.op)
+    } else if (q.key == "pure") {
+      let [a,b] = q.arg.map(trans)
+      // TOOD: generalize
+      if (q.op == 'plus')
+        return expr("(" + a.txt + ") + (" + b.txt + ")", ...a.deps, ...b.deps)
+
+      return expr(q.op + "(" + a.txt + ", " + b.txt + ")", ...a.deps, ...b.deps)
+    } else {
+      return expr('"unknown op: '+pretty(q)+'"')
+    }
+  }
+
+  for (let e of assignments) {
+    // TODO: for each e generate tmp
+  }
+
+  let res = trans(q)
+
+  let ir = {
+    assignmentStms,
+    generatorStms,
+    tmpVarWriteRank,
+    res
+  }
+
+  return generate(ir)
+}
+
+
+
 let compile = (q,{
   altInfer = false, 
-  singleResult = true // TODO: elim flag?
+  singleResult = true, // TODO: elim flag?
+  newCodegen = false
 }={}) => {
 
   reset()
@@ -1279,6 +1338,11 @@ let compile = (q,{
   let pseudo = emitPseudo(q)
 
   // 11. Codegen
+
+  if (newCodegen)
+    return translateToNewCodegen(q)
+
+
   let code = emitCode(q,order)
 
   code = fixIndent(code)
