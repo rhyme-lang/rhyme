@@ -2164,8 +2164,6 @@ test("day21-part1", () => {
     toSet: (arr) => new Set(arr),
     toArr: (set) => Array.from(set),
     getCell: (grid, i, j) => grid?.[i]?.[j],
-    ifThen: (predicate, thenBr) => predicate ? thenBr : undefined,
-    ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
     ...udf_stdlib
   }
   let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
