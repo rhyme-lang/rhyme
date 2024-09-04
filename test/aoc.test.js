@@ -2139,6 +2139,74 @@ test("day20-part1", () => {
   expect(res).toBe(11687500)
 })
 
+test("day21-part1", () => {
+  let input = `...........
+.....###.#.
+.###.##..#.
+..#.#...#..
+....#.#....
+.##..S####.
+.##..#...#.
+.......##..
+.##.#.####.
+.##..##.##.
+...........`
+
+  let udf = {
+    getAdj: point => {
+      let i = +point[0]
+      let j = +point[1]
+      return [[i - 1, j], [i + 1, j], [i, j - 1], [i, j + 1]]
+    },
+    filter: c => c ? { [c]: true } : {},
+    andThen: (a,b) => b, // just to add a as dependency
+    toCoordStr: (i, j) => `${i} ${j}`,
+    toSet: (arr) => new Set(arr),
+    toArr: (set) => Array.from(set),
+    getCell: (grid, i, j) => grid?.[i]?.[j],
+    ifThen: (predicate, thenBr) => predicate ? thenBr : undefined,
+    ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
+    ...udf_stdlib
+  }
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+
+  let grid = [rh`.input | udf.split "\\n" | .*line
+                         | udf.split ""`]
+
+  // Use filter to find the start position
+  let isStart = rh`udf.isEqual ${grid}.*i.*j "S"`
+  let startPos = [rh`udf.toCoordStr (udf.toNum *i) (udf.toNum *j) | ${filterBy("*f1", isStart)}`]
+
+  let initialState = {
+    curr: rh`udf.toSet ${startPos}`,
+    grid: grid
+  }
+
+  let getInitialState = api.compile(initialState)
+  let state = getInitialState({input, udf})
+
+  // Iterate through each current cell and add the their neighbors to the array / set
+  
+  let adj = rh`udf.getAdj ((udf.toArr state.curr).*curr | udf.split " ")`
+  let isGardenPlot = rh`udf.logicalAnd (udf.getCell state.grid ${adj}.*adj.0 ${adj}.*adj.1) (udf.notEqual (udf.getCell state.grid ${adj}.*adj.0 ${adj}.*adj.1) "#")`
+  let neighbors = [rh`${adj} | udf.toCoordStr .*adj.0 .*adj.1 | ${filterBy("*f2", isGardenPlot)}`]
+
+  let query = {
+    curr: rh`udf.toSet ${neighbors}`,
+    grid: rh`state.grid`
+  }
+  let func = api.compile(query)
+
+  let i = 0
+  while (i < 6) {
+    state = func({input, udf, state})
+    i++
+  }
+
+  let res = state.curr.size
+  expect(res).toBe(16)
+})
+
 // 2022
 
 test("day1-A", () => {
