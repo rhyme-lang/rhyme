@@ -55,13 +55,12 @@ test("testTrivial0", () => {
 
   let func = compile(query, { newCodegen: true })
 
-  console.log(func.explain.code.join("\n"))
+  console.log(func.explain.codeString)
 
   let res = func({data, other})
 
 
   expect(res).toEqual(5)
-  // expect(res).toEqual([40,20,10])
 })
 
 test("testTrivial1", () => {
@@ -69,14 +68,13 @@ test("testTrivial1", () => {
 
   let func = compile(query, { newCodegen: true })
 
-  console.log(func.explain.code.join("\n"))
+  console.log(func.explain.codeString)
 
   let res = func({data, other})
 
   // console.log(res)
 
   expect(res).toEqual("unknown op: data[A][value]")
-  // expect(res).toEqual([40,20,10])
 })
 
 test("testScalar0", () => {

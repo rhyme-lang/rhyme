@@ -486,7 +486,7 @@ exports.generate = (ir) => {
   let queryFunc = eval(codeString)
   queryFunc.explain = explain
   queryFunc.explain.code = code
-  //queryFunc.explain.codeString = codeString
+  queryFunc.explain.codeString = codeString
   //
   // execute
   //
