@@ -74,7 +74,7 @@ test("testTrivial1", () => {
 
   // console.log(res)
 
-  expect(res).toEqual("unknown op: data[A][value]")
+  expect(res).toEqual(40)
 })
 
 test("testScalar0", () => {

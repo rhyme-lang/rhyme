@@ -1236,28 +1236,31 @@ let translateToNewCodegen = q => {
   }
 
 
-  let trans = q => {
-    // TODO: complete this based on:
-    // - function 'codegen' in this file and 
-    // - function 'path' and friends in ir.js
-    // NOTE: this could use 'codegen' as is,
-    // if we set 'deps' correctly.
-    if (q.key == "const") {
-      return expr(q.op)
-    } else if (q.key == "pure") {
-      let es = q.arg.map(trans)
-      return call("rt.pure."+q.op, ...es)
-    } else {
-      // console.error("unknown op", pretty(q))
-      return expr('"unknown op: '+pretty(q)+'"')
-    }
-  }
+  // let trans = q => {
+  //   // TODO: complete this based on:
+  //   // - function 'codegen' in this file and 
+  //   // - function 'path' and friends in ir.js
+  //   // NOTE: this could use 'codegen' as is,
+  //   // if we set 'deps' correctly.
+  //   if (q.key == "const") {
+  //     return expr(q.op)
+  //   } else if (q.key == "pure") {
+  //     let es = q.arg.map(trans)
+  //     return call("rt.pure."+q.op, ...es)
+  //   } else {
+  //     // console.error("unknown op", pretty(q))
+  //     return expr('"unknown op: '+pretty(q)+'"')
+  //   }
+  // }
 
-  for (let e of assignments) {
+  let res_deps = [...q.dims] // variables
+  for (let i in assignments) {
+    res_deps.push("tmp"+i)
+
     // TODO: for each e generate tmp
   }
 
-  let res = trans(q)
+  let res = expr(codegen(q), ...res_deps)
 
   let ir = {
     assignmentStms,
@@ -1376,7 +1379,7 @@ let compile = (q,{
 }
 
 
-
+// ------- an alternative code generator follows (currently not used) ------ //
 
 let emitCodeDeep = (q) => {
   let buf = []

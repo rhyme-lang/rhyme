@@ -484,6 +484,7 @@ exports.generate = (ir) => {
   if (trace)
       code.forEach(s => print(s))
   let codeString = code.join("\n")
+  // console.log(codeString)
   let rt = runtime // make available in scope for generated code
   let queryFunc = eval(codeString)
   queryFunc.explain = explain
