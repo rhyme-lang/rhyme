@@ -1,5 +1,6 @@
 const { quoteVar, debug, trace, print, inspect, error, warn } = require("./utils")
 const { scc } = require('./scc')
+const { runtime } = require('./simple-runtime')
 
 // The new codegen guarantees the following key features:
 //    1. statement (assignment) will only be emitted once
@@ -483,6 +484,7 @@ exports.generate = (ir) => {
   if (trace)
       code.forEach(s => print(s))
   let codeString = code.join("\n")
+  let rt = runtime // make available in scope for generated code
   let queryFunc = eval(codeString)
   queryFunc.explain = explain
   queryFunc.explain.code = code
