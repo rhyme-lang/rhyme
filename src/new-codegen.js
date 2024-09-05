@@ -75,7 +75,7 @@ function buildDeps(assignmentStms, generatorStms, tmpVarWriteRank) {
 
   // Second: Build dependencies
 
-  let isloop = s => s.startsWith("*")
+  let isloop = s => !istmp(s) // s.startsWith("*")
   let istmp = s => s.startsWith("tmp")
 
   // assignment dependencies
@@ -275,7 +275,7 @@ exports.generate = (ir) => {
     closedLoopByStmt[s] ??= {}
   }
 
-  let isloop = s => s.startsWith("*")
+  let isloop = s => !istmp(s) // s.startsWith("*")
   let istmp = s => s.startsWith("tmp")
 
   let getStmt = i => assignmentStms[i]

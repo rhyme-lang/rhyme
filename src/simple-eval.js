@@ -1217,15 +1217,17 @@ let translateToNewCodegen = q => {
   let tmpVarWriteRank = {} 
 
 
+  // generator ir api: mirroring necessary bits from ir.js
   let expr = (txt, ...args) => ({ txt, deps: args })
+
   let call = (func, ...es) => expr(func+"("+es.map(x => x.txt).join(",")+")", ...es.flatMap(x => x.deps))
 
-  let assign = (lhs, op, rhs) => {
-      let e = expr(lhs.txt + " " + op + " " + rhs.txt, ...lhs.deps, ...rhs.deps)
-      e.lhs = lhs
-      e.op = op
-      e.rhs = rhs
-      e.writeSym = lhs.root
+  let assign = (txt, lhs_root_sym, lhs_deps, rhs_deps) => {
+      let e = expr(txt, ...lhs_deps, ...rhs_deps) // lhs.txt + " " + op + " " + rhs.txt
+      e.lhs = expr("LHS", ...lhs_deps)
+      e.op = "=?="
+      e.rhs = expr("RHS", ...rhs_deps)
+      e.writeSym = lhs_root_sym
       e.deps = e.deps.filter(e1 => e1 != e.writeSym) // remove cycles
       // update sym to rank dep map
       tmpVarWriteRank[e.writeSym] ??= 1
@@ -1235,32 +1237,57 @@ let translateToNewCodegen = q => {
       assignmentStms.push(e)
   }
 
-
-  // let trans = q => {
-  //   // TODO: complete this based on:
-  //   // - function 'codegen' in this file and 
-  //   // - function 'path' and friends in ir.js
-  //   // NOTE: this could use 'codegen' as is,
-  //   // if we set 'deps' correctly.
-  //   if (q.key == "const") {
-  //     return expr(q.op)
-  //   } else if (q.key == "pure") {
-  //     let es = q.arg.map(trans)
-  //     return call("rt.pure."+q.op, ...es)
-  //   } else {
-  //     // console.error("unknown op", pretty(q))
-  //     return expr('"unknown op: '+pretty(q)+'"')
-  //   }
-  // }
-
-  let res_deps = [...q.dims] // variables
-  for (let i in assignments) {
-    res_deps.push("tmp"+i)
-
-    // TODO: for each e generate tmp
+  function selectGenFilter(a, b) { 
+    let b1 = b.deps[0]
+    let e = expr("FOR", ...a.deps) // "for " + b1 + " <- " + a.txt
+    e.sym = b1
+    e.rhs = a.txt
+    // if (generatorStms.every(e1 => e1.txt != e.txt)) // generator CSE
+      generatorStms.push(e)
   }
 
-  let res = expr(codegen(q), ...res_deps)
+  let tmpSym = i => "tmp-"+i
+
+  let getDeps = q => [...q.fre,...q.tmps.map(tmpSym)]
+
+  let transExpr = q => expr(codegen(q), ...getDeps(q))
+
+  // map assignments
+  for (let i in assignments) {
+    let sym = tmpSym(i)
+
+    let q = assignments[i]
+
+    // emit initialization (see 'emitCode')
+    if (q.key == "stateful" && (q.op+"_init") in runtime.stateful || q.key == "update") {
+        let fv = q.fre
+        let xs = [i,...q.fre.map(quoteVar)]
+        let ys = xs.map(x => ","+x).join("")
+
+        assign("rt.init(tmp"+ys+")("+ emitStmInit(q) + ")", sym, q.fre, [])
+    }
+
+    // emit update (see 'emitCode')
+    {
+      let fv = union(q.fre, q.bnd)
+      let xs = [i,...q.fre.map(quoteVar)]
+      let ys = xs.map(x => ","+x).join("")
+
+      let deps = [...fv,...q.tmps.map(tmpSym)] // XXX rhs dims only?
+
+      assign("rt.update(tmp"+ys+")("+ emitStm(q) + ")", sym, q.fre, deps)
+    }
+  }
+
+  // map filters/generators
+  for (let i in filters) {
+    let q = filters[i]
+    let [a,b] = q.arg.map(transExpr)
+    selectGenFilter(a, b)
+  }
+
+  // map final result
+  let res = transExpr(q)
 
   let ir = {
     assignmentStms,
