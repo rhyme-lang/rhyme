@@ -1237,6 +1237,11 @@ let translateToNewCodegen = q => {
 
 
   let trans = q => {
+    // TODO: complete this based on:
+    // - function 'codegen' in this file and 
+    // - function 'path' and friends in ir.js
+    // NOTE: this could use 'codegen' as is,
+    // if we set 'deps' correctly.
     if (q.key == "const") {
       return expr(q.op)
     } else if (q.key == "pure") {
