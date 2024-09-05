@@ -1218,7 +1218,9 @@ let translateToNewCodegen = q => {
 
 
   let expr = (txt, ...args) => ({ txt, deps: args })
-  function assign(lhs, op, rhs) {
+  let call = (func, ...es) => expr(func+"("+es.map(x => x.txt).join(",")+")", ...es.flatMap(x => x.deps))
+
+  let assign = (lhs, op, rhs) => {
       let e = expr(lhs.txt + " " + op + " " + rhs.txt, ...lhs.deps, ...rhs.deps)
       e.lhs = lhs
       e.op = op
@@ -1238,13 +1240,10 @@ let translateToNewCodegen = q => {
     if (q.key == "const") {
       return expr(q.op)
     } else if (q.key == "pure") {
-      let [a,b] = q.arg.map(trans)
-      // TOOD: generalize
-      if (q.op == 'plus')
-        return expr("(" + a.txt + ") + (" + b.txt + ")", ...a.deps, ...b.deps)
-
-      return expr(q.op + "(" + a.txt + ", " + b.txt + ")", ...a.deps, ...b.deps)
+      let es = q.arg.map(trans)
+      return call("rt.pure."+q.op, ...es)
     } else {
+      // console.error("unknown op", pretty(q))
       return expr('"unknown op: '+pretty(q)+'"')
     }
   }
