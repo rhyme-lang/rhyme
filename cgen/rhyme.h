@@ -31,13 +31,13 @@ int decode_int(rh a) {
 
 
 
-// rh rt_const_string(char* a) {
-//   ...  
-// }
+rh rt_const_string(char* a) {
+  return 0; // TODO
+}
 
-// rh rt_const_obj() {
-//   ...  
-// }
+rh rt_const_obj() {
+  return 0; // TODO
+}
 
 // rh rt_const_float(float a) {
 //   return a;
@@ -47,7 +47,6 @@ rh rt_const_int(int a) {
   return encode_int(a);
 }
 
-
 rh rt_pure_plus(rh a, rh b) {
   // TODO: return null if a,b not int
   // TODO: operate on encoded repr
@@ -55,9 +54,17 @@ rh rt_pure_plus(rh a, rh b) {
 }
 
 
+rh rt_get(rh a, rh b) {
+  return 0; // TODO
+}
+
+
+
 void write_result(rh x) {
   if (is_int(x))
     printf("%d", decode_int(x));
+  else if (x == 0)
+    printf("%s", "undefined");
   else
     printf("%s", "unknown value");
 }

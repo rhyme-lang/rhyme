@@ -1195,6 +1195,15 @@ let emitCode = (q, order) => {
 }
 
 
+let quoteIndexVarsXS_C = (s, vs) => {
+  let res = s
+  for (let v of vs) {
+    res = "rt_get("+res+", "+quoteVarXS(v)+")"
+  }
+  return res
+}
+
+
 let codegenC = q => {
   if (q.key == "input") {
     return "inp"
@@ -1216,14 +1225,14 @@ let codegenC = q => {
     return quoteVar(q.op)
   } else if (q.key == "ref") {
     let q1 = assignments[q.op]
-    let xs = [String(q.op),...q1.fre]
-    return quoteIndexVarsXS("tmp", xs)
+    let xs = ["rt_const_int("+q.op+")",...q1.fre]
+    return quoteIndexVarsXS_C("tmp", xs)
   } else if (q.key == "get" && isDeepVarExp(q.arg[1])) {
     let [e1,e2] = q.arg.map(codegenC)
     return "rt_deepGet("+e1+","+e2+")"
   } else if (q.key == "get") {
     let [e1,e2] = q.arg.map(codegenC)
-    return e1+quoteIndex(e2)
+    return "rt_get("+e1+","+e2+")"
   } else if (q.key == "pure") {
     let es = q.arg.map(codegenC)
     return "rt_pure_"+q.op+"("+es.join(",")+")"
@@ -1242,6 +1251,8 @@ let emitCodeC = (q, order) => {
   buf.push("#include <stdio.h>")
   buf.push("#include \"rhyme.h\"")
   buf.push("int main() {")
+  buf.push("rh inp = 0; // input?")
+  buf.push("rh tmp = rt_const_obj();")
 
   for (let is of order) {
     if (is.length > 1)

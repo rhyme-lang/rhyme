@@ -47,3 +47,29 @@ test("testTrivial0", async () => {
 
   expect(res).toEqual("5")
 })
+
+
+// XXX TODO:
+// - access input data
+// - string, array/obj
+// - implement assignments
+
+test("testTrivial1", async () => {
+  let query = rh`data.A.value`
+
+  let func = compile(query, { CCodegen: true })
+  console.log(func.explain.codeString)
+  let res = await func({data})
+
+  expect(res).toEqual("undefined")
+})
+
+test("testScalar1", async () => {
+  let query = rh`sum data.*.value`
+
+  let func = compile(query, { CCodegen: true })
+  console.log(func.explain.codeString)
+  let res = await func({data})
+
+  expect(res).toEqual("undefined")
+})
