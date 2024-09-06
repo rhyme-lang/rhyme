@@ -2,12 +2,34 @@
 
 // notes:
 // - currently only integers supported
-// - should think how to support relevant type universe
-//   (indirection, tagging scheme?)
-// - general collection interface: need iteration plus random access
-// - consider
+// - simple tagging scheme to support relevant type universe
+// - need generic collection interface:  iteration plus random access
+// - consider macros instead of functions
 
-typedef int rh;
+#include <stdbool.h>
+#include <stdio.h>
+
+typedef void* rh;
+
+
+// simple tagging scheme:
+// - 0 is undefined/null
+// - int is shifted << 1 and has lsb 1
+// - lsb 0 means memory object (string, array, ...)
+
+bool is_int(rh a) {
+  return (((size_t)a) & 1) == 1;
+}
+
+rh encode_int(int a) {
+  return (rh)(size_t)((a<<1)|1);
+}
+
+int decode_int(rh a) {
+  return (int)((size_t)a) >> 1;
+}
+
+
 
 // rh rt_const_string(char* a) {
 //   ...  
@@ -22,15 +44,20 @@ typedef int rh;
 // }
 
 rh rt_const_int(int a) {
-  return a;
+  return encode_int(a);
 }
 
 
 rh rt_pure_plus(rh a, rh b) {
-  return a + b;
+  // TODO: return null if a,b not int
+  // TODO: operate on encoded repr
+  return encode_int(decode_int(a) + decode_int(b));
 }
 
 
 void write_result(rh x) {
-  printf("%d", x);
+  if (is_int(x))
+    printf("%d", decode_int(x));
+  else
+    printf("%s", "unknown value");
 }
