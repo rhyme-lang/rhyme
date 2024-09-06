@@ -1195,6 +1195,74 @@ let emitCode = (q, order) => {
 }
 
 
+let codegenC = q => {
+  if (q.key == "input") {
+    return "inp"
+  } else if (q.key == "const") {
+    if (typeof q.op === "number") {
+      if (Number.isInteger(q.op))
+        return "rt_const_int("+q.op+")"
+      else
+        return "rt_const_float("+q.op+")"
+    } else if (typeof q.op === "string") {
+      return "rt_const_string(\""+q.op+"\")"
+    } else if (typeof q.op === "object" && Object.keys(q.op).length == 0){
+      return "rt_const_obj()"
+    } else {
+      console.error("unsupported constant ", pretty(q))
+      return String(q.op)
+    }
+  } else if (q.key == "var") {
+    return quoteVar(q.op)
+  } else if (q.key == "ref") {
+    let q1 = assignments[q.op]
+    let xs = [String(q.op),...q1.fre]
+    return quoteIndexVarsXS("tmp", xs)
+  } else if (q.key == "get" && isDeepVarExp(q.arg[1])) {
+    let [e1,e2] = q.arg.map(codegenC)
+    return "rt_deepGet("+e1+","+e2+")"
+  } else if (q.key == "get") {
+    let [e1,e2] = q.arg.map(codegenC)
+    return e1+quoteIndex(e2)
+  } else if (q.key == "pure") {
+    let es = q.arg.map(codegenC)
+    return "rt_pure_"+q.op+"("+es.join(",")+")"
+  } else if (q.key == "mkset") {
+    let [e1] = q.arg.map(codegenC)
+    return "rt_singleton("+e1+")"
+  } else {
+    console.error("unknown op ", pretty(q))
+    return "<?"+q.key+"?>"
+  }
+}
+
+
+let emitCodeC = (q, order) => {
+  let buf = []
+  buf.push("#include <stdio.h>")
+  buf.push("#include \"rhyme.h\"")
+  buf.push("int main() {")
+
+  for (let is of order) {
+    if (is.length > 1)
+      console.error("cycle "+is)
+    let [i] = is
+    let q = assignments[i]
+    
+    buf.push("// --- tmp"+i+" ---")
+    buf.push("// XXX NOT IMPLEMENTED")
+  }
+
+  buf.push("// --- res ---")
+  buf.push("rh res = "+codegenC(q)+";")
+  buf.push("write_result(res);")
+  buf.push("}\n")
+
+  return buf.join("\n")
+}
+
+
+
 let fixIndent = s => {
   let lines = s.split("\n")
   let out = []
@@ -1304,7 +1372,8 @@ let translateToNewCodegen = q => {
 let compile = (q,{
   altInfer = false, 
   singleResult = true, // TODO: elim flag?
-  newCodegen = false
+  newCodegen = false,
+  CCodegen = false
 }={}) => {
 
   reset()
@@ -1375,6 +1444,43 @@ let compile = (q,{
 
   if (newCodegen)
     return translateToNewCodegen(q)
+
+
+  if (CCodegen) {
+    const fs = require('node:fs/promises')
+    const os = require('node:child_process')
+
+let execPromise = function(cmd) {
+    return new Promise(function(resolve, reject) {
+        os.exec(cmd, function(err, stdout) {
+            if (err) return reject(err);
+            resolve(stdout);
+        });
+    });
+}
+
+    let code = emitCodeC(q,order)
+    code = fixIndent(code)
+
+    let func = (async () => {
+      await fs.writeFile('cgen/test.c', code);
+      await execPromise('gcc cgen/test.c -o cgen/test.out')
+      return 'cgen/test.out'
+    })()
+
+    let wrap = async (input) => {
+      let file = await func
+      let res = await execPromise(file)
+      return res
+    }
+
+    wrap.explain = {
+      src,
+      ir: {filters, assignments, vars, order}, 
+      pseudo, code 
+    }
+    return wrap
+  }
 
 
   let code = emitCode(q,order)

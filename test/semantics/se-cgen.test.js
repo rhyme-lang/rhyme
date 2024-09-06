@@ -35,3 +35,15 @@ int main() {
   expect(res).toEqual("Hello C!\n")
 })
 
+
+let data = {}
+
+test("testTrivial0", async () => {
+  let query = rh`1 + 4`
+
+  let func = compile(query, { CCodegen: true })
+  console.log(func.explain.code)
+  let res = await func({data})
+
+  expect(res).toEqual("5")
+})
