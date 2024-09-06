@@ -73,3 +73,14 @@ test("testScalar1", async () => {
 
   expect(res).toEqual("undefined")
 })
+
+test("testHint1", async () => {
+  let query = rh`(hint dense data) & (sum data.*.value)`
+
+  let func = compile(query, { CCodegen: true })
+  console.log(func.explain.codeString)
+  console.log(func.explain.pseudo)
+  let res = await func({data})
+
+  expect(res).toEqual("undefined")
+})

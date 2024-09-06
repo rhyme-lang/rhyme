@@ -53,6 +53,9 @@ rh rt_pure_plus(rh a, rh b) {
   return encode_int(decode_int(a) + decode_int(b));
 }
 
+rh rt_pure_and(rh a, rh b) {
+  return a == 0 ? a : b;
+}
 
 rh rt_get(rh a, rh b) {
   return 0; // TODO
