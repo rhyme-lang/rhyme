@@ -1523,6 +1523,95 @@ test("day15-part2", () => {
   expect(focusPower).toEqual(145);
 });
 
+test("day16-part1", () => {
+  let input = `.|...\\....
+|.-.\\.....
+.....|-...
+........|.
+..........
+.........\\
+..../.\\\\..
+.-.-/..|..
+.|....-|.\\
+..//.|....`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    andThen: (a,b) => b, // just to add a as dependency,
+    getAdj: point => {
+      let i = +point[0]
+      let j = +point[1]
+      return [[i - 1, j], [i + 1, j], [i, j - 1], [i, j + 1]]
+    },
+    onDot: (curr) => [[curr[0] + curr[2], curr[1] + curr[3], curr[2], curr[3]]],
+    onPipe: (curr) => curr[2] == 0 ? [[curr[0] - 1, curr[1], -1, 0], [curr[0] + 1, curr[1], 1, 0]] : udf.onDot(curr),
+    onDash: (curr) => curr[3] == 0 ? [[curr[0], curr[1] - 1, 0, -1], [curr[0], curr[1] + 1, 0, 1]] : udf.onDot(curr),
+    onSlash: (curr) => [[curr[0] - curr[3], curr[1] - curr[2], -curr[3], -curr[2]]],
+    onBackslash: (curr) => [[curr[0] + curr[3], curr[1] + curr[2], curr[3], curr[2]]],
+    optionalChaining: (o, k) => o?.[k],
+    notVisited: (visited, curr) => visited[curr[0]]?.[curr[1]]?.[curr[2]]?.[curr[3]] == undefined,
+    merge: (o1, o2) => {
+      return {...o1, ...o2}
+    },
+    ...udf_stdlib
+  }
+
+  let connected = {
+    "|": [[-1, 0], [1, 0]],
+    "-": [[0, -1], [0, 1]],
+    "/": [[-1, 0], [0, 1]],
+    "\\": [[-1, 0], [0, -1]]
+  }
+
+  let lines = rh`.input | udf.split "\\n"`
+  let mat = rh`${lines} | .*line | udf.split "" | group *line`
+
+  // The ray is represented by combining the position and direction [x, y, vx, vy]
+  let state = {
+    curr: [[0, 0, 0, 1]],      // top-left corner
+    visited: {'0': {'0': {'0': {'1': true}}}}
+  }
+
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+
+  let getCell = rh`udf.optionalChaining (udf.optionalChaining ${mat} (state.curr.*curr.0)) (state.curr.*curr.1)`
+
+  let isDash = rh`udf.isEqual "-" ${getCell}`
+  let isPipe = rh`udf.isEqual "|" ${getCell}`
+  let isDot = rh`udf.isEqual "." ${getCell}`
+  let isSlash = rh`udf.isEqual "/" ${getCell}`
+
+  let newPosAndDir = [rh`udf.ifThenElse ${isDot} (udf.onDot state.curr.*curr) (udf.ifThenElse ${isPipe} (udf.onPipe state.curr.*curr) (udf.ifThenElse ${isDash} (udf.onDash state.curr.*curr) (udf.ifThenElse ${isSlash} (udf.onSlash state.curr.*curr) (udf.onBackslash state.curr.*curr)))) | .*new`]
+
+  let inRange = rh`udf.optionalChaining (udf.optionalChaining ${mat} (${newPosAndDir}.*newPos.0)) (${newPosAndDir}.*newPos.1)`
+  let notVisited = rh`udf.notVisited state.visited ${newPosAndDir}.*newPos`
+  let valid = rh`udf.logicalAnd ${inRange} ${notVisited}`
+  let filteredPosAndDir = [rh`${newPosAndDir}.*newPos | ${filterBy("*f", valid)}`]
+  let nextState = {
+    curr: filteredPosAndDir,
+    visited: rh`state.visited`
+  }
+
+  let getNextState = api.compile(nextState)
+  
+  while (state.curr.length > 0) {
+    state = getNextState({input, udf, state})
+    for (let i in state.curr) {
+      let curr = state.curr[i]
+      state.visited[curr[0]] ??= {}
+      state.visited[curr[0]][curr[1]] ??= {}
+      state.visited[curr[0]][curr[1]][curr[2]] ??= {}
+      state.visited[curr[0]][curr[1]][curr[2]][curr[3]] = true
+    }
+  }
+
+  let query = rh`count state.visited.*i.*j`
+
+  let func = api.compile(query)
+  let res = func({state})
+
+  expect(res).toBe(46)
+})
 
 test("day18-part1", () => {
   let input = `R 6 (#70c710)
