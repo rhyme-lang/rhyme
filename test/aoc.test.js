@@ -31,6 +31,7 @@ let udf_stdlib = {
   int2Char: x => String.fromCharCode(x),
   matchAll: (regex, flags) => x => [...x.matchAll(new RegExp(regex, flags))],
   logicalAnd: (x,y) => x && y,
+  logicalOr: (x,y) => x || y,
   range: (start, stop, step) =>
       Array.from({ length: (stop - start + step - 1) / step }, (_, i) => start + (i * step)),
   slice: start => x => x.slice(start),
@@ -2203,6 +2204,174 @@ test("day21-part1", () => {
 
   let res = state.curr.size
   expect(res).toBe(16)
+})
+
+test("day22-part1", () => {
+  let input = `1,0,1~1,2,1
+0,0,2~2,0,2
+0,2,3~2,2,3
+0,0,4~0,2,4
+2,0,5~2,2,5
+0,1,6~2,1,6
+1,1,8~1,1,9`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    andThen: (a,b) => b, // just to add a as dependency,
+    ifThenElse: (pred, thenBr, elseBr) => pred ? thenBr : elseBr,
+    moveDown: (brick) => {
+      // copy original brick and modify
+      let newBrick = {"0": {...brick[0]}, "1": {...brick[1]}}
+      newBrick[0][2] -= 1
+      newBrick[1][2] -= 1
+      return newBrick
+    },
+    // use rhyme for this function later
+    collides: (a, b) => {
+      let xOverlaps = (a, b) => {
+        let minX = Math.min(a[0][0], a[1][0])
+        let maxX = Math.max(a[0][0], a[1][0])
+        let otherMinX = Math.min(b[0][0], b[1][0])
+        let otherMaxX = Math.max(b[0][0], b[1][0])
+        return maxX >= otherMinX && otherMaxX >= minX
+      }
+      let yOverlaps = (a, b) => {
+        let minY = Math.min(a[0][1], a[1][1])
+        let maxY = Math.max(a[0][1], a[1][1])
+        let otherMinY = Math.min(b[0][1], b[1][1])
+        let otherMaxY = Math.max(b[0][1], b[1][1])
+        return maxY >= otherMinY && otherMaxY >= minY
+      }
+      let zOverlaps = (a, b) => {
+        let minZ = Math.min(a[0][2], a[1][2])
+        let maxZ = Math.max(a[0][2], a[1][2])
+        let otherMinZ = Math.min(b[0][2], b[1][2])
+        let otherMaxZ = Math.max(b[0][2], b[1][2])
+        return maxZ >= otherMinZ && otherMaxZ >= minZ
+      }
+      return xOverlaps(a, b) && yOverlaps(a, b) && zOverlaps(a, b)
+    },
+    prepend: (value, arr) => [value, ...arr],
+    cmpFn: (a, b) => {
+      return Math.min(a[0][2], a[1][2]) - Math.min(b[0][2], b[1][2])
+    },
+    toSet: (arr) => new Set(arr),
+    ...udf_stdlib
+  }
+
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+
+  let lines = [rh`.input | udf.split "\\n" | .*line
+                         | udf.split "~" | .*endpoint
+                         | udf.split "," | .*coord
+                         | group *coord | group *endpoint`]
+
+  let bricksQuery = rh`${lines} | udf.sort udf.cmpFn`
+
+  let getBricks = api.compile(bricksQuery)
+  let bricks = getBricks({input, udf})
+
+  let state = {
+    bricks,
+    droppedBricksKeys: [],
+    droppedBricksValues: []
+  }
+
+  let brickMovedDown = rh`udf.moveDown state.bricks.0`
+  let collides = rh`udf.collides state.droppedBricksKeys.*brick ${brickMovedDown}`
+  let collisions = [rh`state.droppedBricksKeys.*brick | ${filterBy("*f", collides)}`]
+  let collideWithGround = rh`udf.logicalOr (udf.isEqual ${brickMovedDown}.0.2 0) (udf.isEqual ${brickMovedDown}.1.2 0)`
+  let collideWithGroundOrBrick = rh`udf.logicalOr (udf.notEqual ${collisions}.length 0) ${collideWithGround}`
+  let nextState = {
+    bricks: rh`udf.ifThenElse ${collideWithGroundOrBrick} (state.bricks | udf.slice 1) (udf.prepend ${brickMovedDown} (state.bricks | udf.slice 1))`,
+    droppedBricksKeys: rh`udf.ifThenElse ${collideWithGroundOrBrick} (udf.prepend state.bricks.0 state.droppedBricksKeys) state.droppedBricksKeys`,
+    droppedBricksValues: rh`udf.ifThenElse ${collideWithGroundOrBrick} (udf.prepend ${collisions} state.droppedBricksValues) state.droppedBricksValues`
+  } 
+
+  let next = api.compile(nextState)
+
+  while (state.bricks.length > 0) {
+    state = next({input, udf, state})
+  }
+
+  let onlyOneSupportingBrick = rh`udf.isEqual state.droppedBricksValues.*.length 1`
+  let nonDisintegrableBricks = [rh`state.droppedBricksValues.*.0  | ${filterBy("*f", onlyOneSupportingBrick)}`]
+  let query = rh`bricks.length - (udf.toSet ${nonDisintegrableBricks}).size`
+
+  let func = api.compile(query)
+  let res = func({input, udf, state, bricks})
+
+  expect(res).toBe(5)
+})
+
+test("day24-part1", () => {
+  let input = `19, 13, 30 @ -2, 1, -2
+18, 19, 22 @ -1, -1, -2
+20, 25, 34 @ -2, -2, -4
+12, 31, 28 @ -1, -2, -1
+20, 19, 15 @ 1, -5, -3`
+
+  let udf = {
+    ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
+    logicalAnd1: (a, b) => a && b ? 1 : 0,
+    toCoord: (x, y) => [x, y],
+    ...udf_stdlib
+  }
+
+  // parse input
+  let hailstones = [rh`.input | udf.split "\\n" | .*line
+                              | udf.split " @ " | .*part
+                              | udf.split ", " | udf.toNum .*axis
+                              | group *axis | group *part`]
+
+  let x_1 = rh`${hailstones}.*hailstone1.0.0`
+  let y_1 = rh`${hailstones}.*hailstone1.0.1`
+
+  let x_2 = rh`${hailstones}.*hailstone2.0.0`
+  let y_2 = rh`${hailstones}.*hailstone2.0.1`
+
+  let vx_1 = rh`${hailstones}.*hailstone1.1.0`
+  let vy_1 = rh`${hailstones}.*hailstone1.1.1`
+
+  let vx_2 = rh`${hailstones}.*hailstone2.1.0`
+  let vy_2 = rh`${hailstones}.*hailstone2.1.1`
+
+  let a_1 = vy_1
+  let b_1 = rh`0 - ${vx_1}`
+  let c_1 = rh`${vx_1} * ${y_1} - ${vy_1} * ${x_1}`
+
+  let a_2 = vy_2
+  let b_2 = rh`0 - ${vx_2}`
+  let c_2 = rh`${vx_2} * ${y_2} - ${vy_2} * ${x_2}`
+
+  // if denominator is 0, then the two lines are parallel so they won't intersect
+  let denominator = rh`${a_1} * ${b_2} - ${a_2} * ${b_1}`
+
+  // calculate the intersection
+  let intersection_x = rh`(${b_1} * ${c_2} - ${b_2} * ${c_1}) / ${denominator}`
+  let intersection_y = rh`(${c_1} * ${a_2} - ${c_2} * ${a_1}) / ${denominator}`
+
+  // calculate the time the hailstones reach the intersection
+  let time_1 = rh`udf.ifThenElse ${vx_1} ((${intersection_x} - ${x_1}) / ${vx_1}) ((${intersection_y} - ${y_1}) / ${vy_1})`
+  let time_2 = rh`udf.ifThenElse ${vx_2} ((${intersection_x} - ${x_2}) / ${vx_2}) ((${intersection_y} - ${y_2}) / ${vy_2})`
+
+  // check if the intersection is within the desired area
+  let intersect_within_area = rh`udf.logicalAnd (udf.isGreaterOrEqual ${intersection_x} 7) (udf.isLessOrEqual ${intersection_x} 27)`
+  // check if the intersection is in the future
+  let intersect_in_the_future = rh`udf.logicalAnd (udf.isGreaterOrEqual ${time_1} 0) (udf.isGreaterOrEqual ${time_2} 0)`
+
+  // the two hailstones will intersect if both are true
+  let will_intersect = rh`udf.logicalAnd1 ${intersect_within_area} ${intersect_in_the_future}`
+
+  let will_intersect_all = [rh`udf.ifThenElse (udf.isLessThan *hailstone1 *hailstone2) (udf.ifThenElse ${denominator} (${will_intersect}) 0) 0`]
+
+  // count the number of intersections
+  let query = rh`${will_intersect_all} | sum .*`
+
+  let func = api.compile(query)
+  let res = func({input, udf})
+
+  expect(res).toBe(2)
 })
 
 // 2022
