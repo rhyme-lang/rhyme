@@ -1240,6 +1240,122 @@ test("day11-part2", () => {
   expect(res).toBe(82000210)
 })
 
+test("day12-part1", () => {
+  let input = `???.### 1,1,3
+.??..??...?##. 1,1,3
+?#?#?#?#?#?#?#? 1,3,1,6
+????.#...#... 4,1,1
+????.######..#####. 1,6,5
+?###???????? 3,2,1`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    andThen: (a,b) => b, // just to add a as dependency,
+    operationalCase: (springs, list, n) => {
+
+    },
+    damagedCase: () => {
+
+    },
+    result: (res) =>{
+      return {
+        input: [],
+        ds: [],
+        d: 0,
+        res: res
+      }
+    },
+    toArr1: (x) => [x],
+    toArr2: (x, y) => [x, y],
+    isNotUndef: (x) => x !== undefined,
+    valueOrDefault: (x) => x !== undefined ? x : 0,
+    ...udf_stdlib
+  }
+
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+
+  let line = [{
+    // the remaining input to process
+    input: rh`.input | udf.split "\\n" | .*line
+                     | udf.split " " | .0
+                     | udf.split ""`,
+    // a list of the numbers of damaged springs remaining to be placed
+    ds: [rh`.input | udf.split "\\n" | .*line
+                   | udf.split " " | .1
+                   | udf.split "," | udf.toNum .*ds`],
+    // the number of consecutive damaged springs seen so far
+    d: 0 
+  }]
+
+  let lines = rh`${line} | group *line`
+
+  let getPuzzles = api.compile(lines)
+  let puzzles = getPuzzles({input, udf})
+
+  // console.log(puzzles[0])
+
+  // puzzles = {
+  //   "0": [{
+  //     input: ["."],
+  //     ds: [],
+  //     d: 4
+  //   }]
+  // }
+
+  let zero = rh`udf.result 0`
+  let one = rh`udf.result 1`
+
+  let currInput = rh`puzzle.*input`
+  let validArrangement = rh`udf.logicalOr (udf.logicalAnd (udf.isEqual ${currInput}.ds.length 0) (udf.isEqual ${currInput}.d 0)) (udf.logicalAnd (udf.isEqual ${currInput}.ds.length 1) (udf.isEqual ${currInput}.d ${currInput}.ds.0))`
+  
+  let operationalRes1 = {
+    input: rh`${currInput}.input | udf.slice 1`,
+    ds: rh`${currInput}.ds`,
+    d: 0
+  }
+  let operationalRes2 = {
+    input: rh`${currInput}.input | udf.slice 1`,
+    ds: rh`${currInput}.ds | udf.slice 1`,
+    d: 0
+  }
+  let operationalCase = rh`udf.ifThenElse (udf.isEqual ${currInput}.d 0) ${operationalRes1} (udf.ifThenElse (udf.logicalAnd (udf.notEqual ${currInput}.ds.length 0) (udf.isEqual ${currInput}.d ${currInput}.ds.0)) ${operationalRes2} ${zero})`
+
+  let damagedRes = {
+    input: rh`${currInput}.input | udf.slice 1`,
+    ds: rh`${currInput}.ds`,
+    d: rh`${currInput}.d + 1`
+  }
+  let damagedCase = rh`udf.ifThenElse (udf.isEqual ${currInput}.ds.length 0) ${zero} (udf.ifThenElse (udf.isEqual ${currInput}.d ${currInput}.ds.0) ${zero} ${damagedRes})`
+
+  let unknownCase = rh`udf.toArr2 ${operationalCase} ${damagedCase}`
+  let nonEmptyCase = rh`udf.ifThenElse (udf.isEqual ${currInput}.input.0 ".") (udf.toArr1 ${operationalCase}) (udf.ifThenElse (udf.isEqual ${currInput}.input.0 "#") (udf.toArr1 ${damagedCase}) ${unknownCase})`
+  let emptyCase = rh`udf.ifThenElse ${validArrangement} ${one} ${zero} | udf.toArr1`
+
+  let query = {
+    puzzle: [rh`udf.ifThenElse (udf.isNotUndef ${currInput}.res) (udf.toArr1 ${currInput}) (udf.ifThenElse (udf.isEqual ${currInput}.input.length 0) ${emptyCase} ${nonEmptyCase}) | .*new`],
+    solved: rh`product (udf.isNotUndef ${currInput}.res)`,
+    count: rh`sum (udf.valueOrDefault ${currInput}.res)`
+  }
+
+  let func = api.compile(query)
+  // console.log(func.explain.code)
+
+  let res = 0
+  for (let i in puzzles) {
+    let isSolved = 0
+    let ret = null
+    while (!isSolved) {
+      ret = func({input, udf, puzzle: puzzles[i]})
+      isSolved = ret.solved
+      puzzles[i] = ret.puzzle
+    }
+
+    res += ret.count
+  }
+  
+  expect(res).toBe(21)
+})
+
 test("day13-part1", () => {
   let input =`#.##..##.
 ..#.##.#.
