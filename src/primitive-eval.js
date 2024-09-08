@@ -663,7 +663,7 @@ let emitCodeDeep = (q) => {
         if (q.key == "stateful") {
           return "rt.stateful."+q.op+"_init"
         } else if (q.key == "update") {
-          let e0 = codegen(q.arg[0],env1)
+          let e0 = codegen(q.arg[0],env)
           return "rt.stateful.update_init("+e0+")"
         } else {
           console.error("unknown op", q)
@@ -681,7 +681,7 @@ let emitCodeDeep = (q) => {
           let [e1] = q.arg.map(codegen2)
           return "rt.stateful."+q.op+"("+e1+")"
         } else if (q.key == "update") {
-          let e0 = codegen2(q.arg[0])
+          let e0 = "null/*XXX inited separately!*/"//codegen(q.arg[0], env)
           let e2 = codegen2(q.arg[2])
           let e1 = q.arg[1].vars.map(quoteVar)
           return "rt.stateful.update("+e0+", ["+e1+"], "+e2+")" // XXX: init is still needed for tree paths

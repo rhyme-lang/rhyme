@@ -4,7 +4,7 @@ const ir = require('./ir')
 const graphics = require('./graphics')
 
 const simpleEval = require('../src/simple-eval')
-const primitiveEval = require('../src/primitive-eval')
+// const primitiveEval = require('../src/primitive-eval')
 
 // ---------- API ----------
 //
