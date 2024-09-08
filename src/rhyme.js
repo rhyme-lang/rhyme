@@ -3,7 +3,8 @@ const new_codegen = require('./new-codegen')
 const ir = require('./ir')
 const graphics = require('./graphics')
 
-const { compile } = require('../src/simple-eval')
+const simpleEval = require('../src/simple-eval')
+const primitiveEval = require('../src/primitive-eval')
 
 // ---------- API ----------
 //
@@ -140,7 +141,7 @@ api["query"] = api["compile"] = (query) => {
     let rep = ir.createIR(query)
     let c1 = codegen.generate(rep)
     let c1_opt = new_codegen.generate(rep)
-    let c2 = compile(query)
+    let c2 = simpleEval.compile(query)
     let wrapper = (x) => {
         let res1 = c1(x)
         let res1_opt = c1_opt(x)
@@ -194,7 +195,7 @@ api["compileFastPathOnly"] = (query) => {
 api["compileNew"] = (query) => {
   let rep = ir.createIR(query)
   let c1 = new_codegen.generate(rep)
-  let c2 = compile(query)
+  let c2 = simpleEval.compile(query)
   let wrapper = (x) => {
       let res1 = c1(x)
       let res2 = c2(x)
