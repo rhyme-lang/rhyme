@@ -300,6 +300,37 @@ let infer = q => {
 }
 
 
+// compute free variables, based on current scope ...
+// XXX wip
+
+let free = (q,env) => {
+  if (q.key == "input" || q.key == "const") {
+    return []
+  } else if (q.key == "var") {
+    // if (env.indexOf(q.op) < 0)
+      // console.error("// ERROR: var '"+q.op+"' not defined")
+    return [q.op]
+  } else if (q.key == "get" || q.key == "pure" || q.key == "mkset") {
+    let fs = q.arg.flatMap(x => free(x, env))
+    return unique(fs)
+  } else if (q.key == "stateful" || q.key == "prefix") {
+    let bound = diff(q.arg[0].dims, env)
+    let fs = q.arg.flatMap(x => free(x, union(env,bound)))
+    return diff(unique(fs), bound)
+  } else if (q.key == "update") {
+    let bound = q.arg[1].vars // explicit var
+    let fs1 = free(q.arg[0], env)
+    let fs2 = free(q.arg[2], union(env,bound))
+    let fs3 = q.arg[3] ? free(q.arg[3], union(env,bound)) : []
+    return union(fs1, diff(unique([...fs2, ...fs3]), bound))
+  } else {
+    console.error("unknown op", q)
+    return []
+  }
+}
+
+
+
 
 
 // ----- back end -----
