@@ -880,7 +880,7 @@ test("day5-part2-debug", () => {
   let starts1 = rh`${starts0}.*A`
   let lengths1 = rh`${lengths0}.*A`
 
-  let f0 = compile([{start: starts1, length: lengths1}])
+  let f0 = compile([{startX: starts1, lengthX: lengths1}])
 
   let res = f0({udf, extra})
 
@@ -907,8 +907,8 @@ test("day5-part2-debug", () => {
   // console.log(res)
 
   expect(res).toEqual([ 
-    { start: 79, length: 14 }, 
-    { start: 55, length: 13 } 
+    { startX: 79, lengthX: 14 }, 
+    { startX: 55, lengthX: 13 } 
   ])
 
 
