@@ -1,5 +1,6 @@
 const { quoteVar, debug, trace, print, inspect, error, warn } = require("./utils")
 const { scc } = require('./scc')
+const { runtime } = require('./simple-runtime')
 
 // The new codegen guarantees the following key features:
 //    1. statement (assignment) will only be emitted once
@@ -74,7 +75,7 @@ function buildDeps(assignmentStms, generatorStms, tmpVarWriteRank) {
 
   // Second: Build dependencies
 
-  let isloop = s => s.startsWith("*")
+  let isloop = s => !istmp(s) // s.startsWith("*")
   let istmp = s => s.startsWith("tmp")
 
   // assignment dependencies
@@ -274,7 +275,7 @@ exports.generate = (ir) => {
     closedLoopByStmt[s] ??= {}
   }
 
-  let isloop = s => s.startsWith("*")
+  let isloop = s => !istmp(s) // s.startsWith("*")
   let istmp = s => s.startsWith("tmp")
 
   let getStmt = i => assignmentStms[i]
@@ -483,10 +484,12 @@ exports.generate = (ir) => {
   if (trace)
       code.forEach(s => print(s))
   let codeString = code.join("\n")
+  // console.log(codeString)
+  let rt = runtime // make available in scope for generated code
   let queryFunc = eval(codeString)
   queryFunc.explain = explain
   queryFunc.explain.code = code
-  //queryFunc.explain.codeString = codeString
+  queryFunc.explain.codeString = codeString
   //
   // execute
   //

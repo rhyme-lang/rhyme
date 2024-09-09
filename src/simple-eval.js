@@ -1,6 +1,7 @@
 const { api } = require('./rhyme')
 const { parse } = require('./parser')
 const { scc } = require('./scc')
+const { generate } = require('./new-codegen')
 const { runtime } = require('./simple-runtime')
 
 // DONE
@@ -162,6 +163,7 @@ let prefixes      // canonicalize * for every prefix, e.g., data.* (preproc)
 let path          // current grouping path variables (extract)
 
 let vars          // deps var->var, var->tmp
+let hints
 let filters
 let assignments
 
@@ -170,6 +172,7 @@ let reset = () => {
   path = []
 
   vars = {}
+  hints = []
   filters = []
   assignments = []
 }
@@ -226,6 +229,13 @@ let preproc = q => {
       return preproc({...q, xxpath:e1.op, xxparam:qs2})
     else // udf apply
       return { key: "pure", op: "apply", arg: [e1,...qs2.map(preproc)] }
+  } else if (q.xxpath == "hint") {
+    let [q1,...qs2] = q.xxparam
+    let e1 = preproc(q1)
+    if (e1.key == "const")
+      return { key: "hint", op: e1.op, arg: [...qs2.map(preproc)] }
+    else
+      return { key: "hint", op: "generic", arg: [e1,...qs2.map(preproc)] }
   } else if (q.xxkey == "array") {
     return preproc(q.xxparam)
   } else if (q instanceof Array) {
@@ -378,7 +388,7 @@ let extract2 = q => {
 }
 
 
-// 8: extract filters
+// 8: extract filters and hints
 //    - runs after inferBwd()
 let extract3 = q => {
   if (!q.arg) return
@@ -392,6 +402,14 @@ let extract3 = q => {
         let q1 = JSON.parse(str)
         filters.push(q1) // deep copy...
       }
+    }
+  }
+  if (q.key == "hint") {
+    let str = JSON.stringify(q) // extract & cse
+    if (hints.map(x => JSON.stringify(x)).indexOf(str) < 0) {
+      let ix = hints.length
+      let q1 = JSON.parse(str)
+      hints.push(q1) // deep copy...
     }
   }
 }
@@ -416,7 +434,7 @@ let infer = q => {
     q.vars = [q.op]
     q.mind = [q.op]
     q.dims = [q.op]
-  } else if (q.key == "get" || q.key == "pure" || q.key == "mkset") {
+  } else if (q.key == "get" || q.key == "pure" || q.key == "hint" || q.key == "mkset") {
     let es = q.arg.map(infer)
     q.vars = unique(es.flatMap(x => x.vars))
     q.mind = unique(es.flatMap(x => x.mind))
@@ -481,7 +499,7 @@ let inferBwd0 = out => q => {
   } else if (q.key == "var") {
     q.bnd = []
     q.allBnd = []
-  } else if (q.key == "get" || q.key == "pure" || q.key == "mkset") {
+  } else if (q.key == "get" || q.key == "pure" || q.key == "hint" || q.key == "mkset") {
     let es = q.arg.map(inferBwd0(out))
     q.bnd = []
     q.allBnd = unique(es.flatMap(x => x.allBnd))
@@ -531,7 +549,7 @@ let inferBwd1 = out => q => {
     q.fre = []
   } else if (q.key == "var") {
     q.fre = [q.op] 
-  } else if (q.key == "get" || q.key == "pure" || q.key == "mkset") {
+  } else if (q.key == "get" || q.key == "pure"  || q.key == "hint" || q.key == "mkset") {
     let es = q.arg.map(inferBwd1(out))
     q.fre = unique(es.flatMap(x => x.fre))
   } else if (q.key == "stateful" || q.key == "prefix") {
@@ -790,6 +808,9 @@ let pretty = q => {
   } else if (q.key == "pure") {
     let es = q.arg.map(pretty)
     return q.op + "(" + es.join(", ") + ")"
+  } else if (q.key == "hint") {
+    let es = q.arg.map(pretty)
+    return q.op + "(" + es.join(", ") + ")"
   } else if (q.key == "mkset") {
     let [e1] = q.arg.map(pretty)
     return "mkset("+e1+")"
@@ -817,6 +838,13 @@ let emitPseudo = (q) => {
   for (let i in filters) {
     let q = filters[i]
     buf.push("gen"+i + ": " + pretty(q))
+    if (q.vars.length)
+      buf.push("  " + q.vars + " / " + q.fre)
+  }
+  buf.push("")
+  for (let i in hints) {
+    let q = hints[i]
+    buf.push("hint"+i + ": " + pretty(q))
     if (q.vars.length)
       buf.push("  " + q.vars + " / " + q.fre)
   }
@@ -912,6 +940,9 @@ let codegen = q => {
   } else if (q.key == "pure") {
     let es = q.arg.map(codegen)
     return "rt.pure."+q.op+"("+es.join(",")+")"
+  } else if (q.key == "hint") {
+    // no-op!
+    return "{}"
   } else if (q.key == "mkset") {
     let [e1] = q.arg.map(codegen)
     return "rt.singleton("+e1+")"
@@ -1194,6 +1225,88 @@ let emitCode = (q, order) => {
 }
 
 
+let quoteIndexVarsXS_C = (s, vs) => {
+  let res = s
+  for (let v of vs) {
+    res = "rt_get("+res+", "+quoteVarXS(v)+")"
+  }
+  return res
+}
+
+
+let codegenC = q => {
+  if (q.key == "input") {
+    return "inp"
+  } else if (q.key == "const") {
+    if (typeof q.op === "number") {
+      if (Number.isInteger(q.op))
+        return "rt_const_int("+q.op+")"
+      else
+        return "rt_const_float("+q.op+")"
+    } else if (typeof q.op === "string") {
+      return "rt_const_string(\""+q.op+"\")"
+    } else if (typeof q.op === "object" && Object.keys(q.op).length == 0){
+      return "rt_const_obj()"
+    } else {
+      console.error("unsupported constant ", pretty(q))
+      return String(q.op)
+    }
+  } else if (q.key == "var") {
+    return quoteVar(q.op)
+  } else if (q.key == "ref") {
+    let q1 = assignments[q.op]
+    let xs = ["rt_const_int("+q.op+")",...q1.fre]
+    return quoteIndexVarsXS_C("tmp", xs)
+  } else if (q.key == "get" && isDeepVarExp(q.arg[1])) {
+    let [e1,e2] = q.arg.map(codegenC)
+    return "rt_deepGet("+e1+","+e2+")"
+  } else if (q.key == "get") {
+    let [e1,e2] = q.arg.map(codegenC)
+    return "rt_get("+e1+","+e2+")"
+  } else if (q.key == "pure") {
+    let es = q.arg.map(codegenC)
+    return "rt_pure_"+q.op+"("+es.join(",")+")"
+  } else if (q.key == "hint") {
+    // no-op!
+    return "1"
+  } else if (q.key == "mkset") {
+    let [e1] = q.arg.map(codegenC)
+    return "rt_singleton("+e1+")"
+  } else {
+    console.error("unknown op ", pretty(q))
+    return "<?"+q.key+"?>"
+  }
+}
+
+
+let emitCodeC = (q, order) => {
+  let buf = []
+  buf.push("#include <stdio.h>")
+  buf.push("#include \"rhyme.h\"")
+  buf.push("int main() {")
+  buf.push("rh inp = 0; // input?")
+  buf.push("rh tmp = rt_const_obj();")
+
+  for (let is of order) {
+    if (is.length > 1)
+      console.error("cycle "+is)
+    let [i] = is
+    let q = assignments[i]
+    
+    buf.push("// --- tmp"+i+" ---")
+    buf.push("// XXX NOT IMPLEMENTED")
+  }
+
+  buf.push("// --- res ---")
+  buf.push("rh res = "+codegenC(q)+";")
+  buf.push("write_result(res);")
+  buf.push("}\n")
+
+  return buf.join("\n")
+}
+
+
+
 let fixIndent = s => {
   let lines = s.split("\n")
   let out = []
@@ -1209,9 +1322,102 @@ let fixIndent = s => {
 }
 
 
+let translateToNewCodegen = q => {
+
+  let assignmentStms = []
+  let generatorStms = []
+  let tmpVarWriteRank = {} 
+
+
+  // generator ir api: mirroring necessary bits from ir.js
+  let expr = (txt, ...args) => ({ txt, deps: args })
+
+  let call = (func, ...es) => expr(func+"("+es.map(x => x.txt).join(",")+")", ...es.flatMap(x => x.deps))
+
+  let assign = (txt, lhs_root_sym, lhs_deps, rhs_deps) => {
+      let e = expr(txt, ...lhs_deps, ...rhs_deps) // lhs.txt + " " + op + " " + rhs.txt
+      e.lhs = expr("LHS", ...lhs_deps)
+      e.op = "=?="
+      e.rhs = expr("RHS", ...rhs_deps)
+      e.writeSym = lhs_root_sym
+      e.deps = e.deps.filter(e1 => e1 != e.writeSym) // remove cycles
+      // update sym to rank dep map
+      tmpVarWriteRank[e.writeSym] ??= 1
+      e.writeRank = tmpVarWriteRank[e.writeSym]
+      // if (e.op != "+=") // do not increment for idempotent ops? (XX todo opt)
+      tmpVarWriteRank[e.writeSym] += 1
+      assignmentStms.push(e)
+  }
+
+  function selectGenFilter(a, b) { 
+    let b1 = b.deps[0]
+    let e = expr("FOR", ...a.deps) // "for " + b1 + " <- " + a.txt
+    e.sym = b1
+    e.rhs = a.txt
+    // if (generatorStms.every(e1 => e1.txt != e.txt)) // generator CSE
+      generatorStms.push(e)
+  }
+
+  let tmpSym = i => "tmp-"+i
+
+  let getDeps = q => [...q.fre,...q.tmps.map(tmpSym)]
+
+  let transExpr = q => expr(codegen(q), ...getDeps(q))
+
+  // map assignments
+  for (let i in assignments) {
+    let sym = tmpSym(i)
+
+    let q = assignments[i]
+
+    // emit initialization (see 'emitCode')
+    if (q.key == "stateful" && (q.op+"_init") in runtime.stateful || q.key == "update") {
+        let fv = q.fre
+        let xs = [i,...q.fre.map(quoteVar)]
+        let ys = xs.map(x => ","+x).join("")
+
+        assign("rt.init(tmp"+ys+")("+ emitStmInit(q) + ")", sym, q.fre, [])
+    }
+
+    // emit update (see 'emitCode')
+    {
+      let fv = union(q.fre, q.bnd)
+      let xs = [i,...q.fre.map(quoteVar)]
+      let ys = xs.map(x => ","+x).join("")
+
+      let deps = [...fv,...q.tmps.map(tmpSym)] // XXX rhs dims only?
+
+      assign("rt.update(tmp"+ys+")("+ emitStm(q) + ")", sym, q.fre, deps)
+    }
+  }
+
+  // map filters/generators
+  for (let i in filters) {
+    let q = filters[i]
+    let [a,b] = q.arg.map(transExpr)
+    selectGenFilter(a, b)
+  }
+
+  // map final result
+  let res = transExpr(q)
+
+  let ir = {
+    assignmentStms,
+    generatorStms,
+    tmpVarWriteRank,
+    res
+  }
+
+  return generate(ir)
+}
+
+
+
 let compile = (q,{
   altInfer = false, 
-  singleResult = true // TODO: elim flag?
+  singleResult = true, // TODO: elim flag?
+  newCodegen = false,
+  CCodegen = false
 }={}) => {
 
   reset()
@@ -1279,6 +1485,48 @@ let compile = (q,{
   let pseudo = emitPseudo(q)
 
   // 11. Codegen
+
+  if (newCodegen)
+    return translateToNewCodegen(q)
+
+
+  if (CCodegen) {
+    const fs = require('node:fs/promises')
+    const os = require('node:child_process')
+
+let execPromise = function(cmd) {
+    return new Promise(function(resolve, reject) {
+        os.exec(cmd, function(err, stdout) {
+            if (err) return reject(err);
+            resolve(stdout);
+        });
+    });
+}
+
+    let code = emitCodeC(q,order)
+    code = fixIndent(code)
+
+    let func = (async () => {
+      await fs.writeFile('cgen/test.c', code);
+      await execPromise('gcc cgen/test.c -o cgen/test.out')
+      return 'cgen/test.out'
+    })()
+
+    let wrap = async (input) => {
+      let file = await func
+      let res = await execPromise(file)
+      return res
+    }
+
+    wrap.explain = {
+      src,
+      ir: {filters, assignments, vars, order}, 
+      pseudo, code 
+    }
+    return wrap
+  }
+
+
   let code = emitCode(q,order)
 
   code = fixIndent(code)
@@ -1308,7 +1556,7 @@ let compile = (q,{
 }
 
 
-
+// ------- an alternative code generator follows (currently not used) ------ //
 
 let emitCodeDeep = (q) => {
   let buf = []

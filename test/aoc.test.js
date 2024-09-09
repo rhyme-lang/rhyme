@@ -31,6 +31,7 @@ let udf_stdlib = {
   int2Char: x => String.fromCharCode(x),
   matchAll: (regex, flags) => x => [...x.matchAll(new RegExp(regex, flags))],
   logicalAnd: (x,y) => x && y,
+  logicalOr: (x,y) => x || y,
   range: (start, stop, step) =>
       Array.from({ length: (stop - start + step - 1) / step }, (_, i) => start + (i * step)),
   slice: start => x => x.slice(start),
@@ -1522,6 +1523,89 @@ test("day15-part2", () => {
   expect(focusPower).toEqual(145);
 });
 
+test("day16-part1", () => {
+  let input = `.|...\\....
+|.-.\\.....
+.....|-...
+........|.
+..........
+.........\\
+..../.\\\\..
+.-.-/..|..
+.|....-|.\\
+..//.|....`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    andThen: (a,b) => b, // just to add a as dependency,
+    getAdj: point => {
+      let i = +point[0]
+      let j = +point[1]
+      return [[i - 1, j], [i + 1, j], [i, j - 1], [i, j + 1]]
+    },
+    onDot: (curr) => [[curr[0] + curr[2], curr[1] + curr[3], curr[2], curr[3]]],
+    onPipe: (curr) => curr[2] == 0 ? [[curr[0] - 1, curr[1], -1, 0], [curr[0] + 1, curr[1], 1, 0]] : udf.onDot(curr),
+    onDash: (curr) => curr[3] == 0 ? [[curr[0], curr[1] - 1, 0, -1], [curr[0], curr[1] + 1, 0, 1]] : udf.onDot(curr),
+    onSlash: (curr) => [[curr[0] - curr[3], curr[1] - curr[2], -curr[3], -curr[2]]],
+    onBackslash: (curr) => [[curr[0] + curr[3], curr[1] + curr[2], curr[3], curr[2]]],
+    optionalChaining: (o, k) => o?.[k],
+    notVisited: (visited, curr) => visited[curr[0]]?.[curr[1]]?.[curr[2]]?.[curr[3]] == undefined,
+    merge: (o1, o2) => {
+      return {...o1, ...o2}
+    },
+    ...udf_stdlib
+  }
+
+  let lines = rh`.input | udf.split "\\n"`
+  let mat = rh`${lines} | .*line | udf.split "" | group *line`
+
+  // The ray is represented by combining the position and direction [x, y, vx, vy]
+  let state = {
+    curr: [[0, 0, 0, 1]],      // top-left corner
+    visited: {'0': {'0': {'0': {'1': true}}}}
+  }
+
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+
+  let getCell = rh`udf.optionalChaining (udf.optionalChaining ${mat} (state.curr.*curr.0)) (state.curr.*curr.1)`
+
+  let isDash = rh`udf.isEqual "-" ${getCell}`
+  let isPipe = rh`udf.isEqual "|" ${getCell}`
+  let isDot = rh`udf.isEqual "." ${getCell}`
+  let isSlash = rh`udf.isEqual "/" ${getCell}`
+
+  let newPosAndDir = [rh`udf.ifThenElse ${isDot} (udf.onDot state.curr.*curr) (udf.ifThenElse ${isPipe} (udf.onPipe state.curr.*curr) (udf.ifThenElse ${isDash} (udf.onDash state.curr.*curr) (udf.ifThenElse ${isSlash} (udf.onSlash state.curr.*curr) (udf.onBackslash state.curr.*curr)))) | .*new`]
+
+  let inRange = rh`udf.optionalChaining (udf.optionalChaining ${mat} (${newPosAndDir}.*newPos.0)) (${newPosAndDir}.*newPos.1)`
+  let notVisited = rh`udf.notVisited state.visited ${newPosAndDir}.*newPos`
+  let valid = rh`udf.logicalAnd ${inRange} ${notVisited}`
+  let filteredPosAndDir = [rh`${newPosAndDir}.*newPos | ${filterBy("*f", valid)}`]
+  let nextState = {
+    curr: filteredPosAndDir,
+    visited: rh`state.visited`
+  }
+
+  let getNextState = api.compile(nextState)
+  
+  while (state.curr.length > 0) {
+    state = getNextState({input, udf, state})
+    for (let i in state.curr) {
+      let curr = state.curr[i]
+      state.visited[curr[0]] ??= {}
+      state.visited[curr[0]][curr[1]] ??= {}
+      state.visited[curr[0]][curr[1]][curr[2]] ??= {}
+      state.visited[curr[0]][curr[1]][curr[2]][curr[3]] = true
+    }
+  }
+
+  let query = rh`count state.visited.*i.*j`
+
+  let func = api.compile(query)
+  let res = func({state})
+
+  expect(res).toBe(46)
+})
+
 test("day17-part1", () => {
   let input = `2413432311323
 3215453535623
@@ -2065,6 +2149,362 @@ hdj{m>838:A,pv}
   expect(state.acceptedAmt).toBe(167409079868000);
 
 });
+
+test("day20-part1", () => {
+  let input = `broadcaster -> a
+%a -> inv, con
+&inv -> b
+%b -> con
+&con -> output`
+
+  let udf = {
+    ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
+    ifThen: (predicate, thenBr) => predicate ? thenBr : undefined,
+    removePrefix: (str) => str.substring(1),
+    emptyObject: () => { return {} },
+    copyAndUpdate: (o, k, v) => {
+      let res = {...o}
+      res[k] = v
+      return res
+    },
+    flip: (n) => n ^= 1,
+    getObjSize: (o) => Object.keys(o).length,
+    optionalChaining: (o, k) => o?.[k],
+    getAdjOrDefault: (o) => o ? o["adj"] : [],
+    mergeArrays: (a, b) => [...a, ...b],
+    ...udf_stdlib
+  }
+
+  let lines = rh`.input | udf.split "\\n"`
+
+  let node = rh`${lines}.*line | udf.split " -> " 
+                               | udf.ifThenElse (udf.isEqual .0 "broadcaster") .0 (udf.removePrefix .0)`
+  let dest = rh`${lines}.*line | udf.split " -> " | .1
+                               | udf.split ", "`
+
+  let inDegree = rh`count ${dest}.*dest | group ${dest}.*dest`
+
+  let nodeObj = {
+    type: rh`${lines}.*line | udf.split " -> " | udf.ifThenElse (udf.isEqual .0 "broadcaster") .0 .0.0`,
+    adj: dest
+  }
+
+  let initialNodeState = rh`${lines}.*line | udf.split " -> " | udf.ifThen (udf.notEqual .0 "broadcaster") (udf.ifThenElse (udf.isEqual .0.0 "%") 0 (udf.emptyObject 0))`
+
+  let graphQuery = {
+    nodes: rh`${nodeObj} | group ${node}`,
+    inDegree,
+    nodeStates: rh`${initialNodeState} | group ${node}`,
+  }
+
+  let getGraph = api.compile(graphQuery)
+  let graph = getGraph({input, udf})
+  
+  let broadcaster = {
+    src: rh`state.pulses.0.dest`,
+    dest: rh`(udf.getAdjOrDefault state.graph.nodes.(state.pulses.0.dest)).*adj`,
+    pulse: rh`state.pulses.0.pulse`
+  }
+
+  let flipFlop = {
+    src: rh`state.pulses.0.dest`,
+    dest: rh`(udf.getAdjOrDefault state.graph.nodes.(state.pulses.0.dest)).*adj`,
+    pulse: rh`udf.flip state.graph.nodeStates.(state.pulses.0.dest)`
+  }
+
+  let stateCopy = rh`udf.copyAndUpdate state.graph.nodeStates.(state.pulses.0.dest) state.pulses.0.src state.pulses.0.pulse`
+  let conj = {
+    src: rh`state.pulses.0.dest`,
+    dest: rh`(udf.getAdjOrDefault state.graph.nodes.(state.pulses.0.dest)).*adj`,
+    pulse: rh`udf.flip (udf.toNum (udf.logicalAnd (product ${stateCopy}.*input) (udf.isEqual state.graph.inDegree.(state.pulses.0.dest) (udf.getObjSize ${stateCopy}))))`
+  }
+
+  let isBroadcaster = rh`udf.isEqual state.pulses.0.dest "broadcaster"`
+  let isFlipFlop = rh`udf.isEqual (udf.optionalChaining state.graph.nodes.(state.pulses.0.dest) "type") "%"`
+  let isConj = rh`udf.isEqual (udf.optionalChaining state.graph.nodes.(state.pulses.0.dest) "type") "&"`
+
+  let newPulses = [rh`udf.ifThenElse ${isBroadcaster} ${broadcaster} (udf.ifThenElse ${isFlipFlop} (udf.ifThen (udf.isEqual state.pulses.0.pulse 0) ${flipFlop}) ${conj})`]
+
+  let query = {
+    graph: rh`state.graph`,
+    pulses: rh`udf.mergeArrays (state.pulses | udf.slice 1) ${newPulses}`,
+    flipped: rh`udf.ifThen (udf.logicalAnd ${isFlipFlop} (udf.isEqual state.pulses.0.pulse 0)) state.pulses.0.dest`,
+    stateUpdated: rh`udf.ifThen ${isConj} state.pulses.0`,
+    countLowPulse: rh`state.countLowPulse + (udf.toNum (udf.isEqual state.pulses.0.pulse 0))`,
+    countHighPulse: rh`state.countHighPulse + (udf.toNum (udf.isEqual state.pulses.0.pulse 1))`
+  }
+
+  let state = {
+    graph: graph,
+    pulses: [{
+      src: "button",
+      dest: "broadcaster",
+      pulse: 0
+    }],
+    countLowPulse: 0,
+    countHighPulse: 0,
+  }
+
+  let func = api.compileNew(query)
+
+  let i = 0;
+  while (i < 1000) {
+    state.pulses = [{
+      src: "button",
+      dest: "broadcaster",
+      pulse: 0
+    }]
+
+    while (state.pulses.length > 0) {
+      state = func({input, udf, state})
+      // Update state manually
+      if (state.flipped) {
+        state.graph.nodeStates[state.flipped] ^= 1
+      }
+      if (state.stateUpdated) {
+        state.graph.nodeStates[state.stateUpdated["dest"]][state.stateUpdated["src"]] = state.stateUpdated["pulse"]
+      }
+    }
+    i++
+  }
+
+  let res = state.countLowPulse * state.countHighPulse
+  expect(res).toBe(11687500)
+})
+
+test("day21-part1", () => {
+  let input = `...........
+.....###.#.
+.###.##..#.
+..#.#...#..
+....#.#....
+.##..S####.
+.##..#...#.
+.......##..
+.##.#.####.
+.##..##.##.
+...........`
+
+  let udf = {
+    getAdj: point => {
+      let i = +point[0]
+      let j = +point[1]
+      return [[i - 1, j], [i + 1, j], [i, j - 1], [i, j + 1]]
+    },
+    filter: c => c ? { [c]: true } : {},
+    andThen: (a,b) => b, // just to add a as dependency
+    toCoordStr: (i, j) => `${i} ${j}`,
+    toSet: (arr) => new Set(arr),
+    toArr: (set) => Array.from(set),
+    getCell: (grid, i, j) => grid?.[i]?.[j],
+    ...udf_stdlib
+  }
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+
+  let grid = [rh`.input | udf.split "\\n" | .*line
+                         | udf.split ""`]
+
+  // Use filter to find the start position
+  let isStart = rh`udf.isEqual ${grid}.*i.*j "S"`
+  let startPos = [rh`udf.toCoordStr (udf.toNum *i) (udf.toNum *j) | ${filterBy("*f1", isStart)}`]
+
+  let initialState = {
+    curr: rh`udf.toSet ${startPos}`,
+    grid: grid
+  }
+
+  let getInitialState = api.compile(initialState)
+  let state = getInitialState({input, udf})
+
+  // Iterate through each current cell and add the their neighbors to the array / set
+  
+  let adj = rh`udf.getAdj ((udf.toArr state.curr).*curr | udf.split " ")`
+  let isGardenPlot = rh`udf.logicalAnd (udf.getCell state.grid ${adj}.*adj.0 ${adj}.*adj.1) (udf.notEqual (udf.getCell state.grid ${adj}.*adj.0 ${adj}.*adj.1) "#")`
+  let neighbors = [rh`${adj} | udf.toCoordStr .*adj.0 .*adj.1 | ${filterBy("*f2", isGardenPlot)}`]
+
+  let query = {
+    curr: rh`udf.toSet ${neighbors}`,
+    grid: rh`state.grid`
+  }
+  let func = api.compile(query)
+
+  let i = 0
+  while (i < 6) {
+    state = func({input, udf, state})
+    i++
+  }
+
+  let res = state.curr.size
+  expect(res).toBe(16)
+})
+
+test("day22-part1", () => {
+  let input = `1,0,1~1,2,1
+0,0,2~2,0,2
+0,2,3~2,2,3
+0,0,4~0,2,4
+2,0,5~2,2,5
+0,1,6~2,1,6
+1,1,8~1,1,9`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    andThen: (a,b) => b, // just to add a as dependency,
+    ifThenElse: (pred, thenBr, elseBr) => pred ? thenBr : elseBr,
+    moveDown: (brick) => {
+      // copy original brick and modify
+      let newBrick = {"0": {...brick[0]}, "1": {...brick[1]}}
+      newBrick[0][2] -= 1
+      newBrick[1][2] -= 1
+      return newBrick
+    },
+    // use rhyme for this function later
+    collides: (a, b) => {
+      let xOverlaps = (a, b) => {
+        let minX = Math.min(a[0][0], a[1][0])
+        let maxX = Math.max(a[0][0], a[1][0])
+        let otherMinX = Math.min(b[0][0], b[1][0])
+        let otherMaxX = Math.max(b[0][0], b[1][0])
+        return maxX >= otherMinX && otherMaxX >= minX
+      }
+      let yOverlaps = (a, b) => {
+        let minY = Math.min(a[0][1], a[1][1])
+        let maxY = Math.max(a[0][1], a[1][1])
+        let otherMinY = Math.min(b[0][1], b[1][1])
+        let otherMaxY = Math.max(b[0][1], b[1][1])
+        return maxY >= otherMinY && otherMaxY >= minY
+      }
+      let zOverlaps = (a, b) => {
+        let minZ = Math.min(a[0][2], a[1][2])
+        let maxZ = Math.max(a[0][2], a[1][2])
+        let otherMinZ = Math.min(b[0][2], b[1][2])
+        let otherMaxZ = Math.max(b[0][2], b[1][2])
+        return maxZ >= otherMinZ && otherMaxZ >= minZ
+      }
+      return xOverlaps(a, b) && yOverlaps(a, b) && zOverlaps(a, b)
+    },
+    prepend: (value, arr) => [value, ...arr],
+    cmpFn: (a, b) => {
+      return Math.min(a[0][2], a[1][2]) - Math.min(b[0][2], b[1][2])
+    },
+    toSet: (arr) => new Set(arr),
+    ...udf_stdlib
+  }
+
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+
+  let lines = [rh`.input | udf.split "\\n" | .*line
+                         | udf.split "~" | .*endpoint
+                         | udf.split "," | .*coord
+                         | group *coord | group *endpoint`]
+
+  let bricksQuery = rh`${lines} | udf.sort udf.cmpFn`
+
+  let getBricks = api.compile(bricksQuery)
+  let bricks = getBricks({input, udf})
+
+  let state = {
+    bricks,
+    droppedBricksKeys: [],
+    droppedBricksValues: []
+  }
+
+  let brickMovedDown = rh`udf.moveDown state.bricks.0`
+  let collides = rh`udf.collides state.droppedBricksKeys.*brick ${brickMovedDown}`
+  let collisions = [rh`state.droppedBricksKeys.*brick | ${filterBy("*f", collides)}`]
+  let collideWithGround = rh`udf.logicalOr (udf.isEqual ${brickMovedDown}.0.2 0) (udf.isEqual ${brickMovedDown}.1.2 0)`
+  let collideWithGroundOrBrick = rh`udf.logicalOr (udf.notEqual ${collisions}.length 0) ${collideWithGround}`
+  let nextState = {
+    bricks: rh`udf.ifThenElse ${collideWithGroundOrBrick} (state.bricks | udf.slice 1) (udf.prepend ${brickMovedDown} (state.bricks | udf.slice 1))`,
+    droppedBricksKeys: rh`udf.ifThenElse ${collideWithGroundOrBrick} (udf.prepend state.bricks.0 state.droppedBricksKeys) state.droppedBricksKeys`,
+    droppedBricksValues: rh`udf.ifThenElse ${collideWithGroundOrBrick} (udf.prepend ${collisions} state.droppedBricksValues) state.droppedBricksValues`
+  } 
+
+  let next = api.compile(nextState)
+
+  while (state.bricks.length > 0) {
+    state = next({input, udf, state})
+  }
+
+  let onlyOneSupportingBrick = rh`udf.isEqual state.droppedBricksValues.*.length 1`
+  let nonDisintegrableBricks = [rh`state.droppedBricksValues.*.0  | ${filterBy("*f", onlyOneSupportingBrick)}`]
+  let query = rh`bricks.length - (udf.toSet ${nonDisintegrableBricks}).size`
+
+  let func = api.compile(query)
+  let res = func({input, udf, state, bricks})
+
+  expect(res).toBe(5)
+})
+
+test("day24-part1", () => {
+  let input = `19, 13, 30 @ -2, 1, -2
+18, 19, 22 @ -1, -1, -2
+20, 25, 34 @ -2, -2, -4
+12, 31, 28 @ -1, -2, -1
+20, 19, 15 @ 1, -5, -3`
+
+  let udf = {
+    ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
+    logicalAnd1: (a, b) => a && b ? 1 : 0,
+    toCoord: (x, y) => [x, y],
+    ...udf_stdlib
+  }
+
+  // parse input
+  let hailstones = [rh`.input | udf.split "\\n" | .*line
+                              | udf.split " @ " | .*part
+                              | udf.split ", " | udf.toNum .*axis
+                              | group *axis | group *part`]
+
+  let x_1 = rh`${hailstones}.*hailstone1.0.0`
+  let y_1 = rh`${hailstones}.*hailstone1.0.1`
+
+  let x_2 = rh`${hailstones}.*hailstone2.0.0`
+  let y_2 = rh`${hailstones}.*hailstone2.0.1`
+
+  let vx_1 = rh`${hailstones}.*hailstone1.1.0`
+  let vy_1 = rh`${hailstones}.*hailstone1.1.1`
+
+  let vx_2 = rh`${hailstones}.*hailstone2.1.0`
+  let vy_2 = rh`${hailstones}.*hailstone2.1.1`
+
+  let a_1 = vy_1
+  let b_1 = rh`0 - ${vx_1}`
+  let c_1 = rh`${vx_1} * ${y_1} - ${vy_1} * ${x_1}`
+
+  let a_2 = vy_2
+  let b_2 = rh`0 - ${vx_2}`
+  let c_2 = rh`${vx_2} * ${y_2} - ${vy_2} * ${x_2}`
+
+  // if denominator is 0, then the two lines are parallel so they won't intersect
+  let denominator = rh`${a_1} * ${b_2} - ${a_2} * ${b_1}`
+
+  // calculate the intersection
+  let intersection_x = rh`(${b_1} * ${c_2} - ${b_2} * ${c_1}) / ${denominator}`
+  let intersection_y = rh`(${c_1} * ${a_2} - ${c_2} * ${a_1}) / ${denominator}`
+
+  // calculate the time the hailstones reach the intersection
+  let time_1 = rh`udf.ifThenElse ${vx_1} ((${intersection_x} - ${x_1}) / ${vx_1}) ((${intersection_y} - ${y_1}) / ${vy_1})`
+  let time_2 = rh`udf.ifThenElse ${vx_2} ((${intersection_x} - ${x_2}) / ${vx_2}) ((${intersection_y} - ${y_2}) / ${vy_2})`
+
+  // check if the intersection is within the desired area
+  let intersect_within_area = rh`udf.logicalAnd (udf.isGreaterOrEqual ${intersection_x} 7) (udf.isLessOrEqual ${intersection_x} 27)`
+  // check if the intersection is in the future
+  let intersect_in_the_future = rh`udf.logicalAnd (udf.isGreaterOrEqual ${time_1} 0) (udf.isGreaterOrEqual ${time_2} 0)`
+
+  // the two hailstones will intersect if both are true
+  let will_intersect = rh`udf.logicalAnd1 ${intersect_within_area} ${intersect_in_the_future}`
+
+  let will_intersect_all = [rh`udf.ifThenElse (udf.isLessThan *hailstone1 *hailstone2) (udf.ifThenElse ${denominator} (${will_intersect}) 0) 0`]
+
+  // count the number of intersections
+  let query = rh`${will_intersect_all} | sum .*`
+
+  let func = api.compile(query)
+  let res = func({input, udf})
+
+  expect(res).toBe(2)
+})
 
 // 2022
 
