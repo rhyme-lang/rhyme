@@ -537,6 +537,10 @@ let emitFiltersC2 = (scope, iter) => (buf, codegen) => body => {
   // remember the set of iteration vars
   for (let v of iter) vars[v] = true
   for (let v of scope) vars[v] = true
+  // XX re-run filters on 'scope'? yes, because 
+  // some may be correlated with 'iter'
+
+  // XX but gotta be careful -- see etaIndirect2 test
 
   // record current scope
   for (let v of scope) seen[v] = true
@@ -682,9 +686,13 @@ let emitCodeDeep = (q) => {
       let i = stmCount++
 
       let bound
-      if (q.key == "update")
+      if (q.key == "update") {
         bound = q.arg[1].vars // explicit var
-      else
+        if (intersect(bound,env).length > 0) {
+          buf.push("// WARNING: var '"+bound+"' already defined in "+env)
+          console.warn("// WARNING: var '"+bound+"' already defined in "+env)
+        }
+      } else
         bound = diff(q.arg[0].dims, env)
 
       buf.push("/* --- begin "+q.key+"_"+i+" --- "+pretty(q)+" ---*/")
