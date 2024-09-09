@@ -1249,14 +1249,6 @@ test("day12-part1", () => {
 ?###???????? 3,2,1`
 
   let udf = {
-    filter: c => c ? { [c]: true } : {},
-    andThen: (a,b) => b, // just to add a as dependency,
-    operationalCase: (springs, list, n) => {
-
-    },
-    damagedCase: () => {
-
-    },
     result: (res) =>{
       return {
         input: [],
@@ -1271,8 +1263,6 @@ test("day12-part1", () => {
     valueOrDefault: (x) => x !== undefined ? x : 0,
     ...udf_stdlib
   }
-
-  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
 
   let line = [{
     // the remaining input to process
@@ -1291,16 +1281,6 @@ test("day12-part1", () => {
 
   let getPuzzles = api.compile(lines)
   let puzzles = getPuzzles({input, udf})
-
-  // console.log(puzzles[0])
-
-  // puzzles = {
-  //   "0": [{
-  //     input: ["."],
-  //     ds: [],
-  //     d: 4
-  //   }]
-  // }
 
   let zero = rh`udf.result 0`
   let one = rh`udf.result 1`
@@ -1338,7 +1318,6 @@ test("day12-part1", () => {
   }
 
   let func = api.compile(query)
-  // console.log(func.explain.code)
 
   let res = 0
   for (let i in puzzles) {
