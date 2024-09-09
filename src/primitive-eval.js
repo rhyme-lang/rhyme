@@ -578,8 +578,8 @@ let emitFiltersC2 = (scope, iter) => (buf, codegen) => body => {
 
 
   // XXX SHORTCUT -- known vars & range ...
-  for (let v of iter) {
-    buf.push("for (let "+quoteVar(v)+" of [0,1,2,3,4,'A','B','C','D','E','F','G','H','U','V','W','X','Y','Z']) {")
+  for (let v of diff(iter,scope)) {
+    buf.push("for (let "+quoteVar(v)+" of rt.globalVarDomain) {")
     seen[v] = true
     closing = "}\n"+closing
   }
