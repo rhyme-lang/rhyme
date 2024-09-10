@@ -560,7 +560,20 @@ let inferBwd1 = out => q => {
     let extra = path.filter(x => 
       intersects(trans(x.xxFree), trans(q.bnd))).flatMap(x => x.xxFree)
 
-    q.fre = intersect(union(trans(e1.fre), extra), out)
+
+    // free variables: anything from current scope (out) that is:
+    // - used in any filter for q.bnd (here: trans via .dims)
+    // - free in e1
+    // - an extra K from outer grouping
+    q.fre = intersect(union(trans(q.bnd), union(e1.fre, extra)), out)
+
+    // previous:
+    // q.fre = intersect(union(trans(e1.fre), extra), out)
+
+    // NOTE: we cannot just subtract q.bnd, because we'd retain the
+    // parts of trans(q.bnd) in q.fre which aren't part of 'out'. 
+    // Those will be iterated over, but projected out. 
+
 
   } else if (q.key == "update") {
     let e0 = inferBwd1(out)(q.arg[0]) // what are we extending
@@ -593,7 +606,8 @@ let inferBwd1 = out => q => {
 
     let fv = unique([...e0.fre, ...e1.fre, ...e2.fre, ...diff(e1Body.fre, q.e1BodyBnd)])
 
-    q.fre = intersect(union(trans(fv), extra), out)
+    // free variables: see note at stateful above
+    q.fre = intersect(union(trans(q.bnd), union(fv, extra)), out)
 
   } else {
     console.error("unknown op", q)
