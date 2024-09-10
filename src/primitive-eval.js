@@ -378,7 +378,7 @@ let inferBwd0 = out => q => {
 
     let e2 = inferBwd0(union(out, [e1.op]))(q.arg[2])
 
-    q.bnd = diff(union([e1.op], e1Body.dims), out)
+    q.bnd = diff(union([e1.op], []/*e1Body.dims*/), out)
     q.allBnd = unique([...q.bnd, ...e0.allBnd, ...e1.allBnd, ...e2.allBnd, ...e1Body.allBnd])
 
   } else {
@@ -668,7 +668,7 @@ let transViaFiltersDimsC = iter => {
       let v1 = f.arg[1].op
       let g1 = f.arg[0]
       if (vars[v1]) { // not interested in this? skip
-        for (v2 of g1.dims) {
+        for (v2 of g1.fre) { // FRE !!!
           if (!vars[v2]) {
             vars[v2] = true
             done = false
@@ -686,7 +686,7 @@ let transViaFiltersDimsC = iter => {
 
 
 
-let emitFiltersC1 = (scope, iter) => (buf, codegen) => body => {
+let emitFiltersC1 = (scope, free, iter) => (buf, codegen) => body => {
   // approach: build explicit projection first
   // 1. iterate over transitive iter space to
   //    build projection map
@@ -695,14 +695,14 @@ let emitFiltersC1 = (scope, iter) => (buf, codegen) => body => {
 
   if (iter.length == 0) return body()
 
-  let full = transViaFiltersDimsC(union(scope,iter)) // XX simpler way to compute?
+  let full = transViaFiltersDimsC(union(free,iter)) // XX simpler way to compute?
 
   let closing = "}"
   buf.push("{")
   buf.push("// PROJECT "+full+" -> "+iter)
   buf.push("let proj = {}")
 
-  emitFiltersC2(scope, diff(full,scope))(buf, codegen)(() => {
+  emitFiltersC2(scope, full)(buf, codegen)(() => {
     // (logic taken from caller)
     let xs = [...iter.map(quoteVar)]
     let ys = xs.map(x => ","+x).join("")
@@ -742,11 +742,14 @@ let emitFiltersC2 = (scope, iter) => (buf, codegen) => body => {
 
   // remember the set of iteration vars
   for (let v of iter) vars[v] = true
-  for (let v of scope) vars[v] = true
+  // for (let v of scope) vars[v] = true
+
   // XX re-run filters on 'scope'? yes, because 
   // some may be correlated with 'iter'
 
   // XX but gotta be careful -- see etaIndirect2 test
+  // the new model is to again include q.fre in iter,
+  // which overlaps with scope.
 
   // record current scope
   for (let v of scope) seen[v] = true
@@ -774,7 +777,7 @@ let emitFiltersC2 = (scope, iter) => (buf, codegen) => body => {
       let g1 = f.arg[0]
 
       // XXX dep on .fre here!
-      let avail = g1.dims.every(x => seen[x]) 
+      let avail = g1.fre.every(x => seen[x])
 
       if (avail)
         available.push(i)
@@ -789,6 +792,7 @@ let emitFiltersC2 = (scope, iter) => (buf, codegen) => body => {
 
   // XXX SHORTCUT -- known vars & range ...
   for (let v of diff(iter,scope)) {
+  // for (let v of iter) {
     buf.push("for (let "+quoteVar(v)+" of rt.globalVarDomain) {")
     seen[v] = true
     closing = "}\n"+closing
@@ -901,8 +905,17 @@ let emitCodeDeep = (q) => {
       } else
         bound = diff(q.arg[0].dims, env)
 
+
       buf.push("/* --- begin "+q.key+"_"+i+" --- "+pretty(q)+" ---*/")
       buf.push("// env: "+env+" dims: "+q.dims+" bound: "+bound)
+
+      if (!same(bound,q.bnd)) {
+        // console.warn("// OBACHT! bound "+bound+" -> q.bnd "+q.bnd)
+        buf.push("// OBACHT! q.bound "+q.bnd)
+      }
+      bound = q.bnd
+
+
 
       let emitStmInit = (q) => {
         if (q.key == "stateful") {
@@ -944,7 +957,7 @@ let emitCodeDeep = (q) => {
       }
 
       // emit main computation
-      emitFiltersC1(env, bound)(buf, codegen)(() => {
+      emitFiltersC1(env, q.fre, bound)(buf, codegen)(() => {
         buf.push("tmp"+i+" = "+emitStm(q) + ".next(tmp"+i+")")
       })
 
@@ -1018,6 +1031,7 @@ let compile = (q,{
      vars: q.vars,
      dims: [],
      bnd: q.dims,
+     fre: [],
     }
     // NOTE: compared to adding it earlier and
     //       following desugaring pipeline:

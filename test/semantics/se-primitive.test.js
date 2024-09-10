@@ -346,11 +346,21 @@ test("testGroup0-a3", () => {
 test("testGroup0-a4", () => {
   let query = rh`group *K (mkset(data.*.key).*K & array(data.*.value))`
   
+  // Difference to prev: drop *K from inner `array(...)`
+
   let func = compile(query)
   let res = func({data, other})
 
+  // NOTE: this worked in an intermediate model of primitive-eval,
+  // where { data.*.key: ... } had no special status and was directly
+  // desugared in to group *K without touching nested aggregations
+  // via path. 
+  // 
+  // This was found to conflict with eta5, so we reverted to the
+  // old behavior (consistent with simple-eval).
+
   expect(res).toEqual(
-   { U: [40, 20], V: [10] }
+   { U: [40, 20, 10], V: [40, 20, 10] }
   )
 })
 
@@ -483,5 +493,5 @@ test("eta5", () => { // BUG -- eta via array constr
     let bug = {
       2: 1
     }
-    expect(res).toEqual(bug)
+    expect(res).toEqual(expected)
 })
