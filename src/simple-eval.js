@@ -556,6 +556,16 @@ let inferBwd1 = out => q => {
     let out1 = union(out,q.arg[0].dims) // need to consider mode?
     let [e1] = q.arg.map(inferBwd1(out1))
 
+    // NOTE: for consistency with 'update' it would be interesting
+    // to eval e1 with path+q.bnd -- this mostly works but leads
+    // to unsolved filter ordering issues in testCycles2-2 and
+    // testCycles 3-2
+    
+    // let save = path
+    // path = [...path, { xxFree: q.bnd }]
+    // let [e1] = q.arg.map(inferBwd1(out1))
+    // path = save
+
     // find correlated path keys: check overlap with our own bound vars
     let extra = path.filter(x =>
       intersects(trans(x.xxFree), trans(q.bnd))).flatMap(x => x.xxFree)
