@@ -53,6 +53,7 @@ let prefixes      // canonicalize * for every prefix, e.g., data.* (preproc)
 let path          // current grouping path variables (extract)
 
 let vars          // deps var->var, var->tmp
+let hints
 let filters
 
 let reset = () => {
@@ -60,6 +61,7 @@ let reset = () => {
   path = []
 
   vars = {}
+  hints = []
   filters = []
 }
 
@@ -115,6 +117,13 @@ let preproc = q => {
       return preproc({...q, xxpath:e1.op, xxparam:qs2})
     else // udf apply
       return { key: "pure", op: "apply", arg: [e1,...qs2.map(preproc)] }
+  } else if (q.xxpath == "hint") {
+    let [q1,...qs2] = q.xxparam
+    let e1 = preproc(q1)
+    if (e1.key == "const")
+      return { key: "hint", op: e1.op, arg: [...qs2.map(preproc)] }
+    else
+      return { key: "hint", op: "generic", arg: [e1,...qs2.map(preproc)] }
   } else if (q.xxkey == "array") {
     return preproc(q.xxparam)
   } else if (q instanceof Array) {
@@ -244,7 +253,7 @@ let extract1 = q => {
 }
 
 
-// 8: extract filters
+// 8: extract filters and hints
 //    - runs after inferBwd()
 let extract3 = q => {
   if (!q.arg) return
@@ -258,6 +267,14 @@ let extract3 = q => {
         let q1 = JSON.parse(str)
         filters.push(q1) // deep copy...
       }
+    }
+  }
+  if (q.key == "hint") {
+    let str = JSON.stringify(q) // extract & cse
+    if (hints.map(x => JSON.stringify(x)).indexOf(str) < 0) {
+      let ix = hints.length
+      let q1 = JSON.parse(str)
+      hints.push(q1) // deep copy...
     }
   }
 }
@@ -282,7 +299,7 @@ let infer = q => {
     q.vars = [q.op]
     q.mind = [q.op]
     q.dims = [q.op]
-  } else if (q.key == "get" || q.key == "pure" || q.key == "mkset") {
+  } else if (q.key == "get" || q.key == "pure" || q.key == "hint" || q.key == "mkset") {
     let es = q.arg.map(infer)
     q.vars = unique(es.flatMap(x => x.vars))
     q.mind = unique(es.flatMap(x => x.mind))
@@ -573,6 +590,9 @@ let pretty = q => {
   } else if (q.key == "pure") {
     let es = q.arg.map(pretty)
     return q.op + "(" + es.join(", ") + ")"
+  } else if (q.key == "hint") {
+    let es = q.arg.map(pretty)
+    return q.op + "(" + es.join(", ") + ")"
   } else if (q.key == "mkset") {
     let [e1] = q.arg.map(pretty)
     return "mkset("+e1+")"
@@ -602,6 +622,13 @@ let emitPseudo = (q) => {
     buf.push("gen"+i + ": " + pretty(q))
     if (q.vars.length)
       buf.push("  " + q.vars + " / " + q.dims)
+  }
+  buf.push("")
+  for (let i in hints) {
+    let q = hints[i]
+    buf.push("hint"+i + ": " + pretty(q))
+    if (q.vars.length)
+      buf.push("  " + q.vars + " / " + q.fre)
   }
   buf.push("")
   buf.push(pretty(q))
@@ -888,6 +915,9 @@ let emitCodeDeep = (q) => {
     } else if (q.key == "pure") {
       let es = q.arg.map(codegen1)
       return "rt.pure."+q.op+"("+es.join(",")+")"
+    } else if (q.key == "hint") {
+      // no-op!
+      return "{}"
     } else if (q.key == "mkset") {
       let [e1] = q.arg.map(codegen1)
       return "rt.singleton("+e1+")"      
