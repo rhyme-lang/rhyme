@@ -458,12 +458,13 @@ rt.deepForInTemp = (root, f) => {
 // XXX TEMP primitive-eval
 
 rt.globalVarDomain = [
-  0,1,2,3,4,5,6,7,8,9,
-  '0','1','2','3','4','5','6','7','8','9',
+  0,1,2,3,4,5,6,7,8,9, 10,20,30,40,50,60,
+  '0','1','2','3','4','5','6','7','8','9', '20','40',
   'A','B','C','D','E','F','G','H','U','V','W','X','Y','Z',
   'total', 'all', 'items', 'foo', 'bar',
   'iPhone', 'Galaxy', 'S6', '7', 'Q',
   'region', 'Asia', 'Europe', 'Osaka', 'Hamburg', 'Shanghai',
-  'seeds', 'lengthX', 'startX'
+  'seeds', 'lengthX', 'startX',
+  'fib',
 ]
 

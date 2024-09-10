@@ -1792,5 +1792,7 @@ exports.interpret = interpret
 
 // exports.compile = interpret // TEMP
 
+// exports.compile = require('./primitive-eval').compile
+
 
 
