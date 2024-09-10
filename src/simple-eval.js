@@ -559,7 +559,8 @@ let inferBwd1 = out => q => {
     // NOTE: for consistency with 'update' it would be interesting
     // to eval e1 with path+q.bnd -- this mostly works but leads
     // to unsolved filter ordering issues in testCycles2-2 and
-    // testCycles 3-2
+    // testCycles 3-2. We have since restricted path extension
+    // for 'update' due to same issues emerging in testCycles2-3.
 
     // let save = path
     // path = [...path, { xxFree: q.bnd }]
@@ -604,7 +605,8 @@ let inferBwd1 = out => q => {
 
     let save = path
 
-    if (e1.op != "*K_HACK_CYCLES_2_3") // HACK for testCycles2-3
+    // only extend path for nontrivial group expressions (see testCycles2-3)
+    if (q.arg[3])
       path = [...path, { xxFree: e1.vars }]
 
     let e2 = inferBwd1(union(out, [e1.op]))(q.arg[2])
