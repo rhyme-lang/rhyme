@@ -1621,7 +1621,24 @@ test("day17-part1", () => {
 2546548887735
 4322674655533`
 
-  let udf = udf_stdlib
+  // left: [0, 1] => [-1, 0], [1, 0] => [0, 1], [0, -1] => [1, 0], [-1, 0] => [0, -1]
+  // right: [0, 1] => [1, 0], [1, 0] => [0, -1], [0, -1] => [-1, 0], [-1, 0] => [0, 1]
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    andThen: (a, b) => b, // just to add a as dependency
+    getNeighbors: (curr) => {
+      let straight = [curr[0] + curr[2], curr[1] + curr[3], curr[2], curr[3], curr[4] + 1]
+      let left = [curr[0] - curr[3], curr[1] + curr[2], -curr[3], curr[2], 1]
+      let right = [curr[0] + curr[3], curr[1] - curr[2], curr[3], -curr[2], 1]
+      return [straight, left, right]
+    },
+    getNode: (graph, i, j) => graph?.[i]?.[j],
+    notContain: (map, k) => map[k] === undefined,
+    mapGet: (map, k) => map[k],
+    merge: (a, b) => [...a, ...b],
+    toStr: (state) => state.join(" "),
+    ...udf_stdlib
+  }
   
   let lines = rh`.input | udf.split "\\n" | .*line
                         | udf.split "" | .*char
@@ -1629,24 +1646,24 @@ test("day17-part1", () => {
   let n = rh`.input | udf.split "\\n" | .length`
   let m = rh`.input | udf.split "\\n" | .0.length`
 
-  let gridQuery = {
-    grid: lines, n, m
+  let graphQuery = {
+    graph: lines, n, m
   }
 
   // no need to process input in every iteration
-  let getGrid = api.compile(gridQuery)
-  let grid = getGrid({input, udf})
+  let getGraph = api.compile(graphQuery)
+  let graph = getGraph({input, udf})
 
-  console.log(grid)
+  // console.log(graph)
 
   let state = {
-    visiting: {pos: [0, 0], dir: "E", streak: 0},
-    minHeatLoss: new Map()
+    visiting: [0, 0, 0, 1, 0],
   }
-
-  state.minHeatLoss.set(state.visiting, 0)
-
-  console.log(state.minHeatLoss)
+  let queue = new Set()
+  let minHeatLoss = {
+    "0 0 0 1 0": 0
+  }
+  // console.log(minHeatLoss)
 
   // Get the list of possible next positions
   // Caldulate the heat loss for each of them
@@ -1654,6 +1671,42 @@ test("day17-part1", () => {
 
   // Need a priority queue implementation?
 
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+
+  let neighbors = rh`udf.getNeighbors state.visiting | .*neighbors`
+  let inRangeAndNotVisited = rh`udf.logicalAnd (udf.logicalAnd (udf.getNode graph.graph ${neighbors}.0 ${neighbors}.1) (udf.notContain .minHeatLoss (udf.toStr ${neighbors}))) (udf.isLessOrEqual ${neighbors}.4 3)`
+
+  let newMinHeatLoss = {
+    state: neighbors,
+    heatLoss: rh`(udf.mapGet .minHeatLoss (udf.toStr state.visiting)) + (udf.toNum (udf.getNode graph.graph ${neighbors}.0 ${neighbors}.1))`
+  }
+  let query = [rh`${newMinHeatLoss} | ${filterBy("*f", inRangeAndNotVisited)}`]
+
+  let func = api.compile(query)
+
+  while (state.visiting[0] != graph.n - 1 || state.visiting[1] != graph.m - 1) {
+    let updated = func({input, udf, state, minHeatLoss, graph})
+
+    for (let i in updated) {
+      queue.add(updated[i].state)
+      minHeatLoss[udf.toStr(updated[i].state)] = updated[i].heatLoss
+    }
+
+    let minState = undefined
+    let min = Number.MAX_VALUE
+    queue.forEach(k => {
+      if (minHeatLoss[udf.toStr(k)] < min) {
+        minState = k
+        min = minHeatLoss[udf.toStr(k)]
+      }
+    })
+
+    state.visiting = minState
+    queue.delete(minState)
+  }
+
+  let res = minHeatLoss[udf.toStr(state.visiting)]
+  expect(res).toBe(102)
 })
 
 test("day18-part1", () => {
