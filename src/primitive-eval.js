@@ -818,12 +818,15 @@ let emitFiltersC2 = (scope, iter) => (buf, codegen) => body => {
 
 
   // XXX SHORTCUT -- known vars & range ...
-  for (let v of diff(iter,scope)) {
-  // for (let v of iter) {
-    buf.push("for (let "+quoteVar(v)+" of rt.globalVarDomain) {")
-    seen[v] = true
-    closing = "}\n"+closing
-  }
+  // for (let v of diff(iter,scope)) {
+  // // for (let v of iter) {
+  //   buf.push("for (let "+quoteVar(v)+" of rt.globalVarDomain) {")
+  //   seen[v] = true
+  //   closing = "}\n"+closing
+  // }
+
+  // let scope1 = union(scope,iter)
+  let scope1 = [...scope]
 
   // process filters
   while (next()) {
@@ -832,36 +835,39 @@ let emitFiltersC2 = (scope, iter) => (buf, codegen) => body => {
       let v1 = f.arg[1].op
       let g1 = f.arg[0]
 
+
+
       buf.push("// FILTER "+i+" := "+pretty(filters[i]))
 
-      // XXX use 'available'
-      buf.push("if (!("+quoteVar(v1)+" in ("+codegen(g1,union(scope,iter))+"??[]))) continue")
-
-      continue // XXX
+      // XXX SHORTCUT -- known vars & range ...
+      // buf.push("if (!("+quoteVar(v1)+" in ("+codegen(g1,scope1)+"??[]))) continue")
+      // continue // XXX
 
       // Contract: input is already transitively closed, so we don't
       // depend on any variables that we don't want to iterate over.
       // (sanity check!)
-      let extra = g1.fre.filter(x => !vars[x]) // XXX no needed
+      let extra = g1.fre.filter(x => !vars[x]) // XXX not needed
       if (extra.length != 0) {
         console.error("extra dependencie: "+extra)
       }
 
       if (isDeepVarStr(v1)) { // ok, just emit current
         if (!seen[v1]) {
-          buf.push("rt.deepForIn("+codegen(g1,available)+", "+quoteVar(v1)+" => {")
+          buf.push("rt.deepForIn("+codegen(g1,scope1)+", "+quoteVar(v1)+" => {")
+          seen[v1] = true
+          scope1.push(v1)
         } else {
-          buf.push("rt.deepIfIn("+codegen(g1,available)+", "+quoteVar(v1)+", () => {")
+          buf.push("rt.deepIfIn("+codegen(g1,scope1)+", "+quoteVar(v1)+", () => {")
         }
-        seen[v1] = true
         closing = "})\n"+closing
       } else { // ok, just emit current
         if (!seen[v1]) {
-          buf.push("for (let "+quoteVar(v1)+" in "+codegen(g1,available)+") {")
+          buf.push("for (let "+quoteVar(v1)+" in "+codegen(g1,scope1)+") {")
+          seen[v1] = true
+          scope1.push(v1)
         } else {
-          buf.push("if ("+quoteVar(v1)+" in ("+codegen(g1,available)+"??[])) {")
+          buf.push("if ("+quoteVar(v1)+" in ("+codegen(g1,scope1)+"??[])) {")
         }
-        seen[v1] = true
         closing = "}\n"+closing
       }
     }
