@@ -3,6 +3,8 @@ const { rh, parse } = require('../../src/parser')
 const { compile } = require('../../src/primitive-eval')
 
 
+// ========== FROM se-basic.test.js ========== //
+
 
 // some sample data for testing
 // let data = [
@@ -457,4 +459,29 @@ test("testOuterJoin_pre2", () => {
   expect(res).toEqual({
     0: 7, 2: 7
   })
+})
+
+
+
+// ========== FROM se-bug.test.js ========== //
+
+// simplified from se-bug/eta2Indirect2
+test("eta5", () => { // BUG -- eta via array constr
+    let data = { 0: 2, 1: 2, 2: 2 }
+    let data1 = ["data.*E"]
+    let q0 = rh`count ${data1}.*A | group ${data1}.*A`
+    let func = compile(q0)
+    let res = func({ data })
+
+    // console.log(func.explain.pseudo0)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = {
+      2: 3
+    }
+    let bug = {
+      2: 1
+    }
+    expect(res).toEqual(bug)
 })
