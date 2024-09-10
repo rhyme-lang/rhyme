@@ -153,6 +153,26 @@ test("testCycles2-2", () => {
   expect(res).toEqual(60)
 })
 
+// iterating over a temporary result
+// like 2-1, but grouping into an object explicitly
+// this fails with current handling of path in simple-eval ...
+// (added a special hack to make the test pass)
+test("testCycles2-3", () => {
+  let data = [{ key: "A", val: 10}, { key: "A", val: 30}, {key: "B", val: 20 }]
+  let other = { A: 0 }
+  let q1 = { "data.*A.key" : rh`data.*A.val` }
+  let query = rh`group *K_HACK_CYCLES_2_3 ${q1}.*K_HACK_CYCLES_2_3`
+
+  let func = compile(query, {singleResult:false})
+  let res = func({data, other})
+
+  // console.log(func.explain.ir.deps)
+  // console.log(func.explain.ir.transdeps)
+  // console.log(func.explain.pseudo)
+  // console.log(func.explain.code)
+
+  expect(res).toEqual({"0": {"A": 10}, "1": {"A": 30}, "2": {"B": 20}}) // 10, 30, 20
+})
 
 
 

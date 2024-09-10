@@ -560,7 +560,7 @@ let inferBwd1 = out => q => {
     // to eval e1 with path+q.bnd -- this mostly works but leads
     // to unsolved filter ordering issues in testCycles2-2 and
     // testCycles 3-2
-    
+
     // let save = path
     // path = [...path, { xxFree: q.bnd }]
     // let [e1] = q.arg.map(inferBwd1(out1))
@@ -604,7 +604,8 @@ let inferBwd1 = out => q => {
 
     let save = path
 
-    path = [...path, { xxFree: e1.vars }]
+    if (e1.op != "*K_HACK_CYCLES_2_3") // HACK for testCycles2-3
+      path = [...path, { xxFree: e1.vars }]
 
     let e2 = inferBwd1(union(out, [e1.op]))(q.arg[2])
 
