@@ -1026,7 +1026,7 @@ let emitCodeDeep = (q) => {
 
 
 let compile = (q,{
-  // add flags here ...
+  singleResult = true, // TODO: elim flag?
 }={}) => {
 
   reset()
@@ -1060,23 +1060,23 @@ let compile = (q,{
   computeDependencies()
 
   // 6. Backward pass to infer output dimensions
-  let out = q.dims//singleResult ? q.mind : q.dims
+  let out = singleResult ? q.mind : q.dims
   q = inferBwd0(out)(q)
   q = inferBwd1(out)(q)
 
-  if (q.dims.length > 0) {
-    // wrap as (group (vars q.dims) q)
+  if (out.length > 0) {
+    // wrap as (group (vars q.mind) q)
     q = {
      key: "update",
      arg: [
       { key: "const", op: {}, arg: [], vars: [], dims: [] },
       { key: "pure", op: "vars",
-        arg: q.dims.map(x => ({ key: "var", op: x, arg:[] })),
-        vars: q.dims, dims: q.dims },
+        arg: out.map(x => ({ key: "var", op: x, arg:[] })),
+        vars: out, dims: out },
       q],
      vars: q.vars,
      dims: [],
-     bnd: q.dims,
+     bnd: out,
      fre: [],
     }
     // NOTE: compared to adding it earlier and
