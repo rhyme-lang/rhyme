@@ -21,14 +21,14 @@ const { runtime } = require('./simple-runtime')
 //
 // - nested grouping, partial sums at multiple levels,
 //   aggregates as keys, generators as filters
-// 
+//
 // TODO
 //
 // Features
 //
-// - &&, ??, non-unifying get -> sufficient to model 
+// - &&, ??, non-unifying get -> sufficient to model
 //    failure, filters, left outer joins, etc?
-// - recursion: structural (tree traversal), 
+// - recursion: structural (tree traversal),
 //    fixpoint (datalog, incremental), inf. streams
 //
 // Optimizations
@@ -41,7 +41,7 @@ const { runtime } = require('./simple-runtime')
 // - more corner cases involving var->tmp->var->... closure
 //
 // Questions
-// 
+//
 // - is current way of dealing with transitive closure
 //   of var->tmp->var->... precise enough?
 // - what to do with cycles between assignments?
@@ -145,7 +145,7 @@ let join = (obj1, obj2) => (schema1, schema2, schema3) => func => {
   v1 = reshape(v1)(r1, [...r1only,...r1r2])
   v2 = reshape(v2)(r2, [...r2only,...r1r2])
   let res = {}
-  traverse(v1)(r1only.length)((a1,o1) => 
+  traverse(v1)(r1only.length)((a1,o1) =>
     traverse(v2)(r2only.length)((a2,o2) => {
       traverse(o1,o2)(r1r2.length)((a3,o3,o4) => {
         res = update(res)([...a1,...a2,...a3])(func(o3,o4))
@@ -213,7 +213,7 @@ let preproc = q => {
     if (isVar(q.xxparam)) return { key: "var", op: q.xxparam }
     else return { key: "const", op: q.xxparam }
   } else if (q.xxpath == "get") {
-    let e1 = preproc(q.xxparam[0]) 
+    let e1 = preproc(q.xxparam[0])
     // special case for literal "*": moved from here to extract
     let e2
     if (q.xxparam[1] === undefined) {
@@ -286,7 +286,7 @@ let preproc = q => {
 //  into external data structures
 //
 
-// 2: extract0: 
+// 2: extract0:
 // - canonicalize *
 // - insert 'single' in nested stateful positions
 // - ensure all grouping is wrt a variable, i.e.,
@@ -419,7 +419,7 @@ let extract3 = q => {
 // ----- middle-tier -----
 
 //
-// 3. Infer dependencies bottom up: 
+// 3. Infer dependencies bottom up:
 //    - vars: variables used
 //    - mind: minimum set of variables in output (not removed through reductions)
 //    - dims: desired set of variables in output
@@ -428,7 +428,7 @@ let extract3 = q => {
 let infer = q => {
   if (q.key == "input" || q.key == "const") {
     q.vars = []
-    q.mind = [] 
+    q.mind = []
     q.dims = []
   } else if (q.key == "var") {
     q.vars = [q.op]
@@ -473,7 +473,7 @@ let infer = q => {
 
 
 //
-// 6. Infer dependencies top down: 
+// 6. Infer dependencies top down:
 //    - out:  maximum allowed set of variables in output (provided as input arg)
 //    - free: free variables, anticipating conversion to loops
 //    - bound: bound variables, anticipating conversion to loops (allBound: incl deep in subterms)
@@ -522,7 +522,7 @@ let inferBwd0 = out => q => {
       console.assert(e3.arg[1].key == "var" && e3.arg[1].op == e1.op)
       e1Body = e3.arg[0].arg[0]
     } else {
-      e1Body = { key: "const", op: "???", 
+      e1Body = { key: "const", op: "???",
         vars: [], mind: [], dims: [], bnd: [], allBnd: [] }
     }
 
@@ -548,7 +548,7 @@ let inferBwd1 = out => q => {
   if (q.key == "input" || q.key == "const") {
     q.fre = []
   } else if (q.key == "var") {
-    q.fre = [q.op] 
+    q.fre = [q.op]
   } else if (q.key == "get" || q.key == "pure"  || q.key == "hint" || q.key == "mkset") {
     let es = q.arg.map(inferBwd1(out))
     q.fre = unique(es.flatMap(x => x.fre))
@@ -557,7 +557,7 @@ let inferBwd1 = out => q => {
     let [e1] = q.arg.map(inferBwd1(out1))
 
     // find correlated path keys: check overlap with our own bound vars
-    let extra = path.filter(x => 
+    let extra = path.filter(x =>
       intersects(trans(x.xxFree), trans(q.bnd))).flatMap(x => x.xxFree)
 
     q.fre = intersect(union(trans(e1.fre), extra), out)
@@ -575,7 +575,7 @@ let inferBwd1 = out => q => {
       console.assert(e3.arg[1].key == "var" && e3.arg[1].op == e1.op)
       e1Body = e3.arg[0].arg[0]
     } else {
-      e1Body = { key: "const", op: "???", 
+      e1Body = { key: "const", op: "???",
         vars: [], mind: [], dims: [], fre: [] }
     }
 
@@ -588,7 +588,7 @@ let inferBwd1 = out => q => {
     path = save
 
     // find correlated path keys: check overlap with our own bound vars
-    let extra = path.filter(x => 
+    let extra = path.filter(x =>
       intersects(trans(x.xxFree), trans(q.bnd))).flatMap(x => x.xxFree)
 
     let fv = unique([...e0.fre, ...e1.fre, ...e2.fre, ...diff(e1Body.fre, q.e1BodyBnd)])
@@ -610,7 +610,7 @@ let inferBwd1 = out => q => {
 
 
 
-// XXX. alternative "denotational" formulation: 
+// XXX. alternative "denotational" formulation:
 //    - try to make "infer" compositional
 //    - combine forward and backward pass into a single function
 //    - k: dims -> out, i.e. minimum we can produce -> what is observed
@@ -758,10 +758,10 @@ let computeOrder = q => {
   }
   for (let i in deps.tmp2tmp) {
     deps2.tmp2tmp[i] = {}
-    for (let j in deps.tmp2tmp[i]) 
+    for (let j in deps.tmp2tmp[i])
       deps2.tmp2tmp[i][j] = true
     for (let v in deps.tmp2var[i])
-      for (let j in deps.var2tmp[v]) 
+      for (let j in deps.var2tmp[v])
         deps2.tmp2tmp[i][j] = true
   }
 
@@ -859,33 +859,33 @@ let emitPseudo = (q) => {
   for (let i in assignments) {
     let q = assignments[i]
     buf.push("tmp"+i + prettyPath(q.fre) + " = " + pretty(q))
-    if (q.path?.length > 0) 
+    if (q.path?.length > 0)
       buf.push("  pth: " + q.path.map(pretty))
-    if (q.vars.length > 0) 
+    if (q.vars.length > 0)
       buf.push("  var: " + q.vars)
-    if (q.tmps?.length > 0) 
+    if (q.tmps?.length > 0)
       buf.push("  tmp: " + q.tmps)
-    if (q.mind.length > 0)  
+    if (q.mind.length > 0)
       buf.push("  min: " + q.mind)
-    if (q.dims.length > 0)  
+    if (q.dims.length > 0)
       buf.push("  dim: " + q.dims)
-    if (q.out?.length > 0)  
+    if (q.out?.length > 0)
       buf.push("  out: " + q.out)
-    if (q.iterInit?.length > 0) 
+    if (q.iterInit?.length > 0)
       buf.push("  it0: " + q.iterInit)
-    if (q.iter?.length > 0) 
+    if (q.iter?.length > 0)
       buf.push("  itr: " + q.iter)
-    if (q.free?.length > 0) 
+    if (q.free?.length > 0)
       buf.push("  fr1: " + q.free)
-    if (q.fre?.length > 0) 
+    if (q.fre?.length > 0)
       buf.push("  fre: " + q.fre)
-    if (q.bound?.length > 0) 
+    if (q.bound?.length > 0)
       buf.push("  bn1: " + q.bound)
-    if (q.bnd?.length > 0) 
+    if (q.bnd?.length > 0)
       buf.push("  bnd: " + q.bnd)
   }
   buf.push(pretty(q))
-  if (q.fre?.length > 0)  
+  if (q.fre?.length > 0)
     buf.push("  " + q.fre)
   return buf.join("\n")
 }
@@ -1023,7 +1023,7 @@ let emitFilters1 = iter => (buf, codegen) => body => {
 
   let full = transViaFiltersFree(iter) // XX simpler way to compute?
 
-  // Questions: 
+  // Questions:
   // 1. does trans(iter) do the right thing, or
   //    do we need to use q.free? (XX: had to use .fre)
   // 2. is it OK to take the ordering of iter, or
@@ -1096,7 +1096,7 @@ let emitFilters2 = iter => (buf, codegen) => body => {
       let v1 = f.arg[1].op
       let g1 = f.arg[0]
 
-      let avail = g1.fre.every(x => seen[x]) 
+      let avail = g1.fre.every(x => seen[x])
 
       if (avail)
         available.push(i)
@@ -1169,7 +1169,7 @@ let emitCode = (q, order) => {
       console.error("cycle "+is)
     let [i] = is
     let q = assignments[i]
-    
+
     buf.push("// --- tmp"+i+" ---")
 
     // emit initialization first (so that sum empty = 0)
@@ -1292,7 +1292,7 @@ let emitCodeC = (q, order) => {
       console.error("cycle "+is)
     let [i] = is
     let q = assignments[i]
-    
+
     buf.push("// --- tmp"+i+" ---")
     buf.push("// XXX NOT IMPLEMENTED")
   }
@@ -1326,7 +1326,7 @@ let translateToNewCodegen = q => {
 
   let assignmentStms = []
   let generatorStms = []
-  let tmpVarWriteRank = {} 
+  let tmpVarWriteRank = {}
 
 
   // generator ir api: mirroring necessary bits from ir.js
@@ -1349,7 +1349,7 @@ let translateToNewCodegen = q => {
       assignmentStms.push(e)
   }
 
-  function selectGenFilter(a, b) { 
+  function selectGenFilter(a, b) {
     let b1 = b.deps[0]
     let e = expr("FOR", ...a.deps) // "for " + b1 + " <- " + a.txt
     e.sym = b1
@@ -1372,11 +1372,16 @@ let translateToNewCodegen = q => {
 
     // emit initialization (see 'emitCode')
     if (q.key == "stateful" && (q.op+"_init") in runtime.stateful || q.key == "update") {
-        let fv = q.fre
         let xs = [i,...q.fre.map(quoteVar)]
         let ys = xs.map(x => ","+x).join("")
 
-        assign("rt.init(tmp"+ys+")("+ emitStmInit(q) + ")", sym, q.fre, [])
+        let init_deps = []
+        if (q.key == "update") {
+          let init_arg = q.arg[0]
+          init_deps = [...union(init_arg.fre, init_arg.bnd),...init_arg.tmps.map(tmpSym)]
+        }
+
+        assign("rt.init(tmp"+ys+")("+ emitStmInit(q) + ")", sym, q.fre, init_deps)
     }
 
     // emit update (see 'emitCode')
@@ -1414,7 +1419,7 @@ let translateToNewCodegen = q => {
 
 
 let compile = (q,{
-  altInfer = false, 
+  altInfer = false,
   singleResult = true, // TODO: elim flag?
   newCodegen = false,
   CCodegen = false
@@ -1422,7 +1427,7 @@ let compile = (q,{
 
   reset()
 
-  let trace = { 
+  let trace = {
     log: () => {}
     // log: console.log
   }
@@ -1520,8 +1525,8 @@ let execPromise = function(cmd) {
 
     wrap.explain = {
       src,
-      ir: {filters, assignments, vars, order}, 
-      pseudo, code 
+      ir: {filters, assignments, vars, order},
+      pseudo, code
     }
     return wrap
   }
@@ -1549,8 +1554,8 @@ let execPromise = function(cmd) {
 
   wrap.explain = {
     src,
-    ir: {filters, assignments, vars, order}, 
-    pseudo, code 
+    ir: {filters, assignments, vars, order},
+    pseudo, code
   }
   return wrap
 }
@@ -1594,9 +1599,9 @@ let emitCodeDeep = (q) => {
       return "rt.pure."+q.op+"("+es.join(",")+")"
     } else if (q.key == "mkset") {
       let [e1] = q.arg.map(codegen)
-      return "rt.singleton("+e1+")"      
+      return "rt.singleton("+e1+")"
     } else if (q.key == "stateful" || q.key == "prefix" || q.key == "update") {
- 
+
       let i = stmCount++
       let tmpkey = '"tmpval"' // indirection into tmpN var -- TODO: eliminate
 
@@ -1688,8 +1693,8 @@ let interpret = (q,{
 
   reset()
 
-  let trace = { 
-    log: () => {} 
+  let trace = {
+    log: () => {}
     // log: console.log
   }
 
@@ -1763,8 +1768,8 @@ let interpret = (q,{
 
   wrap.explain = {
     src,
-    ir: {filters, assignments, vars}, 
-    pseudo, code 
+    ir: {filters, assignments, vars},
+    pseudo, code
   }
   return wrap
 }
