@@ -58,7 +58,7 @@ test("testTrivial1", async () => {
   let query = rh`data.A.value`
 
   let func = compile(query, { CCodegen: true })
-  console.log(func.explain.codeString)
+  console.log(func.explain.code)
   let res = await func({data})
 
   expect(res).toEqual("undefined")
@@ -68,7 +68,7 @@ test("testScalar1", async () => {
   let query = rh`sum data.*.value`
 
   let func = compile(query, { CCodegen: true })
-  console.log(func.explain.codeString)
+  console.log(func.explain.code)
   let res = await func({data})
 
   expect(res).toEqual("undefined")
@@ -78,7 +78,7 @@ test("testHint1", async () => {
   let query = rh`(hint dense data) & (sum data.*.value)`
 
   let func = compile(query, { CCodegen: true })
-  console.log(func.explain.codeString)
+  console.log(func.explain.code)
   console.log(func.explain.pseudo)
   let res = await func({data})
 

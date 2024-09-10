@@ -54,7 +54,7 @@ test("test_NCG_Trivial0", () => {
   let query = rh`1 + 4`
 
   let func = compile(query, { newCodegen: true })
-  console.log(func.explain.codeString)
+  // console.log(func.explain.codeString)
   let res = func({data, other})
 
   expect(res).toEqual(5)
@@ -64,7 +64,7 @@ test("test_NCG_Trivial1", () => {
   let query = rh`data.A.value`
 
   let func = compile(query, { newCodegen: true })
-  console.log(func.explain.codeString)
+  // console.log(func.explain.codeString)
   let res = func({data, other})
 
   expect(res).toEqual(40)
@@ -74,7 +74,7 @@ test("test_NCG_Scalar1", () => {
   let query = rh`sum data.*.value`
 
   let func = compile(query, { newCodegen: true })
-  console.log(func.explain.codeString)
+  // console.log(func.explain.codeString)
   let res = func({data, other})
 
   expect(res).toEqual(70)
