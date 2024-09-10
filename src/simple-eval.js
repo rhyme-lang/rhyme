@@ -530,7 +530,7 @@ let inferBwd0 = out => q => {
 
     let e2 = inferBwd0(union(out, [e1.op]))(q.arg[2])
 
-    q.bnd = diff(union([e1.op], e1Body.dims), out)
+    q.bnd = diff(union([e1.op], []/*e1Body.dims*/), out)
     q.allBnd = unique([...q.bnd, ...e0.allBnd, ...e1.allBnd, ...e2.allBnd, ...e1Body.allBnd])
 
   } else {
