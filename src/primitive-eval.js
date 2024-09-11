@@ -614,14 +614,22 @@ let pretty = q => {
     return "prefix_"+q.op+"("+e1+")"
   } else if (q.key == "stateful") {
     let [e1] = q.arg.map(pretty)
-    return q.op+"("+e1+")"
+    let qb = ""
+    let qf = ""
+    if (q.bnd && q.bnd.length) qb = "_{"+q.bnd+"}"
+    if (q.fre && q.fre.length) qf = "^{"+q.fre+"}"
+    return q.op+qf+qb+"("+e1+")"
   } else if (q.key == "group") {
     let [e1,e2] = q.arg.map(pretty)
     return "{ "+ e1 + ": " + e2 + " }"
   } else if (q.key == "update") {
     let [e0,e1,e2,e3] = q.arg.map(pretty)
-    if (e3) return e0+ "{ "+ e1 + ": " + e2 + " } / " + e3
-    return e0+ "{ "+ e1 + ": " + e2 + " }"
+    let p0 = String(e0)
+    if (p0 == "{}") p0 = ""
+    if (e3 && filters.length == 0) return p0+ "{ "+ e1 + ": " + e2 + " } / " + e3
+    let qf = ""
+    if (q.fre && q.fre.length) qf = "^{"+q.fre+"}"
+    return p0+"group"+qf+"_{"+ e1 + "} (" + e2 + ")"
   } else {
     console.error("unknown op", q)
   }
