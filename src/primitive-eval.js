@@ -495,7 +495,7 @@ let inferBwd1 = out => q => {
   console.assert(subset(q.dims, q.vars))
 
   console.assert(!intersects(q.fre, q.bnd))
-  console.assert(!intersects(q.fre, q.allBnd), pretty(q)+": "+q.fre+"/\\"+q.allBnd)
+  console.assert(!intersects(q.fre, q.allBnd))
 
   return q
 }
@@ -634,7 +634,7 @@ let emitPseudo = (q) => {
     let q = filters[i]
     buf.push("gen"+i + ": " + pretty(q))
     if (q.vars.length)
-      buf.push("  " + q.vars + " / " + q.dims)
+      buf.push("  " + q.vars + " / " + q.fre)
   }
   buf.push("")
   for (let i in hints) {
@@ -644,6 +644,13 @@ let emitPseudo = (q) => {
       buf.push("  " + q.vars + " / " + q.fre)
   }
   buf.push("")
+  let hi = buf.length
+  for (let v in vars) {
+    if (vars[v].vars.length > 0 || vars[v].tmps && vars[v].tmps.length > 0)
+      buf.push(v + " -> " + vars[v].vars /*+"  "+ vars[v].tmps*/)
+  }
+  if (buf.length > hi)
+    buf.push("")
   buf.push(pretty(q))
   if (q.fre?.length > 0)  
     buf.push("  " + q.fre)
