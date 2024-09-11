@@ -816,7 +816,6 @@ let emitFiltersC2 = (scope, iter) => (buf, codegen) => body => {
       let v1 = f.arg[1].op
       let g1 = f.arg[0]
 
-      // XXX dep on .fre here!
       let avail = g1.fre.every(x => seen[x])
 
       if (avail)
@@ -848,9 +847,8 @@ let emitFiltersC2 = (scope, iter) => (buf, codegen) => body => {
       let v1 = f.arg[1].op
       let g1 = f.arg[0]
 
-
-
-      buf.push("// FILTER "+i+" := "+pretty(filters[i]))
+      buf.push("// FILTER "+i+" := "+pretty(f))
+      scope1 = f.fre
 
       // XXX SHORTCUT -- known vars & range ...
       // buf.push("if (!("+quoteVar(v1)+" in ("+codegen(g1,scope1)+"??[]))) continue")
@@ -946,11 +944,7 @@ let emitCodeDeep = (q) => {
 
       let bound
       if (q.key == "update") {
-        bound = q.arg[1].vars // explicit var
-        if (intersect(bound,env).length > 0) {
-          buf.push("// WARNING: var '"+bound+"' already defined in "+env)
-          console.warn("// WARNING: var '"+bound+"' already defined in "+env)
-        }
+        bound = diff(q.arg[1].vars, env) // explicit var -- still no traversal if already in scope
       } else
         bound = diff(q.arg[0].dims, env)
 
@@ -959,11 +953,15 @@ let emitCodeDeep = (q) => {
       buf.push("// env: "+env+" dims: "+q.dims+" bound: "+bound)
 
       if (!same(bound,q.bnd)) {
-        // console.warn("// OBACHT! bound "+bound+" -> q.bnd "+q.bnd)
-        buf.push("// OBACHT! q.bound "+q.bnd)
+        buf.push("// WARNING! q.bound "+q.bnd)
+        console.warn("// WARNING! bound "+bound+" -> q.bnd "+q.bnd)
       }
       bound = q.bnd
 
+      if (intersect(bound,env).length > 0) {
+        buf.push("// WARNING: var '"+bound+"' already defined in "+env)
+        console.warn("// WARNING: var '"+bound+"' already defined in "+env)
+      }
 
 
       let emitStmInit = (q) => {

@@ -338,8 +338,15 @@ test("testGroup0-a3", () => {
   let func = compile(query)
   let res = func({data, other})
 
+  // NOTE: this worked in an intermediate model of primitive-eval,
+  // where filters would be able to use the entire set of variables
+  // in scope.
+  // 
+  // This was found to conflict with aggregateAsKey, so we reverted
+  // to the old behavior (consistent with simple-eval).
+
   expect(res).toEqual(
-   { U: [40, 20], V: [10] }
+   { U: [40, 20, 10], V: [40, 20, 10] }
   )
 })
 
@@ -353,7 +360,7 @@ test("testGroup0-a4", () => {
 
   // NOTE: this worked in an intermediate model of primitive-eval,
   // where { data.*.key: ... } had no special status and was directly
-  // desugared in to group *K without touching nested aggregations
+  // desugared into group *K without touching nested aggregations
   // via path. 
   // 
   // This was found to conflict with eta5, so we reverted to the
