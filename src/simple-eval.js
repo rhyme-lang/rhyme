@@ -1295,7 +1295,7 @@ let codegenC = q => {
     return "rt_pure_"+q.op+"("+es.join(",")+")"
   } else if (q.key == "hint") {
     // no-op!
-    return "1"
+    return "rt_const_int(1)"
   } else if (q.key == "mkset") {
     let [e1] = q.arg.map(codegenC)
     return "rt_singleton("+e1+")"
