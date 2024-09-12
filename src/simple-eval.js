@@ -1000,8 +1000,10 @@ let emitStm = (q) => {
     let [e1] = q.arg.map(codegen)
     return "rt.stateful."+q.op+"("+e1+")"
   } else if (q.key == "update") {
-    let [e0,e1,e2] = q.arg.map(codegen)
-    return "rt.stateful.update("+e0+", "+e1+", "+e2+")" // XXX: init is still needed for tree paths
+    let e0 = codegen(q.arg[0])
+    let e2 = codegen(q.arg[2])
+    let e1 = q.arg[1].vars.map(quoteVar)
+    return "rt.stateful.update("+e0+", ["+e1+"], "+e2+")" // XXX: init is still needed for tree paths
     // return "rt.stateful.update("+"null"+", "+e1+", "+e2+")" // see testPathGroup4-2
   } else {
     console.error("unknown op", q)
@@ -1496,6 +1498,29 @@ let compile = (q,{
   q = inferBwd0(out)(q)
   q = inferBwd1(out)(q)
 
+  if (out.length > 0) {
+    // wrap as (group (vars q.mind) q)
+    q = {
+     key: "update",
+     arg: [
+      { key: "const", op: {}, arg: [], vars: [], mind: [], dims: [], bnd: [], fre: [] },
+      // NOTE: non-standard way of encoding *multiple*
+      // key variables: (vars x y z)
+      { key: "pure", op: "vars",
+        arg: out.map(x => ({ key: "var", op: x, arg:[], vars: [x], mind: [x], dims: [x] })),
+        vars: out, mind: out, dims: out, bnd: [], fre: [] },
+      q],
+     vars: q.vars,
+     mind: [],
+     dims: [],
+     bnd: out,
+     fre: [],
+    }
+    // NOTE: compared to adding it earlier and
+    //       following desugaring pipeline:
+    //  1: no embedded 'single' (not needed)
+    //  2: multiple vars encoded using (vars *A *B *C)
+  }
 
   // ---- middle tier, imperative form ----
 
