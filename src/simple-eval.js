@@ -571,6 +571,14 @@ let inferBwd1 = out => q => {
     let extra = path.filter(x =>
       intersects(trans(x.xxFree), trans(q.bnd))).flatMap(x => x.xxFree)
 
+    let extra2 = out
+    .filter(x => x.startsWith("K"))
+    .filter(x => intersects(trans([x]), trans(q.bnd)))
+
+    assertSame(extra, extra2, "extra "+pretty(q))
+
+    extra = extra2
+
 
     // free variables: anything from current scope (out) that is:
     // - used in any filter for q.bnd (here: trans via .dims)
@@ -592,7 +600,7 @@ let inferBwd1 = out => q => {
 
     let e1Body
     if (q.arg[3]) {
-      let out3 = union(out, union([e1.op], q.arg[3].dims)) // e3 includes e1.op (union left for clarity)
+      let out3 = union(out, union([/*e1.op*/], diff(q.arg[3].dims, [e1.op]))) // e3 includes e1.op (union left for clarity)
       let e3 = inferBwd1(out3)(q.arg[3]) // filter expr
       console.assert(e3.key == "get")
       console.assert(e3.arg[0].key == "mkset")
@@ -616,6 +624,14 @@ let inferBwd1 = out => q => {
     // find correlated path keys: check overlap with our own bound vars
     let extra = path.filter(x =>
       intersects(trans(x.xxFree), trans(q.bnd))).flatMap(x => x.xxFree)
+
+    let extra2 = out
+    .filter(x => x.startsWith("K"))
+    .filter(x => intersects(trans([x]), trans(q.bnd)))
+
+    assertSame(extra, extra2, "extra "+pretty(q))
+
+    extra = extra2
 
     let fv = unique([...e0.fre, ...e1.fre, ...e2.fre, ...diff(e1Body.fre, q.e1BodyBnd)])
 
