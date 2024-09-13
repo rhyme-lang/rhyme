@@ -483,7 +483,7 @@ test("testOuterJoin_pre2", () => {
 // ========== FROM se-bug.test.js ========== //
 
 // simplified from se-bug/eta2Indirect2
-test("eta5", () => { // BUG -- eta via array constr
+test("eta2Indirect2-simpl", () => { // BUG -- eta via array constr
     let data = { 0: 2, 1: 2, 2: 2 }
     let data1 = ["data.*E"]
     let q0 = rh`count ${data1}.*A | group ${data1}.*A`

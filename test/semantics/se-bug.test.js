@@ -507,7 +507,7 @@ test("undefinedFields3", () => {
 })
 
 
-test("eta1", () => { // OK -- no eta
+test("eta-kv-rec1", () => { // OK -- no eta
     let data = [
         {product: "iPhone", model: "7", quantity: 10},
         {product: "Galaxy", model: "S6", quantity: 20},
@@ -527,7 +527,7 @@ test("eta1", () => { // OK -- no eta
     expect(res).toEqual(expected)
 })
 
-test("eta2", () => { // OK -- eta in body of group expr
+test("eta-kv-rec2", () => { // OK -- eta in body of group expr
     let data = [
         {product: "iPhone", model: "7", quantity: 10},
         {product: "Galaxy", model: "S6", quantity: 20},
@@ -549,7 +549,81 @@ test("eta2", () => { // OK -- eta in body of group expr
     expect(res).toEqual(expected)
 })
 
-test("eta3", () => { // BUG -- eta in key of group expr
+// XXXX this one fails!!
+test("eta-kv-rec2-alt", () => { // consistent index var for data.*E
+    let data = [
+        {product: "iPhone", model: "7", quantity: 10},
+        {product: "Galaxy", model: "S6", quantity: 20},
+    ]
+    let data0 = "data"
+    let data1 = {"*E": "data.*E"}
+    let q0 = rh`sum data.*E.quantity | group ${data1}.*A.product`
+    let func = compile(q0)
+    let res = func({ data })
+
+    // console.log(func.explain.pseudo0)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = {
+      "iPhone": 10,
+      "Galaxy": 20
+    }
+    let bug = {
+      "iPhone": 30,
+      "Galaxy": 30
+    }
+    // expect(res).toEqual(expected)
+    expect(res).toEqual(bug) // BUG!!!
+})
+
+test("eta-kv-rec3", () => { // BUG -- eta in key of group expr
+    let data = [
+        {product: "iPhone", model: "7", quantity: 10},
+        {product: "Galaxy", model: "S6", quantity: 20},
+    ]
+    let data0 = "data"
+    let data1 = {"*E": "data.*E"}
+    let q0 = rh`sum ${data1}.*A.quantity | group data.*A.product`
+    let func = compile(q0)
+    let res = func({ data })
+
+    // console.log(func.explain.pseudo0)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = {
+      "iPhone": 10,
+      "Galaxy": 20
+    }
+    expect(res).toEqual(expected)
+    // NOTE: requires recursion fix
+})
+
+test("eta-kv-rec3-alt", () => { // consistent index var for data.*E
+    let data = [
+        {product: "iPhone", model: "7", quantity: 10},
+        {product: "Galaxy", model: "S6", quantity: 20},
+    ]
+    let data0 = "data"
+    let data1 = {"*E": "data.*E"}
+    let q0 = rh`sum ${data1}.*A.quantity | group data.*E.product`
+    let func = compile(q0)
+    let res = func({ data })
+
+    // console.log(func.explain.pseudo0)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = {
+      "iPhone": 10,
+      "Galaxy": 20
+    }
+    expect(res).toEqual(expected)
+    // NOTE: requires recursion fix
+})
+
+test("eta-kv-rec4", () => { // BUG -- eta in key of group expr
     let data = [
         {product: "iPhone", model: "7", quantity: 10},
         {product: "Galaxy", model: "S6", quantity: 20},
@@ -572,8 +646,104 @@ test("eta3", () => { // BUG -- eta in key of group expr
     // NOTE: requires recursion fix
 })
 
+
+test("eta-kv-array2", () => {
+    let data = [
+        {product: "iPhone", model: "7", quantity: 10},
+        {product: "Galaxy", model: "S6", quantity: 20},
+    ]
+    let data0 = "data"
+    let data1 = ["data.*E"]
+    let q0 = rh`sum data.*A.quantity | group ${data1}.*A.product`
+    let func = compile(q0)
+    let res = func({ data })
+
+    // console.log(func.explain.pseudo0)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = {
+      "iPhone": 10,
+      "Galaxy": 20
+    }
+    expect(res).toEqual(expected)
+})
+
+test("eta-kv-array2-alt", () => {
+    let data = [
+        {product: "iPhone", model: "7", quantity: 10},
+        {product: "Galaxy", model: "S6", quantity: 20},
+    ]
+    let data0 = "data"
+    let data1 = ["data.*E"]
+    let q0 = rh`sum data.*E.quantity | group ${data1}.*A.product`
+    let func = compile(q0)
+    let res = func({ data })
+
+    // console.log(func.explain.pseudo0)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = {
+      "iPhone": 10,
+      "Galaxy": 20
+    }
+    let bug = {
+      "iPhone": 30,
+      "Galaxy": 30
+    }
+    // expect(res).toEqual(expected)
+    expect(res).toEqual(bug) // BUG!!!
+})
+
+test("eta-kv-array3", () => { // BUG -- eta in key of group expr
+    let data = [
+        {product: "iPhone", model: "7", quantity: 10},
+        {product: "Galaxy", model: "S6", quantity: 20},
+    ]
+    let data0 = "data"
+    let data1 = ["data.*E"]
+    let q0 = rh`sum ${data1}.*A.quantity | group data.*A.product`
+    let func = compile(q0)
+    let res = func({ data })
+
+    // console.log(func.explain.pseudo0)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = {
+      "iPhone": 10,
+      "Galaxy": 20
+    }
+    expect(res).toEqual(expected)
+    // NOTE: requires recursion fix
+})
+
+test("eta-kv-array3-alt", () => { // consistent index var for data.*E
+    let data = [
+        {product: "iPhone", model: "7", quantity: 10},
+        {product: "Galaxy", model: "S6", quantity: 20},
+    ]
+    let data0 = "data"
+    let data1 = ["data.*E"]
+    let q0 = rh`sum ${data1}.*A.quantity | group data.*E.product`
+    let func = compile(q0)
+    let res = func({ data })
+
+    // console.log(func.explain.pseudo0)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = {
+      "iPhone": 10,
+      "Galaxy": 20
+    }
+    expect(res).toEqual(expected)
+    // NOTE: requires recursion fix
+})
+
 // this is the core of plainSortTest3
-test("eta4", () => { // BUG -- eta via array constr
+test("eta-kv-array4", () => { // BUG -- eta via array constr
     let data = [
         {product: "iPhone", model: "7", quantity: 10},
         {product: "Galaxy", model: "S6", quantity: 20},
@@ -664,6 +834,77 @@ for (*E <- data)
     ...
 
 */
+
+// more test cases for equivalence of eta expansion
+test("etaSame0", () => { // baseline
+    let data = [1,2,3]
+    let q = rh`(sum data.*) + (sum data.*)`
+    let func = compile(q)
+    let res = func({ data })
+
+    // console.log(func.explain.pseudo0)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = 12
+    expect(res).toEqual(expected)
+})
+
+test("etaSame1", () => { 
+    let data = [1,2,3]
+    let q = rh`(sum data.*) + (sum (array data.*).*)`
+    let func = compile(q)
+    let res = func({ data })
+
+    // console.log(func.explain.pseudo0)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = 12
+    expect(res).toEqual(expected)
+})
+
+test("etaSame2", () => { 
+    let data = [1,2,3]
+    let q = rh`sum (data.* + (array data.*).*)`
+    let func = compile(q)
+    let res = func({ data })
+
+    // console.log(func.explain.pseudo0)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = 12
+    expect(res).toEqual(expected)
+})
+
+test("etaSame3", () => { 
+    let data = [1,2,3]
+    let q = rh`sum (data.*A + (array data.*A).*B)`
+    let func = compile(q)
+    let res = func({ data })
+
+    // console.log(func.explain.pseudo0)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = 12
+    expect(res).toEqual(expected)
+})
+
+test("etaSame4", () => { 
+    let data = [1,2,3]
+    let q = rh`sum (data.*A + (group *A data.*A).*B)`
+    let func = compile(q)
+    let res = func({ data })
+
+    // console.log(func.explain.pseudo0)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = 12
+    expect(res).toEqual(expected)
+})
 
 
 // ----- test indirect correlation of group keys
