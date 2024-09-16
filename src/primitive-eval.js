@@ -708,7 +708,7 @@ let fixIndent = s => {
 
 
 // XX TODO: do this more like computeDependencies (precompute bulk)
-let transViaFiltersDimsC = iter => {
+let transViaFiltersFreC = iter => {
   let vars = {}
 
   // remember the set of iteration vars
@@ -750,7 +750,7 @@ let emitFiltersC1 = (scope, free, iter) => (buf, codegen) => body => {
 
   if (iter.length == 0) return body()
 
-  let full = transViaFiltersDimsC(union(free,iter)) // XX simpler way to compute?
+  let full = transViaFiltersFreC(union(free,iter)) // XX simpler way to compute?
 
   let closing = "}"
   buf.push("{")
