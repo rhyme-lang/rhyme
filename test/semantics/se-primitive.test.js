@@ -372,30 +372,48 @@ test("testGroup0-a4", () => {
 })
 
 test("testGroup0-a5", () => {
+  // NOTE: added special *KEYVAR var prefix as part of broadening handling of
+  // correlated key vars. Now this works ...
+
   let query = rh`(count (singleton data.*D.key).*KEYVAR) &
   (group *KEYVAR (array data.*D.value))`
   
-  // NOTE: it's crucial to use 'singleton' (pure) not 'mkset' (aggr),
+  // NOTE: here we use 'singleton' (pure) not 'mkset' (aggr),
   // because correlation is determined by dims* and dims(mkset ..) = Ø,
-  // so the dependency *KEYVAR -> D wouldn't register
-
-  // Perhaps one would like this to work:
-  //
-  //   (count *D & (mkset data.*D.key).*KEYVAR)
-  //
-  // This elaborates to (mkset_Ø^D data.*.key) and thus has the
-  // right bound/free sets. BUT we're still relying on dims, not fre.
+  // so the dependency *KEYVAR -> D wouldn't register for mkset.
 
   let func = compile(query)
   let res = func({data, other})
-
-  // NOTE: added special *KEYVAR var prefix as part of broadening handling of
-  // correlated key vars. Now this works ...
 
   expect(res).toEqual(
    { U: [40, 20], V: [10] }
   )
 })
+
+test("testGroup0-a6", () => {
+  let query = rh`(count (*D & (mkset data.*D.key)).*KEYVAR) &
+  (group *KEYVAR (array data.*D.value))`
+  
+  // NOTE: here we massage a prefix for *KEYVAR that both includes D
+  // among its dims and also uses mkset to perform the selection.
+
+  // Note that the following doesn't work:
+  //
+  //   (count *D & (mkset data.*D.key).*KEYVAR)
+  //
+  // This elaborates to (mkset_Ø^D data.*.key) and thus has the
+  // right bound/free sets. BUT we're still relying on dims
+  // of the selection prefix for *KEYVAR -- free isn't
+  // available yet.
+
+  let func = compile(query)
+  let res = func({data, other})
+
+  expect(res).toEqual(
+   { U: [40, 20], V: [10] }
+  )
+})
+
 
 test("testGroup1", () => {
   let query = {"data.*.key": rh`sum(data.*.value)`}
