@@ -371,6 +371,22 @@ test("testGroup0-a4", () => {
   )
 })
 
+test("testGroup0-a5", () => {
+  let query = rh`(array (singleton data.*.key).*KEYVAR) &
+  (group *KEYVAR array(data.*.value))`
+  
+  // Difference to prev: drop *K from inner `array(...)`
+
+  let func = compile(query)
+  let res = func({data, other})
+
+  // NOTE: added special *KEYVAR var prefix as part of broadening handling of
+  // correlated key vars. Now this works ...
+
+  expect(res).toEqual(
+   { U: [40, 20], V: [10] }
+  )
+})
 
 test("testGroup1", () => {
   let query = {"data.*.key": rh`sum(data.*.value)`}

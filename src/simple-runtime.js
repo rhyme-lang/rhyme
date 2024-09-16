@@ -95,6 +95,11 @@ rt.pure.and = (x1,x2) => {
 }
 
 
+rt.pure.singleton = (x1) => { // 'mkset'
+  if (x1 === undefined) return {}
+  return {[x1]:true}
+}
+
 rt.singleton = (x1) => { // 'mkset'
   if (x1 === undefined) return {}
   return {[x1]:true}
