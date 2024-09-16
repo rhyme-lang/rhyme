@@ -180,11 +180,12 @@ let preproc = q => {
 // - ensure all grouping is wrt a variable, i.e.,
 //   transform { e1: e2 } to {}{ K1: e2 } / mkset(e1).K1
 
-let canonicalVarName = e1 => {
+let canonicalVarName = (e1, isCorrelatedGroupKey) => {
   let str = JSON.stringify(e1)
   let key = prefixes.indexOf(str)
   if (key < 0) { key = prefixes.length; prefixes.push(str) }
-  let name = e1.key == "mkset" ? "K" : "D"
+  // let name = e1.key == "mkset" ? "K" : "D"
+  let name = isCorrelatedGroupKey ? "K" : "D"
   return name+key
 }
 
@@ -205,7 +206,7 @@ let extract0 = q => {
       // canonicalize '*' in 'data.*' to a unique variable
       // NOTE: we use e1 _before_ extract as key -- XXX consistent with 'update' below?
       if (e2.op == "*")
-        e2 = {...e2, op: canonicalVarName(e1) }
+        e2 = {...e2, op: canonicalVarName(e1, false) }
     }
     e1 = extract0(e1)
     e2 = extract0(e2)
@@ -219,8 +220,8 @@ let extract0 = q => {
     let e2 = extractFlex0(q.arg[2])
     if (e1.key != "var") {
       let prefix = { key:"mkset", arg:[e1] }
-      let v1 = { key: "var", op: canonicalVarName(prefix) }
-      let v2 = { key: "var", op: canonicalVarName(prefix) }
+      let v1 = { key: "var", op: canonicalVarName(prefix, true) }
+      let v2 = { key: "var", op: canonicalVarName(prefix, true) }
       return { ...q, arg: [e0, v1, e2, { key: "get", arg: [prefix, v2] }], mode: e2.mode }
       // return { ...q, arg: [v1,
       //   { key:"stateful", op: "single", mode: "reluctant", arg:[
@@ -347,6 +348,8 @@ let infer = q => {
 //    Decorrelate paths and eliminate trivial recursion
 //
 
+let isCorrelatedKeyVar = s => s.startsWith("K") || s.startsWith("*KEYVAR") // 2nd is a temp hack?
+
 let trans = ps => unique([...ps,...ps.flatMap(x => vars[x].vars)])
 
 let intersects = (a,b) => intersect(a,b).length > 0
@@ -437,10 +440,10 @@ let inferBwd1 = out => q => {
       intersects(trans(x.xxFree), trans(q.bnd))).flatMap(x => x.xxFree)
 
     let extra2 = out
-    .filter(x => x.startsWith("K"))
+    .filter(isCorrelatedKeyVar)
     .filter(x => intersects(trans([x]), trans(q.bnd)))
 
-    assertSame(extra, extra2, "extra "+pretty(q))
+    assertSame(extra, diff(extra2, ["*KEYVAR"]), "extra "+pretty(q)) // XX can use *KEYVAR manually now
 
     extra = extra2
 
@@ -491,10 +494,10 @@ let inferBwd1 = out => q => {
       intersects(trans(x.xxFree), trans(q.bnd))).flatMap(x => x.xxFree)
 
     let extra2 = out
-    .filter(x => x.startsWith("K"))
+    .filter(isCorrelatedKeyVar)
     .filter(x => intersects(trans([x]), trans(q.bnd)))
 
-    assertSame(extra, extra2, "extra "+pretty(q))
+    assertSame(extra, diff(extra2, ["*KEYVAR"]), "extra "+pretty(q)) // XX can use *KEYVAR manually now
 
     extra = extra2
 
