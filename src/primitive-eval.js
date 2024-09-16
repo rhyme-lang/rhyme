@@ -853,7 +853,6 @@ let emitFiltersC2 = (scope, iter) => (buf, codegen) => body => {
   // }
 
   // let scope1 = union(scope,iter)
-  let scope1 = [...scope]
 
   // process filters
   while (next()) {
@@ -863,7 +862,7 @@ let emitFiltersC2 = (scope, iter) => (buf, codegen) => body => {
       let g1 = f.arg[0]
 
       buf.push("// FILTER "+i+" := "+pretty(f))
-      scope1 = f.fre
+      let scope1 = g1.fre
 
       // XXX SHORTCUT -- known vars & range ...
       // buf.push("if (!("+quoteVar(v1)+" in ("+codegen(g1,scope1)+"??[]))) continue")
@@ -881,7 +880,6 @@ let emitFiltersC2 = (scope, iter) => (buf, codegen) => body => {
         if (!seen[v1]) {
           buf.push("rt.deepForIn("+codegen(g1,scope1)+", "+quoteVar(v1)+" => {")
           seen[v1] = true
-          scope1.push(v1)
         } else {
           buf.push("rt.deepIfIn("+codegen(g1,scope1)+", "+quoteVar(v1)+", () => {")
         }
@@ -890,7 +888,6 @@ let emitFiltersC2 = (scope, iter) => (buf, codegen) => body => {
         if (!seen[v1]) {
           buf.push("for (let "+quoteVar(v1)+" in "+codegen(g1,scope1)+") {")
           seen[v1] = true
-          scope1.push(v1)
         } else {
           buf.push("if ("+quoteVar(v1)+" in ("+codegen(g1,scope1)+"??[])) {")
         }
