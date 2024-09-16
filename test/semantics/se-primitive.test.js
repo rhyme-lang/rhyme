@@ -518,15 +518,29 @@ test("testFreeVars", () => {
       7,7,7,7
   ]
 
-  let query = rh`(array a.*A.*C) & (array (array b.*B).*C) & (array (array d.*D).*C) & (group *A (group *B (*A + *B + (sum data.*C))))`
+  let query = rh`(array a.*A.*C) & 
+  (array (array b.*B).*C) & 
+  (array (array d.*D).*C) & 
+  (group *A (group *B (
+      *A + *B + (sum data.*C))))`
 
-  // let simple = require('../../src/simple-eval')
-  let simple = require('../../src/primitive-eval')
+  // inner sum:
+  //   sum^{*A}_{*C}(data[*C])
+  // free: A, bound: C
+
+/*
+array_{*A,*C}(a[*A][*C]) &
+array_{*C}(array_{*B}(b[*B])[*C]) &
+array_{*C}(array_{*D}(d[*D])[*C]) &
+group_{*A} (group^{*A}_{*B} 
+  (single^{*A,*B}(plus(plus(*A, *B), 
+    sum^{*A}_{*C}(data[*C])))))
+*/
 
   let func = compile(query)
 
-  console.log(func.explain.pseudo)
-  console.log(func.explain.code)
+  // console.log(func.explain.pseudo)
+  // console.log(func.explain.code)
 
   let res1 = func({a,b,d, data})
 
