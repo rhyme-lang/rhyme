@@ -372,10 +372,19 @@ test("testGroup0-a4", () => {
 })
 
 test("testGroup0-a5", () => {
-  let query = rh`(array (singleton data.*.key).*KEYVAR) &
-  (group *KEYVAR array(data.*.value))`
+  let query = rh`(count (singleton data.*D.key).*KEYVAR) &
+  (group *KEYVAR (array data.*D.value))`
   
-  // Difference to prev: drop *K from inner `array(...)`
+  // NOTE: it's crucial to use 'singleton' (pure) not 'mkset' (aggr),
+  // because correlation is determined by dims* and dims(mkset ..) = Ø,
+  // so the dependency *KEYVAR -> D wouldn't register
+
+  // Perhaps one would like this to work:
+  //
+  //   (count *D & (mkset data.*D.key).*KEYVAR)
+  //
+  // This elaborates to (mkset_Ø^D data.*.key) and thus has the
+  // right bound/free sets. BUT we're still relying on dims, not fre.
 
   let func = compile(query)
   let res = func({data, other})
