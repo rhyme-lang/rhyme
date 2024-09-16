@@ -1636,7 +1636,17 @@ test("day17-part1", () => {
     notContain: (map, k) => map[k] === undefined,
     mapGet: (map, k) => map[k],
     merge: (a, b) => [...a, ...b],
-    toStr: (state) => state.join(" "),
+    toStr: (state) => {return state.join(" ")},
+    toArr: (set) => Array.from(set),
+    toSet: (arr) => new Set(arr),
+    mergeArr: (a1, a2) => [...a1, ...a2],
+    mergeObj: (o1, o2) => {
+      let copy = {...o1}
+      for (o of o2) {
+        copy[o.state] = o.heatLoss
+      }
+      return copy
+    },
     ...udf_stdlib
   }
   
@@ -1654,8 +1664,6 @@ test("day17-part1", () => {
   let getGraph = api.compile(graphQuery)
   let graph = getGraph({input, udf})
 
-  // console.log(graph)
-
   let state = {
     visiting: [0, 0, 0, 1, 0],
   }
@@ -1663,47 +1671,81 @@ test("day17-part1", () => {
   let minHeatLoss = {
     "0 0 0 1 0": 0
   }
-  // console.log(minHeatLoss)
 
   // Get the list of possible next positions
   // Caldulate the heat loss for each of them
   // Get the next position to be visited (min in the queue)
-
-  // Need a priority queue implementation?
 
   let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
 
   let neighbors = rh`udf.getNeighbors state.visiting | .*neighbors`
   let inRangeAndNotVisited = rh`udf.logicalAnd (udf.logicalAnd (udf.getNode graph.graph ${neighbors}.0 ${neighbors}.1) (udf.notContain .minHeatLoss (udf.toStr ${neighbors}))) (udf.isLessOrEqual ${neighbors}.4 3)`
 
-  let newMinHeatLoss = {
-    state: neighbors,
-    heatLoss: rh`(udf.mapGet .minHeatLoss (udf.toStr state.visiting)) + (udf.toNum (udf.getNode graph.graph ${neighbors}.0 ${neighbors}.1))`
+  let newState = rh`${neighbors} | ${filterBy("*f", inRangeAndNotVisited)}`
+
+  let newStates = [rh`udf.toStr ${newState}`]
+  let newMinHeatLoss = [{
+    state: rh`udf.toStr ${newState}`,
+    heatLoss: rh`(udf.mapGet .minHeatLoss (udf.toStr state.visiting)) + (udf.toNum (udf.getNode graph.graph ${newState}.0 ${newState}.1))`
+  }]
+  
+  let newMap = rh`udf.mergeObj .minHeatLoss ${newMinHeatLoss}`
+  let newQueue = rh`udf.mergeArr (udf.toArr .queue) ${newStates}`
+
+  // let newMap = rh`${newMinHeatLoss}`
+  // let newQueue = rh`${newStates}`
+
+  let min = rh`min (udf.mapGet ${newMap} ${newQueue}.*find1)`
+  let isMin = rh`udf.isEqual (udf.mapGet ${newMap} ${newQueue}.*find2) ${min}`
+
+  let query = {
+    newQueue: rh`udf.toSet ${newQueue}`,
+    newMap: newMap,
+    // next: [rh`${newQueue}.*find2 | ${filterBy("*f1", isMin)} | first | udf.split " " | udf.toNum .*`]
   }
-  let query = [rh`${newMinHeatLoss} | ${filterBy("*f", inRangeAndNotVisited)}`]
 
-  let func = api.compile(query)
+  let func = api.compileNew(query)
+  console.log(func.explain.code)
 
+  let i = 0
+  // while (state.visiting[0] != graph.n - 1 || state.visiting[1] != graph.m - 1) {
   while (state.visiting[0] != graph.n - 1 || state.visiting[1] != graph.m - 1) {
-    let updated = func({input, udf, state, minHeatLoss, graph})
+    // let {newQueue, newMap, next} = func({input, udf, state, minHeatLoss, graph, queue})
+    
+    // minHeatLoss = newMap
+    // queue = newQueue
+    // state.visiting = next
+    // queue.delete(next.join(" "))
 
-    for (let i in updated) {
-      queue.add(updated[i].state)
-      minHeatLoss[udf.toStr(updated[i].state)] = updated[i].heatLoss
+    let {newQueue, newMap} = func({input, udf, state, minHeatLoss, graph, queue})
+    // console.log(newMap)
+
+    // for (let o of newMap) {
+    //   queue.add(o.state)
+    //   minHeatLoss[o.state] = o.heatLoss
+    // }
+
+    minHeatLoss = newMap
+    queue = newQueue
+
+    let min = Infinity
+    let minState = undefined
+    for (let s of Array.from(queue)) {
+      if (minHeatLoss[s] < min) {
+        min = minHeatLoss[s]
+        minState = s
+      }
     }
 
-    let minState = undefined
-    let min = Number.MAX_VALUE
-    queue.forEach(k => {
-      if (minHeatLoss[udf.toStr(k)] < min) {
-        minState = k
-        min = minHeatLoss[udf.toStr(k)]
-      }
-    })
-
-    state.visiting = minState
     queue.delete(minState)
+    state.visiting = minState.split(" ").map(e => udf.toNum(e))
+
+    // console.log(queue, minHeatLoss, minState)
+
+    i++
   }
+
+  console.log(i)
 
   let res = minHeatLoss[udf.toStr(state.visiting)]
   expect(res).toBe(102)
