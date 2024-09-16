@@ -1074,36 +1074,41 @@ let emitFilters1 = iter => (buf, codegen) => body => {
   // 2. is it OK to take the ordering of iter, or
   //    do we need to compute topological order?
 
-  let closing = "}"
-  buf.push("{")
-  buf.push("// PROJECT "+full+" -> "+iter)
-  buf.push("let proj = {}")
+  if (same(full,iter)) { // XXX should not disregard order?
+    emitFilters2(full)(buf, codegen)(body)
+  } else {
 
-  emitFilters2(full)(buf, codegen)(() => {
-    // (logic taken from caller)
-    let xs = [...iter.map(quoteVar)]
-    let ys = xs.map(x => ","+x).join("")
-    buf.push("  rt.initTemp(proj"+ys+")(() => true)")
-  })
+    let closing = "}"
+    buf.push("{")
+    buf.push("// PROJECT "+full+" -> "+iter)
+    buf.push("let proj = {}")
 
-  buf.push("// TRAVERSE "+iter)
+    emitFilters2(full)(buf, codegen)(() => {
+      // (logic taken from caller)
+      let xs = [...iter.map(quoteVar)]
+      let ys = xs.map(x => ","+x).join("")
+      buf.push("  rt.initTemp(proj"+ys+")(() => true)")
+    })
 
-  let prefix = "proj"
-  for (let x of iter) {
-    if (isDeepVarStr(x)) { // ok, just emit current
-      buf.push("rt.deepForInTemp("+prefix+", ("+quoteVar(x)+"_key, "+quoteVar(x)+") => {")
-      prefix += "["+quoteVar(x)+"_key]"
-      closing = "})\n"+closing
-    } else {
-      buf.push("for (let "+quoteVar(x)+" in "+prefix+") {")
-      prefix += "["+quoteVar(x)+"]"
-      closing = "}\n"+closing
+    buf.push("// TRAVERSE "+iter)
+
+    let prefix = "proj"
+    for (let x of iter) {
+      if (isDeepVarStr(x)) { // ok, just emit current
+        buf.push("rt.deepForInTemp("+prefix+", ("+quoteVar(x)+"_key, "+quoteVar(x)+") => {")
+        prefix += "["+quoteVar(x)+"_key]"
+        closing = "})\n"+closing
+      } else {
+        buf.push("for (let "+quoteVar(x)+" in "+prefix+") {")
+        prefix += "["+quoteVar(x)+"]"
+        closing = "}\n"+closing
+      }
     }
+
+    body()
+
+    buf.push(closing)
   }
-
-  body()
-
-  buf.push(closing)
 }
 
 
