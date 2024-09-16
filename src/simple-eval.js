@@ -1210,7 +1210,7 @@ let emitFilters2 = iter => (buf, codegen) => body => {
 
 let emitCode = (q, order) => {
   let buf = []
-  buf.push("(inp => k => {")
+  buf.push("(inp => {")
   buf.push("let tmp = {}")
 
 
@@ -1264,11 +1264,9 @@ let emitCode = (q, order) => {
 
   buf.push("// --- res ---")
   let fv = q.fre
-  emitFilters1(fv)(buf, codegen)(() => {
-    let xs = q.fre.map(quoteVar)
-    let ys = xs.map(x => ","+x).join("")
-    buf.push("k("+codegen(q)+ys+")")
-  })
+  console.assert(same(fv,[]))
+  buf.push("return "+codegen(q))
+
   buf.push("})")
 
   return buf.join("\n")
@@ -1619,10 +1617,7 @@ let execPromise = function(cmd) {
   let func = eval(code)
 
   let wrap = (input) => {
-    let res
-    func(input)((x,...path) => res = rt.deepUpdate(res,path,x))
-    // alternative: discard path and collect into an array
-    return res
+    return func(input)
   }
 
   wrap.explain = {
