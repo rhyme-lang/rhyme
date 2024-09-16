@@ -504,48 +504,35 @@ test("eta2Indirect2-simpl", () => { // BUG -- eta via array constr
 })
 
 
-// ========== FROM se-encoding.test.js ========== //
 
-test("aggregateAsKey_encoded1", () => {
+
+// ========== other ========== //
+
+test("testFreeVars", () => {
+
+  let a = [[1,2,3]]
+  let b = [[1,2,3]]
+  let d = [[1,2,3]]
 
   let data = [
-      {"A": 1, "B": 10},
-      {"A": 2, "B": 20},
-      {"A": 1, "B": 30},
+      7,7,7,7
   ]
 
-  // let q1 = { "data.*.A": { "sum(data.*.B)": true } }
+  let query = rh`(array a.*A.*C) & (array (array b.*B).*C) & (array (array d.*D).*C) & (group *A (group *B (*A + *B + (sum data.*C))))`
 
-  let query = //{"*K1": {"*K2": 
-    rh`*K1 & *K2 & mkset(sum(mkset(data.*.A).*K1 & data.*.B)).*K2 & true`
-  // }}
-
-  // this one is not correct:
-  // rh`mkset(data.*.A).*K1 & mkset(sum(data.*.B)).*K2 & true`
+  // let simple = require('../../src/simple-eval')
+  let simple = require('../../src/primitive-eval')
 
   let func = compile(query)
-  let res1 = func({data})
+
+  console.log(func.explain.pseudo)
+  console.log(func.explain.code)
+
+  let res1 = func({a,b,d, data})
 
   let e1 = {
-      1: { 40: "true" },
-      2: { 20: "true" }
+      0: { 0: 7 }
   }
 
-  // expect(res1).toEqual(e1)
+  expect(res1).toEqual(e1)
 })
-
-
-
-// ========== FROM se-recursion.test.js ========== //
-
-// testRecursion1 -- most likely due to {singleResult: true}
-
-
-
-// ========== FROM basic.test.js ========== //
-
-// ...
-
-// ========== FROM advanced.test.js ========== //
-
-// ...
