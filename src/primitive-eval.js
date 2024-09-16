@@ -752,36 +752,41 @@ let emitFiltersC1 = (scope, free, iter) => (buf, codegen) => body => {
 
   let full = transViaFiltersFreC(union(free,iter)) // XX simpler way to compute?
 
-  let closing = "}"
-  buf.push("{")
-  buf.push("// PROJECT "+full+" -> "+iter)
-  buf.push("let proj = {}")
+  if (same(full,iter)) { // XXX should not disregard order?
+    emitFiltersC2(scope, full)(buf, codegen)(body)
+  } else {
 
-  emitFiltersC2(scope, full)(buf, codegen)(() => {
-    // (logic taken from caller)
-    let xs = [...iter.map(quoteVar)]
-    let ys = xs.map(x => ","+x).join("")
-    buf.push("  rt.initTemp(proj"+ys+")(() => true)")
-  })
+    let closing = "}"
+    buf.push("{")
+    buf.push("// PROJECT "+full+" -> "+iter)
+    buf.push("let proj = {}")
 
-  buf.push("// TRAVERSE "+iter)
+    emitFiltersC2(scope, full)(buf, codegen)(() => {
+      let xs = [...iter.map(quoteVar)]
+      let ys = xs.map(x => ","+x).join("")
+      buf.push("  rt.initTemp(proj"+ys+")(() => true)")
+    })
 
-  let prefix = "proj"
-  for (let x of iter) {
-    if (isDeepVarStr(x)) { // ok, just emit current
-      buf.push("rt.deepForInTemp("+prefix+", ("+quoteVar(x)+"_key, "+quoteVar(x)+") => {")
-      prefix += "["+quoteVar(x)+"_key]"
-      closing = "})\n"+closing
-    } else {
-      buf.push("for (let "+quoteVar(x)+" in "+prefix+") {")
-      prefix += "["+quoteVar(x)+"]"
-      closing = "}\n"+closing
+    buf.push("// TRAVERSE "+iter)
+
+    let prefix = "proj"
+    for (let x of iter) {
+      if (isDeepVarStr(x)) { // ok, just emit current
+        buf.push("rt.deepForInTemp("+prefix+", ("+quoteVar(x)+"_key, "+quoteVar(x)+") => {")
+        prefix += "["+quoteVar(x)+"_key]"
+        closing = "})\n"+closing
+      } else {
+        buf.push("for (let "+quoteVar(x)+" in "+prefix+") {")
+        prefix += "["+quoteVar(x)+"]"
+        closing = "}\n"+closing
+      }
     }
+
+    body()
+
+    buf.push(closing)
   }
 
-  body()
-
-  buf.push(closing)
 }
 
 
