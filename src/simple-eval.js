@@ -482,6 +482,8 @@ let infer = q => {
 //    Decorrelate paths and eliminate trivial recursion
 //
 
+let isCorrelatedKeyVar = s => s.startsWith("K") || s.startsWith("*KEYVAR") // 2nd is a temp hack?
+
 let trans = ps => unique([...ps,...ps.flatMap(x => vars[x].vars)])
 
 let intersects = (a,b) => intersect(a,b).length > 0
@@ -572,10 +574,10 @@ let inferBwd1 = out => q => {
       intersects(trans(x.xxFree), trans(q.bnd))).flatMap(x => x.xxFree)
 
     let extra2 = out
-    .filter(x => x.startsWith("K"))
+    .filter(isCorrelatedKeyVar)
     .filter(x => intersects(trans([x]), trans(q.bnd)))
 
-    assertSame(extra, extra2, "extra "+pretty(q))
+    assertSame(extra, diff(extra2, ["*KEYVAR"]), "extra "+pretty(q)) // XX can use *KEYVAR manually now
 
     extra = extra2
 
@@ -626,10 +628,10 @@ let inferBwd1 = out => q => {
       intersects(trans(x.xxFree), trans(q.bnd))).flatMap(x => x.xxFree)
 
     let extra2 = out
-    .filter(x => x.startsWith("K"))
+    .filter(isCorrelatedKeyVar)
     .filter(x => intersects(trans([x]), trans(q.bnd)))
 
-    assertSame(extra, extra2, "extra "+pretty(q))
+    assertSame(extra, diff(extra2, ["*KEYVAR"]), "extra "+pretty(q)) // XX can use *KEYVAR manually now
 
     extra = extra2
 
