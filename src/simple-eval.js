@@ -1022,7 +1022,10 @@ let emitStmInit = (q) => {
     return "rt.stateful."+q.op+"_init"
   } else if (q.key == "update") {
     let e0 = codegen(q.arg[0])
-    return "rt.stateful.update_init("+e0+")"
+    if (isFresh(q.arg[0]))
+      return "(() => "+e0+")"
+    else
+      return "rt.stateful.update_init("+e0+")" // need to create copy
   } else {
     console.error("unknown op", q)
   }
