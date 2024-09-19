@@ -317,7 +317,7 @@ let extract0 = q => {
       // canonicalize '*' in 'data.*' to a unique variable
       // NOTE: we use e1 _before_ extract as key -- XXX consistent with 'update' below?
       if (e2.op == "*")
-        e2 = {...e2, op: canonicalVarName(e1) }
+        e2 = {...e2, op: canonicalVarName(e1, false) }
     }
     e1 = extract0(e1)
     e2 = extract0(e2)
@@ -331,8 +331,8 @@ let extract0 = q => {
     let e2 = extractFlex0(q.arg[2])
     if (e1.key != "var") {
       let prefix = { key:"mkset", arg:[e1] }
-      let v1 = { key: "var", op: canonicalVarName(prefix) }
-      let v2 = { key: "var", op: canonicalVarName(prefix) }
+      let v1 = { key: "var", op: canonicalVarName(prefix, true) }
+      let v2 = { key: "var", op: canonicalVarName(prefix, true) }
       return { ...q, arg: [e0, v1, e2, { key: "get", arg: [prefix, v2] }], mode: e2.mode }
       // return { ...q, arg: [v1,
       //   { key:"stateful", op: "single", mode: "reluctant", arg:[
