@@ -292,11 +292,12 @@ let preproc = q => {
 // - ensure all grouping is wrt a variable, i.e.,
 //   transform { e1: e2 } to {}{ K1: e2 } / mkset(e1).K1
 
-let canonicalVarName = e1 => {
+let canonicalVarName = (e1, isCorrelatedGroupKey) => {
   let str = JSON.stringify(e1)
   let key = prefixes.indexOf(str)
   if (key < 0) { key = prefixes.length; prefixes.push(str) }
-  let name = e1.key == "mkset" ? "K" : "D"
+  // let name = e1.key == "mkset" ? "K" : "D"
+  let name = isCorrelatedGroupKey ? "K" : "D"
   return name+key
 }
 
