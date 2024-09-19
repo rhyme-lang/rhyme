@@ -557,6 +557,7 @@ let inferBwd1 = out => q => {
     q.fre = unique(es.flatMap(x => x.fre))
   } else if (q.key == "stateful" || q.key == "prefix") {
     let out1 = union(out,q.arg[0].dims) // need to consider mode?
+    assertSame(out1, union(out,q.bnd)) // same as adding bnd
     let [e1] = q.arg.map(inferBwd1(out1))
 
     // NOTE: for consistency with 'update' it would be interesting
