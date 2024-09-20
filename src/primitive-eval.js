@@ -688,6 +688,25 @@ let emitPseudo = (q) => {
 
 
 //
+// 10-11. Analysis
+//
+
+// does the expression produce a result that's
+// not aliased with any other mutable value?
+let isFresh = q => {
+  if (q.key == "const") {
+    return true
+  } else if (q.key == "pure") {
+    // contract for udfs: arguments fresh, result fresh
+    if (q.op == "apply")
+      return q.arg.slice(1).every(isFresh)
+  }
+  return false
+}
+
+
+
+//
 // 11. Code generation
 //
 
@@ -1005,7 +1024,10 @@ let emitCodeDeep = (q) => {
           return "rt.stateful."+q.op+"_init"
         } else if (q.key == "update") {
           let e0 = codegen(q.arg[0],env)
-          return "rt.stateful.update_init("+e0+")"
+          if (isFresh(q.arg[0]))
+            return "(() => "+e0+")"
+          else
+            return "rt.stateful.update_init("+e0+")" // need to create copy
         } else {
           console.error("unknown op", q)
         }
