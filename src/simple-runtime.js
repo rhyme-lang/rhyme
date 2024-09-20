@@ -267,7 +267,14 @@ rt.stateful.group = (x1,x2) => ({
 })
 
 
-rt.stateful.update_init = (x0) => () => ({...x0})
+
+
+rt.uniqueMutableCopy = x0 => {
+  // console.assert(typeof x0 === "object")
+  return {...x0}
+}
+
+rt.stateful.update_init = (x0) => () => rt.uniqueMutableCopy(x0)
 
 rt.stateful.update = (x0,x1,x2) => ({
   init: () => ({...x0}), // NOTE: preserve init value! 
@@ -282,8 +289,8 @@ rt.stateful.update = (x0,x1,x2) => ({
       // pre-init path (see testPathGroup3,4)
       // XXX todo: ensure more generally that we're only
       // updating proper objects
-      if (typeof x0 === "object")
-        s = {...x0}
+      if (typeof x0 === "object") // testPathGroup3,4: String!
+        s = rt.uniqueMutableCopy(x0)
       else
         s = x0
     }
@@ -291,6 +298,7 @@ rt.stateful.update = (x0,x1,x2) => ({
       // console.error("TODO: add deep update (group)! "+x1)
       s = rt.deepUpdate(s, x1, x2)
     } else {
+      console.assert(typeof s === "object")
       s[x1] = x2
     }
     return s
