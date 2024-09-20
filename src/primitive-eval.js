@@ -788,7 +788,8 @@ let emitFiltersC1 = (scope, free, iter) => (buf, codegen) => body => {
 
   if (iter.length == 0) return body()
 
-  let full = transViaFiltersFreC(union(free,iter)) // XX simpler way to compute?
+  // let full = union(free, transViaFiltersFreC(iter)) // this doesn't work
+  let full = transViaFiltersFreC(union(free, iter)) // XX simpler way to compute?
 
   if (same(full,iter)) { // XXX should not disregard order?
     emitFiltersC2(scope, full)(buf, codegen)(body)
