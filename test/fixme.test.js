@@ -52,7 +52,7 @@ test("statelessRepeatedGrouping4", () => {
 
     let res1 = f1({data})
     let res2 = f2.c1({data})
-    let res2_new = f2.c2({data}, true)
+    let res2_new = f2.c2({data})
 
     let e = [
       { key: 'A', data: { A: 10 } },
@@ -98,7 +98,7 @@ test("asymmetricPartialSum", () => {
 
     let func = api.compile(query)
     let res = func.c1({data, other})
-    let res_new = func.c2({data, other}, true)
+    let res_new = func.c2({data, other})
 
     // console.log(res)
 
@@ -140,7 +140,7 @@ test("undefinedVal", () => {
 
     let f = api.compile(q)
     let res = f.c1({data, index})
-    let res_new = f.c2({data, index}, true)
+    let res_new = f.c2({data, index})
 
     // console.dir(res)
 
@@ -162,7 +162,7 @@ test("undefinedKey", () => {
 
     let f = api.compile(q)
     let res = f.c1({data, index})
-    let res_new = f.c2({data, index}, true)
+    let res_new = f.c2({data, index})
 
     // console.dir(res)
 
@@ -211,8 +211,8 @@ test("aggregateAsKey", () => {
     let res2 = f2.c1({data})
     let res1_opt = f1.c1_opt({data})
     let res2_opt = f2.c1_opt({data})
-    let res1_new = f1.c2({data}, true)
-    let res2_new = f2.c2({data}, true)
+    let res1_new = f1.c2({data})
+    let res2_new = f2.c2({data})
 
     let e1 = {
         1: { 40: true },
