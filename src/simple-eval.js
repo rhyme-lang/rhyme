@@ -744,7 +744,7 @@ let computeDependencies = () => {
   let followVarVar = (i,j) => {
     if (deps.var2var[i][j]) return
     deps.var2var[i][j] = true
-    for (let k in deps.var2var[j]) followVarVar(i,k)
+    for (let k of vars[j].vars) followVarVar(i,k)
   }
 
   for (let i in vars) {
