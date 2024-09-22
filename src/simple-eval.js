@@ -372,6 +372,9 @@ let extract1 = q => {
   }
 }
 
+
+let varsChanged = false
+
 let extract1f = q => {
   if (q.arg) q.arg.map(extract1f)
   if (q.key == "var") {
@@ -381,8 +384,11 @@ let extract1f = q => {
   } else if (q.key == "get") {
     let [e1,e2] = q.arg
     if (e2.key == "var") {
-      vars[e2.op].varsf = union(vars[e2.op].varsf, e1.fre ?? e1.dims)
-      vars[e2.op].varsf1 = union(vars[e2.op].varsf1, e1.fre ?? e1.dims)
+      if (!e1.fre || !subset(e1.fre, vars[e2.op].varsf)) {
+        varsChanged = true
+        vars[e2.op].varsf = union(vars[e2.op].varsf, e1.fre ?? e1.dims)
+        vars[e2.op].varsf1 = union(vars[e2.op].varsf1, e1.fre ?? e1.dims)
+      }
     }
   }
 }
@@ -1644,47 +1650,12 @@ let compile = (q,{
   let out = singleResult ? q.mind : q.dims
   q = inferBwd0(out)(q)
 
-  extract1f(q)
-  computeDependenciesf()
-  q = inferBwd1(out)(q)
-
-  extract1f(q)
-  computeDependenciesf()
-  q = inferBwd1(out)(q)
-
-  extract1f(q)
-  computeDependenciesf()
-  q = inferBwd1(out)(q)
-
-  extract1f(q)
-  computeDependenciesf()
-  q = inferBwd1(out)(q)
-
-  extract1f(q)
-  computeDependenciesf()
-  q = inferBwd1(out)(q)
-
-  extract1f(q)
-  computeDependenciesf()
-  q = inferBwd1(out)(q)
-
-  extract1f(q)
-  computeDependenciesf()
-  q = inferBwd1(out)(q)
-
-  extract1f(q)
-  computeDependenciesf()
-  q = inferBwd1(out)(q)
-
-  extract1f(q)
-  computeDependenciesf()
-  q = inferBwd1(out)(q)
-
-  extract1f(q)
-  computeDependenciesf()
-  q = inferBwd1(out)(q)
-
-// console.log("FFF", vars)
+  do {
+    varsChanged = false
+    extract1f(q)
+    computeDependenciesf()
+    q = inferBwd1(out)(q)
+  } while (varsChanged)
 
 
   if (out.length > 0) {
