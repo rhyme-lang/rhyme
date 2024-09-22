@@ -384,7 +384,7 @@ let extract1f = q => {
   } else if (q.key == "get") {
     let [e1,e2] = q.arg
     if (e2.key == "var") {
-      if (!e1.fre || !subset(e1.fre, vars[e2.op].varsf)) {
+      if (!subset(e1.fre ?? e1.dims, vars[e2.op].varsf)) {
         varsChanged = true
         vars[e2.op].varsf = union(vars[e2.op].varsf, e1.fre ?? e1.dims)
         vars[e2.op].varsf1 = union(vars[e2.op].varsf1, e1.fre ?? e1.dims)
@@ -1650,12 +1650,18 @@ let compile = (q,{
   let out = singleResult ? q.mind : q.dims
   q = inferBwd0(out)(q)
 
-  do {
+  varsChanged = false
+  extract1f(q)
+  computeDependenciesf()
+  q = inferBwd1(out)(q)
+
+  while (true) {
     varsChanged = false
     extract1f(q)
+    if (!varsChanged) break
     computeDependenciesf()
     q = inferBwd1(out)(q)
-  } while (varsChanged)
+  }
 
 
   if (out.length > 0) {
