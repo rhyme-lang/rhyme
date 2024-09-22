@@ -1071,6 +1071,49 @@ test("testIndirectCorrelation5", () => {
 // })
 
 
+test("testFreeVars", () => {
+
+  let a = [[1,2,3]]
+  let b = [[1,2,3]]
+  let d = [[1,2,3]]
+
+  let data = [
+      7,7,7,7
+  ]
+
+  let query = rh`(array a.*A.*C) & 
+  (array (array b.*B).*C) & 
+  (array (array d.*D).*C) & 
+  (group *A (group *B (
+      *A + *B + (sum data.*C))))`
+
+  // inner sum:
+  //   sum^{*A}_{*C}(data[*C])
+  // free: A, bound: C
+
+/*
+array_{*A,*C}(a[*A][*C]) &
+array_{*C}(array_{*B}(b[*B])[*C]) &
+array_{*C}(array_{*D}(d[*D])[*C]) &
+group_{*A} (group^{*A}_{*B} 
+  (single^{*A,*B}(plus(plus(*A, *B), 
+    sum^{*A}_{*C}(data[*C])))))
+*/
+
+  let func = compile(query)
+
+  // console.log(func.explain.pseudo)
+  // console.log(func.explain.code)
+
+  let res1 = func({a,b,d, data})
+
+  let e1 = {
+      0: { 0: 7 }
+  }
+
+  expect(res1).toEqual(e1)
+})
+
 
 test("day5-part2-debug", () => {
   let extra = { seeds: [79, 14, 55, 13] }
