@@ -1617,7 +1617,49 @@ let compile = (q,{
   // 6. Backward pass to infer output dimensions
   let out = singleResult ? q.mind : q.dims
   q = inferBwd0(out)(q)
+
+  extract1f(q)
+  computeDependenciesf()
   q = inferBwd1(out)(q)
+
+  extract1f(q)
+  computeDependenciesf()
+  q = inferBwd1(out)(q)
+
+  extract1f(q)
+  computeDependenciesf()
+  q = inferBwd1(out)(q)
+
+  extract1f(q)
+  computeDependenciesf()
+  q = inferBwd1(out)(q)
+
+  extract1f(q)
+  computeDependenciesf()
+  q = inferBwd1(out)(q)
+
+  extract1f(q)
+  computeDependenciesf()
+  q = inferBwd1(out)(q)
+
+  extract1f(q)
+  computeDependenciesf()
+  q = inferBwd1(out)(q)
+
+  extract1f(q)
+  computeDependenciesf()
+  q = inferBwd1(out)(q)
+
+  extract1f(q)
+  computeDependenciesf()
+  q = inferBwd1(out)(q)
+
+  extract1f(q)
+  computeDependenciesf()
+  q = inferBwd1(out)(q)
+
+// console.log("FFF", vars)
+
 
   if (out.length > 0) {
     // wrap as (group (vars q.mind) q)
@@ -1893,7 +1935,7 @@ let interpret = (q,{
   // 6. Backward pass to infer output dimensions
   let out = singleResult ? q.mind : q.dims
   q = inferBwd0(out)(q)
-  q = inferBwd1(out)(q)
+
 
 
   // ---- middle tier, imperative form ----
