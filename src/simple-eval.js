@@ -264,7 +264,7 @@ let preproc = q => {
     // if 'update .. ident ..', convert ident to input ref?
     let op = q.xxpath || q.xxkey
     let array = q.xxpath || op == "merge" || op == "keyval" || op == "flatten" || op == "array"
-    let es2 = array ? q.xxparam.map(preproc) : [preproc(q.xxparam)]
+    let es2 = q.xxparam instanceof Array ? q.xxparam.map(preproc) : [preproc(q.xxparam)]
     if (op in runtime.special)
       return { key: op, arg: es2 }
     else if (op in runtime.pure)
