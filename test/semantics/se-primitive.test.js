@@ -415,6 +415,26 @@ test("testGroup0-a6", () => {
 })
 
 
+test("testGroup0-a7", () => {
+  let query = rh`(count (*D & (mkset data.*D.key).*KEYVAR)) &
+  (group *KEYVAR (array data.*D.value))`
+  
+  // If we make .free available in a fixpoint loop this
+  // actually does work:
+  //
+  //   (count *D & (mkset data.*D.key).*KEYVAR)
+  //
+
+  let func = compile(query)
+  let res = func({data, other})
+
+  expect(res).toEqual(
+   { U: [40, 20], V: [10] }
+  )
+})
+
+
+
 test("testGroup1", () => {
   let query = {"data.*.key": rh`sum(data.*.value)`}
 
