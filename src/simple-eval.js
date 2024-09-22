@@ -1149,7 +1149,7 @@ let emitStm = (q) => {
 }
 
 
-// XX TODO: do this more like computeDependencies (precompute bulk)
+// XX no longer used, now using transf/computeDependenciesf
 let transViaFiltersFree = iter => {
   let vars = {}
 
@@ -1181,14 +1181,23 @@ let transViaFiltersFree = iter => {
   return res
 }
 
-let emitFilters1 = iter => (buf, codegen) => body => {
+let emitFilters1 = (free, bnd) => (buf, codegen) => body => {
   // approach: build explicit projection first
   // 1. iterate over transitive iter space to
   //    build projection map
   // 2. iterate over projection map to compute
   //    desired result
 
-  let full = transViaFiltersFree(iter) // XX simpler way to compute?
+  let iter = union(free,bnd)
+  let full = transf(iter)
+
+  // let full2 = union(free,transf(bnd))
+  // assertSame(full, full2, "free "+free+" bound "+bnd)
+
+  // full2 doesn't work: free was cut down to out, so
+  // any variables not in scope will need to be
+  // reconstructed here (through iteration)
+
 
   // Questions:
   // 1. does trans(iter) do the right thing, or
@@ -1206,7 +1215,6 @@ let emitFilters1 = iter => (buf, codegen) => body => {
     buf.push("let proj = {}")
 
     emitFilters2(full)(buf, codegen)(() => {
-      // (logic taken from caller)
       let xs = [...iter.map(quoteVar)]
       let ys = xs.map(x => ","+x).join("")
       buf.push("  rt.initTemp(proj"+ys+")(() => true)")
@@ -1365,7 +1373,7 @@ let emitCode = (q, order) => {
       //    now done in inferBwd (could be refined there)
 
       let fv = q.fre
-      emitFilters1(fv)(buf, codegen)(() => {
+      emitFilters1(fv,[])(buf, codegen)(() => {
         let xs = [i,...q.fre.map(quoteVar)]
         let ys = xs.map(x => ","+x).join("")
 
@@ -1373,8 +1381,8 @@ let emitCode = (q, order) => {
       })
     }
 
-    let fv = union(q.fre, q.bnd)
-    emitFilters1(fv)(buf, codegen)(() => {
+    let fv = q.fre // union(q.fre, q.bnd)
+    emitFilters1(fv,q.bnd)(buf, codegen)(() => {
       let xs = [i,...q.fre.map(quoteVar)]
       let ys = xs.map(x => ","+x).join("")
 
