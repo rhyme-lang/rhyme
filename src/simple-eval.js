@@ -355,15 +355,33 @@ let extract0 = q => {
 let extract1 = q => {
   if (q.arg) q.arg.map(extract1)
   if (q.key == "var") {
-    vars[q.op] ??= { vars:[] }
+    vars[q.op] ??= { vars:[], vars1: [] }
   } else if (q.key == "get") {
     let [e1,e2] = q.arg
     if (e2.key == "var") {
       vars[e2.op].vars = union(vars[e2.op].vars, e1.dims) // was: e1.vars
+      vars[e2.op].vars1 = union(vars[e2.op].vars1, e1.dims) // was: e1.vars
       // getting recursion fix and filter ordering errors when relaxed again
     }
   }
 }
+
+let extract1f = q => {
+  if (q.arg) q.arg.map(extract1f)
+  if (q.key == "var") {
+    vars[q.op] ??= { }
+    vars[q.op].varsf ??= [] 
+    vars[q.op].varsf1 ??= [] 
+  } else if (q.key == "get") {
+    let [e1,e2] = q.arg
+    if (e2.key == "var") {
+      vars[e2.op].varsf = union(vars[e2.op].varsf, e1.fre ?? e1.dims) // was: e1.vars
+      vars[e2.op].varsf1 = union(vars[e2.op].varsf1, e1.fre ?? e1.dims) // was: e1.vars
+      // getting recursion fix and filter ordering errors when relaxed again
+    }
+  }
+}
+
 
 
 // TODO: cse for array-valued udfs?
@@ -486,6 +504,13 @@ let infer = q => {
 let isCorrelatedKeyVar = s => s.startsWith("K") || s.startsWith("*KEYVAR") // 2nd is a temp hack?
 
 let trans = ps => unique([...ps,...ps.flatMap(x => vars[x].vars)])
+
+let trans1 = ps => unique(ps.flatMap(x => vars[x].vars))
+
+let transf = ps => unique([...ps,...ps.flatMap(x => vars[x].varsf)])
+
+let transf1 = ps => unique(ps.flatMap(x => vars[x].varsf1))
+
 
 let intersects = (a,b) => intersect(a,b).length > 0
 
@@ -758,6 +783,30 @@ let computeDependencies = () => {
   }
 }
 
+let computeDependenciesf = () => {
+  // calculate transitive dependencies between vars directly
+
+  let deps = {
+    var2var: {},
+  }
+
+  let followVarVar = (i,j) => {
+    if (deps.var2var[i][j]) return
+    deps.var2var[i][j] = true
+    for (let k of vars[j].varsf) followVarVar(i,k)
+  }
+
+  for (let i in vars) {
+    deps.var2var[i] ??= {}
+    for (let j of vars[i].varsf) followVarVar(i,j)
+  }
+
+  // inject transitive closure info so "inferBwd" will pick it up
+  for (let i in deps.var2var) {
+    vars[i].varsf = Object.keys(deps.var2var[i])
+  }
+}
+
 
 
 
@@ -900,6 +949,12 @@ let emitPseudo = (q) => {
   for (let v in vars) {
     if (vars[v].vars.length > 0 || vars[v].tmps && vars[v].tmps.length > 0)
       buf.push(v + " -> " + vars[v].vars +"  "+ vars[v].tmps)
+  }
+  buf.push("")
+  hi = buf.length
+  for (let v in vars) {
+    if (vars[v].varsf.length > 0 || vars[v].tmps && vars[v].tmps.length > 0)
+      buf.push(v + " -> " + vars[v].varsf +"  "+ vars[v].tmps)
   }
   if (buf.length > hi)
     buf.push("")
