@@ -1192,6 +1192,38 @@ test("testIndirectFreeVars2", () => {
   })
 })
 
+
+test("testSingleArgGroup0", () => {
+  let query = rh`data.*A.key` // implicit top-level group
+
+  let func = compile(query)
+  let res = func({data})
+
+  // console.log(func.explain.pseudo)
+
+  expect(res).toEqual({
+    0: "A", 1: "B", 2: "A"
+  })
+})
+
+test("testSingleArgGroup1", () => {
+  let query = rh`group data.*A.key`
+
+  let func = compile(query)
+  let res = func({data})
+
+  // console.log(func.explain.pseudo)
+
+  expect(res).toEqual({
+    0: "A", 1: "B", 2: "A"
+  })
+})
+
+
+
+// ========== from aoc test failures ========== //
+
+
 test("day5-part2-debug", () => {
   let extra = { seeds: [79, 14, 55, 13] }
 
