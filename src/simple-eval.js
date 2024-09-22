@@ -366,9 +366,8 @@ let extract1 = q => {
   } else if (q.key == "get") {
     let [e1,e2] = q.arg
     if (e2.key == "var") {
-      vars[e2.op].vars = union(vars[e2.op].vars, e1.dims) // was: e1.vars
-      vars[e2.op].vars1 = union(vars[e2.op].vars1, e1.dims) // was: e1.vars
-      // getting recursion fix and filter ordering errors when relaxed again
+      vars[e2.op].vars = union(vars[e2.op].vars, e1.dims)
+      vars[e2.op].vars1 = union(vars[e2.op].vars1, e1.dims)
     }
   }
 }
@@ -382,9 +381,8 @@ let extract1f = q => {
   } else if (q.key == "get") {
     let [e1,e2] = q.arg
     if (e2.key == "var") {
-      vars[e2.op].varsf = union(vars[e2.op].varsf, e1.fre ?? e1.dims) // was: e1.vars
-      vars[e2.op].varsf1 = union(vars[e2.op].varsf1, e1.fre ?? e1.dims) // was: e1.vars
-      // getting recursion fix and filter ordering errors when relaxed again
+      vars[e2.op].varsf = union(vars[e2.op].varsf, e1.fre ?? e1.dims)
+      vars[e2.op].varsf1 = union(vars[e2.op].varsf1, e1.fre ?? e1.dims)
     }
   }
 }
