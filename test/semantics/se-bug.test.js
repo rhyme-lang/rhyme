@@ -1114,6 +1114,83 @@ group_{*A} (group^{*A}_{*B}
   expect(res1).toEqual(e1)
 })
 
+test("testIndirectFreeVars0", () => {
+  let other = {
+    0: { 0: 1 },
+    1: { 1: 1 },
+    2: { 2: 1 }
+  }
+
+  // XXX this one also works with trans(q.dims)
+
+  let filter1 = rh`count other.*B.*A`
+
+  let expr = rh`*B & array(data.*A.value)`
+
+  let query = rh`${filter1} & ${expr}`
+
+  let func = compile(query)
+  let res = func({data, other})
+
+  expect(res).toEqual({
+    0: [10], 1: [20], 2: [30]
+  })
+})
+
+test("testIndirectFreeVars1", () => {
+  let other = {
+    0: { 0: 1 },
+    1: { 1: 1 },
+    2: { 2: 1 }
+  }
+
+  // Consider a in (q.bnd \ out), b in (transf1(a) \ out), c in (transf1(b) & out)
+  // Make sure we're not missing c!
+
+  // XXX this one also works with trans(q.dims)
+
+  let filter1 = rh`count other.*B.*A`
+  let filter2 = rh`count other.*C.*B`
+  let filter3 = rh`count other.*D.*C`
+  let filter4 = rh`count other.*E.*D`
+
+  let expr = rh`*E & array(data.*A.value)`
+
+  let query = rh`${filter1} & ${filter2} & ${filter3} & ${filter4} & ${expr}`
+
+  let func = compile(query)
+  let res = func({data, other})
+
+  expect(res).toEqual({
+    0: [10], 1: [20], 2: [30]
+  })
+})
+
+test("testIndirectFreeVars2", () => {
+  let other = {
+    0: { 0: 1 },
+    1: { 1: 1 },
+    2: { 2: 1 }
+  }
+
+  // XXX this one genuinely requires trans(q.fre)
+
+  let filter1 = rh`count (group *AX (sum other.*B.*AX)).*A`
+  let filter2 = rh`count (group *BX (sum other.*C.*BX)).*B`
+  let filter3 = rh`count (group *CX (sum other.*D.*CX)).*C`
+  let filter4 = rh`count (group *DX (sum other.*E.*DX)).*D`
+
+  let expr = rh`*E & array(data.*A.value)`
+
+  let query = rh`${filter1} & ${filter2} & ${filter3} & ${filter4} & ${expr}`
+
+  let func = compile(query)
+  let res = func({data, other})
+
+  expect(res).toEqual({
+    0: [10], 1: [20], 2: [30]
+  })
+})
 
 test("day5-part2-debug", () => {
   let extra = { seeds: [79, 14, 55, 13] }
