@@ -308,6 +308,11 @@ let extractFlex0 = q => {
     return extract0({ key:"stateful", op: "single", mode: "reluctant", arg:[q] })
 }
 
+let extractKey0 = q => {
+  return extract0(q)   // could move more logic here
+}
+
+
 let extract0 = q => {
   if (q.key == "var") {
     if (q.op == "*") throw console.error("cannot support free-standing *")
@@ -324,13 +329,15 @@ let extract0 = q => {
     e2 = extract0(e2)
     return { ...q, arg: [e1,e2]}
   } else if (q.key == "group") {
-    return extract0({...q, key:"update",
-      arg: [{key:"const",op:{}}, ...q.arg]})
+    let arg = [{key:"const",op:{}}]
+    if (q.arg.length == 1) arg.push({key:"placeholder",op:"*",arg:[]})
+    arg.push(...q.arg)
+    return extract0({...q, key:"update", arg})
   } else if (q.key == "update") {
     let e0 = extract0(q.arg[0])
-    let e1 = extract0(q.arg[1])
+    let e1 = extractKey0(q.arg[1])
     let e2 = extractFlex0(q.arg[2])
-    if (e1.key != "var") {
+    if (e1.key != "var" && e1.key != "placeholder") {
       let prefix = { key:"mkset", arg:[e1] }
       let v1 = { key: "var", op: canonicalVarName(prefix, true) }
       let v2 = { key: "var", op: canonicalVarName(prefix, true) }
@@ -445,7 +452,7 @@ let extract3 = q => {
 //
 
 let infer = q => {
-  if (q.key == "input" || q.key == "const") {
+  if (q.key == "input" || q.key == "const" || q.key == "placeholder") {
     q.vars = []
     q.mind = []
     q.dims = []
@@ -480,8 +487,13 @@ let infer = q => {
     e3 ??= { vars: [], mind: [], dims: [] }
     q.vars = unique([...e0.vars, ...e1.vars, ...e2.vars, ...e3.vars])
     // treat e3 like a reduction: do not propagate it's inner mind/dims
-    q.mind = union(e0.mind, diff(e2.mind, e1.vars))
-    q.dims = union(e0.dims, diff(e2.dims, e1.vars))
+    if (e1.key == "placeholder") {
+      q.mind = []
+      q.dims = e0.dims
+    } else {
+      q.mind = union(e0.mind, diff(e2.mind, e1.vars))
+      q.dims = union(e0.dims, diff(e2.dims, e1.vars))
+    }
   } else {
     console.error("unknown op", q)
   }
@@ -521,7 +533,7 @@ let assertSame = (a,b,msg) => console.assert(same(a,b), msg+": "+a+" != "+b)
 
 // infer bound vars (simple mode)
 let inferBwd0 = out => q => {
-  if (q.key == "input" || q.key == "const") {
+  if (q.key == "input" || q.key == "const" || q.key == "placeholder") {
     q.bnd = []
     q.allBnd = []
   } else if (q.key == "var") {
@@ -541,6 +553,14 @@ let inferBwd0 = out => q => {
     let e0 = inferBwd0(out)(q.arg[0]) // what are we extending
     let e1 = inferBwd0(out)(q.arg[1]) // key variable
 
+    if (e1.key == "placeholder") {
+      let bnd = diff(q.arg[2].dims, out)
+      e1 = q.arg[1] = { key: "pure", op: "vars",
+        arg: bnd.map(x => ({ key: "var", op: x, arg:[], vars: [x], mind: [x], dims: [x], bnd: [], allBnd: [] })),
+        vars: bnd, mind: bnd, dims: bnd, bnd: [], allBnd: []
+      }
+    }
+
     let e1Body
     if (q.arg[3]) {
       let out3 = union(out, union([e1.op], q.arg[3].dims)) // e3 includes e1.op (union left for clarity)
@@ -556,9 +576,9 @@ let inferBwd0 = out => q => {
 
     q.e1BodyBnd = diff(e1Body.dims, out)
 
-    let e2 = inferBwd0(union(out, [e1.op]))(q.arg[2])
+    let e2 = inferBwd0(union(out, e1.vars))(q.arg[2])
 
-    q.bnd = diff(union([e1.op], []/*e1Body.dims*/), out)
+    q.bnd = diff(union(e1.vars, []/*e1Body.dims*/), out)
     q.allBnd = unique([...q.bnd, ...e0.allBnd, ...e1.allBnd, ...e2.allBnd, ...e1Body.allBnd])
 
   } else {
@@ -575,7 +595,7 @@ let checkDimsFreeTrans = false
 
 // infer free vars (simple mode)
 let inferBwd1 = out => q => {
-  if (q.key == "input" || q.key == "const") {
+  if (q.key == "input" || q.key == "const" || q.key == "placeholder") {
     q.fre = []
   } else if (q.key == "var") {
     q.fre = [q.op]
@@ -659,7 +679,7 @@ let inferBwd1 = out => q => {
     if (q.arg[3])
       path = [...path, { xxFree: e1.vars }]
 
-    let e2 = inferBwd1(union(out, [e1.op]))(q.arg[2])
+    let e2 = inferBwd1(union(out, e1.vars))(q.arg[2])
 
     path = save
 
