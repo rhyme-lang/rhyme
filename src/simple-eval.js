@@ -571,6 +571,8 @@ let inferBwd0 = out => q => {
   return q
 }
 
+let checkDimsFreeTrans = false
+
 // infer free vars (simple mode)
 let inferBwd1 = out => q => {
   if (q.key == "input" || q.key == "const") {
@@ -602,10 +604,10 @@ let inferBwd1 = out => q => {
 
     let extra2 = out
     .filter(isCorrelatedKeyVar)
-    .filter(x => intersects(trans([x]), trans(q.bnd)))
+    .filter(x => intersects(diff(transf([x]),out), transf(q.bnd)))
+    // .flatMap(x => transf([x]))
 
-    assertSame(extra, diff(extra2, ["*KEYVAR"]), "extra "+pretty(q)) // XX can use *KEYVAR manually now
-
+    if (checkDimsFreeTrans) assertSame(extra, diff(extra2, ["*KEYVAR"]), "extra "+pretty(q)) // XX can use *KEYVAR manually now
     extra = extra2
 
 
@@ -614,6 +616,17 @@ let inferBwd1 = out => q => {
     // - free in e1
     // - an extra K from outer grouping
     q.fre = intersect(union(trans(q.bnd), union(e1.fre, extra)), out)
+
+    let fre2 = intersect(transf(union(q.bnd, union(e1.fre, extra))), out)
+
+    // XXXX is transf1 enough?
+    // What if a in (q.bnd \ out), b in (transf1(a) \ out), c in (transf1(b) & out)
+    // looks like we'll be missing c?
+
+    if (checkDimsFreeTrans) assertSame(q.fre, fre2, "FRE1.1 "+pretty(q))
+    // fre2 = diff(fre2, trans1(fre2))
+    // assertSame(q.fre, fre2, "FRE1.2 "+pretty(q))
+    q.fre = fre2
 
     // previous:
     // q.fre = intersect(union(trans(e1.fre), extra), out)
@@ -656,16 +669,26 @@ let inferBwd1 = out => q => {
 
     let extra2 = out
     .filter(isCorrelatedKeyVar)
-    .filter(x => intersects(trans([x]), trans(q.bnd)))
+    .filter(x => intersects(diff(transf([x]),out), transf(q.bnd)))
+    // .flatMap(x => transf([x]))
 
-    assertSame(extra, diff(extra2, ["*KEYVAR"]), "extra "+pretty(q)) // XX can use *KEYVAR manually now
-
+    if (checkDimsFreeTrans) assertSame(extra, diff(extra2, ["*KEYVAR"]), "extra2 "+pretty(q)) // XX can use *KEYVAR manually now
     extra = extra2
 
     let fv = unique([...e0.fre, ...e1.fre, ...e2.fre, ...diff(e1Body.fre, q.e1BodyBnd)])
 
     // free variables: see note at stateful above
     q.fre = intersect(union(trans(q.bnd), union(fv, extra)), out)
+
+    let fre2 = intersect(transf(union(q.bnd, union(fv, extra))), out)
+
+    // assertSame(q.fre, intersect(transf(q.fre),out), "FRE2 "+pretty(q))
+
+    if (checkDimsFreeTrans) assertSame(q.fre, fre2, "FRE2.1 "+pretty(q))
+    // fre2 = diff(fre2, transf1(fre2))
+    // assertSame(q.fre, fre2, "FRE2.2 "+pretty(q))
+    // q.fre = fre2
+
 
   } else {
     console.error("unknown op", q)
