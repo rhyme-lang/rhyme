@@ -2169,16 +2169,16 @@ hdj{m>838:A,pv}
   let falseBranches = arrayGroupBy("*part", falseBranch);
 
   // Combine and accumulate all true and false branches from list of current states.
-  let newParts = api.array(rh`${[trueBranches, falseBranches]} | .*a.*b`);
+  let newParts = rh`${[trueBranches, falseBranches]} | .*a.*b`;
   
   // Filter for accepted states.
-  let acceptedStates = api.array(rh`${newParts} | .*parts | ${filterBy("*acc", rh`udf.isEqual ${newParts}.*parts.state "A0"`)}`);
+  let acceptedStates = rh`${newParts} | ${filterBy("*acc", rh`udf.isEqual ${newParts}.state "A0"`)}`;
   
   // Filter for states neither accepted nor rejected.
-  let notAcceptedStates = api.array(rh`${newParts} | .*parts | ${filterBy("*n_acc", rh`udf.notEqual ${newParts}.*parts.state "A0"`)}`);
-  let filteredStates = rh`${notAcceptedStates} | .*partsNotAccepted | ${filterBy("*rej", rh`udf.notEqual ${notAcceptedStates}.*partsNotAccepted.state "R0"`)}`;
+  let notAcceptedStates = rh`${newParts} | ${filterBy("*n_acc", rh`udf.notEqual ${newParts}.state "A0"`)}`;
+  let filteredStates = rh`${notAcceptedStates} | ${filterBy("*rej", rh`udf.notEqual ${notAcceptedStates}.state "R0"`)}`;
   
-  let attrs = rh`${acceptedStates}.*part4.attrs`;
+  let attrs = rh`${acceptedStates} | .attrs`;
 
   let run = api.compile({
       transitions: rh`.input.transitions`,
@@ -2488,7 +2488,7 @@ test("day22-part1", () => {
   expect(res).toBe(5)
 })
 
-test("day23-part-1", () => {
+test("day23-part1", () => {
 
     let input = `#.#####################
 #.......#########...###
@@ -2519,103 +2519,123 @@ test("day23-part-1", () => {
         splitN: x => x.split("\n"),
         filter: c => c ? { [c]: true } : {},
         isWellDefined: n => n !== undefined && Number.isFinite(n),
+        checkNearby: (grid, y, x, delta) => (
+            (grid[y + delta.y] != undefined && grid[y + delta.y][x + delta.x] == ".")
+        ),
+        sort: (arr) => {
+            arr.sort((elem1, elem2) => {
+                for(var k of Object.keys(elem1)) {
+                    if(elem1[k] > elem2[k])
+                        return 1;
+                    if(elem1[k] < elem2[k])
+                        return -1;
+                }
+                return 0;
+            });
+            return arr;
+        },
+        combine: (a, b) => {
+            if(Number.isNaN(a) || !Number.isFinite(a) || a === undefined) {
+                if(Number.isNaN(b) || !Number.isFinite(b) || b === undefined) {
+                    return undefined;
+                }
+                return [b];
+            } else {
+                if(Number.isNaN(b) || !Number.isFinite(b) || b === undefined) {
+                    return [a];
+                }
+                return [a,b];
+            }
+        },
+        isDefined: (a) => a === undefined ? false : true,
         andThen: (a,b) => b, // just to add a as dependency
     };
     let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
 
     let cells = rh`.input | udf.splitN | .*lines | udf.split "" | .*cells`;
-    let pathCells = rh`${cells} | ${filterBy("*f0", rh`udf.isEqual ${cells} "."`)}`;
 
-    let paths = api.array({y: "udf.toNum *lines", x: "udf.toNum *cells", dep: rh`${pathCells}`});
+    let grid = {
+        "*lines": api.array(rh`${cells}`)
+    };
+
+    let deltas = [{x: -1, y: 0}, {x: 1, y: 0}, {x: 0, y: -1}, {x: 0, y: 1}];
 
     let steps = api.array({
-        x1: rh`${paths}.*paths_from.x`,
-        y1: rh`${paths}.*paths_from.y`,
-        x2: rh`${paths}.*paths_to.x`,
-        y2: rh`${paths}.*paths_to.y`,
-        dep: rh`(udf.filter (
-            udf.logicalOr (udf.logicalOr
-                (udf.logicalAnd (udf.isEqual ${paths}.*paths_from.x (${paths}.*paths_to.x + 1)) (udf.isEqual ${paths}.*paths_from.y (${paths}.*paths_to.y)))
-                (udf.logicalAnd (udf.isEqual ${paths}.*paths_from.x (${paths}.*paths_to.x - 1)) (udf.isEqual ${paths}.*paths_from.y (${paths}.*paths_to.y)))
-            ) (udf.logicalOr
-                (udf.logicalAnd (udf.isEqual ${paths}.*paths_from.y (${paths}.*paths_to.y + 1)) (udf.isEqual ${paths}.*paths_from.x (${paths}.*paths_to.x)))
-                (udf.logicalAnd (udf.isEqual ${paths}.*paths_from.y (${paths}.*paths_to.y - 1)) (udf.isEqual ${paths}.*paths_from.x (${paths}.*paths_to.x)))
-            ))).*f1`
+        dep: rh`(udf.filter (udf.logicalAnd
+                (udf.isEqual ${grid}.*y.*x ".")
+                (udf.checkNearby ${grid} (udf.toNum *y) (udf.toNum *x) ${deltas}.*d)
+            )).*f1`,
+        xy1: rh`*x + "," + *y`,
+        xy2: rh`((udf.toNum *x) + ${deltas}.*d.x) + "," + ((udf.toNum *y) + ${deltas}.*d.y)`,
     });
 
-    let cellObjs = {y: "udf.toNum *lines", x: "udf.toNum *cells", val: rh`${cells}`};
-    let forceSearch = (gen, sym) => api.array(rh`${cellObjs} | ${filterBy(gen, rh`udf.isEqual ${cellObjs}.val ${sym}`)}`);
-
-    // TODO Allow holes to be filled directly with number values.
     let tuples = [
-        ["*down", forceSearch("*fD", "\"v\""), "0", "-1"],
-        ["*up", forceSearch("*fU", "\"^\""), "0", "1"],
-        ["*right", forceSearch("*fR", "\">\""), "-1", "0"],
-        ["*left", forceSearch("*fL", "\"<\""), "1", "0"],
+        ["*fD", "\"v\"", 0, -1],
+        ["*fU", "\"^\"", 0,  1],
+        ["*fR", "\">\"", -1, 0],
+        ["*fL", "\"<\"",  1, 0],
     ];
 
-    let force = api.array(...tuples.map((tup) => ({
-        x1: rh`${tup[1]}.${tup[0]}.x + (udf.toNum ${tup[2]})`,
-        y1: rh`${tup[1]}.${tup[0]}.y + (udf.toNum ${tup[3]})`,
-        x2: rh`${tup[1]}.${tup[0]}.x - (udf.toNum ${tup[2]})`,
-        y2: rh`${tup[1]}.${tup[0]}.y - (udf.toNum ${tup[3]})`,
-    })));
+    let forceMap = (tup) => ({
+        xy1: rh`((udf.toNum *cells) + ${tup[2]}) + "," + ((udf.toNum *lines) + ${tup[3]})`,
+        xy2: rh`((udf.toNum *cells) + ${-tup[2]}) + "," + ((udf.toNum *lines) + ${-tup[3]})`,
+        dep: rh`(udf.filter (udf.isEqual ${cells} ${tup[1]})).${tup[0]}`
+    });
+ 
+    let force = api.array(
+        forceMap(tuples[0]),
+        forceMap(tuples[1]),
+        forceMap(tuples[2]),
+        forceMap(tuples[3]),
+    );
 
     let parse = api.compile({
-        steps: steps,
-        force: force,
-        maxY: rh`max ${paths}.*paths.y`,
-        maxX: rh`max ${paths}.*paths.x`
+        steps: rh`udf.sort ${steps}`,
+        force: rh`udf.sort ${force}`,
+        keys: api.array(rh`udf.andThen ${grid}.*y.*x (*y + "," + *x)`),
+        maxX: rh`max (udf.andThen ${grid}.*y.*x (udf.toNum *x))`,
+        maxY: rh`max (udf.andThen ${grid}.*y.*x (udf.toNum *y))`,
     });
 
     let parsedRes = parse({udf, input});
 
-    let distsObj = [{x: 1, y: 0, d: 0}];
-
-    let stepPred = rh`udf.logicalAnd (udf.isEqual .dists.*dists.x .steps.*steps.x1) (udf.isEqual .dists.*dists.y .steps.*steps.y1)`
     let distSteps = {"-": api.keyval(
-        rh`.steps.*steps.x2 + "," + .steps.*steps.y2`,
-        api.min(rh`.dists.*dists | ${filterBy("*f0", stepPred)} | .d`)
+        rh`.steps.*steps.xy2`,
+        api.min(rh`.dists.(.steps.*steps.xy1).*A`)
     )};
 
-    let forcePred = rh`udf.logicalAnd (udf.isEqual .dists.*dists.x .forces.*forces.x1) (udf.isEqual .dists.*dists.y .forces.*forces.y1)`
     let distForces = {"-": api.keyval(
-        rh`.forces.*forces.x2 + "," + .forces.*forces.y2`,
-        api.max(rh`.dists.*dists | ${filterBy("*f1", forcePred)} | .d`)
+        rh`.forces.*forces.xy2`,
+        api.max(rh`.dists.(.forces.*forces.xy1).*B`)
     )};
 
-    let distsCalc = api.array(
-        {x: 1, y: 0, d: 0},
-        {
-            d: rh`(${distSteps}.*stepXY | ${filterBy("*wds", rh`${distSteps}.*stepXY | udf.isWellDefined`)}) + 1`,
-            x: rh`*stepXY | udf.split "," | .0 | udf.toNum`,
-            y: rh`*stepXY | udf.split "," | .1 | udf.toNum`, 
-        }, {
-            d: rh`(${distForces}.*forceXY | ${filterBy("*wdf", rh`${distForces}.*forceXY | udf.isWellDefined`)}) + 2`,
-            x: rh`*forceXY | udf.split "," | .0 | udf.toNum`,
-            y: rh`*forceXY | udf.split "," | .1 | udf.toNum`,
-        },
-    );
+    let distsCalc = {
+        "-": api.keyval(
+            rh`.keys.*keys`,
+            rh`udf.combine (${distSteps}.(.keys.*keys) + 1) (${distForces}.(.keys.*keys) + 2)`
+        )
+    };
 
     let func = api.compile(distsCalc);
 
-    console.log(func.explain_opt);
-
+    let distsObj = {"1,0": [0]};
     let lastRes = {};
     // Continue until the result converges.
-    while(JSON.stringify(lastRes) !== JSON.stringify(distsObj)) {
+    while(Object.keys(lastRes).length != Object.keys(distsObj).length || JSON.stringify(lastRes) !== JSON.stringify(distsObj)) {
         lastRes = distsObj;
         distsObj = func({
             steps: parsedRes.steps,
             forces: parsedRes.force,
+            keys: parsedRes.keys,
             dists: distsObj,
             udf
         });
+        distsObj["1,0"] = [0];
     }
 
-    let results = distsObj.filter(elem => elem.x == parsedRes.maxX && elem.y == parsedRes.maxY);
+    let results = distsObj[(parsedRes.maxX-1) + "," + parsedRes.maxY];
     
-    expect(results[0].d).toBe(94);
+    expect(results[0]).toBe(94);
 
 });
 
