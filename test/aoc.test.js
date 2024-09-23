@@ -1635,14 +1635,9 @@ test("day17-part1", () => {
     getNode: (graph, i, j) => graph?.[i]?.[j],
     notContain: (map, k) => map[k] === undefined,
     mapGet: (map, k) => map[k],
-    merge: (a, b) => [...a, ...b],
-    toStr: (state) => {return state.join(" ")},
-    toArr: (set) => Array.from(set),
-    toSet: (arr) => new Set(arr),
-    mergeArr: (a1, a2) => [...a1, ...a2],
+    toStr: (state) => state.join(" "),
     mergeObj: (o1, o2) => {
-      let copy = {...o1, ...o2}
-      return copy
+      return {...o1, ...o2}
     },
     getKeys: (o) => Object.keys(o),
     ...udf_stdlib
