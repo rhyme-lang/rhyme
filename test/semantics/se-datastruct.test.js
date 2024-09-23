@@ -87,3 +87,24 @@ test("array2_filterGaps", () => {
   ])
 })
 
+
+// next: typed arrays
+// 
+// this works, but there are no undefined values and
+// empty slots map to zeros. this seems consistent
+// if the init value is provided explicitly.
+
+test("typedArray0_noGapsJustZeroes", () => {
+  let data = [1,2,3,4,5]
+  let filter = { 1: true, 3: true, 5: true }
+  let udf = { array: x => new Float32Array(x) }
+  let query = rh`update (udf.array 10) *D (filter.(data.*D) & data.*D + 10)`
+
+  let func = compile(query)
+  let res = func({data, filter, udf})
+
+  expect(res).toEqual(new Float32Array([
+    11, 0, 13, 0, 15, 0, 0, 0, 0, 0
+  ]))
+})
+
