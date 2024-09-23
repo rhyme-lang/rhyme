@@ -302,8 +302,6 @@ test("tensorView3_id", () => {
   let func = compile(query)
   let res = func({data, out})
 
-  console.log(func.explain.pseudo)
-
   expect(toMatrix1(res)).toEqual([
     [11,12], [13,14], [15,16]
   ])
@@ -324,7 +322,4 @@ test("tensorView3_transpose", () => {
   expect(toMatrix1(res)).toEqual([
     [11,13,15], [12,14,16]
   ])
-  // expect(res2).toEqual([
-  //   [1,4], [2,5], [3,6]
-  // ])
 })
