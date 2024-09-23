@@ -289,3 +289,23 @@ test("tensorView2_toArraysTranspose", () => {
   ])
 })
 
+
+test("tensorView3_transpose", () => {
+
+  let raw = [1,2,3,4,5,6]
+
+  let data = TensorView(raw, [3,2])
+  let out = TensorView(new Array(6), [2,3])
+
+  let query = rh`update_inplace .out *j (update_inplace out.*j *i 10+data.*i.*j)`
+
+  let func = compile(query)
+  let res = func({data, out})
+
+  expect(toMatrix1(res)).toEqual([
+    [11,13,15], [12,14,16]
+  ])
+  // expect(res2).toEqual([
+  //   [1,4], [2,5], [3,6]
+  // ])
+})
