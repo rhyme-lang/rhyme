@@ -133,7 +133,24 @@ let TensorViewProxy = {
       }
     }
     return Reflect.get(...arguments)
-  }
+  },
+  ownKeys(target) {
+    let l = target.shape[0]
+    let res = new Array(l)
+    for (let i = 0; i < l; i++)
+      res[i] = String(i)
+    return res
+    // would be more efficient to return an
+    // iterator, but doesn't quite seem to work
+    // return (function* () {
+    //   for (let i = 0; i < l; i++)
+    //     yield String(i)
+    // })
+  },
+  getOwnPropertyDescriptor(target, prop) {
+    return { configurable: true, enumerable: true }
+  } 
+
 }
 
 
@@ -144,7 +161,7 @@ let TensorView = (data, shape, offset = 0) => {
   return new Proxy({data, offset, size, shape}, TensorViewProxy)
 }
 
-let toMatrix = tv => {
+let toMatrix1 = tv => {
   let mat = []
   for (let i = 0; i < tv.length; i++) {
     let row = []
@@ -156,6 +173,19 @@ let toMatrix = tv => {
   return mat
 }
 
+let toMatrix2 = tv => {
+  let mat = []
+  for (let i in tv) {
+    let row = []
+    for (let j in tv[i]) {
+      row.push(tv[i][j])
+    }
+    mat.push(row)
+  }
+  return mat
+}
+
+
 test("tensorView0", () => {
 
   let raw = [1,2,3,4,5,6]
@@ -163,11 +193,21 @@ test("tensorView0", () => {
   let tv1 = TensorView(raw, [3,2])
   let tv2 = TensorView(raw, [2,3])
 
-  expect(toMatrix(tv1)).toEqual([
+  // test for(i = 0; i < tv.length; i++)
+  expect(toMatrix1(tv1)).toEqual([
     [1,2], [3,4], [5,6]
   ])
-  expect(toMatrix(tv2)).toEqual([
+  expect(toMatrix1(tv2)).toEqual([
     [1,2,3], [4,5,6]
   ])
+
+  // test for(i in tv)
+  expect(toMatrix2(tv1)).toEqual([
+    [1,2], [3,4], [5,6]
+  ])
+  expect(toMatrix2(tv2)).toEqual([
+    [1,2,3], [4,5,6]
+  ])
+
 })
 
