@@ -290,6 +290,25 @@ test("tensorView2_toArraysTranspose", () => {
 })
 
 
+test("tensorView3_id", () => {
+
+  let raw = [1,2,3,4,5,6]
+
+  let data = TensorView(raw, [3,2])
+  let out = TensorView(new Array(6), [3,2])
+
+  let query = rh`update_inplace .out *WILDCARD 10+data.*i.*j`
+
+  let func = compile(query)
+  let res = func({data, out})
+
+  console.log(func.explain.pseudo)
+
+  expect(toMatrix1(res)).toEqual([
+    [11,12], [13,14], [15,16]
+  ])
+})
+
 test("tensorView3_transpose", () => {
 
   let raw = [1,2,3,4,5,6]
