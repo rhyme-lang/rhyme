@@ -1703,7 +1703,6 @@ test("day17-part1", () => {
 
   let func = api.compileNew(query)
 
-  let i = 0
   while (state.visiting[0] != graph.n - 1 || state.visiting[1] != graph.m - 1) {
     let {newQueue, newMap, next} = func({input, udf, state, minHeatLoss, graph, queue})
 
@@ -1712,8 +1711,6 @@ test("day17-part1", () => {
 
     delete queue[next.join(" ")]
     state.visiting = next
-
-    i++
   }
 
   let res = minHeatLoss[udf.toStr(state.visiting)]
