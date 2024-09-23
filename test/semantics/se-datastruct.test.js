@@ -240,3 +240,52 @@ test("tensorView0", () => {
 
 })
 
+
+test("tensorView1_toArrays", () => {
+
+  let raw = [1,2,3,4,5,6]
+
+  let tv1 = TensorView(raw, [3,2])
+  let tv2 = TensorView(raw, [2,3])
+
+  let query = rh`array (*i & (array data.*i.*j))`
+
+  let func = compile(query)
+
+  // console.log(func.explain.code)
+
+  let res1 = func({data: tv1})
+  let res2 = func({data: tv2})
+
+  expect(res1).toEqual([
+    [1,2], [3,4], [5,6]
+  ])
+  expect(res2).toEqual([
+    [1,2,3], [4,5,6]
+  ])
+})
+
+test("tensorView2_toArraysTranspose", () => {
+
+  let raw = [1,2,3,4,5,6]
+
+  let tv1 = TensorView(raw, [3,2])
+  let tv2 = TensorView(raw, [2,3])
+
+  let query = rh`array (*j & (array data.*i.*j))`
+
+  let func = compile(query)
+
+  // console.log(func.explain.code)
+
+  let res1 = func({data: tv1})
+  let res2 = func({data: tv2})
+
+  expect(res1).toEqual([
+    [1,3,5], [2,4,6]
+  ])
+  expect(res2).toEqual([
+    [1,4], [2,5], [3,6]
+  ])
+})
+
