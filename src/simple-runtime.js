@@ -14,6 +14,7 @@ rt.stateful = {}
 rt.special.get = true
 rt.special.group = true
 rt.special.update = true
+rt.special.update_inplace = true
 rt.special.merge = rt.special.keyval = true
 
 // pure operations

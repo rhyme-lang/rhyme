@@ -486,9 +486,13 @@ let infer = q => {
     } else {
       q.dims = []
     }
-  } else if (q.key == "update") {
+  } else if (q.key == "update" || q.key == "update_inplace" ) {
     let [e0,e1,e2,e3] = q.arg.map(infer)
     e3 ??= { vars: [], mind: [], dims: [] }
+    if (q.key == "update_inplace") {
+      q.mode = "inplace"
+      q.key = "update"
+    }
     q.vars = unique([...e0.vars, ...e1.vars, ...e2.vars, ...e3.vars])
     // treat e3 like a reduction: do not propagate it's inner mind/dims
     if (e1.key == "placeholder") {
@@ -1124,7 +1128,7 @@ let emitStmInit = (q) => {
     return "rt.stateful."+q.op+"_init"
   } else if (q.key == "update") {
     let e0 = codegen(q.arg[0])
-    if (isFresh(q.arg[0]))
+    if (q.mode == "inplace" || isFresh(q.arg[0]))
       return "(() => "+e0+")"
     else
       return "rt.stateful.update_init("+e0+")" // need to create copy
