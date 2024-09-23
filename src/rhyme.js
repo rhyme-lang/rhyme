@@ -28,6 +28,10 @@ api["max"] = (e) => ({
   xxkey: "max",
   xxparam: e
 })
+api["min"] = (e) => ({
+  xxkey: "min",
+  xxparam: e
+})
 api["join"] = (e) => ({
   xxkey: "join",
   xxparam: e
