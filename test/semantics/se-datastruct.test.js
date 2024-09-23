@@ -121,7 +121,7 @@ let TensorViewProxy = {
     if (prop === "length") {
       return target.shape[0]
     }
-    if (!Number.isNaN(Number(prop))) {
+    if (!Number.isNaN(Number(String(prop)))) {
       let i = Number(prop)
       if (i >= target.shape[0]) return undefined
       if (target.shape.length > 1) {
@@ -133,6 +133,35 @@ let TensorViewProxy = {
       }
     }
     return Reflect.get(...arguments)
+  },
+  has(target, prop) {
+    if (prop === "length") {
+      return true
+    }
+    if (!Number.isNaN(Number(String(prop)))) {
+      let i = Number(prop)
+      if (i >= target.shape[0]) return undefined
+      return true
+    }
+    return Reflect.has(...arguments)
+  },
+  set(target, prop, value) {
+    if (prop === "length") {
+      return
+    }
+    if (!Number.isNaN(Number(String(prop)))) {
+      let i = Number(prop)
+      if (i >= target.shape[0]) return undefined
+      if (target.shape.length > 1) {
+        let [s,...shape] = target.shape
+        let size = target.size / s
+        console.assert(target.data === value.data)
+        //return TensorView(target.data, shape, target.offset + i * size)
+      } else {
+        target.data[target.offset + i] = value
+      }
+    }
+    return Reflect.set(...arguments)
   },
   ownKeys(target) {
     let l = target.shape[0]
