@@ -108,3 +108,66 @@ test("typedArray0_noGapsJustZeroes", () => {
   ]))
 })
 
+
+
+// next: tensor views
+//
+// multidimensional interface backed by flat dense array
+//
+// so far read-only
+
+let TensorViewProxy = {
+  get(target, prop, receiver) {
+    if (prop === "length") {
+      return target.shape[0]
+    }
+    if (!Number.isNaN(Number(prop))) {
+      let i = Number(prop)
+      if (i >= target.shape[0]) return undefined
+      if (target.shape.length > 1) {
+        let [s,...shape] = target.shape
+        let size = target.size / s
+        return TensorView(target.data, shape, target.offset + i * size)
+      } else {
+        return target.data[target.offset + i]
+      }
+    }
+    return Reflect.get(...arguments)
+  }
+}
+
+
+let TensorView = (data, shape, offset = 0) => {
+  let size = 1
+  for (let d of shape) {size *= d}
+  console.assert(data.length - offset >= size)
+  return new Proxy({data, offset, size, shape}, TensorViewProxy)
+}
+
+let toMatrix = tv => {
+  let mat = []
+  for (let i = 0; i < tv.length; i++) {
+    let row = []
+    for (let j = 0; j < tv[i].length; j++) {
+      row.push(tv[i][j])
+    }
+    mat.push(row)
+  }
+  return mat
+}
+
+test("tensorView0", () => {
+
+  let raw = [1,2,3,4,5,6]
+
+  let tv1 = TensorView(raw, [3,2])
+  let tv2 = TensorView(raw, [2,3])
+
+  expect(toMatrix(tv1)).toEqual([
+    [1,2], [3,4], [5,6]
+  ])
+  expect(toMatrix(tv2)).toEqual([
+    [1,2,3], [4,5,6]
+  ])
+})
+
