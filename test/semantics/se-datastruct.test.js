@@ -443,3 +443,30 @@ test("redBlackTree0", () => {
   ])
 
 })
+
+
+test("redBlackTree1", () => {
+
+  // sort array and count occurence
+  let data = [4,1, 5,1,2,3,7,7,2,0]
+
+  let udf = {
+    redBlackTree: () => RedBlackTree()
+  }
+
+  let query = rh`update (udf.redBlackTree 0) data.* (count data.*)`
+
+  let func = compile(query)
+  let res = func({data, udf})
+
+  expect([...res]).toEqual([
+    ['0',1],
+    ['1',2],
+    ['2',2],
+    ['3',1],
+    ['4',1],
+    ['5',1],
+    ['7',2]
+  ])
+
+})
