@@ -323,3 +323,123 @@ test("tensorView3_transpose", () => {
     [11,13,15], [12,14,16]
   ])
 })
+
+
+// next: red-black trees to build sorted maps
+//
+// (Sedgewick's left leaning variant)
+
+function lookup(elem, key) {
+  if (!elem) return undefined
+  if (key < elem.key)
+    return lookup(elem.left, key)
+  else if (key == elem.key)
+    return elem.value
+  else
+    return lookup(elem.right, key)
+}
+function insert(elem, key, value) {
+  if (!elem) return {key,value,red:true}
+  if (key < elem.key)
+    elem = {...elem, left: insert(elem.left,key,value)}
+  else if (key == elem.key)
+    elem = {...elem, value}
+  else
+    elem = {...elem, right: insert(elem.right,key,value)}
+  if (isRed(elem.right))
+    elem = rotateLeft(elem)
+  if (isRed(elem.left) && isRed(elem.left.left))
+    elem = rotateRight(elem)
+  if (isRed(elem.left) && isRed(elem.right))
+    elem = colorFlip(elem)
+  return elem
+}
+function isRed(elem) {
+  return elem && elem.red
+}
+function colorFlip(elem) {
+  // we know both children are red
+  elem.red = !elem.red
+  elem.left.red = !elem.left.red
+  elem.right.red = !elem.right.red
+  return elem
+}
+function rotateLeft(elem) {
+  // assert(isRed(elem.right))
+  let x = elem.right
+  elem.right = x.left
+  x.left = elem
+  x.red = elem.red//!x.left.red
+  //x.left.red = true
+  elem.red = true
+  return x
+}
+function rotateRight(elem) {
+  // assert(isRed(elem.left) && isRed(elem.left.left))
+  let x = elem.left
+  elem.left = x.right
+  x.right = elem
+  x.red = elem.red//x.right.red
+  //x.right.red = true
+  elem.red = true
+  return x
+}
+
+let RedBlackTreeProxy = {
+  get(target, prop, receiver) {
+    if (prop === Symbol.iterator) {
+      return (function*() {
+        let rec = function* rec(elem) {
+          if (!elem) return
+          yield* rec(elem.left)
+          yield ([elem.key, elem.value])
+          yield* rec(elem.right)
+        }
+        yield* rec(target.root)
+       })
+    }
+    return lookup(target.root, prop)
+  },
+  has(target, prop) {
+    return lookup(target.root, prop) ?? false
+  },
+  set(target, prop, value) {
+    return target.root = insert(target.root, prop, value)
+  },
+  ownKeys(target) {
+    let res = new Array
+    let rec = elem => {
+      if (!elem) return
+      rec(elem.left)
+      res.push(elem.key)
+      rec(elem.right)
+    }
+    rec(target.root)
+    return res
+  },
+  getOwnPropertyDescriptor(target, prop) {
+    return { configurable: true, enumerable: true }
+  }
+}
+
+
+let RedBlackTree = () => {
+  return new Proxy({root:null}, RedBlackTreeProxy)
+}
+
+test("redBlackTree0", () => {
+
+  let rb = RedBlackTree()
+
+  rb[5] = 1
+  rb[4] = 2
+  rb[3] = 3
+  rb[2] = 4
+  rb[1] = 5
+  rb[0] = 6
+
+  expect([...rb]).toEqual([
+    ["0",6], ["1",5], ["2",4], ["3",3], ["4",2], ["5",1]
+  ])
+
+})
