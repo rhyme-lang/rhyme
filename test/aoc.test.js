@@ -1697,34 +1697,32 @@ test("day17-part1", () => {
 
   let newQueueMin = rh`udf.andThen ${newHeatLoss}.*find4 *find4 | ${filterBy("*f2", isMin2)} | first`
 
+  let nextToVisit = rh`udf.ifThenElse (udf.isLessOrEqual ${min1} ${min2}) ${oldQueueMin} ${newQueueMin}`
+  let next = rh`udf.ifThenElse ${oldQueueMin} (udf.ifThenElse ${newQueueMin} ${nextToVisit} ${oldQueueMin}) ${newQueueMin}`
+
   let query = {
     newQueue: newQueue,
     newMap: newMap,
-    // next: [rh`(udf.getKeys .queue).*find2 | ${filterBy("*f1", isMin)} | first | udf.split " " | udf.toNum .*`],
-    oldQueueMin, newQueueMin
+    next: [rh`${next} | udf.split " " | udf.toNum .*`]
   }
 
   let func = api.compileNew(query)
-  console.log(func.explain.code)
 
   let i = 0
-  while (i < 1) {
-    let {newQueue, newMap, next, oldQueueMin, newQueueMin} = func({input, udf, state, minHeatLoss, graph, queue})
+  while (state.visiting[0] != graph.n - 1 || state.visiting[1] != graph.m - 1) {
+    let {newQueue, newMap, next} = func({input, udf, state, minHeatLoss, graph, queue})
 
     minHeatLoss = newMap
     queue = newQueue
 
+    delete queue[next.join(" ")]
     state.visiting = next
-
-    console.log(queue, minHeatLoss, state.visiting, oldQueueMin, newQueueMin)
 
     i++
   }
 
-  console.log(i)
-
-  // let res = minHeatLoss[udf.toStr(state.visiting)]
-  // expect(res).toBe(102)
+  let res = minHeatLoss[udf.toStr(state.visiting)]
+  expect(res).toBe(102)
 })
 
 test("day18-part1", () => {
