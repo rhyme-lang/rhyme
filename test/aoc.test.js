@@ -1707,38 +1707,92 @@ test("day17-part1", () => {
   let func = api.compileNew(query)
   console.log(func.explain.code)
 
+  let func1 = inp => {
+    let tmp = {}
+    tmp[0] ??= {}
+    tmp[1] = inp['udf']['getNeighbors'](inp['state']['visiting'])
+    tmp[2] ??= {}
+    tmp[3] ??= {}
+    tmp[4] ??= {}
+    tmp[5] ??= {}
+    tmp[6] ??= {}
+    tmp[7] ??= {}
+    tmp[8] ??= {}
+    tmp[9] ??= {}
+    tmp[11] ??= {}
+    tmp[12] ??= {}
+    tmp[13] ??= {}
+    tmp[14] ??= {}
+    tmp[15] ??= {}
+    tmp[3]['newQueue'] ??= []
+    tmp[5]['newMap'] ??= {}
+    tmp[6]['newMap'] ??= []
+    tmp[7]['next'] ??= {}
+    tmp[8]['next'] ??= []
+    tmp[9]['next'] ??= []
+    tmp[11]['next'] ??= {}
+    tmp[12]['next'] ??= []
+    tmp[13]['next'] ??= Infinity
+    for (let xneighbors in tmp[1]) {
+        tmp[2][xneighbors] ??= {}
+        tmp[4][xneighbors] ??= {}
+        tmp[5]['newMap'][xneighbors] ??= {}
+        tmp[7]['next'][xneighbors] ??= {}
+        tmp[11]['next'][xneighbors] ??= {}
+        tmp[2][xneighbors][xneighbors] ??= {}
+        tmp[4][xneighbors][xneighbors] ??= {}
+        tmp[2][xneighbors][xneighbors][xneighbors] ??= {}
+        tmp[4][xneighbors][xneighbors][xneighbors] ??= {}
+        tmp[2][xneighbors][xneighbors][xneighbors][xneighbors] = inp['udf']['filter'](inp['udf']['logicalAnd'](inp['udf']['logicalAnd'](inp['udf']['getNode'](inp['graph']['graph'],tmp[1][xneighbors][0],tmp[1][xneighbors][1]),inp['udf']['notContain'](inp['minHeatLoss'],inp['udf']['toStr'](tmp[1][xneighbors]))),inp['udf']['isLessOrEqual'](tmp[1][xneighbors][4],3)))
+        tmp[4][xneighbors][xneighbors][xneighbors][xneighbors] ??= {}
+        for (let xf in tmp[2][xneighbors][xneighbors][xneighbors][xneighbors]) {
+            tmp[3]['newQueue'] .push (inp['udf']['toStr'](inp['udf']['andThen'](tmp[2][xneighbors][xneighbors][xneighbors][xneighbors][xf],tmp[1][xneighbors])))
+            tmp[4][xneighbors][xneighbors][xneighbors][xneighbors][xf] ??= {}
+            tmp[5]['newMap'][xneighbors][xf] ??= {} //
+            tmp[7]['next'][xneighbors][xf] ??= {} //
+            tmp[9]['next'] .push (inp['udf']['toStr'](inp['udf']['andThen'](tmp[2][xneighbors][xneighbors][xneighbors][xneighbors][xf],tmp[1][xneighbors])))
+            tmp[11]['next'][xneighbors][xf] ??= {} //
+            tmp[4][xneighbors][xneighbors][xneighbors][xneighbors][xf][xneighbors] = inp['udf']['andThen'](tmp[2][xneighbors][xneighbors][xneighbors][xneighbors][xf],tmp[1][xneighbors])
+            tmp[5]['newMap'][xneighbors][xf]['state'] = inp['udf']['toStr'](inp['udf']['andThen'](tmp[2][xneighbors][xneighbors][xneighbors][xneighbors][xf],tmp[1][xneighbors]))
+            tmp[7]['next'][xneighbors][xf]['state'] = inp['udf']['toStr'](inp['udf']['andThen'](tmp[2][xneighbors][xneighbors][xneighbors][xneighbors][xf],tmp[1][xneighbors]))
+            tmp[11]['next'][xneighbors][xf]['state'] = inp['udf']['toStr'](inp['udf']['andThen'](tmp[2][xneighbors][xneighbors][xneighbors][xneighbors][xf],tmp[1][xneighbors]))
+            tmp[5]['newMap'][xneighbors][xf]['heatLoss'] = (inp['udf']['mapGet'](inp['minHeatLoss'],inp['udf']['toStr'](inp['state']['visiting']))+inp['udf']['toNum'](inp['udf']['getNode'](inp['graph']['graph'],tmp[4][xneighbors][xneighbors][xneighbors][xneighbors][xf][xneighbors][0],tmp[4][xneighbors][xneighbors][xneighbors][xneighbors][xf][xneighbors][1])))
+            tmp[7]['next'][xneighbors][xf]['heatLoss'] = (inp['udf']['mapGet'](inp['minHeatLoss'],inp['udf']['toStr'](inp['state']['visiting']))+inp['udf']['toNum'](inp['udf']['getNode'](inp['graph']['graph'],tmp[4][xneighbors][xneighbors][xneighbors][xneighbors][xf][xneighbors][0],tmp[4][xneighbors][xneighbors][xneighbors][xneighbors][xf][xneighbors][1])))
+            tmp[11]['next'][xneighbors][xf]['heatLoss'] = (inp['udf']['mapGet'](inp['minHeatLoss'],inp['udf']['toStr'](inp['state']['visiting']))+inp['udf']['toNum'](inp['udf']['getNode'](inp['graph']['graph'],tmp[4][xneighbors][xneighbors][xneighbors][xneighbors][xf][xneighbors][0],tmp[4][xneighbors][xneighbors][xneighbors][xneighbors][xf][xneighbors][1])))
+            tmp[6]['newMap'] .push (tmp[5]['newMap'][xneighbors][xf])
+            tmp[8]['next'] .push (tmp[7]['next'][xneighbors][xf])
+            tmp[12]['next'] .push (tmp[11]['next'][xneighbors][xf])
+        }
+    }
+    tmp[0]['newQueue'] = inp['udf']['toSet'](inp['udf']['mergeArr'](inp['udf']['toArr'](inp['queue']),tmp[3]['newQueue']))
+    tmp[10] = inp['udf']['mergeArr'](inp['udf']['toArr'](inp['queue']),tmp[9]['next'])
+    tmp[0]['newMap'] = inp['udf']['mergeObj'](inp['minHeatLoss'],tmp[6]['newMap'])
+    tmp[0]['next'] ??= []
+    for (let xfind1 in tmp[10]) {
+        tmp[13]['next'] = Math.min(tmp[13]['next'],inp['udf']['mapGet'](tmp[0]['newMap'],tmp[10][xfind1]))
+    }
+    for (let xfind2 in tmp[10]) {
+        tmp[14][xfind2] = inp['udf']['filter'](inp['udf']['isEqual'](inp['udf']['mapGet'](tmp[0]['newMap'],tmp[10][xfind2]),tmp[13]['next']))
+        for (let xf1 in tmp[14][xfind2]) {
+            tmp[15]['next'] ??= inp['udf']['andThen'](tmp[14][xfind2][xf1],tmp[10][xfind2])
+        }
+    }
+    tmp[16] = inp['udf']['split'](' ')(tmp[15]['next'])
+    for (let x in tmp[16]) {
+        tmp[0]['next'] .push (inp['udf']['toNum'](tmp[16][x]))
+    }
+    return tmp[0]
+  }
+
   let i = 0
-  // while (state.visiting[0] != graph.n - 1 || state.visiting[1] != graph.m - 1) {
   while (state.visiting[0] != graph.n - 1 || state.visiting[1] != graph.m - 1) {
-    // let {newQueue, newMap, next} = func({input, udf, state, minHeatLoss, graph, queue})
-    
-    // minHeatLoss = newMap
-    // queue = newQueue
-    // state.visiting = next
-    // queue.delete(next.join(" "))
-
-    let {newQueue, newMap} = func({input, udf, state, minHeatLoss, graph, queue})
-    // console.log(newMap)
-
-    // for (let o of newMap) {
-    //   queue.add(o.state)
-    //   minHeatLoss[o.state] = o.heatLoss
-    // }
+    let {newQueue, newMap, next} = func1({input, udf, state, minHeatLoss, graph, queue})
 
     minHeatLoss = newMap
     queue = newQueue
 
-    let min = Infinity
-    let minState = undefined
-    for (let s of Array.from(queue)) {
-      if (minHeatLoss[s] < min) {
-        min = minHeatLoss[s]
-        minState = s
-      }
-    }
-
-    queue.delete(minState)
-    state.visiting = minState.split(" ").map(e => udf.toNum(e))
+    queue.delete(next.join(" "))
+    state.visiting = next
 
     // console.log(queue, minHeatLoss, minState)
 
