@@ -309,6 +309,9 @@ let extractFlex0 = q => {
 }
 
 let extractKey0 = q => {
+  if (q.key == "var" && q.op == "*WILDCARD") { // XXX
+    return { key: "placeholder", op: "*", arg: [] }
+  }
   return extract0(q)   // could move more logic here
 }
 
@@ -333,7 +336,7 @@ let extract0 = q => {
     if (q.arg.length == 1) arg.push({key:"placeholder",op:"*",arg:[]})
     arg.push(...q.arg)
     return extract0({...q, key:"update", arg})
-  } else if (q.key == "update") {
+  } else if (q.key == "update" || q.key == "update_inplace") {
     let e0 = extract0(q.arg[0])
     let e1 = extractKey0(q.arg[1])
     let e2 = extractFlex0(q.arg[2])
