@@ -470,3 +470,24 @@ test("redBlackTree1", () => {
   ])
 
 })
+
+
+// next: sparse matrices in CSR format (compressed sparse row)
+
+/*
+example:
+
+      10 20  0  0  0  0  0
+       0 30  0 40  0  0  0
+  M =  0  0 50 60 70  0  0
+       0  0  0  0  0 80  0
+       0  0  0  0  0  0  0
+
+  v = 10 20 30 40 50 60 70 80
+  c =  0  1  1  3  2  3  4  5
+
+  r =  0  2  4  7  8  8
+
+matrix is a concatenation of sparse row vectors
+
+*/
