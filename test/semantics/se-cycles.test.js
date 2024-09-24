@@ -106,7 +106,7 @@ test("testCycles2-0", () => {
   let query = rh`${q1}.*`
   // let query = q1
 
-  let func = compile(query, {singleResult:false})
+  let func = compile(query)
   let res = func({data, other})
 
   // console.log(func.explain.code)
@@ -121,9 +121,9 @@ test("testCycles2-1", () => {
   let data = [{ key: "A", val: 10}, { key: "A", val: 30}, {key: "B", val: 20 }]
   let other = { A: 0 }
   let q1 = { "data.*A.key" : rh`data.*A.val` }
-  let query = rh`${q1}.*`
+  let query = rh`*A & ${q1}.*`
 
-  let func = compile(query, {singleResult:false})
+  let func = compile(query)
   let res = func({data, other})
 
   // console.log(func.explain.ir.deps)
@@ -140,9 +140,9 @@ test("testCycles2-2", () => {
   let data = [{ key: "A", val: 10}, { key: "A", val: 30}, {key: "B", val: 20 }]
   let other = { A: 0 }
   let q1 = { "data.*A.key" : rh`data.*A.val` }
-  let query = rh`sum ${q1}.*`
+  let query = rh`sum *A & ${q1}.*`
 
-  let func = compile(query, {singleResult:false})
+  let func = compile(query)
   let res = func({data, other})
 
   // console.log(func.explain.ir.deps)
@@ -160,9 +160,9 @@ test("testCycles2-3", () => {
   let data = [{ key: "A", val: 10}, { key: "A", val: 30}, {key: "B", val: 20 }]
   let other = { A: 0 }
   let q1 = { "data.*A.key" : rh`data.*A.val` }
-  let query = rh`group *K ${q1}.*K`
+  let query = rh`*A & (group *K & ${q1}.*K)`
 
-  let func = compile(query, {singleResult:false})
+  let func = compile(query)
   let res = func({data, other})
 
   // console.log(func.explain.ir.deps)
@@ -182,7 +182,7 @@ test("testCycles3-0", () => {
   let q1 = { "data.*A.key" : rh`sum data.*A.val` }
   let query = rh`(other.*B) + (${q1}.*B)`
 
-  let func = compile(query, {singleResult:false})
+  let func = compile(query)
 
   let res = func({data, other})
   // console.log(res)
@@ -198,12 +198,12 @@ test("testCycles3-1", () => {
   let data = [{ key: "A", val: 10}, { key: "A", val: 30}, {key: "B", val: 20 }]
   let other = { A: 1 }
   let q1 = { "data.*A.key" : rh`data.*A.val` }
-  let query = rh`(other.*B) + (${q1}.*B)`
+  let query = rh`(other.*B) + (*A & ${q1}.*B)`
 
   // Here the groupby does not eliminate *A, so 
   // other.* produces multiple values
 
-  let func = compile(query, {singleResult:false})
+  let func = compile(query)
 
   // console.log(func.explain.pseudo)
   // console.log(func.explain.code)
@@ -217,7 +217,7 @@ test("testCycles3-2", () => {
   let data = [{ key: "A", val: 10}, { key: "A", val: 30}, {key: "B", val: 20 }]
   let other = { A: 1, D: 2 }
   let q1 = { "data.*A.key" : rh`data.*A.val` }
-  let query = rh`sum(other.*B) + sum(${q1}.*B)`
+  let query = rh`sum(other.*B) + sum(*A & ${q1}.*B)`
 
   // NOTE: this case relies on reordering (topological sort)
 
@@ -228,7 +228,7 @@ test("testCycles3-2", () => {
 
   // Also exercises "pre-gen" logic for *A, when iterating over *B
 
-  let func = compile(query, {singleResult:false})
+  let func = compile(query)
 
   // console.log(func.explain.pseudo)
   // console.log(func.explain.code)

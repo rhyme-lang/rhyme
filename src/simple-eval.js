@@ -534,6 +534,9 @@ let infer = q => {
     q.vars = unique(es.flatMap(x => x.vars))
     q.mind = unique(es.flatMap(x => x.mind))
     q.dims = unique(es.flatMap(x => x.dims))
+    // special case for 'get': nudge reluctant prefix to aggregate
+    if (q.key == "get")
+      q.dims = union(es[0].mind, es[1].dims)
   } else if (q.key == "stateful" || q.key == "prefix") {
     let [e1] = q.arg.map(infer)
 
@@ -1664,8 +1667,8 @@ let translateToNewCodegen = q => {
 
 let compile = (q,{
   altInfer = false,
-  singleResult = true, // TODO: elim flag?
   antiSubstGroupKey = false,
+  singleResult = true, // TODO: elim flag? 14 tests failing when false globally
   newCodegen = false,
   CCodegen = false
 }={}) => {
