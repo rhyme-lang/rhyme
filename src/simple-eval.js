@@ -1866,14 +1866,15 @@ let execPromise = function(cmd) {
 
 let emitCodeDeep = (q) => {
   let buf = []
-  buf.push("(inp => k => {")
-  buf.push("let tmp = {}")
+  buf.push("// "+pretty(q))
+  buf.push("(inp => {")
 
   let stmCount = 0
 
-  let codegen = q => {
-    // TODO: recurse and emit in-place (following codegen(q))
-    // ...
+  let codegen = (q,env) => {
+    // recurse and emit in-place (following codegen(q))
+    let codegen1 = q => codegen(q,env)
+
     if (q.key == "input") {
       return "inp"
     } else if (q.key == "const") {
@@ -1884,54 +1885,81 @@ let emitCodeDeep = (q) => {
       else
         return String(q.op)
     } else if (q.key == "var") {
+      if (env.indexOf(q.op) < 0) {        
+        buf.push("// ERROR: var '"+q.op+"' not defined in "+env)
+        console.error("// ERROR: var '"+q.op+"' not defined")
+      }
       return quoteVar(q.op)
-    // } else if (q.key == "ref") {
-    //   let q1 = assignments[q.op]
-    //   let xs = [String(q.op),...q1.fre]
-    //   return quoteIndexVarsXS("tmp", xs)
     } else if (q.key == "get" && isDeepVarExp(q.arg[1])) {
-      let [e1,e2] = q.arg.map(codegen)
+      let [e1,e2] = q.arg.map(codegen1)
       return "rt.deepGet("+e1+","+e2+")"
     } else if (q.key == "get") {
-      let [e1,e2] = q.arg.map(codegen)
+      let [e1,e2] = q.arg.map(codegen1)
       return e1+quoteIndex(e2)
     } else if (q.key == "pure") {
-      let es = q.arg.map(codegen)
+      let es = q.arg.map(codegen1)
       return "rt.pure."+q.op+"("+es.join(",")+")"
+    } else if (q.key == "hint") {
+      // no-op!
+      return "{}"
     } else if (q.key == "mkset") {
-      let [e1] = q.arg.map(codegen)
-      return "rt.singleton("+e1+")"
+      let [e1] = q.arg.map(codegen1)
+      return "rt.singleton("+e1+")"      
     } else if (q.key == "stateful" || q.key == "prefix" || q.key == "update") {
-
+ 
       let i = stmCount++
-      let tmpkey = '"tmpval"' // indirection into tmpN var -- TODO: eliminate
 
-      buf.push("let tmp"+i+" = {}")
-      buf.push("/* --- begin "+q.key+"_"+i+" --- */ {")
+      let bound
+      if (q.key == "update") {
+        bound = diff(q.arg[1].vars, env) // explicit var -- still no traversal if already in scope
+      } else
+        bound = diff(q.arg[0].dims, env)
+
+
+      buf.push("/* --- begin "+q.key+"_"+i+" --- "+pretty(q)+" ---*/")
+      buf.push("// env: "+env+" dims: "+q.dims+" bound: "+bound)
+
+      if (!same(bound,q.bnd)) {
+        buf.push("// WARNING! q.bound "+q.bnd)
+        console.warn("// WARNING! bound "+bound+" -> q.bnd "+q.bnd)
+      }
+      bound = q.bnd
+
+      if (intersect(bound,env).length > 0) {
+        buf.push("// WARNING: var '"+bound+"' already defined in "+env)
+        console.warn("// WARNING: var '"+bound+"' already defined in "+env)
+      }
+
 
       let emitStmInit = (q) => {
         if (q.key == "stateful") {
           return "rt.stateful."+q.op+"_init"
         } else if (q.key == "update") {
-          let e0 = codegen(q.arg[0])
-          return "rt.stateful.update_init("+e0+")"
+          let e0 = codegen(q.arg[0],env)
+          if (q.mode == "inplace" || isFresh(q.arg[0]))
+            return "(() => "+e0+")"
+          else
+            return "rt.stateful.update_init("+e0+")" // need to create copy
         } else {
           console.error("unknown op", q)
         }
       }
 
+      let env1 = union(env, bound)
+      let codegen2 = q => codegen(q, env1)
+
       let emitStm = (q) => {
         if (q.key == "prefix") {
-          let [e1] = q.arg.map(codegen)
-          // XXX TODO: add prefix wrapper?
+          let [e1] = q.arg.map(codegen2)
           return "rt.stateful.prefix(rt.stateful."+q.op+"("+e1+"))"
         } else if (q.key == "stateful") {
-          let [e1] = q.arg.map(codegen)
+          let [e1] = q.arg.map(codegen2)
           return "rt.stateful."+q.op+"("+e1+")"
         } else if (q.key == "update") {
-          let [e0,e1,e2] = q.arg.map(codegen)
-          return "rt.stateful.update("+e0+", "+e1+", "+e2+")" // XXX: init is still needed for tree paths
-          // return "rt.stateful.update("+"null"+", "+e1+", "+e2+")" // see testPathGroup4-2
+          let e0 = "null/*XXX inited separately!*/"//codegen(q.arg[0], env)
+          let e2 = codegen2(q.arg[2])
+          let e1 = q.arg[1].vars.map(quoteVar)
+          return "rt.stateful.update("+e0+", ["+e1+"], "+e2+")" // XXX: init is still needed for tree paths
         } else {
           console.error("unknown op", q)
         }
@@ -1940,64 +1968,45 @@ let emitCodeDeep = (q) => {
 
       // emit initialization
       if (q.key == "stateful" && (q.op+"_init") in runtime.stateful || q.key == "update") {
-
-        buf.push("// --- init ---")
-        let fv = q.fre
-        emitFilters1(fv)(buf, codegen)(() => {
-          let xs = [tmpkey,...q.fre.map(quoteVar)]
-          let ys = xs.map(x => ","+x).join("")
-
-          buf.push("  rt.init(tmp"+i+ys+")\n  ("+ emitStmInit(q) + ")")
-        })
-
+          buf.push("let tmp"+i+" = "+ emitStmInit(q)+"()")
+      } else {
+          buf.push("let tmp"+i)
       }
 
       // emit main computation
-      buf.push("// --- main ---")
-      let fv = union(q.fre, q.bnd)
-      emitFilters1(fv)(buf, codegen)(() => {
-        let xs = [tmpkey,...q.fre.map(quoteVar)]
-        let ys = xs.map(x => ","+x).join("")
-
-        buf.push("  rt.update(tmp"+i+ys+")\n  ("+ emitStm(q) + ")")
+      emitFilters1(env, q.fre, bound)(buf, codegen)(() => {
+        buf.push("tmp"+i+" = "+emitStm(q) + ".next(tmp"+i+")")
       })
 
-      buf.push("} /* --- end "+q.key+"_"+i+" */")
+      buf.push("/* --- end "+q.key+"_"+i+" */")
 
       // return reference
-      let xs = [tmpkey,...q.fre]
-      return quoteIndexVarsXS("tmp"+i, xs)
+      return "tmp"+i
 
     } else {
       console.error("unknown op", pretty(q))
       return "<?"+q.key+"?>"
     }
-    return q
   }
 
-  buf.push("// --- res ---")
-  let fv = q.fre
-  emitFilters1(fv)(buf, codegen)(() => {
-    let xs = q.fre.map(quoteVar)
-    let ys = xs.map(x => ","+x).join("")
-    buf.push("k("+codegen(q)+ys+")")
-  })
+    buf.push("return "+codegen(q,[])+"")
   buf.push("})")
 
   return buf.join("\n")
 }
 
 
-let interpret = (q,{
+let compilePrimitive = (q,{
   singleResult = true // TODO: elim flag?
 }={}) => {
 
   reset()
 
-  let trace = {
+  let trace = { 
     log: () => {}
     // log: console.log
   }
+
 
   // ---- front end ----
 
@@ -2025,21 +2034,45 @@ let interpret = (q,{
   let out = singleResult ? q.mind : q.dims
   q = inferBwd0(out)(q)
 
+  varsChanged = false
+  extract1f(q)
+  computeDependenciesf()
+  q = inferBwd1(out)(q)
 
+  while (true) {
+    varsChanged = false
+    extract1f(q)
+    if (!varsChanged) break
+    computeDependenciesf()
+    q = inferBwd1(out)(q)
+  }
+
+
+  if (out.length > 0) {
+    // wrap as (group (vars q.mind) q)
+    q = {
+     key: "update",
+     arg: [
+      { key: "const", op: {}, arg: [], vars: [], dims: [] },
+      { key: "pure", op: "vars",
+        arg: out.map(x => ({ key: "var", op: x, arg:[] })),
+        vars: out, dims: out },
+      q],
+     vars: q.vars,
+     dims: [],
+     bnd: out,
+     fre: [],
+    }
+    // NOTE: compared to adding it earlier and
+    //       following desugaring pipeline:
+    //  1: no embedded 'single' (not needed)
+    //  2: multiple vars encoded using (vars *A *B *C)
+  }
 
   // ---- middle tier, imperative form ----
 
-  // 7. Extract assignments
-  //q = extract2(q)
-
   // 8. Extract filters
-  //for (let e of assignments)
-  //  extract3(e)
   extract3(q)
-
-  // 9. Compute legal order of assignments
-  //let order = computeOrder(q)
-
 
   // ---- back end ----
 
@@ -2061,28 +2094,23 @@ let interpret = (q,{
   let func = eval(code)
 
   let wrap = (input) => {
-    let res
-    func(input)((x,...path) => res = rt.deepUpdate(res,path,x))
-    // alternative: discard path and collect into an array
-    return res
+    return func(input)
   }
 
   wrap.explain = {
     src,
-    ir: {filters, assignments, vars},
-    pseudo, code
+    ir: { filters },
+    pseudo, code 
   }
   return wrap
 }
 
 
-
-
 exports.compile = compile
 
-exports.interpret = interpret
+exports.compilePrimitive = compilePrimitive
 
-// exports.compile = interpret // TEMP
+// exports.compile = compilePrimitive // TEMP
 
 // exports.compile = require('./primitive-eval').compile
 
