@@ -360,6 +360,68 @@ let extract0 = q => {
 }
 
 
+// prototype anti-substitution
+//
+// motivation:
+//
+//   { data.*.key: data.*.key + 1 }
+//
+// it's clear that there is a 1:1 mapping,
+// so no aggregation is necessary.
+// represent this as:
+// 
+//   mkset(data.*.key).K & 
+//   { K: K + 1 }
+//
+// but we need to be carefeul:
+// 
+//   { data.*: count(data.*) }
+//
+// here it seems more logical iterpret
+// this as counting multiples
+
+
+// NOTE: this is early in the pipeline, we
+// have not computed dims/bnd/fre yet
+let extract0b = (q, out) => {
+  if (!prefixes.length) return q // early exit
+
+  if (q.key == "stateful" && q.mode != "reluctant") {
+    q.arg = q.arg.map(x => extract0b(x, []))
+  } else if (q.key == "update") {
+    let [e0,e1,e2,e3] = q.arg
+    e0 = extract0b(e0, out)
+    if (e1.key == "var" && e1.op.startsWith("K")) {
+      e2 = extract0b(e2, union(out,[e1.op]))
+    } else {
+      e2 = extract0b(e2, out)
+    }
+    if (e3) {
+      e3 = extract0b(e3, out)
+      q.arg = [e0,e1,e2,e3]
+    } else {
+      q.arg = [e0,e1,e2]
+    }
+  } else {
+    if (q.arg) q.arg = q.arg.map(x => extract0b(x, out))
+  }
+
+  // return q
+
+  if (!out.length) return q // early exit
+
+  let e1 = { key:"mkset", arg:[q] }
+  let str = JSON.stringify(e1)
+  let key = prefixes.indexOf(str)
+  if (key >= 0 && subset(["K"+key],out)) {
+    // console.log("FOUND: K"+key)
+    return { key: "var", op: "K"+key }
+  }
+
+  return q
+}
+
+
 // 4: extract var -> filter variable deps
 //    - runs after infer()
 let extract1 = q => {
@@ -1603,6 +1665,7 @@ let translateToNewCodegen = q => {
 let compile = (q,{
   altInfer = false,
   singleResult = true, // TODO: elim flag?
+  antiSubstGroupKey = false,
   newCodegen = false,
   CCodegen = false
 }={}) => {
@@ -1634,6 +1697,11 @@ let compile = (q,{
   // 2. Extract
   q = extract0(q) // basic massaging
 
+  if (antiSubstGroupKey && !newCodegen) {
+    // anti-substitution: find occurrences of group key
+    // in body and replace with K variable
+    q = extract0b(q,[])
+  }
 
   // ---- middle tier ----
 
