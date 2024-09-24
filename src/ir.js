@@ -157,6 +157,9 @@ exports.createIR = (query) => {
                 } else if (p.xxpath == "mod") {
                     let [e1, e2] = p.xxparam
                     return unop("Math.trunc", binop("%", path1(e1), path1(e2)))
+                } else if (p.xxpath == "and") {
+                    let [e1, e2] = p.xxparam
+                    return binop("&&", path1(e1), path1(e2))
                 } else {
                     error("ERROR - unknown path key '" + p.xxpath + "'")
                     return expr("undefined")

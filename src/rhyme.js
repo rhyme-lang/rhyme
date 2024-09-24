@@ -48,6 +48,10 @@ api["first"] = (e) => ({
   xxkey: "first",
   xxparam: e
 })
+api["single"] = (e) => ({
+  xxkey: "last", // TODO: check that values are equal, like c2
+  xxparam: e
+})
 api["keyval"] = (k, v) => ({
   xxkey: "keyval",
   xxparam: [k, v]
@@ -100,6 +104,10 @@ api["div"] = (e1, e2) => ({
 })
 api["mod"] = (e1, e2) => ({
   xxpath: "mod",
+  xxparam: [e1, e2]
+})
+api["and"] = (e1, e2) => ({
+  xxpath: "and",
   xxparam: [e1, e2]
 })
 // ---------- Fluent API ----------
