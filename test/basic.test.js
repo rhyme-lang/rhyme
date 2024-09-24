@@ -195,6 +195,27 @@ test("joinSimpleTest1", () => {
     expect(res).toEqual(expected)
 })
 
+test("joinSimpleTest1B", () => { // use explicit 'single' aggregation
+    let q1 = {
+        "other.*O.country": api.single("other.*O.region")
+    }
+    let query = {
+        "data.*.city": {
+            country: api.single("data.*.country"),
+            region: api.single(api.get(q1,"data.*.country"))
+        }
+    }
+    let func = api.compile(query)
+    let res = func({ data: countryData, other: regionData })
+    let expected = {
+        "Beijing": { country: "China", region: "Asia" },
+        "Paris": { country: "France", region: "Europe" },
+        "London": { country: "UK", region: "Europe" },
+        "Tokyo": { country: "Japan", region: "Asia" }
+    }
+    expect(res).toEqual(expected)
+})
+
 test("joinSimpleTest2", () => {
     let q1 = {
         "other.*O.country": "other.*O.region"
