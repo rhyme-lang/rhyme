@@ -491,3 +491,39 @@ example:
 matrix is a concatenation of sparse row vectors
 
 */
+let buildCSR = mat => {
+  let data = []
+  let cols = []
+  let rows = []
+  // note: we rely on in-order traversal
+  for (let y in mat) {
+    rows.push(data.length)
+    for (let x in mat[y]) {
+      if (mat[y][x]) {
+        cols.push(x)
+        data.push(mat[y][x])
+      }
+    }
+  }
+  return {data, cols, rows}
+}
+
+test("csr0_buildManual", () => {
+
+  let mat = [
+    [10, 20,  0,  0,  0,  0,  0],
+    [ 0, 30,  0, 40,  0,  0,  0],
+    [ 0,  0, 50, 60, 70,  0,  0],
+    [ 0,  0,  0,  0,  0, 80,  0],
+    [ 0,  0,  0,  0,  0,  0,  0],
+  ]
+
+  let csr = {
+    data: [10, 20, 30, 40, 50, 60, 70, 80],
+    cols: ['0', '1', '1','3', '2', '3','4', '5'],
+    rows: [ 0, 2, 4, 7, 8 ]
+  }
+
+  expect(buildCSR(mat)).toEqual(csr)
+
+})
