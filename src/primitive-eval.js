@@ -427,20 +427,16 @@ let assertSame = (a,b,msg) => console.assert(same(a,b), msg+": "+a+" != "+b)
 let inferBwd0 = out => q => {
   if (q.key == "input" || q.key == "const" || q.key == "placeholder") {
     q.bnd = []
-    q.allBnd = []
   } else if (q.key == "var") {
     q.bnd = []
-    q.allBnd = []
   } else if (q.key == "get" || q.key == "pure" || q.key == "hint" || q.key == "mkset") {
     let es = q.arg.map(inferBwd0(out))
     q.bnd = []
-    q.allBnd = unique(es.flatMap(x => x.allBnd))
   } else if (q.key == "stateful" || q.key == "prefix") {
     let out1 = union(out,q.arg[0].dims) // need to consider mode?
     let [e1] = q.arg.map(inferBwd0(out1))
 
     q.bnd = diff(e1.dims, out)
-    q.allBnd = union(q.bnd, e1.allBnd)
   } else if (q.key == "update") {
     let e0 = inferBwd0(out)(q.arg[0]) // what are we extending
     let e1 = inferBwd0(out)(q.arg[1]) // key variable
@@ -448,8 +444,8 @@ let inferBwd0 = out => q => {
     if (e1.key == "placeholder") {
       let bnd = diff(q.arg[2].dims, out)
       e1 = q.arg[1] = { key: "pure", op: "vars",
-        arg: bnd.map(x => ({ key: "var", op: x, arg:[], vars: [x], mind: [x], dims: [x], bnd: [], allBnd: [] })),
-        vars: bnd, mind: bnd, dims: bnd, bnd: [], allBnd: []
+        arg: bnd.map(x => ({ key: "var", op: x, arg:[], vars: [x], mind: [x], dims: [x], bnd: [] })),
+        vars: bnd, mind: bnd, dims: bnd, bnd: []
       }
     }
 
@@ -463,7 +459,7 @@ let inferBwd0 = out => q => {
       e1Body = e3.arg[0].arg[0]
     } else {
       e1Body = { key: "const", op: "???",
-        vars: [], mind: [], dims: [], bnd: [], allBnd: [] }
+        vars: [], mind: [], dims: [], bnd: [] }
     }
 
     q.e1BodyBnd = diff(e1Body.dims, out)
@@ -471,7 +467,6 @@ let inferBwd0 = out => q => {
     let e2 = inferBwd0(union(out, e1.vars))(q.arg[2])
 
     q.bnd = diff(union(e1.vars, []/*e1Body.dims*/), out)
-    q.allBnd = unique([...q.bnd, ...e0.allBnd, ...e1.allBnd, ...e2.allBnd, ...e1Body.allBnd])
 
   } else {
     console.error("unknown op", q)
@@ -610,7 +605,6 @@ let inferBwd1 = out => q => {
   console.assert(subset(q.dims, q.vars))
 
   console.assert(!intersects(q.fre, q.bnd))
-  console.assert(!intersects(q.fre, q.allBnd))
 
   return q
 }
