@@ -491,6 +491,7 @@ example:
 matrix is a concatenation of sparse row vectors
 
 */
+
 let buildCSR = mat => {
   let data = []
   let cols = []
@@ -506,6 +507,81 @@ let buildCSR = mat => {
     }
   }
   return {data, cols, rows}
+}
+
+
+let CSVectorProxy = {
+  get(target, prop, receiver) {
+    if (!Number.isNaN(Number(String(prop)))) {
+      // inefficient: use binary search to improve
+      let i = target.cols.indexOf(prop, target.start)
+      if (target.start <= i && i < target.end) return target.data[i]
+      return undefined
+    }
+    return Reflect.get(...arguments)
+  },
+  has(target, prop) {
+    if (!Number.isNaN(Number(String(prop)))) {
+      let i = target.cols.indexOf(prop, target.start)
+      return i < target.end
+    }
+    return Reflect.has(...arguments)
+  },
+  set(target, prop, value) {
+    if (!Number.isNaN(Number(String(prop)))) {
+      let i = Number(prop)
+      console.error("update not yet supported for CSVector")
+    }
+    return Reflect.set(...arguments)
+  },
+  ownKeys(target) {
+    return target.cols.slice(target.start, target.end)
+  },
+  getOwnPropertyDescriptor(target, prop) {
+    return { configurable: true, enumerable: true }
+  }
+}
+
+let CSVector = (data, cols, start, end) => {
+  return new Proxy({data, cols, start, end}, CSVectorProxy)
+}
+
+let CSRMatrixProxy = {
+  get(target, prop, receiver) {
+    if (!Number.isNaN(Number(String(prop)))) {
+      let i = Number(prop)
+      if (i < target.rows.length) {
+        let start = target.rows[i]
+        let end = (i == target.rows.length - 1)
+                  ? target.data.length
+                  : target.rows[i + 1]
+        return CSVector(target.data, target.cols, start, end)
+      }
+      return undefined
+    }
+    return Reflect.get(...arguments)
+  },
+  has(target, prop) {
+    // return lookup(target.root, prop) ?? false
+  },
+  set(target, prop, value) {
+    // return target.root = insert(target.root, prop, value)
+  },
+  ownKeys(target) {
+    let l = target.rows.length
+    let res = new Array(l)
+    for (let i = 0; i < l; i++)
+      res[i] = String(i)
+    return res
+  },
+  getOwnPropertyDescriptor(target, prop) {
+    return { configurable: true, enumerable: true }
+  }
+}
+
+
+let CSRMatrix = (data, cols, rows) => {
+  return new Proxy({data, cols, rows}, CSRMatrixProxy)
 }
 
 test("csr0_buildManual", () => {
@@ -527,3 +603,36 @@ test("csr0_buildManual", () => {
   expect(buildCSR(mat)).toEqual(csr)
 
 })
+
+test("csr1_traverseManual", () => {
+
+  let mat = [
+    [10, 20,  0,  0,  0,  0,  0],
+    [ 0, 30,  0, 40,  0,  0,  0],
+    [ 0,  0, 50, 60, 70,  0,  0],
+    [ 0,  0,  0,  0,  0, 80,  0],
+    [ 0,  0,  0,  0,  0,  0,  0],
+  ]
+
+  let csr_data = {
+    data: [10, 20, 30, 40, 50, 60, 70, 80],
+    cols: ['0', '1', '1','3', '2', '3','4', '5'],
+    rows: [ 0, 2, 4, 7, 8 ]
+  }
+
+  let csr = CSRMatrix(csr_data.data, csr_data.cols, csr_data.rows)
+
+  let mat2 = []
+  for (let y in csr) {
+    mat2[y] = new Array(7).fill(0) // will be undefined without zeros
+    for (let x in csr[y]) {
+      mat2[y][x] = csr[y][x]
+    }
+  }
+
+  expect(mat2).toEqual(mat)
+
+})
+
+
+
