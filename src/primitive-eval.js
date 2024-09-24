@@ -891,19 +891,21 @@ let transViaFiltersFreC = iter => {
 
 
 
-let emitFiltersC1 = (scope, free, iter) => (buf, codegen) => body => {
+let emitFiltersC1 = (scope, free, bnd) => (buf, codegen) => body => {
   // approach: build explicit projection first
   // 1. iterate over transitive iter space to
   //    build projection map
   // 2. iterate over projection map to compute
   //    desired result
 
+  let iter = diff(union(free, bnd), scope)
+
   if (iter.length == 0) return body()
 
   // let full = union(free, transViaFiltersFreC(iter)) // this doesn't work
-  let full = transf(union(free, iter)) // XX simpler way to compute?
+  let full = transf(union(free,bnd)) // XX simpler way to compute?
 
-  if (same(full,iter)) { // XXX should not disregard order?
+  if (same(full, iter)) { // XXX should not disregard order?
     emitFiltersC2(scope, full)(buf, codegen)(body)
   } else {
 
@@ -943,7 +945,7 @@ let emitFiltersC1 = (scope, free, iter) => (buf, codegen) => body => {
 
 let emitFiltersC2 = (scope, iter) => (buf, codegen) => body => {
 
-  let watermark = buf.length
+  // let watermark = buf.length
 
   let vars = {}
   let seen = {}
@@ -965,7 +967,7 @@ let emitFiltersC2 = (scope, iter) => (buf, codegen) => body => {
   // record current scope
   for (let v of scope) seen[v] = true
 
-  // only consider filters contributing to iteration vars=
+  // only consider filters contributing to iteration vars
   let pending = []
   for (let i in filters) {
     let f = filters[i]
@@ -1029,7 +1031,7 @@ let emitFiltersC2 = (scope, iter) => (buf, codegen) => body => {
       // (sanity check!)
       let extra = g1.fre.filter(x => !vars[x]) // XXX not needed
       if (extra.length != 0) {
-        console.error("extra dependencie: "+extra)
+        console.error("extra dependency: "+extra)
       }
 
       if (isDeepVarStr(v1)) { // ok, just emit current

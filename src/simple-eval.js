@@ -1250,15 +1250,18 @@ let transViaFiltersFree = iter => {
   return res
 }
 
-let emitFilters1 = (free, bnd) => (buf, codegen) => body => {
+let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
   // approach: build explicit projection first
   // 1. iterate over transitive iter space to
   //    build projection map
   // 2. iterate over projection map to compute
   //    desired result
 
-  let iter = union(free,bnd)
-  let full = transf(iter)
+  let iter = diff(union(free, bnd), scope)
+
+  if (iter.length == 0) return body()
+
+  let full = transf(union(free, bnd))
 
   // let full2 = union(free,transf(bnd))
   // assertSame(full, full2, "free "+free+" bound "+bnd)
@@ -1274,8 +1277,8 @@ let emitFilters1 = (free, bnd) => (buf, codegen) => body => {
   // 2. is it OK to take the ordering of iter, or
   //    do we need to compute topological order?
 
-  if (same(full,iter)) { // XXX should not disregard order?
-    emitFilters2(full)(buf, codegen)(body)
+  if (same(full, iter)) { // XXX should not disregard order?
+    emitFilters2(scope, full)(buf, codegen)(body)
   } else {
 
     let closing = "}"
@@ -1283,7 +1286,7 @@ let emitFilters1 = (free, bnd) => (buf, codegen) => body => {
     buf.push("// PROJECT "+full+" -> "+iter)
     buf.push("let proj = {}")
 
-    emitFilters2(full)(buf, codegen)(() => {
+    emitFilters2(scope, full)(buf, codegen)(() => {
       let xs = [...iter.map(quoteVar)]
       let ys = xs.map(x => ","+x).join("")
       buf.push("  rt.initTemp(proj"+ys+")(() => true)")
@@ -1311,19 +1314,25 @@ let emitFilters1 = (free, bnd) => (buf, codegen) => body => {
 }
 
 
-let emitFilters2 = iter => (buf, codegen) => body => {
+let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
 
-  let watermark = buf.length
-  let buf0 = buf
-  let buf1 = []
+  // let watermark = buf.length
+  // let buf0 = buf
+  // let buf1 = []
 
   let vars = {}
   let seen = {}
 
+  if (iter.length == 0)
+    return body()
+
   // remember the set of iteration vars
   for (let v of iter) vars[v] = true
 
-  // only consider filters contributing to iteration vars=
+  // record current scope
+  for (let v of scope) seen[v] = true
+
+  // only consider filters contributing to iteration vars
   let pending = []
   for (let i in filters) {
     let f = filters[i]
@@ -1364,27 +1373,30 @@ let emitFilters2 = iter => (buf, codegen) => body => {
       let v1 = f.arg[1].op
       let g1 = f.arg[0]
 
+      // buf.push("// FILTER "+i+" := "+pretty(f))
+      let scope1 = g1.fre
+
       // Contract: input is already transitively closed, so we don't
       // depend on any variables that we don't want to iterate over.
       // (sanity check!)
       let extra = g1.fre.filter(x => !vars[x])
       if (extra.length != 0) {
-        console.error("extra dependencie: "+extra)
+        console.error("extra dependency: "+extra)
       }
 
       if (isDeepVarStr(v1)) { // ok, just emit current
         if (!seen[v1]) {
-          buf1.push("rt.deepForIn("+codegen(g1)+", "+quoteVar(v1)+" => {")
+          buf.push("rt.deepForIn("+codegen(g1,scope1)+", "+quoteVar(v1)+" => {")
         } else {
-          buf1.push("rt.deepIfIn("+codegen(g1)+", "+quoteVar(v1)+", () => {")
+          buf.push("rt.deepIfIn("+codegen(g1,scope1)+", "+quoteVar(v1)+", () => {")
         }
         seen[v1] = true
         closing = "})\n"+closing
       } else { // ok, just emit current
         if (!seen[v1]) {
-          buf1.push("for (let "+quoteVar(v1)+" in "+codegen(g1)+") {")
+          buf.push("for (let "+quoteVar(v1)+" in "+codegen(g1,scope1)+") {")
         } else {
-          buf1.push("if ("+quoteVar(v1)+" in ("+codegen(g1)+"??[])) {")
+          buf.push("if ("+quoteVar(v1)+" in ("+codegen(g1,scope1)+"??[])) {")
         }
         seen[v1] = true
         closing = "}\n"+closing
@@ -1395,11 +1407,14 @@ let emitFilters2 = iter => (buf, codegen) => body => {
   if (pending.length > 0) {
     let problem = pending.map(i => pretty(filters[i])).join(", ")
     console.warn("unsolved filter ordering problem: couldn't emit "+problem)
+    for (let i of pending) {
+      buf.push("// ERROR: unsolved filter ordering problem: "+i+" := "+pretty(filters[i]))
+    }
   }
 
   // combine buffers
-  if (buf.length > watermark) buf.push("// main loop")
-  buf.push(...buf1)
+  // if (buf.length > watermark) buf.push("// main loop")
+  // buf.push(...buf1)
 
   body()
 
@@ -1442,7 +1457,7 @@ let emitCode = (q, order) => {
       //    now done in inferBwd (could be refined there)
 
       let fv = q.fre
-      emitFilters1(fv,[])(buf, codegen)(() => {
+      emitFilters1([],fv,[])(buf, codegen)(() => {
         let xs = [i,...q.fre.map(quoteVar)]
         let ys = xs.map(x => ","+x).join("")
 
@@ -1451,7 +1466,7 @@ let emitCode = (q, order) => {
     }
 
     let fv = q.fre // union(q.fre, q.bnd)
-    emitFilters1(fv,q.bnd)(buf, codegen)(() => {
+    emitFilters1([],fv,q.bnd)(buf, codegen)(() => {
       let xs = [i,...q.fre.map(quoteVar)]
       let ys = xs.map(x => ","+x).join("")
 
