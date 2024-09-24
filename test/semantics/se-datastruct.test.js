@@ -635,4 +635,34 @@ test("csr1_traverseManual", () => {
 })
 
 
+test("csr2_sparseMatrixVectorProduct", () => {
+
+  let csr_data = {
+    data: [10, 20, 30, 40, 50, 60, 70, 80],
+    cols: ['0', '1', '1','3', '2', '3','4', '5'],
+    rows: [ 0, 2, 4, 7, 8 ]
+  }
+
+  let csr = CSRMatrix(csr_data.data, csr_data.cols, csr_data.rows)
+
+  let vec = [4, -2, 1, 0, 4, 9, -5]
+
+  let udf = {
+    array: (n) => new Array(n)
+  }
+  
+  let query = rh`update (udf.array 5) *i sum(csr.*i.*j * vec.*j)`
+
+  let func = compile(query)
+  let res = func({csr, vec, udf})
+
+  expect(res).toEqual([ 
+    0, -60, 330, 720, 0 
+  ])
+
+
+})
+
+
+
 
