@@ -1354,10 +1354,9 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
 
   // compute next set of available filters:
   // all dependent iteration vars have been seen (emitted before)
-  let available
+  let available = []
   let next = () => {
     let p = pending
-    available = []
     pending = []
     for (let i of p) {
       let f = filters[i]
@@ -1367,7 +1366,7 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
       let avail = g1.fre.every(x => seen[x])
 
       if (avail)
-        available.push(i)
+        available.push(i) // TODO: insert in proper place
       else
         pending.push(i)
     }
@@ -1378,8 +1377,13 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
 
   // process filters
   while (next()) {
-    // TODO: sort available by estimated selectivity
-    for (let i of available) {
+    // sort available by estimated selectivity
+    // crude proxy: number of free vars
+    let selEst = i => filters[i].arg[0].fre.length
+    available.sort((a,b) => selEst(b) - selEst(a))
+
+    let i = available.shift()
+    // for (let i of available) {
       let f = filters[i]
       let v1 = f.arg[1].op
       let g1 = f.arg[0]
@@ -1412,7 +1416,7 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
         seen[v1] = true
         closing = "}\n"+closing
       }
-    }
+    // }
   }
 
   if (pending.length > 0) {
