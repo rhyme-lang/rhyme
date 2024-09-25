@@ -562,10 +562,18 @@ let CSRMatrixProxy = {
     return Reflect.get(...arguments)
   },
   has(target, prop) {
-    // return lookup(target.root, prop) ?? false
+    if (!Number.isNaN(Number(String(prop)))) {
+      let i = Number(prop)
+      return (i < target.rows.length)
+    }
+    return Reflect.has(...arguments)
   },
   set(target, prop, value) {
-    // return target.root = insert(target.root, prop, value)
+    if (!Number.isNaN(Number(String(prop)))) {
+      let i = Number(prop)
+      console.error("update not yet supported for CSRMatrix")
+    }
+    return Reflect.set(...arguments)
   },
   ownKeys(target) {
     let l = target.rows.length
