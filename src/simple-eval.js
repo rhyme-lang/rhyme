@@ -1041,38 +1041,44 @@ let pretty = q => {
 }
 
 
+let pseudoVerbose = false
+
 let emitPseudo = (q) => {
+  let margin = 16
   let buf = []
   for (let i in filters) {
     let q = filters[i]
-    buf.push("gen"+i + ": " + pretty(q))
-    if (q.vars.length)
-      buf.push("  " + q.vars + " / " + q.fre)
+    buf.push(("gen"+i + prettyPath(q.fre)).padEnd(margin) + " = " + pretty(q))
+    if (pseudoVerbose && q.fre.length)
+      buf.push("  " + q.fre)
   }
-  buf.push("")
+  if (hints.length) buf.push("")
   for (let i in hints) {
     let q = hints[i]
-    buf.push("hint"+i + ": " + pretty(q))
-    if (q.vars.length)
-      buf.push("  " + q.vars + " / " + q.fre)
+    buf.push(("hint"+i + prettyPath(q.fre)).padEnd(margin) + " = " + pretty(q))
+    if (pseudoVerbose && q.fre.length)
+      buf.push("  " + q.fre)
   }
-  buf.push("")
-  let hi = buf.length
-  for (let v in vars) {
-    if (vars[v].vars.length > 0 || vars[v].tmps && vars[v].tmps.length > 0)
-      buf.push(v + " -> " + vars[v].vars +"  "+ vars[v].tmps)
+  if (pseudoVerbose) {
+    buf.push("")
+    let hi = buf.length
+    for (let v in vars) {
+      if (vars[v].vars.length > 0 || vars[v].tmps && vars[v].tmps.length > 0)
+        buf.push(v + " -> " + vars[v].vars +"  "+ (vars[v].tmps??[]))
+    }
   }
   buf.push("")
   hi = buf.length
   for (let v in vars) {
     if (vars[v].varsf.length > 0 || vars[v].tmps && vars[v].tmps.length > 0)
-      buf.push(v + " -> " + vars[v].varsf +"  "+ vars[v].tmps)
+      buf.push(v + " -> " + vars[v].varsf +"  "+ (vars[v].tmps??[]))
   }
   if (buf.length > hi)
     buf.push("")
   for (let i in assignments) {
     let q = assignments[i]
-    buf.push("tmp"+i + prettyPath(q.fre) + " = " + pretty(q))
+    buf.push(("tmp"+i + prettyPath(q.fre) + prettyPath(q.bnd)).padEnd(margin) + " = " + pretty(q))
+    if (!pseudoVerbose) continue
     if (q.path?.length > 0)
       buf.push("  pth: " + q.path.map(pretty))
     if (q.vars.length > 0)
