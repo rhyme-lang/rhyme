@@ -369,12 +369,12 @@ let extract0 = q => {
 // it's clear that there is a 1:1 mapping,
 // so no aggregation is necessary.
 // represent this as:
-// 
-//   mkset(data.*.key).K & 
+//
+//   mkset(data.*.key).K &
 //   { K: K + 1 }
 //
 // but we need to be carefeul:
-// 
+//
 //   { data.*: count(data.*) }
 //
 // here it seems more logical iterpret
@@ -444,8 +444,8 @@ let extract1f = q => {
   if (q.arg) q.arg.map(extract1f)
   if (q.key == "var") {
     vars[q.op] ??= { }
-    vars[q.op].varsf ??= [] 
-    vars[q.op].varsf1 ??= [] 
+    vars[q.op].varsf ??= []
+    vars[q.op].varsf1 ??= []
   } else if (q.key == "get") {
     let [e1,e2] = q.arg
     if (e2.key == "var") {
@@ -1624,7 +1624,7 @@ let codegenCPP = q => {
     return "rt_pure_"+q.op+"("+es.join(",")+")"
   } else if (q.key == "hint") {
     // no-op!
-    return "1"
+    return "rt_const_int(1)"
   } else if (q.key == "mkset") {
     let [e1] = q.arg.map(codegenCPP)
     return "rt_singleton("+e1+")"
@@ -2099,7 +2099,7 @@ let emitCodeDeep = (q) => {
       else
         return String(q.op)
     } else if (q.key == "var") {
-      if (env.indexOf(q.op) < 0) {        
+      if (env.indexOf(q.op) < 0) {
         buf.push("// ERROR: var '"+q.op+"' not defined in "+env)
         console.error("// ERROR: var '"+q.op+"' not defined")
       }
@@ -2118,9 +2118,9 @@ let emitCodeDeep = (q) => {
       return "{}"
     } else if (q.key == "mkset") {
       let [e1] = q.arg.map(codegen1)
-      return "rt.singleton("+e1+")"      
+      return "rt.singleton("+e1+")"
     } else if (q.key == "stateful" || q.key == "prefix" || q.key == "update") {
- 
+
       let i = stmCount++
 
       let bound
@@ -2216,7 +2216,7 @@ let compilePrimitive = (q,{
 
   reset()
 
-  let trace = { 
+  let trace = {
     log: () => {}
     // log: console.log
   }
@@ -2314,7 +2314,7 @@ let compilePrimitive = (q,{
   wrap.explain = {
     src,
     ir: { filters },
-    pseudo, code 
+    pseudo, code
   }
   return wrap
 }
