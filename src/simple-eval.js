@@ -1283,7 +1283,11 @@ let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
   // 2. is it OK to take the ordering of iter, or
   //    do we need to compute topological order?
 
-  if (same(full, iter)) { // XXX should not disregard order?
+  // NOTE: by passing `full` to emitFilter2 without diff, we will re-run
+  // the full set of filters for each sym that's already in scope.
+  // TODO: keep track of which filters were run in scope, not just vars
+
+  if (same(diff(full,scope), iter)) { // XXX should not disregard order?
     emitFilters2(scope, full)(buf, codegen)(body)
   } else {
 
@@ -1374,6 +1378,7 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
 
   // process filters
   while (next()) {
+    // TODO: sort available by estimated selectivity
     for (let i of available) {
       let f = filters[i]
       let v1 = f.arg[1].op
