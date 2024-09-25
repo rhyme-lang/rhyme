@@ -3,6 +3,8 @@ const { rh, parse } = require('../../src/parser')
 const { compile } = require('../../src/primitive-eval')
 
 
+// ========== FROM se-basic.test.js ========== //
+
 
 // some sample data for testing
 // let data = [
@@ -336,14 +338,50 @@ test("testGroup0-a3", () => {
   let func = compile(query)
   let res = func({data, other})
 
+  // NOTE: this worked in an intermediate model of primitive-eval,
+  // where filters would be able to use the entire set of variables
+  // in scope.
+  // 
+  // This was found to conflict with aggregateAsKey, so we reverted
+  // to the old behavior (consistent with simple-eval).
+
   expect(res).toEqual(
-   { U: [40, 20], V: [10] }
+   { U: [40, 20, 10], V: [40, 20, 10] }
   )
 })
 
 test("testGroup0-a4", () => {
   let query = rh`group *K (mkset(data.*.key).*K & array(data.*.value))`
   
+  // Difference to prev: drop *K from inner `array(...)`
+
+  let func = compile(query)
+  let res = func({data, other})
+
+  // NOTE: this worked in an intermediate model of primitive-eval,
+  // where { data.*.key: ... } had no special status and was directly
+  // desugared into group *K without touching nested aggregations
+  // via path. 
+  // 
+  // This was found to conflict with eta5, so we reverted to the
+  // old behavior (consistent with simple-eval).
+
+  expect(res).toEqual(
+   { U: [40, 20, 10], V: [40, 20, 10] }
+  )
+})
+
+test("testGroup0-a5", () => {
+  // NOTE: added special *KEYVAR var prefix as part of broadening handling of
+  // correlated key vars. Now this works ...
+
+  let query = rh`(count (singleton data.*D.key).*KEYVAR) &
+  (group *KEYVAR (array data.*D.value))`
+  
+  // NOTE: here we use 'singleton' (pure) not 'mkset' (aggr),
+  // because correlation is determined by dims* and dims(mkset ..) = Ø,
+  // so the dependency *KEYVAR -> D wouldn't register for mkset.
+
   let func = compile(query)
   let res = func({data, other})
 
@@ -351,6 +389,50 @@ test("testGroup0-a4", () => {
    { U: [40, 20], V: [10] }
   )
 })
+
+test("testGroup0-a6", () => {
+  let query = rh`(count (*D & (mkset data.*D.key)).*KEYVAR) &
+  (group *KEYVAR (array data.*D.value))`
+  
+  // NOTE: here we massage a prefix for *KEYVAR that both includes D
+  // among its dims and also uses mkset to perform the selection.
+
+  // Note that the following doesn't work:
+  //
+  //   (count *D & (mkset data.*D.key).*KEYVAR)
+  //
+  // This elaborates to (mkset_Ø^D data.*.key) and thus has the
+  // right bound/free sets. BUT we're still relying on dims
+  // of the selection prefix for *KEYVAR -- free isn't
+  // available yet.
+
+  let func = compile(query)
+  let res = func({data, other})
+
+  expect(res).toEqual(
+   { U: [40, 20], V: [10] }
+  )
+})
+
+
+test("testGroup0-a7", () => {
+  let query = rh`(count (*D & (mkset data.*D.key).*KEYVAR)) &
+  (group *KEYVAR (array data.*D.value))`
+  
+  // If we make .free available in a fixpoint loop this
+  // actually does work:
+  //
+  //   (count *D & (mkset data.*D.key).*KEYVAR)
+  //
+
+  let func = compile(query)
+  let res = func({data, other})
+
+  expect(res).toEqual(
+   { U: [40, 20], V: [10] }
+  )
+})
+
 
 
 test("testGroup1", () => {
@@ -458,3 +540,32 @@ test("testOuterJoin_pre2", () => {
     0: 7, 2: 7
   })
 })
+
+
+
+// ========== FROM se-bug.test.js ========== //
+
+// simplified from se-bug/eta2Indirect2
+test("eta2Indirect2-simpl", () => { // BUG -- eta via array constr
+    let data = { 0: 2, 1: 2, 2: 2 }
+    let data1 = ["data.*E"]
+    let q0 = rh`count ${data1}.*A | group ${data1}.*A`
+    let func = compile(q0)
+    let res = func({ data })
+
+    // console.log(func.explain.pseudo0)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = {
+      2: 3
+    }
+    let bug = {
+      2: 1
+    }
+    expect(res).toEqual(expected)
+})
+
+
+
+

@@ -21,7 +21,7 @@ let execPromise = function(cmd) {
 
 
 test("testRoundtrip0", async () => {
-  let content = 
+  let content =
 `#include <stdio.h>
 #include "rhyme.h"
 int main() {
@@ -41,8 +41,8 @@ let data = {}
 test("testTrivial0", async () => {
   let query = rh`1 + 4`
 
-  let func = compile(query, { CCodegen: true })
-  console.log(func.explain.code)
+  let func = compile(query, { backend : "c" })
+  // console.log(func.explain.code)
   let res = await func({data})
 
   expect(res).toEqual("5")
@@ -57,8 +57,8 @@ test("testTrivial0", async () => {
 test("testTrivial1", async () => {
   let query = rh`data.A.value`
 
-  let func = compile(query, { CCodegen: true })
-  console.log(func.explain.codeString)
+  let func = compile(query, { backend : "c" })
+  // console.log(func.explain.code)
   let res = await func({data})
 
   expect(res).toEqual("undefined")
@@ -67,8 +67,8 @@ test("testTrivial1", async () => {
 test("testScalar1", async () => {
   let query = rh`sum data.*.value`
 
-  let func = compile(query, { CCodegen: true })
-  console.log(func.explain.codeString)
+  let func = compile(query, { backend : "c" })
+  // console.log(func.explain.code)
   let res = await func({data})
 
   expect(res).toEqual("undefined")
@@ -77,10 +77,47 @@ test("testScalar1", async () => {
 test("testHint1", async () => {
   let query = rh`(hint dense data) & (sum data.*.value)`
 
-  let func = compile(query, { CCodegen: true })
-  console.log(func.explain.codeString)
-  console.log(func.explain.pseudo)
+  let func = compile(query, { backend : "c" })
+  // console.log(func.explain.code)
+  // console.log(func.explain.pseudo)
   let res = await func({data})
 
   expect(res).toEqual("undefined")
+})
+
+data = {
+  A: { key: "U", value: 40 },
+  B: { key: "U", value: 20 },
+  C: { key: "V", value: 10 },
+}
+
+test("testTrivial1CPP", async () => {
+  let query = rh`data.A.value`
+
+  let func = compile(query, { backend : "cpp" })
+  // console.log(func.explain.code)
+  let res = await func({data})
+
+  expect(res).toEqual("40")
+})
+
+test("testScalar1CPP", async () => {
+  let query = rh`sum data.*.value`
+
+  let func = compile(query, { backend : "cpp" })
+  // console.log(func.explain.code)
+  let res = await func({data})
+
+  expect(res).toEqual("70")
+})
+
+test("testHint1CPP", async () => {
+  let query = rh`(hint dense data) & (sum data.*.value)`
+
+  let func = compile(query, { backend : "cpp" })
+  // console.log(func.explain.code)
+  // console.log(func.explain.pseudo)
+  let res = await func({data})
+
+  expect(res).toEqual("70")
 })

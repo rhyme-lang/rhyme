@@ -14,6 +14,7 @@ rt.stateful = {}
 rt.special.get = true
 rt.special.group = true
 rt.special.update = true
+rt.special.update_inplace = true
 rt.special.merge = rt.special.keyval = true
 
 // pure operations
@@ -94,6 +95,11 @@ rt.pure.and = (x1,x2) => {
   return x2
 }
 
+
+rt.pure.singleton = (x1) => { // 'mkset'
+  if (x1 === undefined) return {}
+  return {[x1]:true}
+}
 
 rt.singleton = (x1) => { // 'mkset'
   if (x1 === undefined) return {}
@@ -262,7 +268,14 @@ rt.stateful.group = (x1,x2) => ({
 })
 
 
-rt.stateful.update_init = (x0) => () => ({...x0})
+
+
+rt.uniqueMutableCopy = x0 => {
+  // console.assert(typeof x0 === "object")
+  return {...x0}
+}
+
+rt.stateful.update_init = (x0) => () => rt.uniqueMutableCopy(x0)
 
 rt.stateful.update = (x0,x1,x2) => ({
   init: () => ({...x0}), // NOTE: preserve init value! 
@@ -277,8 +290,8 @@ rt.stateful.update = (x0,x1,x2) => ({
       // pre-init path (see testPathGroup3,4)
       // XXX todo: ensure more generally that we're only
       // updating proper objects
-      if (typeof x0 === "object")
-        s = {...x0}
+      if (typeof x0 === "object") // testPathGroup3,4: String!
+        s = rt.uniqueMutableCopy(x0)
       else
         s = x0
     }
@@ -286,6 +299,7 @@ rt.stateful.update = (x0,x1,x2) => ({
       // console.error("TODO: add deep update (group)! "+x1)
       s = rt.deepUpdate(s, x1, x2)
     } else {
+      console.assert(typeof s === "object")
       s[x1] = x2
     }
     return s
@@ -453,4 +467,18 @@ rt.deepForInTemp = (root, f) => {
     f(k,rt.decodeTemp(k))
   }
 }
+
+
+// XXX TEMP primitive-eval
+
+rt.globalVarDomain = [
+  0,1,2,3,4,5,6,7,8,9, 10,20,30,40,50,60,
+  '0','1','2','3','4','5','6','7','8','9', '20','40',
+  'A','B','C','D','E','F','G','H','U','V','W','X','Y','Z',
+  'total', 'all', 'items', 'foo', 'bar',
+  'iPhone', 'Galaxy', 'S6', '7', 'Q',
+  'region', 'Asia', 'Europe', 'Osaka', 'Hamburg', 'Shanghai',
+  'seeds', 'lengthX', 'startX',
+  'fib',
+]
 

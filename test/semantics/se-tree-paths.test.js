@@ -154,7 +154,7 @@ test("testPathGroup3", () => {
   // so exactly the same issue as for implicit grouping
   // above. 
 
-  // Current solution: make tmps converts paths to strings
+  // Current solution: make tmps convert paths to strings
   // before indexing. Alternative: preserve path structure
   // but append an auxiliary field at the end to ensure
   // everything is a struct.
@@ -164,7 +164,7 @@ test("testPathGroup3", () => {
   // may not occur.
 
   // TODO: we still want to get rid of the empty A,B fields.
-  // Could be done in rt.stateful.ipdate, but there are
+  // Could be done in rt.stateful.update, but there are
   // conflicting demands from react-todo-app.html.
   // (need to see if we can disambiguate)
 

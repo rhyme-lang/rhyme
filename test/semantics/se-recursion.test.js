@@ -12,7 +12,7 @@ test("testEta0", () => {
 
   let query =  {  "*N": rh`fib.*N` } // XXX bug with fib: and no last
 
-  let func = compile(query, {singleResult:true})
+  let func = compile(query)
 
   // console.log(func.explain.ir.deps)
   // console.log(func.explain.pseudo)
@@ -33,7 +33,7 @@ test("testEta1", () => {
 
   let query =  { fib: {  "*N": rh`fib.*N` } }
 
-  let func = compile(query, {singleResult:true})
+  let func = compile(query)
 
   // console.log(func.explain.ir.deps)
   // console.log(func.explain.pseudo)
@@ -52,7 +52,7 @@ test("testRecursion1", () => {
   let query1 = { fib: query }
   // annoying: have to use reduction op
 
-  let func = compile(query1, {singleResult:true})
+  let func = compile(query1)
 
   // console.dir(func.explain.src, {depth:10})
   // console.log(func.explain.pseudo)

@@ -195,6 +195,27 @@ test("joinSimpleTest1", () => {
     expect(res).toEqual(expected)
 })
 
+test("joinSimpleTest1B", () => { // use explicit 'single' aggregation
+    let q1 = {
+        "other.*O.country": api.single("other.*O.region")
+    }
+    let query = {
+        "data.*.city": {
+            country: api.single("data.*.country"),
+            region: api.single(api.get(q1,"data.*.country"))
+        }
+    }
+    let func = api.compile(query)
+    let res = func({ data: countryData, other: regionData })
+    let expected = {
+        "Beijing": { country: "China", region: "Asia" },
+        "Paris": { country: "France", region: "Europe" },
+        "London": { country: "UK", region: "Europe" },
+        "Tokyo": { country: "Japan", region: "Asia" }
+    }
+    expect(res).toEqual(expected)
+})
+
 test("joinSimpleTest2", () => {
     let q1 = {
         "other.*O.country": "other.*O.region"
@@ -319,12 +340,24 @@ test("arrayTest4", () => {
 test("arrayTest5Zip", () => {
     let query = { "data.*.key": [api.get({ v1: "data.*.value", v2: "data.*.value" },"*A")] }
     let func = api.compile(query)
+    let res = func.c1({ data }) // NOTE: c2 behaves differently now (see test below)
+    let expected = {
+      "A": [10, 10, 30, 30],
+      "B": [20, 20]}
+    expect(res).toEqual(expected)
+})
+
+// c2 needs an explicit var *D pulled out to the right level
+test("arrayTest5ZipB", () => {
+    let query = { "data.*D.key": [api.and("*D", api.get({ v1: "data.*D.value", v2: "data.*D.value" },"*A"))] }
+    let func = api.compile(query)
     let res = func({ data })
     let expected = {
       "A": [10, 10, 30, 30],
       "B": [20, 20]}
     expect(res).toEqual(expected)
 })
+
 
 test("arrayTest6Flatten", () => {
     let query0 = { "data.*.key": {v1:["data.*.value"], v2:["data.*.value"]} }
