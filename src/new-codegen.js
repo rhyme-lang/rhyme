@@ -214,7 +214,7 @@ function buildDeps(assignmentStms, generatorStms, tmpVarWriteRank) {
   return { nodes, assignByTmp, gensBySym, stmtdeps, loopdeps, stmt2stmtByLoop, stmt2stmtloopAfterloop, assign2Node, tmp2Node, gen2Node }
 }
 
-exports.generate = (ir) => {
+exports.generate = (ir, backend = "js") => {
   let assignmentStms = ir.assignmentStms
   let generatorStms = ir.generatorStms
   let tmpVarWriteRank = ir.tmpVarWriteRank
@@ -247,8 +247,18 @@ exports.generate = (ir) => {
     if (str.indexOf("{") >= 0) indent++
     if (str.indexOf("}") > 0) indent--
   }
-  emit("inp => {")
-  emit("let tmp = {}")
+  if (backend == "cpp") {
+    emit("#include \"rhyme.hpp\"")
+    emit("int main() {")
+    emit("rh inp = read_input(); // input?")
+    emit("rh tmp = rt_const_obj();")
+  } else if (backend == "js") {
+    emit("inp => {")
+    emit("let tmp = {}")
+  } else {
+    console.error(`unsupported backend : ${backend}`)
+    return
+  }
   if (debug) {
     print("---- begin code ----")
     for (let e of assignmentStms)
@@ -338,10 +348,18 @@ exports.generate = (ir) => {
   function emitLoopProlog(s) {
     let [e, ...es] = gensBySym[s] // just pick first -- could be more clever!
     // loop header
-    emit("for (let " + quoteVar(e.sym) + " in " + e.rhs + ") {")
-    // filters
-    for (let e1 of es) {
-      emit("if (" + e1.rhs + "[" + quoteVar(e1.sym) + "] === undefined) continue")
+    if (backend == "cpp") {
+      emit("for (auto& ["+quoteVar(e.sym)+", "+quoteVar(e.sym)+"_val]"+ " : " + e.rhs + ".items()) {")
+      // TODO: support multiple filters
+    } else if (backend == "js") {
+      emit("for (let " + quoteVar(e.sym) + " in " + e.rhs + ") {")
+      // filters
+      for (let e1 of es) {
+        emit("if (" + e1.rhs + "[" + quoteVar(e1.sym) + "] === undefined) continue")
+      }
+    } else {
+      console.error(`unsupported backend : ${backend}`)
+      return
     }
 
     openedLoops.push(s)
@@ -479,19 +497,31 @@ exports.generate = (ir) => {
   //
   // wrap up codegen
   //
-  emit("return " + res.txt)
-  emit("}")
-  if (trace)
-      code.forEach(s => print(s))
-  let codeString = code.join("\n")
-  // console.log(codeString)
-  let rt = runtime // make available in scope for generated code
-  let queryFunc = eval(codeString)
-  queryFunc.explain = explain
-  queryFunc.explain.code = code
-  queryFunc.explain.codeString = codeString
-  //
-  // execute
-  //
-  return queryFunc
+  if (backend == "cpp") {
+    emit("// --- res ---")
+    emit("rh res = "+res.txt+";")
+    emit("write_result(res);")
+    emit("}")
+    let codeString = code.join("\n")
+    return codeString
+  } else if (backend == "js") {
+    emit("return " + res.txt)
+    emit("}")
+    if (trace)
+        code.forEach(s => print(s))
+    let codeString = code.join("\n")
+    // console.log(codeString)
+    let rt = runtime // make available in scope for generated code
+    let queryFunc = eval(codeString)
+    queryFunc.explain = explain
+    queryFunc.explain.code = code
+    queryFunc.explain.codeString = codeString
+    //
+    // execute
+    //
+    return queryFunc
+  } else {
+    console.error(`unsupported backend : ${backend}`)
+    return
+  }
 }

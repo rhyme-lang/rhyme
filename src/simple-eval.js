@@ -722,8 +722,8 @@ let inferBwd1 = out => q => {
     // q.fre = intersect(union(trans(e1.fre), extra), out)
 
     // NOTE: we cannot just subtract q.bnd, because we'd retain the
-    // parts of trans(q.bnd) in q.fre which aren't part of 'out'. 
-    // Those will be iterated over, but projected out. 
+    // parts of trans(q.bnd) in q.fre which aren't part of 'out'.
+    // Those will be iterated over, but projected out.
 
 
   } else if (q.key == "update") {
@@ -1582,6 +1582,194 @@ let emitCodeC = (q, order) => {
   return buf.join("\n")
 }
 
+let quoteIndexVarsXS_CPP = (s, vs) => {
+  let res = s
+  for (let v of vs) {
+    res = res+"["+quoteVarXS(v)+"]"
+  }
+  return res
+}
+
+let codegenCPP = q => {
+  if (q.key == "input") {
+    return "inp"
+  } else if (q.key == "const") {
+    if (typeof q.op === "number") {
+      if (Number.isInteger(q.op))
+        return "rt_const_int("+q.op+")"
+      else
+        return "rt_const_float("+q.op+")"
+    } else if (typeof q.op === "string") {
+      return "\""+q.op+"\""
+    } else if (typeof q.op === "object" && Object.keys(q.op).length == 0){
+      return "rt_const_obj()"
+    } else {
+      console.error("unsupported constant ", pretty(q))
+      return String(q.op)
+    }
+  } else if (q.key == "var") {
+    return quoteVar(q.op)
+  } else if (q.key == "ref") {
+    let q1 = assignments[q.op]
+    let xs = ["\""+q.op+"\"",...q1.fre]
+    return quoteIndexVarsXS_CPP("tmp", xs)
+  } else if (q.key == "get" && isDeepVarExp(q.arg[1])) {
+    let [e1,e2] = q.arg.map(codegenCPP)
+    return "rt_deepGet("+e1+","+e2+")"
+  } else if (q.key == "get") {
+    let [e1,e2] = q.arg.map(codegenCPP)
+    return e1+"["+e2+"]"
+  } else if (q.key == "pure") {
+    let es = q.arg.map(codegenCPP)
+    return "rt_pure_"+q.op+"("+es.join(",")+")"
+  } else if (q.key == "hint") {
+    // no-op!
+    return "1"
+  } else if (q.key == "mkset") {
+    let [e1] = q.arg.map(codegenCPP)
+    return "rt_singleton("+e1+")"
+  } else {
+    console.error("unknown op ", pretty(q))
+    return "<?"+q.key+"?>"
+  }
+}
+
+let statefulOpCPP = (q) => {
+  if (q.op == "sum")
+    return "rt_pure_plus"
+  else if (q.op == "product")
+    console.error("unsupported op", q)
+  else if (q.op == "count")
+    console.error("unsupported op", q)
+  else if (q.op == "array")
+    console.error("unsupported op", q)
+  else
+    console.error("unsupported op", q)
+}
+
+let emitStmInitCPP = (q) => {
+  if (q.key == "stateful") {
+    if (q.op == "sum")
+      return "=0"
+    else if (q.op == "product")
+      console.error("unsupported op", q)
+    else if (q.op == "count")
+      console.error("unsupported op", q)
+    else if (q.op == "array")
+      console.error("unsupported op", q)
+    else
+      console.error("unsupported op", q)
+  } else if (q.key == "update") {
+    console.error("unsupported op", q)
+  } else {
+    console.error("unknown op", q)
+  }
+}
+
+let emitStmCPP = (agg, q) => {
+  if (q.key == "prefix") {
+    console.error("unsupported op", q)
+  } else if (q.key == "stateful") {
+    let [e1] = q.arg.map(codegenCPP)
+    return agg+"="+statefulOpCPP(q)+"("+agg+","+e1+")"
+  } else if (q.key == "update") {
+    console.error("unsupported op", q)
+  } else {
+    console.error("unknown op", q)
+  }
+}
+
+let emitCodeCPP = (q, order) => {
+  let assignmentStms = []
+  let generatorStms = []
+  let tmpVarWriteRank = {}
+
+  // generator ir api: mirroring necessary bits from ir.js
+  let expr = (txt, ...args) => ({ txt, deps: args })
+
+  let assign = (txt, lhs_root_sym, lhs_deps, rhs_deps) => {
+      let e = expr(txt+";", ...lhs_deps, ...rhs_deps) // lhs.txt + " " + op + " " + rhs.txt
+      e.lhs = expr("LHS", ...lhs_deps)
+      e.op = "=?="
+      e.rhs = expr("RHS", ...rhs_deps)
+      e.writeSym = lhs_root_sym
+      e.deps = e.deps.filter(e1 => e1 != e.writeSym) // remove cycles
+      // update sym to rank dep map
+      tmpVarWriteRank[e.writeSym] ??= 1
+      e.writeRank = tmpVarWriteRank[e.writeSym]
+      // if (e.op != "+=") // do not increment for idempotent ops? (XX todo opt)
+      tmpVarWriteRank[e.writeSym] += 1
+      assignmentStms.push(e)
+  }
+
+  function selectGenFilter(a, b) {
+    let b1 = b.deps[0]
+    let e = expr("FOR", ...a.deps) // "for " + b1 + " <- " + a.txt
+    e.sym = b1
+    e.rhs = a.txt
+    // if (generatorStms.every(e1 => e1.txt != e.txt)) // generator CSE
+      generatorStms.push(e)
+  }
+
+  let tmpSym = i => "tmp-"+i
+
+  let getDeps = q => [...q.fre,...q.tmps.map(tmpSym)]
+
+  let transExpr = q => expr(codegenCPP(q), ...getDeps(q))
+
+  // map assignments
+  for (let i in assignments) {
+    let sym = tmpSym(i)
+
+    let q = assignments[i]
+
+    // emit initialization (see 'emitCode')
+    if (q.key == "stateful" && (q.op+"_init") in runtime.stateful || q.key == "update") {
+        let xs = [i,...q.fre.map(quoteVar)]
+        let ys = xs.map(x => "[\""+x+"\"]").join("")
+
+        let init_deps = []
+        if (q.key == "update") {
+          let init_arg = q.arg[0]
+          init_deps = [...union(init_arg.fre, init_arg.bnd),...init_arg.tmps.map(tmpSym)]
+        }
+
+        assign("tmp"+ys+emitStmInitCPP(q), sym, q.fre, init_deps)
+    }
+
+    // emit update (see 'emitCode')
+    {
+      let fv = union(q.fre, q.bnd)
+      let xs = [i,...q.fre.map(quoteVar)]
+      let ys = xs.map(x => "[\""+x+"\"]").join("")
+
+      let deps = [...fv,...q.tmps.map(tmpSym)] // XXX rhs dims only?
+
+      assign(emitStmCPP("tmp"+ys, q), sym, q.fre, deps)
+    }
+  }
+
+  // map filters/generators
+  for (let i in filters) {
+    let q = filters[i]
+    let [a,b] = q.arg.map(transExpr)
+    selectGenFilter(a, b)
+  }
+
+  // map final result
+
+  let res = transExpr(q)
+
+  let ir = {
+    assignmentStms,
+    generatorStms,
+    tmpVarWriteRank,
+    res
+  }
+
+  return generate(ir, "cpp")
+}
+
 
 
 let fixIndent = s => {
@@ -1700,7 +1888,7 @@ let compile = (q,{
   antiSubstGroupKey = false,
   singleResult = true, // TODO: elim flag? 14 tests failing when false globally
   newCodegen = false,
-  CCodegen = false
+  backend = "js"
 }={}) => {
 
   reset()
@@ -1814,7 +2002,7 @@ let compile = (q,{
     return translateToNewCodegen(q)
 
 
-  if (CCodegen) {
+  if (backend == "c" || backend == "cpp") {
     const fs = require('node:fs/promises')
     const os = require('node:child_process')
 
@@ -1827,17 +2015,28 @@ let execPromise = function(cmd) {
     });
 }
 
-    let code = emitCodeC(q,order)
-    code = fixIndent(code)
+    let code, cc, filename, flags
+    if (backend == "c") {
+      code = fixIndent(emitCodeC(q,order))
+      cc = "gcc"
+      filename = "test.c"
+      flags = ""
+    } else {
+      code = emitCodeCPP(q,order)
+      cc = "g++"
+      filename = "test.cpp"
+      flags = "-std=c++17"
+    }
 
     let func = (async () => {
-      await fs.writeFile('cgen/test.c', code);
-      await execPromise('gcc cgen/test.c -o cgen/test.out')
+      await fs.writeFile(`cgen/${filename}`, code);
+      await execPromise(`${cc}  ${flags} cgen/${filename} -o cgen/test.out`)
       return 'cgen/test.out'
     })()
 
     let wrap = async (input) => {
       let file = await func
+      await fs.writeFile('cgen/inp.json', JSON.stringify(input));
       let res = await execPromise(file)
       return res
     }
