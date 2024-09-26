@@ -770,3 +770,60 @@ test("sortMergeJoin2", () => {
   expect(res).toEqual([8])
 })
 
+test("sortMergeJoin3", () => {
+
+  let EOF = Number.MAX_SAFE_INTEGER
+
+  let sortedArray = array => ({
+    size: array.length,
+    foreach: function(k, min=0) {
+      let pos = 0
+      for (;;) {
+        // suboptimal, should use binary search 
+        while (pos < array.length && array[pos] < min) pos ++
+        if (pos == array.length) return EOF
+        min = k(array[pos++])
+      }
+    },
+    seek: function(min) {
+      let pos = 0
+      // suboptimal, should use binary search 
+      while (pos < array.length && array[pos] < min) pos ++
+      if (pos == array.length) return EOF
+      return array[pos]
+    }
+  })
+
+
+
+  let A = [0, 1, 3, 4, 5, 6, 7, 8, 9, 11]
+  let B = [0, 2, 6, 7, 8, 9]
+  let C = [2, 4, 5, 8, 10]
+
+  let itA = sortedArray(A)
+  let itB = sortedArray(B)
+  let itC = sortedArray(C)
+
+  // if we prefer to not keep iterator state for inner
+  // filter, and we don't mind doing a full binary search
+  // for each of those, then the following pattern also
+  // works.
+
+  // this is a lightweight extension of the standard hashjoin
+  // pattern, that could allow sorted collections to offer and
+  // take additional hints of the form "hey, I didn't have
+  // this element, but the next bigger one is X" and then let
+  // the parent traversal (optionally) skip ahead.
+
+  let res = []
+  itA.foreach(a => {
+    let b = itB.seek(a)
+    let c = itC.seek(b)
+    if (c == a) 
+      res.push(a)
+    return c
+  })
+
+  expect(res).toEqual([8])
+})
+
