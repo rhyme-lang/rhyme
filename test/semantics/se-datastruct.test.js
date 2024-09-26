@@ -672,5 +672,47 @@ test("csr2_sparseMatrixVectorProduct", () => {
 })
 
 
+test("sortMergeJoin1", () => {
+  // prototype some code for sort-merge joins:
+
+  let C = [0, 1, 3, 4, 5, 6, 7, 8, 9, 11]
+  let B = [0, 2, 6, 7, 8, 9]
+  let A = [2, 4, 5, 8, 10]
+
+  // general strategy: most selective (smallest) first
+
+  let EOF = Number.MAX_SAFE_INTEGER
+
+  let itA = {pos: 0}
+  let itB = {pos: 0}
+  let itC = {pos: 0}
+
+  let key = 0
+
+  let seek = (array, pos, min) => {
+    // suboptimal, should use binary search 
+    while (pos < array.length && array[pos] < min) pos++
+    let key = pos < array.length ? array[pos] : EOF
+    return {pos, key}
+  }
+
+  let res = []
+  for (;;) {
+    itA = seek(A,itA.pos,key)
+    itB = seek(B,itB.pos,itA.key)
+    itC = seek(C,itC.pos,itB.key)
+
+    key = itC.key
+    if (key == EOF) {
+      break
+    }
+    if (key == itA.key) {
+      res.push(key)
+      key++
+    }
+  }
+
+  expect(res).toEqual([8])
+})
 
 
