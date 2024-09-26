@@ -1778,10 +1778,11 @@ let fixIndent = s => {
   let indent = 0
   for (let str of lines) {
     if (str.trim() == "") continue
-    if (str.indexOf("}") == 0) indent--
+    let count = r => (str.match(r)??[]).length
+    let delta = count(/{/g) - count(/}/g)
+    if (str[0] == "}") indent += delta
     out.push("".padEnd(indent * 4, ' ') + str.trim())
-    if (str.indexOf("{") >= 0) indent++
-    if (str.indexOf("}") > 0) indent--
+    if (str[0] != "}") indent += delta
   }
   return out.join("\n")
 }
