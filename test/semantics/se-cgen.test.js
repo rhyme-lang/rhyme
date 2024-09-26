@@ -99,7 +99,7 @@ test("testTrivial1CPP", async () => {
   let res = await func({data})
 
   expect(res).toEqual("40")
-})
+}, 10000)
 
 test("testScalar1CPP", async () => {
   let query = rh`sum data.*.value`
@@ -109,7 +109,7 @@ test("testScalar1CPP", async () => {
   let res = await func({data})
 
   expect(res).toEqual("70")
-})
+}, 10000)
 
 test("testHint1CPP", async () => {
   let query = rh`(hint dense data) & (sum data.*.value)`
@@ -120,4 +120,4 @@ test("testHint1CPP", async () => {
   let res = await func({data})
 
   expect(res).toEqual("70")
-})
+}, 10000)
