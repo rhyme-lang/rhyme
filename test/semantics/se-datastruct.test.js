@@ -716,3 +716,57 @@ test("sortMergeJoin1", () => {
 })
 
 
+test("sortMergeJoin2", () => {
+  // add some stub API
+
+  let EOF = Number.MAX_SAFE_INTEGER
+
+  let sortedArray = array => ({
+    pos: 0,
+    size: array.length,
+    seek: function(min) {
+      // suboptimal, should use binary search 
+      while (this.pos < array.length && array[this.pos] < min) this.pos++
+      let key = this.pos < array.length ? array[this.pos] : EOF
+      return key
+    }
+  })
+
+  let intersection = sets => {
+    sets.sort((a,b) => a.size - b.size) // smallest first
+    return {
+      size: Math.min(sets.map(x => x.size)), // size estimate: smallest input set
+      seek: function(min) {
+        for (;;) {
+          let key = min
+          for (let s of sets) {
+            key = s.seek(key)
+          }
+          // note: this takes one additional cycle to stabilize
+          // (really want to compare output of first set with last)
+          if (key == min)
+            return key
+          min = key
+        }
+      }
+    }
+  }
+
+  // could define union as well (outer join, e.g. SpV + SpV)
+
+  let A = [0, 1, 3, 4, 5, 6, 7, 8, 9, 11]
+  let B = [0, 2, 6, 7, 8, 9]
+  let C = [2, 4, 5, 8, 10]
+
+  let it = intersection([A,B,C].map(sortedArray))
+  let res = []
+  let key = 0
+  for (;;) {
+    key = it.seek(key)
+    if (key == EOF) break
+    res.push(key++)
+  }
+
+  expect(res).toEqual([8])
+})
+
