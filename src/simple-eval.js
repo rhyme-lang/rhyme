@@ -488,24 +488,35 @@ let extract2 = q => {
 let extract3 = q => {
   if (!q.arg) return
   q.arg.map(extract3)
+  q.filters = unique(q.arg.flatMap(x => x.filters??[]))
   if (q.key == "get") {
     let [e1,e2] = q.arg
     if (e2.key == "var") {
       let str = JSON.stringify(q) // extract & cse
-      if (filters.map(x => JSON.stringify(x)).indexOf(str) < 0) {
-        let ix = filters.length
+      let ix = filters.map(x => JSON.stringify(x)).indexOf(str)
+      if (ix < 0) {
+        ix = filters.length
         let q1 = JSON.parse(str)
         filters.push(q1) // deep copy...
       }
+      // NOTE: we leave the expression in place, and just add
+      // a 'filter' field. This way, we can either generate
+      // the expression or a reference, depending on scope.
+      // An alternative would be to return a ref expression
+      // instead.
+      q.filter = ix
+      q.filters.push(ix)
     }
   }
   if (q.key == "hint") {
     let str = JSON.stringify(q) // extract & cse
-    if (hints.map(x => JSON.stringify(x)).indexOf(str) < 0) {
-      let ix = hints.length
+    let ix = hints.map(x => JSON.stringify(x)).indexOf(str)
+    if (ix < 0) {
+      ix = hints.length
       let q1 = JSON.parse(str)
       hints.push(q1) // deep copy...
     }
+    q.hint = ix
   }
 }
 
@@ -1151,8 +1162,9 @@ let quoteVarXS = s => isDeepVarStr(s) ? quoteVar(s)+".join('-')+'-'" : quoteVar(
 let quoteIndexVarsXS = (s,vs) => s + vs.map(quoteVarXS).map(quoteIndex).join("")
 
 
-
-let codegen = q => {
+let codegen = (q, scope) => {
+  console.assert(scope.vars)
+  console.assert(scope.filters)
   if (q.key == "input") {
     return "inp"
   } else if (q.key == "const") {
@@ -1168,20 +1180,22 @@ let codegen = q => {
     let q1 = assignments[q.op]
     let xs = [String(q.op),...q1.fre]
     return quoteIndexVarsXS("tmp", xs)
+  } else if (q.key == "get" && "filter" in q && scope.filters.indexOf(q.filter) >= 0) {
+    return "gen"+q.filter
   } else if (q.key == "get" && isDeepVarExp(q.arg[1])) {
-    let [e1,e2] = q.arg.map(codegen)
+    let [e1,e2] = q.arg.map(x => codegen(x,scope))
     return "rt.deepGet("+e1+","+e2+")"
   } else if (q.key == "get") {
-    let [e1,e2] = q.arg.map(codegen)
+    let [e1,e2] = q.arg.map(x => codegen(x,scope))
     return e1+quoteIndex(e2)
   } else if (q.key == "pure") {
-    let es = q.arg.map(codegen)
+    let es = q.arg.map(x => codegen(x,scope))
     return "rt.pure."+q.op+"("+es.join(",")+")"
   } else if (q.key == "hint") {
     // no-op!
     return "{}"
   } else if (q.key == "mkset") {
-    let [e1] = q.arg.map(codegen)
+    let [e1] = q.arg.map(x => codegen(x,scope))
     return "rt.singleton("+e1+")"
   } else {
     console.error("unknown op", pretty(q))
@@ -1190,11 +1204,11 @@ let codegen = q => {
 }
 
 
-let emitStmInit = (q) => {
+let emitStmInit = (q, scope) => {
   if (q.key == "stateful") {
     return "rt.stateful."+q.op+"_init"
   } else if (q.key == "update") {
-    let e0 = codegen(q.arg[0])
+    let e0 = codegen(q.arg[0], scope)
     if (q.mode == "inplace" || isFresh(q.arg[0]))
       return "(() => "+e0+")"
     else
@@ -1204,17 +1218,17 @@ let emitStmInit = (q) => {
   }
 }
 
-let emitStm = (q) => {
+let emitStm = (q, scope) => {
   if (q.key == "prefix") {
-    let [e1] = q.arg.map(codegen)
+    let [e1] = q.arg.map(x => codegen(x, scope))
     // XXX TODO: add prefix wrapper?
     return "rt.stateful.prefix(rt.stateful."+q.op+"("+e1+"))"
   } else if (q.key == "stateful") {
-    let [e1] = q.arg.map(codegen)
+    let [e1] = q.arg.map(x => codegen(x, scope))
     return "rt.stateful."+q.op+"("+e1+")"
   } else if (q.key == "update") {
-    let e0 = codegen(q.arg[0])
-    let e2 = codegen(q.arg[2])
+    let e0 = codegen(q.arg[0], scope)
+    let e2 = codegen(q.arg[2], scope)
     let e1 = q.arg[1].vars.map(quoteVar)
     return "rt.stateful.update("+e0+", ["+e1+"], "+e2+")" // XXX: init is still needed for tree paths
     // return "rt.stateful.update("+"null"+", "+e1+", "+e2+")" // see testPathGroup4-2
@@ -1263,9 +1277,9 @@ let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
   // 2. iterate over projection map to compute
   //    desired result
 
-  let iter = diff(union(free, bnd), scope)
+  let iter = diff(union(free, bnd), scope.vars)
 
-  if (iter.length == 0) return body()
+  if (iter.length == 0) return body(scope)
 
   let full = transf(union(free, bnd))
 
@@ -1287,7 +1301,7 @@ let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
   // the full set of filters for each sym that's already in scope.
   // TODO: keep track of which filters were run in scope, not just vars
 
-  if (same(diff(full,scope), iter)) { // XXX should not disregard order?
+  if (same(diff(full,scope.vars), iter)) { // XXX should not disregard order?
     emitFilters2(scope, full)(buf, codegen)(body)
   } else {
 
@@ -1317,7 +1331,17 @@ let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
       }
     }
 
-    body()
+    // NOTE: right now we don't add any generator variables for the
+    // loops we're in -- technically we're reading from 'proj', not
+    // evaluating the filters proper. 
+
+    // TODO: another choice would be to add variables for *all*
+    // filters -- investigate if that works
+    // (how to access? could grab and store the scope passed to 
+    // emitFilters2's body)
+
+    let scope1 = { vars: [...scope.vars,...iter], filters: scope.filters }
+    body(scope1)
 
     buf.push(closing)
   }
@@ -1340,7 +1364,7 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
   for (let v of iter) vars[v] = true
 
   // record current scope
-  for (let v of scope) seen[v] = true
+  for (let v of scope.vars) seen[v] = true
 
   // only consider filters contributing to iteration vars
   let pending = []
@@ -1351,6 +1375,8 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
     if (vars[v1]) // not interested in this? skip
       pending.push(i)
   }
+
+  let filtersInScope = [...scope.filters]
 
   // compute next set of available filters:
   // all dependent iteration vars have been seen (emitted before)
@@ -1363,7 +1389,8 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
       let v1 = f.arg[1].op
       let g1 = f.arg[0]
 
-      let avail = g1.fre.every(x => seen[x])
+      let avail = g1.fre.every(x => seen[x]) &&
+                  subset(g1.filters, filtersInScope)
 
       if (avail)
         available.push(i) // TODO: insert in proper place
@@ -1383,13 +1410,19 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
     available.sort((a,b) => selEst(b) - selEst(a))
 
     let i = available.shift()
+    filtersInScope.push(i)
+
     // for (let i of available) {
       let f = filters[i]
       let v1 = f.arg[1].op
       let g1 = f.arg[0]
 
+      // let found = subset(g1.filters, filtersInScope)
+      // buf.push("// "+g1.filters+" | "+filtersInScope + " " +found)
+
       // buf.push("// FILTER "+i+" := "+pretty(f))
-      let scope1 = g1.fre
+      let scopeg1 = {vars:g1.fre,filters:filtersInScope}
+      let scopef = {vars:f.fre,filters:filtersInScope}
 
       // Contract: input is already transitively closed, so we don't
       // depend on any variables that we don't want to iterate over.
@@ -1401,17 +1434,20 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
 
       if (isDeepVarStr(v1)) { // ok, just emit current
         if (!seen[v1]) {
-          buf.push("rt.deepForIn("+codegen(g1,scope1)+", "+quoteVar(v1)+" => {")
+          buf.push("rt.deepForIn("+codegen(g1,scopeg1)+", "+quoteVar(v1)+" => {")
         } else {
-          buf.push("rt.deepIfIn("+codegen(g1,scope1)+", "+quoteVar(v1)+", () => {")
+          buf.push("rt.deepIfIn("+codegen(g1,scopeg1)+", "+quoteVar(v1)+", () => {")
         }
+        buf.push("let gen"+i+" = "+codegen(f,scopef))
         seen[v1] = true
         closing = "})\n"+closing
       } else { // ok, just emit current
         if (!seen[v1]) {
-          buf.push("for (let "+quoteVar(v1)+" in "+codegen(g1,scope1)+") {")
+          buf.push("for (let ["+quoteVar(v1)+", gen"+i+"] of Object.entries("+codegen(g1,scopeg1)+"??{})) {")
+        //   buf.push("for (let "+quoteVar(v1)+" in "+codegen(g1,scopeg1)+") {")
+        //   buf.push("let gen"+i+" = "+codegen(f,scopef))
         } else {
-          buf.push("if ("+quoteVar(v1)+" in ("+codegen(g1,scope1)+"??[])) {")
+          buf.push("if ("+quoteVar(v1)+" in ("+codegen(g1,scopeg1)+"??[])) {")
         }
         seen[v1] = true
         closing = "}\n"+closing
@@ -1431,7 +1467,8 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
   // if (buf.length > watermark) buf.push("// main loop")
   // buf.push(...buf1)
 
-  body()
+  let scope1 = {vars: scope.vars, filters: [...filtersInScope]}
+  body(scope1)
 
   buf.push(closing)
 }
@@ -1450,6 +1487,7 @@ let emitCode = (q, order) => {
     let q = assignments[i]
 
     buf.push("// --- tmp"+i+" ---")
+    let scope = { vars:[], filters:[] }
 
     // emit initialization first (so that sum empty = 0)
     if (q.key == "stateful" && (q.op+"_init") in runtime.stateful || q.key == "update") {
@@ -1471,30 +1509,28 @@ let emitCode = (q, order) => {
       //
       //    now done in inferBwd (could be refined there)
 
-      let fv = q.fre
-      emitFilters1([],fv,[])(buf, codegen)(() => {
+      emitFilters1(scope,q.fre,[])(buf, codegen)(scope1 => {
         let xs = [i,...q.fre.map(quoteVar)]
         let ys = xs.map(x => ","+x).join("")
 
-        buf.push("  rt.init(tmp"+ys+")\n  ("+ emitStmInit(q) + ")")
+        buf.push("  rt.init(tmp"+ys+")\n  ("+ emitStmInit(q, scope1) + ")")
       })
     }
 
-    let fv = q.fre // union(q.fre, q.bnd)
-    emitFilters1([],fv,q.bnd)(buf, codegen)(() => {
+    emitFilters1(scope,q.fre,q.bnd)(buf, codegen)(scope1 => {
       let xs = [i,...q.fre.map(quoteVar)]
       let ys = xs.map(x => ","+x).join("")
 
-      buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStm(q) + ")")
+      buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStm(q, scope1) + ")")
     })
 
     buf.push("")
   }
 
   buf.push("// --- res ---")
-  let fv = q.fre
-  console.assert(same(fv,[]))
-  buf.push("return "+codegen(q))
+  console.assert(same(q.fre,[]))
+  let scope = { vars:[], filters: [] }
+  buf.push("return "+codegen(q,scope))
 
   buf.push("})")
 
@@ -1824,11 +1860,18 @@ let translateToNewCodegen = q => {
       generatorStms.push(e)
   }
 
+  // TODO: make reusable generator/filter variable for the "current"
+  // value of an iteration available in new-codgen. The "scope" object
+  // passed to 'codegen' should list all available such variables in
+  // scope -- right now there are none, filters = q.filters would
+  // mean all used filters have associated variables.
+
   let tmpSym = i => "tmp-"+i
 
+  // XXX could add dependencies on computed generator vars hare (gen2,...)
   let getDeps = q => [...q.fre,...q.tmps.map(tmpSym)]
 
-  let transExpr = q => expr(codegen(q), ...getDeps(q))
+  let transExpr = (q, scope) => expr(codegen(q, scope), ...getDeps(q))
 
   // map assignments
   for (let i in assignments) {
@@ -1847,7 +1890,8 @@ let translateToNewCodegen = q => {
           init_deps = [...union(init_arg.fre, init_arg.bnd),...init_arg.tmps.map(tmpSym)]
         }
 
-        assign("rt.init(tmp"+ys+")("+ emitStmInit(q) + ")", sym, q.fre, init_deps)
+        let scope = { vars: q.fre, filters: [] } // XXX filters?
+        assign("rt.init(tmp"+ys+")("+ emitStmInit(q,scope) + ")", sym, q.fre, init_deps)
     }
 
     // emit update (see 'emitCode')
@@ -1858,19 +1902,22 @@ let translateToNewCodegen = q => {
 
       let deps = [...fv,...q.tmps.map(tmpSym)] // XXX rhs dims only?
 
-      assign("rt.update(tmp"+ys+")("+ emitStm(q) + ")", sym, q.fre, deps)
+      let scope = { vars: q.fre, filters: [] } // XXX filters?
+      assign("rt.update(tmp"+ys+")("+ emitStm(q,scope) + ")", sym, q.fre, deps)
     }
   }
 
   // map filters/generators
   for (let i in filters) {
     let q = filters[i]
-    let [a,b] = q.arg.map(transExpr)
+    let scope = { vars: q.fre, filters: [] } // XXX filters?
+    let [a,b] = q.arg.map(x => transExpr(x, scope))
     selectGenFilter(a, b)
   }
 
   // map final result
-  let res = transExpr(q)
+  let scope = { vars: q.fre, filters: [] } // XXX filters?
+  let res = transExpr(q, scope)
 
   let ir = {
     assignmentStms,
