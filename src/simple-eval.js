@@ -288,7 +288,7 @@ let extract0b = (q, out) => {
 
 
 // 4: extract var -> filter variable deps
-//    - runs after infer()
+//    - runs after inferDims()
 let extract1 = q => {
   if (q.arg) q.arg.map(extract1)
   if (q.key == "var") {
@@ -396,7 +396,7 @@ let extract3 = q => {
 //    - dims: desired set of variables in output
 //
 
-let infer = q => {
+let inferDims = q => {
   if (q.key == "input" || q.key == "const" || q.key == "placeholder") {
     q.vars = []
     q.mind = []
@@ -406,7 +406,7 @@ let infer = q => {
     q.mind = [q.op]
     q.dims = [q.op]
   } else if (q.key == "get" || q.key == "pure" || q.key == "hint" || q.key == "mkset") {
-    let es = q.arg.map(infer)
+    let es = q.arg.map(inferDims)
     q.vars = unique(es.flatMap(x => x.vars))
     q.mind = unique(es.flatMap(x => x.mind))
     q.dims = unique(es.flatMap(x => x.dims))
@@ -414,14 +414,14 @@ let infer = q => {
     if (q.key == "get")
       q.dims = union(es[0].mind, es[1].dims)
   } else if (q.key == "stateful" || q.key == "prefix") {
-    let [e1] = q.arg.map(infer)
+    let [e1] = q.arg.map(inferDims)
 
     // NOTE: wo do not include vars/tmps/dims information from path,
     // only from e1. What is the rationale for this?
 
     // In short: we want to decorrelate paths but we don't have enough
     // information yet. Specifically, transitive var dependencies are
-    // only available after infer.
+    // only available after inferDims.
 
     q.vars = e1.vars
     q.mind = [] // can always reduce to one elem
@@ -431,7 +431,7 @@ let infer = q => {
       q.dims = []
     }
   } else if (q.key == "update" || q.key == "update_inplace" ) {
-    let [e0,e1,e2,e3] = q.arg.map(infer)
+    let [e0,e1,e2,e3] = q.arg.map(inferDims)
     e3 ??= { vars: [], mind: [], dims: [] }
     if (q.key == "update_inplace") {
       q.mode = "inplace"
@@ -484,21 +484,21 @@ let assertSame = (a,b,msg) => console.assert(same(a,b), msg+": "+a+" != "+b)
 
 
 // infer bound vars (simple mode)
-let inferBwd0 = out => q => {
+let inferBound = out => q => {
   if (q.key == "input" || q.key == "const" || q.key == "placeholder") {
     q.bnd = []
   } else if (q.key == "var") {
     q.bnd = []
   } else if (q.key == "get" || q.key == "pure" || q.key == "hint" || q.key == "mkset") {
-    let es = q.arg.map(inferBwd0(out))
+    let es = q.arg.map(inferBound(out))
     q.bnd = []
   } else if (q.key == "stateful" || q.key == "prefix") {
     let out1 = union(out,q.arg[0].dims) // need to consider mode?
-    let [e1] = q.arg.map(inferBwd0(out1))
+    let [e1] = q.arg.map(inferBound(out1))
     q.bnd = diff(e1.dims, out)
   } else if (q.key == "update") {
-    let e0 = inferBwd0(out)(q.arg[0]) // what are we extending
-    let e1 = inferBwd0(out)(q.arg[1]) // key variable
+    let e0 = inferBound(out)(q.arg[0]) // what are we extending
+    let e1 = inferBound(out)(q.arg[1]) // key variable
 
     if (e1.key == "placeholder") {
       let bnd = diff(q.arg[2].dims, out)
@@ -511,7 +511,7 @@ let inferBwd0 = out => q => {
     let e1Body
     if (q.arg[3]) {
       let out3 = union(out, union([e1.op], q.arg[3].dims)) // e3 includes e1.op (union left for clarity)
-      let e3 = inferBwd0(out3)(q.arg[3]) // filter expr
+      let e3 = inferBound(out3)(q.arg[3]) // filter expr
       console.assert(e3.key == "get")
       console.assert(e3.arg[0].key == "mkset")
       console.assert(e3.arg[1].key == "var" && e3.arg[1].op == e1.op)
@@ -523,7 +523,7 @@ let inferBwd0 = out => q => {
 
     q.e1BodyBnd = diff(e1Body.dims, out)
 
-    let e2 = inferBwd0(union(out, e1.vars))(q.arg[2])
+    let e2 = inferBound(union(out, e1.vars))(q.arg[2])
 
     q.bnd = diff(union(e1.vars, []/*e1Body.dims*/), out)
 
@@ -540,18 +540,18 @@ let inferBwd0 = out => q => {
 let checkDimsFreeTrans = false
 
 // infer free vars (simple mode)
-let inferBwd1 = out => q => {
+let inferFree = out => q => {
   if (q.key == "input" || q.key == "const" || q.key == "placeholder") {
     q.fre = []
   } else if (q.key == "var") {
     q.fre = [q.op]
   } else if (q.key == "get" || q.key == "pure"  || q.key == "hint" || q.key == "mkset") {
-    let es = q.arg.map(inferBwd1(out))
+    let es = q.arg.map(inferFree(out))
     q.fre = unique(es.flatMap(x => x.fre))
   } else if (q.key == "stateful" || q.key == "prefix") {
     let out1 = union(out,q.arg[0].dims) // need to consider mode?
     assertSame(out1, union(out,q.bnd)) // same as adding bnd
-    let [e1] = q.arg.map(inferBwd1(out1))
+    let [e1] = q.arg.map(inferFree(out1))
 
     // NOTE: for consistency with 'update' it would be interesting
     // to eval e1 with path+q.bnd -- this mostly works but leads
@@ -561,7 +561,7 @@ let inferBwd1 = out => q => {
 
     // let save = path
     // path = [...path, { xxFree: q.bnd }]
-    // let [e1] = q.arg.map(inferBwd1(out1))
+    // let [e1] = q.arg.map(inferFree(out1))
     // path = save
 
     // find correlated path keys: check overlap with our own bound vars
@@ -603,13 +603,13 @@ let inferBwd1 = out => q => {
 
 
   } else if (q.key == "update") {
-    let e0 = inferBwd1(out)(q.arg[0]) // what are we extending
-    let e1 = inferBwd1(out)(q.arg[1]) // key variable
+    let e0 = inferFree(out)(q.arg[0]) // what are we extending
+    let e1 = inferFree(out)(q.arg[1]) // key variable
 
     let e1Body
     if (q.arg[3]) {
       let out3 = union(out, union([/*e1.op*/], diff(q.arg[3].dims, [e1.op]))) // e3 includes e1.op (union left for clarity)
-      let e3 = inferBwd1(out3)(q.arg[3]) // filter expr
+      let e3 = inferFree(out3)(q.arg[3]) // filter expr
       console.assert(e3.key == "get")
       console.assert(e3.arg[0].key == "mkset")
       console.assert(e3.arg[1].key == "var" && e3.arg[1].op == e1.op)
@@ -625,7 +625,7 @@ let inferBwd1 = out => q => {
     if (q.arg[3])
       path = [...path, { xxFree: e1.vars }]
 
-    let e2 = inferBwd1(union(out, e1.vars))(q.arg[2])
+    let e2 = inferFree(union(out, e1.vars))(q.arg[2])
 
     path = save
 
@@ -1840,7 +1840,7 @@ let compile = (q,{
   // ---- middle tier ----
 
   // 3. Infer dependencies bottom up
-  q = infer(q)
+  q = inferDims(q)
 
   // 4. Extract var->var dependencies due to filters
   extract1(q)
@@ -1850,19 +1850,19 @@ let compile = (q,{
 
   // 6. Backward pass to infer output dimensions
   let out = singleResult ? q.mind : q.dims
-  q = inferBwd0(out)(q)
+  q = inferBound(out)(q)
 
   varsChanged = false
   extract1f(q)
   computeDependenciesf()
-  q = inferBwd1(out)(q)
+  q = inferFree(out)(q)
 
   while (true) {
     varsChanged = false
     extract1f(q)
     if (!varsChanged) break
     computeDependenciesf()
-    q = inferBwd1(out)(q)
+    q = inferFree(out)(q)
   }
 
 
@@ -2149,7 +2149,7 @@ let compilePrimitive = (q,{
   // ---- middle tier ----
 
   // 3. Infer dependencies bottom up
-  q = infer(q)
+  q = inferDims(q)
 
   // 4. Extract var->var dependencies due to filters
   extract1(q)
@@ -2159,19 +2159,19 @@ let compilePrimitive = (q,{
 
   // 6. Backward pass to infer output dimensions
   let out = singleResult ? q.mind : q.dims
-  q = inferBwd0(out)(q)
+  q = inferBound(out)(q)
 
   varsChanged = false
   extract1f(q)
   computeDependenciesf()
-  q = inferBwd1(out)(q)
+  q = inferFree(out)(q)
 
   while (true) {
     varsChanged = false
     extract1f(q)
     if (!varsChanged) break
     computeDependenciesf()
-    q = inferBwd1(out)(q)
+    q = inferFree(out)(q)
   }
 
 
