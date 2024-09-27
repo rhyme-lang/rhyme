@@ -4,53 +4,6 @@ const { scc } = require('./scc')
 const { generate } = require('./new-codegen')
 const { runtime } = require('./simple-runtime')
 
-// DONE
-//
-// Features
-//
-// - objects with multiple entries (merge)
-// - array constructor (collect into array)
-// - other primitives -> abstract over path/stateful op
-// - udfs
-//
-// Optimizations
-//
-// - path decorrelation
-//
-// Tests
-//
-// - nested grouping, partial sums at multiple levels,
-//   aggregates as keys, generators as filters
-//
-// TODO
-//
-// Features
-//
-// - &&, ??, non-unifying get -> sufficient to model
-//    failure, filters, left outer joins, etc?
-// - recursion: structural (tree traversal),
-//    fixpoint (datalog, incremental), inf. streams
-//
-// Optimizations
-//
-// - cse, including expr computed as path
-// - loop fusion
-//
-// Tests
-//
-// - more corner cases involving var->tmp->var->... closure
-//
-// Questions
-//
-// - is current way of dealing with transitive closure
-//   of var->tmp->var->... precise enough?
-// - what to do with cycles between assignments?
-// - how do semantics justify smarter code generation:
-//    - cse (a bit tricky b/c of context semantics)
-//    - destination passing style (accumulate directly
-//      into mutable targets)
-//    - loop fusion: horizontal (independent results)
-//      and vertical (producer/consumer)
 
 
 // ----- utils -----
