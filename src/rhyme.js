@@ -1,6 +1,6 @@
-const codegen = require('./codegen')
+const codegen = require('./c1-codegen')
 const new_codegen = require('./new-codegen')
-const ir = require('./ir')
+const ir = require('./c1-ir')
 const graphics = require('./graphics')
 
 const simpleEval = require('../src/simple-eval')
