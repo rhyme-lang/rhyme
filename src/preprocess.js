@@ -3,9 +3,26 @@ const { parse } = require('./parser')
 const { runtime } = require('./simple-runtime')
 
 //
-// 1. Preprocess: convert from Rhyme AST to our slightly stratified version
+// Preprocess: convert Rhyme AST after parser and desugar to a stratified version
 //
-// We currently support: input, const, var, get, plus, times, sum, group
+// Fields of a term:
+//
+//  - key: one of 
+//        const                       -- constant
+//        input, var, placeholder     -- references to existing values
+//        get, hint, pure, mkset,     -- pure scalar operations
+//        stateful, prefix, update    -- stateful collective operations
+//
+//  - arg: array of subterms (ir passes will process these recursively)
+//
+//  - op:
+//        literal value if key = const
+//        variable name if key = var
+//        any other plain JS value
+//
+//  - mode:
+//        may be 'reluctant' if key = stateful or prefix
+//        may be 'inplace' if key = update
 //
 
 let isVar = s => s.startsWith("*")
