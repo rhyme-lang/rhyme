@@ -673,5 +673,158 @@ test("csr2_sparseMatrixVectorProduct", () => {
 })
 
 
+test("sortMergeJoin1", () => {
+  // prototype some code for sort-merge joins:
 
+  let C = [0, 1, 3, 4, 5, 6, 7, 8, 9, 11]
+  let B = [0, 2, 6, 7, 8, 9]
+  let A = [2, 4, 5, 8, 10]
+
+  // general strategy: most selective (smallest) first
+
+  let EOF = Number.MAX_SAFE_INTEGER
+
+  let itA = {pos: 0}
+  let itB = {pos: 0}
+  let itC = {pos: 0}
+
+  let key = 0
+
+  let seek = (array, pos, min) => {
+    // suboptimal, should use binary search 
+    while (pos < array.length && array[pos] < min) pos++
+    let key = pos < array.length ? array[pos] : EOF
+    return {pos, key}
+  }
+
+  let res = []
+  for (;;) {
+    itA = seek(A,itA.pos,key)
+    itB = seek(B,itB.pos,itA.key)
+    itC = seek(C,itC.pos,itB.key)
+
+    key = itC.key
+    if (key == EOF) {
+      break
+    }
+    if (key == itA.key) {
+      res.push(key)
+      key++
+    }
+  }
+
+  expect(res).toEqual([8])
+})
+
+
+test("sortMergeJoin2", () => {
+  // add some stub API
+
+  let EOF = Number.MAX_SAFE_INTEGER
+
+  let sortedArray = array => ({
+    pos: 0,
+    size: array.length,
+    seek: function(min) {
+      // suboptimal, should use binary search 
+      while (this.pos < array.length && array[this.pos] < min) this.pos++
+      let key = this.pos < array.length ? array[this.pos] : EOF
+      return key
+    }
+  })
+
+  let intersection = sets => {
+    sets.sort((a,b) => a.size - b.size) // smallest first
+    return {
+      size: Math.min(sets.map(x => x.size)), // size estimate: smallest input set
+      seek: function(min) {
+        for (;;) {
+          let key = min
+          for (let s of sets) {
+            key = s.seek(key)
+          }
+          // note: this takes one additional cycle to stabilize
+          // (really want to compare output of first set with last)
+          if (key == min)
+            return key
+          min = key
+        }
+      }
+    }
+  }
+
+  // could define union as well (outer join, e.g. SpV + SpV)
+
+  let A = [0, 1, 3, 4, 5, 6, 7, 8, 9, 11]
+  let B = [0, 2, 6, 7, 8, 9]
+  let C = [2, 4, 5, 8, 10]
+
+  let it = intersection([A,B,C].map(sortedArray))
+  let res = []
+  let key = 0
+  for (;;) {
+    key = it.seek(key)
+    if (key == EOF) break
+    res.push(key++)
+  }
+
+  expect(res).toEqual([8])
+})
+
+test("sortMergeJoin3", () => {
+
+  let EOF = Number.MAX_SAFE_INTEGER
+
+  let sortedArray = array => ({
+    size: array.length,
+    foreach: function(k, min=0) {
+      let pos = 0
+      for (;;) {
+        // suboptimal, should use binary search 
+        while (pos < array.length && array[pos] < min) pos ++
+        if (pos == array.length) return EOF
+        min = k(array[pos++])
+      }
+    },
+    seek: function(min) {
+      let pos = 0
+      // suboptimal, should use binary search 
+      while (pos < array.length && array[pos] < min) pos ++
+      if (pos == array.length) return EOF
+      return array[pos]
+    }
+  })
+
+
+
+  let A = [0, 1, 3, 4, 5, 6, 7, 8, 9, 11]
+  let B = [0, 2, 6, 7, 8, 9]
+  let C = [2, 4, 5, 8, 10]
+
+  let itA = sortedArray(A)
+  let itB = sortedArray(B)
+  let itC = sortedArray(C)
+
+  // if we prefer to not keep iterator state for inner
+  // filter, and we don't mind doing a full binary search
+  // for each of those, then the following pattern also
+  // works.
+
+  // this is a lightweight extension of the standard hashjoin
+  // pattern, that could allow sorted collections to offer and
+  // take additional hints of the form "hey, I didn't have
+  // this element, but the next bigger one is X" and then let
+  // the parent traversal (optionally) skip ahead.
+
+  let res = []
+  itA.foreach(a => {
+    let b = itB.seek(a)
+    let c = itC.seek(b)
+    if (c == a) 
+      res.push(a)
+    return c
+  })
+
+  expect(res).toEqual([8])
+})
 

@@ -2,55 +2,9 @@ const { api } = require('./rhyme')
 const { parse } = require('./parser')
 const { scc } = require('./scc')
 const { generate } = require('./new-codegen')
+const { preproc } = require('./preprocess')
 const { runtime } = require('./simple-runtime')
 
-// DONE
-//
-// Features
-//
-// - objects with multiple entries (merge)
-// - array constructor (collect into array)
-// - other primitives -> abstract over path/stateful op
-// - udfs
-//
-// Optimizations
-//
-// - path decorrelation
-//
-// Tests
-//
-// - nested grouping, partial sums at multiple levels,
-//   aggregates as keys, generators as filters
-//
-// TODO
-//
-// Features
-//
-// - &&, ??, non-unifying get -> sufficient to model
-//    failure, filters, left outer joins, etc?
-// - recursion: structural (tree traversal),
-//    fixpoint (datalog, incremental), inf. streams
-//
-// Optimizations
-//
-// - cse, including expr computed as path
-// - loop fusion
-//
-// Tests
-//
-// - more corner cases involving var->tmp->var->... closure
-//
-// Questions
-//
-// - is current way of dealing with transitive closure
-//   of var->tmp->var->... precise enough?
-// - what to do with cycles between assignments?
-// - how do semantics justify smarter code generation:
-//    - cse (a bit tricky b/c of context semantics)
-//    - destination passing style (accumulate directly
-//      into mutable targets)
-//    - loop fusion: horizontal (independent results)
-//      and vertical (producer/consumer)
 
 
 // ----- utils -----
@@ -188,96 +142,7 @@ let reset = () => {
 
 let isVar = s => s.startsWith("*")
 
-let preproc = q => {
-  if (q === true || q === false)
-    return { key: "const", op: Boolean(q) }
-  if (typeof (q) === "number" || !Number.isNaN(Number(q)))  // number?
-    return { key: "const", op: Number(q) }
-  if (typeof q === "string") {
-    if (q == "-" || q == "$display")
-      return { key: "const", op: q }
-    else
-      return preproc(parse(q))
-  }
 
-  if (q === undefined) {
-    console.error("why undefined?")
-    return q
-  }
-
-  if (q.xxpath == "raw") {
-    if (q.xxparam == "inp") return { key: "input" }
-    else if (!Number.isNaN(Number(q.xxparam))) return { key: "const", op: Number(q.xxparam) }
-    else return { key: "const", op: q.xxparam }
-  } else if (q.xxpath == "ident") {
-    if (isVar(q.xxparam)) return { key: "var", op: q.xxparam }
-    else return { key: "const", op: q.xxparam }
-  } else if (q.xxpath == "get") {
-    let e1 = preproc(q.xxparam[0])
-    // special case for literal "*": moved from here to extract
-    let e2
-    if (q.xxparam[1] === undefined) {
-      e2 = e1
-      e1 = { key: "input" }
-    } else
-      e2 = preproc(q.xxparam[1])
-    return { key: "get", arg: [e1,e2] }
-  } else if (q.xxpath == "apply") {
-    let [q1,...qs2] = q.xxparam
-    let e1 = preproc(q1)
-    if (e1.key == "const") // built-in op
-      return preproc({...q, xxpath:e1.op, xxparam:qs2})
-    else // udf apply
-      return { key: "pure", op: "apply", arg: [e1,...qs2.map(preproc)] }
-  } else if (q.xxpath == "hint") {
-    let [q1,...qs2] = q.xxparam
-    let e1 = preproc(q1)
-    if (e1.key == "const")
-      return { key: "hint", op: e1.op, arg: [...qs2.map(preproc)] }
-    else
-      return { key: "hint", op: "generic", arg: [e1,...qs2.map(preproc)] }
-  } else if (q.xxkey == "array") {
-    return preproc(q.xxparam)
-  } else if (q instanceof Array) {
-    if (q.length == 1)
-      return { key: "stateful", op: "array", arg: q.map(preproc) }
-    else
-      return { key: "pure", op: "flatten", arg: q.map(x => preproc([x])) }
-  } else if (typeof(q) === "object" && !q.xxpath && !q.xxkey) {
-    let res
-    for (let k of Object.keys(q)) {
-      let v = q[k]
-      let e1 = preproc(k)
-      let e2 = preproc(v)
-      if (e2.key == "merge" || e2.key == "keyval") { // TODO: support 'flatten'
-        e1 = e2.arg[0]
-        e2 = e2.arg[1]
-      }
-      if (!res) res = { key: "group", arg: [e1,e2] }
-      else res = { key: "update", arg: [res,e1,e2] }
-    }
-    // return { key: "group", arg: [e1,{key:"stateful", op: "last", mode: "reluctant", arg:[e2]}] }
-    if (!res) // empty?
-      res = { key: "const", op: {} }
-    return res
-  } else if (q.xxpath || q.xxkey) {
-    // if 'update .. ident ..', convert ident to input ref?
-    let op = q.xxpath || q.xxkey
-    let array = q.xxpath || op == "merge" || op == "keyval" || op == "flatten" || op == "array"
-    let es2 = q.xxparam instanceof Array ? q.xxparam.map(preproc) : [preproc(q.xxparam)]
-    if (op in runtime.special)
-      return { key: op, arg: es2 }
-    else if (op in runtime.pure)
-      return { key: "pure", op: op, arg: es2 }
-    else if (op in runtime.stateful)
-      return { key: "stateful", op: op, arg: es2 }
-    else if (op.startsWith("prefix_") && op.substring(7) in runtime.stateful)
-      return { key: "prefix", op: op.substring(7), arg: es2 }
-    console.error("unknown op", q)
-  } else {
-    console.error("malformed op", q)
-  }
-}
 
 
 
@@ -369,12 +234,12 @@ let extract0 = q => {
 // it's clear that there is a 1:1 mapping,
 // so no aggregation is necessary.
 // represent this as:
-// 
-//   mkset(data.*.key).K & 
+//
+//   mkset(data.*.key).K &
 //   { K: K + 1 }
 //
 // but we need to be carefeul:
-// 
+//
 //   { data.*: count(data.*) }
 //
 // here it seems more logical iterpret
@@ -423,7 +288,7 @@ let extract0b = (q, out) => {
 
 
 // 4: extract var -> filter variable deps
-//    - runs after infer()
+//    - runs after inferDims()
 let extract1 = q => {
   if (q.arg) q.arg.map(extract1)
   if (q.key == "var") {
@@ -444,8 +309,8 @@ let extract1f = q => {
   if (q.arg) q.arg.map(extract1f)
   if (q.key == "var") {
     vars[q.op] ??= { }
-    vars[q.op].varsf ??= [] 
-    vars[q.op].varsf1 ??= [] 
+    vars[q.op].varsf ??= []
+    vars[q.op].varsf1 ??= []
   } else if (q.key == "get") {
     let [e1,e2] = q.arg
     if (e2.key == "var") {
@@ -488,24 +353,35 @@ let extract2 = q => {
 let extract3 = q => {
   if (!q.arg) return
   q.arg.map(extract3)
+  q.filters = unique(q.arg.flatMap(x => x.filters??[]))
   if (q.key == "get") {
     let [e1,e2] = q.arg
     if (e2.key == "var") {
       let str = JSON.stringify(q) // extract & cse
-      if (filters.map(x => JSON.stringify(x)).indexOf(str) < 0) {
-        let ix = filters.length
+      let ix = filters.map(x => JSON.stringify(x)).indexOf(str)
+      if (ix < 0) {
+        ix = filters.length
         let q1 = JSON.parse(str)
         filters.push(q1) // deep copy...
       }
+      // NOTE: we leave the expression in place, and just add
+      // a 'filter' field. This way, we can either generate
+      // the expression or a reference, depending on scope.
+      // An alternative would be to return a ref expression
+      // instead.
+      q.filter = ix
+      q.filters.push(ix)
     }
   }
   if (q.key == "hint") {
     let str = JSON.stringify(q) // extract & cse
-    if (hints.map(x => JSON.stringify(x)).indexOf(str) < 0) {
-      let ix = hints.length
+    let ix = hints.map(x => JSON.stringify(x)).indexOf(str)
+    if (ix < 0) {
+      ix = hints.length
       let q1 = JSON.parse(str)
       hints.push(q1) // deep copy...
     }
+    q.hint = ix
   }
 }
 
@@ -520,7 +396,7 @@ let extract3 = q => {
 //    - dims: desired set of variables in output
 //
 
-let infer = q => {
+let inferDims = q => {
   if (q.key == "input" || q.key == "const" || q.key == "placeholder") {
     q.vars = []
     q.mind = []
@@ -530,7 +406,7 @@ let infer = q => {
     q.mind = [q.op]
     q.dims = [q.op]
   } else if (q.key == "get" || q.key == "pure" || q.key == "hint" || q.key == "mkset") {
-    let es = q.arg.map(infer)
+    let es = q.arg.map(inferDims)
     q.vars = unique(es.flatMap(x => x.vars))
     q.mind = unique(es.flatMap(x => x.mind))
     q.dims = unique(es.flatMap(x => x.dims))
@@ -538,14 +414,14 @@ let infer = q => {
     if (q.key == "get")
       q.dims = union(es[0].mind, es[1].dims)
   } else if (q.key == "stateful" || q.key == "prefix") {
-    let [e1] = q.arg.map(infer)
+    let [e1] = q.arg.map(inferDims)
 
     // NOTE: wo do not include vars/tmps/dims information from path,
     // only from e1. What is the rationale for this?
 
     // In short: we want to decorrelate paths but we don't have enough
     // information yet. Specifically, transitive var dependencies are
-    // only available after infer.
+    // only available after inferDims.
 
     q.vars = e1.vars
     q.mind = [] // can always reduce to one elem
@@ -555,7 +431,7 @@ let infer = q => {
       q.dims = []
     }
   } else if (q.key == "update" || q.key == "update_inplace" ) {
-    let [e0,e1,e2,e3] = q.arg.map(infer)
+    let [e0,e1,e2,e3] = q.arg.map(inferDims)
     e3 ??= { vars: [], mind: [], dims: [] }
     if (q.key == "update_inplace") {
       q.mode = "inplace"
@@ -608,21 +484,21 @@ let assertSame = (a,b,msg) => console.assert(same(a,b), msg+": "+a+" != "+b)
 
 
 // infer bound vars (simple mode)
-let inferBwd0 = out => q => {
+let inferBound = out => q => {
   if (q.key == "input" || q.key == "const" || q.key == "placeholder") {
     q.bnd = []
   } else if (q.key == "var") {
     q.bnd = []
   } else if (q.key == "get" || q.key == "pure" || q.key == "hint" || q.key == "mkset") {
-    let es = q.arg.map(inferBwd0(out))
+    let es = q.arg.map(inferBound(out))
     q.bnd = []
   } else if (q.key == "stateful" || q.key == "prefix") {
     let out1 = union(out,q.arg[0].dims) // need to consider mode?
-    let [e1] = q.arg.map(inferBwd0(out1))
+    let [e1] = q.arg.map(inferBound(out1))
     q.bnd = diff(e1.dims, out)
   } else if (q.key == "update") {
-    let e0 = inferBwd0(out)(q.arg[0]) // what are we extending
-    let e1 = inferBwd0(out)(q.arg[1]) // key variable
+    let e0 = inferBound(out)(q.arg[0]) // what are we extending
+    let e1 = inferBound(out)(q.arg[1]) // key variable
 
     if (e1.key == "placeholder") {
       let bnd = diff(q.arg[2].dims, out)
@@ -635,7 +511,7 @@ let inferBwd0 = out => q => {
     let e1Body
     if (q.arg[3]) {
       let out3 = union(out, union([e1.op], q.arg[3].dims)) // e3 includes e1.op (union left for clarity)
-      let e3 = inferBwd0(out3)(q.arg[3]) // filter expr
+      let e3 = inferBound(out3)(q.arg[3]) // filter expr
       console.assert(e3.key == "get")
       console.assert(e3.arg[0].key == "mkset")
       console.assert(e3.arg[1].key == "var" && e3.arg[1].op == e1.op)
@@ -647,7 +523,7 @@ let inferBwd0 = out => q => {
 
     q.e1BodyBnd = diff(e1Body.dims, out)
 
-    let e2 = inferBwd0(union(out, e1.vars))(q.arg[2])
+    let e2 = inferBound(union(out, e1.vars))(q.arg[2])
 
     q.bnd = diff(union(e1.vars, []/*e1Body.dims*/), out)
 
@@ -664,18 +540,18 @@ let inferBwd0 = out => q => {
 let checkDimsFreeTrans = false
 
 // infer free vars (simple mode)
-let inferBwd1 = out => q => {
+let inferFree = out => q => {
   if (q.key == "input" || q.key == "const" || q.key == "placeholder") {
     q.fre = []
   } else if (q.key == "var") {
     q.fre = [q.op]
   } else if (q.key == "get" || q.key == "pure"  || q.key == "hint" || q.key == "mkset") {
-    let es = q.arg.map(inferBwd1(out))
+    let es = q.arg.map(inferFree(out))
     q.fre = unique(es.flatMap(x => x.fre))
   } else if (q.key == "stateful" || q.key == "prefix") {
     let out1 = union(out,q.arg[0].dims) // need to consider mode?
     assertSame(out1, union(out,q.bnd)) // same as adding bnd
-    let [e1] = q.arg.map(inferBwd1(out1))
+    let [e1] = q.arg.map(inferFree(out1))
 
     // NOTE: for consistency with 'update' it would be interesting
     // to eval e1 with path+q.bnd -- this mostly works but leads
@@ -685,7 +561,7 @@ let inferBwd1 = out => q => {
 
     // let save = path
     // path = [...path, { xxFree: q.bnd }]
-    // let [e1] = q.arg.map(inferBwd1(out1))
+    // let [e1] = q.arg.map(inferFree(out1))
     // path = save
 
     // find correlated path keys: check overlap with our own bound vars
@@ -727,13 +603,13 @@ let inferBwd1 = out => q => {
 
 
   } else if (q.key == "update") {
-    let e0 = inferBwd1(out)(q.arg[0]) // what are we extending
-    let e1 = inferBwd1(out)(q.arg[1]) // key variable
+    let e0 = inferFree(out)(q.arg[0]) // what are we extending
+    let e1 = inferFree(out)(q.arg[1]) // key variable
 
     let e1Body
     if (q.arg[3]) {
       let out3 = union(out, union([/*e1.op*/], diff(q.arg[3].dims, [e1.op]))) // e3 includes e1.op (union left for clarity)
-      let e3 = inferBwd1(out3)(q.arg[3]) // filter expr
+      let e3 = inferFree(out3)(q.arg[3]) // filter expr
       console.assert(e3.key == "get")
       console.assert(e3.arg[0].key == "mkset")
       console.assert(e3.arg[1].key == "var" && e3.arg[1].op == e1.op)
@@ -749,7 +625,7 @@ let inferBwd1 = out => q => {
     if (q.arg[3])
       path = [...path, { xxFree: e1.vars }]
 
-    let e2 = inferBwd1(union(out, e1.vars))(q.arg[2])
+    let e2 = inferFree(union(out, e1.vars))(q.arg[2])
 
     path = save
 
@@ -1151,8 +1027,9 @@ let quoteVarXS = s => isDeepVarStr(s) ? quoteVar(s)+".join('-')+'-'" : quoteVar(
 let quoteIndexVarsXS = (s,vs) => s + vs.map(quoteVarXS).map(quoteIndex).join("")
 
 
-
-let codegen = q => {
+let codegen = (q, scope) => {
+  console.assert(scope.vars)
+  console.assert(scope.filters)
   if (q.key == "input") {
     return "inp"
   } else if (q.key == "const") {
@@ -1168,20 +1045,22 @@ let codegen = q => {
     let q1 = assignments[q.op]
     let xs = [String(q.op),...q1.fre]
     return quoteIndexVarsXS("tmp", xs)
+  } else if (q.key == "get" && "filter" in q && scope.filters.indexOf(q.filter) >= 0) {
+    return "gen"+q.filter
   } else if (q.key == "get" && isDeepVarExp(q.arg[1])) {
-    let [e1,e2] = q.arg.map(codegen)
+    let [e1,e2] = q.arg.map(x => codegen(x,scope))
     return "rt.deepGet("+e1+","+e2+")"
   } else if (q.key == "get") {
-    let [e1,e2] = q.arg.map(codegen)
+    let [e1,e2] = q.arg.map(x => codegen(x,scope))
     return e1+quoteIndex(e2)
   } else if (q.key == "pure") {
-    let es = q.arg.map(codegen)
+    let es = q.arg.map(x => codegen(x,scope))
     return "rt.pure."+q.op+"("+es.join(",")+")"
   } else if (q.key == "hint") {
     // no-op!
     return "{}"
   } else if (q.key == "mkset") {
-    let [e1] = q.arg.map(codegen)
+    let [e1] = q.arg.map(x => codegen(x,scope))
     return "rt.singleton("+e1+")"
   } else {
     console.error("unknown op", pretty(q))
@@ -1190,11 +1069,11 @@ let codegen = q => {
 }
 
 
-let emitStmInit = (q) => {
+let emitStmInit = (q, scope) => {
   if (q.key == "stateful") {
     return "rt.stateful."+q.op+"_init"
   } else if (q.key == "update") {
-    let e0 = codegen(q.arg[0])
+    let e0 = codegen(q.arg[0], scope)
     if (q.mode == "inplace" || isFresh(q.arg[0]))
       return "(() => "+e0+")"
     else
@@ -1204,17 +1083,17 @@ let emitStmInit = (q) => {
   }
 }
 
-let emitStm = (q) => {
+let emitStm = (q, scope) => {
   if (q.key == "prefix") {
-    let [e1] = q.arg.map(codegen)
+    let [e1] = q.arg.map(x => codegen(x, scope))
     // XXX TODO: add prefix wrapper?
     return "rt.stateful.prefix(rt.stateful."+q.op+"("+e1+"))"
   } else if (q.key == "stateful") {
-    let [e1] = q.arg.map(codegen)
+    let [e1] = q.arg.map(x => codegen(x, scope))
     return "rt.stateful."+q.op+"("+e1+")"
   } else if (q.key == "update") {
-    let e0 = codegen(q.arg[0])
-    let e2 = codegen(q.arg[2])
+    let e0 = codegen(q.arg[0], scope)
+    let e2 = codegen(q.arg[2], scope)
     let e1 = q.arg[1].vars.map(quoteVar)
     return "rt.stateful.update("+e0+", ["+e1+"], "+e2+")" // XXX: init is still needed for tree paths
     // return "rt.stateful.update("+"null"+", "+e1+", "+e2+")" // see testPathGroup4-2
@@ -1263,9 +1142,9 @@ let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
   // 2. iterate over projection map to compute
   //    desired result
 
-  let iter = diff(union(free, bnd), scope)
+  let iter = diff(union(free, bnd), scope.vars)
 
-  if (iter.length == 0) return body()
+  if (iter.length == 0) return body(scope)
 
   let full = transf(union(free, bnd))
 
@@ -1287,7 +1166,7 @@ let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
   // the full set of filters for each sym that's already in scope.
   // TODO: keep track of which filters were run in scope, not just vars
 
-  if (same(diff(full,scope), iter)) { // XXX should not disregard order?
+  if (same(diff(full,scope.vars), iter)) { // XXX should not disregard order?
     emitFilters2(scope, full)(buf, codegen)(body)
   } else {
 
@@ -1317,7 +1196,17 @@ let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
       }
     }
 
-    body()
+    // NOTE: right now we don't add any generator variables for the
+    // loops we're in -- technically we're reading from 'proj', not
+    // evaluating the filters proper. 
+
+    // TODO: another choice would be to add variables for *all*
+    // filters -- investigate if that works
+    // (how to access? could grab and store the scope passed to 
+    // emitFilters2's body)
+
+    let scope1 = { vars: [...scope.vars,...iter], filters: scope.filters }
+    body(scope1)
 
     buf.push(closing)
   }
@@ -1340,7 +1229,7 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
   for (let v of iter) vars[v] = true
 
   // record current scope
-  for (let v of scope) seen[v] = true
+  for (let v of scope.vars) seen[v] = true
 
   // only consider filters contributing to iteration vars
   let pending = []
@@ -1351,6 +1240,8 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
     if (vars[v1]) // not interested in this? skip
       pending.push(i)
   }
+
+  let filtersInScope = [...scope.filters]
 
   // compute next set of available filters:
   // all dependent iteration vars have been seen (emitted before)
@@ -1363,7 +1254,8 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
       let v1 = f.arg[1].op
       let g1 = f.arg[0]
 
-      let avail = g1.fre.every(x => seen[x])
+      let avail = g1.fre.every(x => seen[x]) &&
+                  subset(g1.filters, filtersInScope)
 
       if (avail)
         available.push(i) // TODO: insert in proper place
@@ -1383,13 +1275,19 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
     available.sort((a,b) => selEst(b) - selEst(a))
 
     let i = available.shift()
+    filtersInScope.push(i)
+
     // for (let i of available) {
       let f = filters[i]
       let v1 = f.arg[1].op
       let g1 = f.arg[0]
 
+      // let found = subset(g1.filters, filtersInScope)
+      // buf.push("// "+g1.filters+" | "+filtersInScope + " " +found)
+
       // buf.push("// FILTER "+i+" := "+pretty(f))
-      let scope1 = g1.fre
+      let scopeg1 = {vars:g1.fre,filters:filtersInScope}
+      let scopef = {vars:f.fre,filters:filtersInScope}
 
       // Contract: input is already transitively closed, so we don't
       // depend on any variables that we don't want to iterate over.
@@ -1401,17 +1299,20 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
 
       if (isDeepVarStr(v1)) { // ok, just emit current
         if (!seen[v1]) {
-          buf.push("rt.deepForIn("+codegen(g1,scope1)+", "+quoteVar(v1)+" => {")
+          buf.push("rt.deepForIn("+codegen(g1,scopeg1)+", "+quoteVar(v1)+" => {")
         } else {
-          buf.push("rt.deepIfIn("+codegen(g1,scope1)+", "+quoteVar(v1)+", () => {")
+          buf.push("rt.deepIfIn("+codegen(g1,scopeg1)+", "+quoteVar(v1)+", () => {")
         }
+        buf.push("let gen"+i+" = "+codegen(f,scopef))
         seen[v1] = true
         closing = "})\n"+closing
       } else { // ok, just emit current
         if (!seen[v1]) {
-          buf.push("for (let "+quoteVar(v1)+" in "+codegen(g1,scope1)+") {")
+          buf.push("for (let ["+quoteVar(v1)+", gen"+i+"] of Object.entries("+codegen(g1,scopeg1)+"??{})) {")
+        //   buf.push("for (let "+quoteVar(v1)+" in "+codegen(g1,scopeg1)+") {")
+        //   buf.push("let gen"+i+" = "+codegen(f,scopef))
         } else {
-          buf.push("if ("+quoteVar(v1)+" in ("+codegen(g1,scope1)+"??[])) {")
+          buf.push("if ("+quoteVar(v1)+" in ("+codegen(g1,scopeg1)+"??[])) {")
         }
         seen[v1] = true
         closing = "}\n"+closing
@@ -1431,7 +1332,8 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
   // if (buf.length > watermark) buf.push("// main loop")
   // buf.push(...buf1)
 
-  body()
+  let scope1 = {vars: scope.vars, filters: [...filtersInScope]}
+  body(scope1)
 
   buf.push(closing)
 }
@@ -1450,6 +1352,7 @@ let emitCode = (q, order) => {
     let q = assignments[i]
 
     buf.push("// --- tmp"+i+" ---")
+    let scope = { vars:[], filters:[] }
 
     // emit initialization first (so that sum empty = 0)
     if (q.key == "stateful" && (q.op+"_init") in runtime.stateful || q.key == "update") {
@@ -1471,30 +1374,28 @@ let emitCode = (q, order) => {
       //
       //    now done in inferBwd (could be refined there)
 
-      let fv = q.fre
-      emitFilters1([],fv,[])(buf, codegen)(() => {
+      emitFilters1(scope,q.fre,[])(buf, codegen)(scope1 => {
         let xs = [i,...q.fre.map(quoteVar)]
         let ys = xs.map(x => ","+x).join("")
 
-        buf.push("  rt.init(tmp"+ys+")\n  ("+ emitStmInit(q) + ")")
+        buf.push("  rt.init(tmp"+ys+")\n  ("+ emitStmInit(q, scope1) + ")")
       })
     }
 
-    let fv = q.fre // union(q.fre, q.bnd)
-    emitFilters1([],fv,q.bnd)(buf, codegen)(() => {
+    emitFilters1(scope,q.fre,q.bnd)(buf, codegen)(scope1 => {
       let xs = [i,...q.fre.map(quoteVar)]
       let ys = xs.map(x => ","+x).join("")
 
-      buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStm(q) + ")")
+      buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStm(q, scope1) + ")")
     })
 
     buf.push("")
   }
 
   buf.push("// --- res ---")
-  let fv = q.fre
-  console.assert(same(fv,[]))
-  buf.push("return "+codegen(q))
+  console.assert(same(q.fre,[]))
+  let scope = { vars:[], filters: [] }
+  buf.push("return "+codegen(q,scope))
 
   buf.push("})")
 
@@ -1624,7 +1525,7 @@ let codegenCPP = q => {
     return "rt_pure_"+q.op+"("+es.join(",")+")"
   } else if (q.key == "hint") {
     // no-op!
-    return "1"
+    return "rt_const_int(1)"
   } else if (q.key == "mkset") {
     let [e1] = q.arg.map(codegenCPP)
     return "rt_singleton("+e1+")"
@@ -1778,10 +1679,11 @@ let fixIndent = s => {
   let indent = 0
   for (let str of lines) {
     if (str.trim() == "") continue
-    if (str.indexOf("}") == 0) indent--
+    let count = r => (str.match(r)??[]).length
+    let delta = count(/{/g) - count(/}/g)
+    if (str[0] == "}") indent += delta
     out.push("".padEnd(indent * 4, ' ') + str.trim())
-    if (str.indexOf("{") >= 0) indent++
-    if (str.indexOf("}") > 0) indent--
+    if (str[0] != "}") indent += delta
   }
   return out.join("\n")
 }
@@ -1823,11 +1725,18 @@ let translateToNewCodegen = q => {
       generatorStms.push(e)
   }
 
+  // TODO: make reusable generator/filter variable for the "current"
+  // value of an iteration available in new-codgen. The "scope" object
+  // passed to 'codegen' should list all available such variables in
+  // scope -- right now there are none, filters = q.filters would
+  // mean all used filters have associated variables.
+
   let tmpSym = i => "tmp-"+i
 
+  // XXX could add dependencies on computed generator vars hare (gen2,...)
   let getDeps = q => [...q.fre,...q.tmps.map(tmpSym)]
 
-  let transExpr = q => expr(codegen(q), ...getDeps(q))
+  let transExpr = (q, scope) => expr(codegen(q, scope), ...getDeps(q))
 
   // map assignments
   for (let i in assignments) {
@@ -1846,7 +1755,8 @@ let translateToNewCodegen = q => {
           init_deps = [...union(init_arg.fre, init_arg.bnd),...init_arg.tmps.map(tmpSym)]
         }
 
-        assign("rt.init(tmp"+ys+")("+ emitStmInit(q) + ")", sym, q.fre, init_deps)
+        let scope = { vars: q.fre, filters: [] } // XXX filters?
+        assign("rt.init(tmp"+ys+")("+ emitStmInit(q,scope) + ")", sym, q.fre, init_deps)
     }
 
     // emit update (see 'emitCode')
@@ -1857,19 +1767,22 @@ let translateToNewCodegen = q => {
 
       let deps = [...fv,...q.tmps.map(tmpSym)] // XXX rhs dims only?
 
-      assign("rt.update(tmp"+ys+")("+ emitStm(q) + ")", sym, q.fre, deps)
+      let scope = { vars: q.fre, filters: [] } // XXX filters?
+      assign("rt.update(tmp"+ys+")("+ emitStm(q,scope) + ")", sym, q.fre, deps)
     }
   }
 
   // map filters/generators
   for (let i in filters) {
     let q = filters[i]
-    let [a,b] = q.arg.map(transExpr)
+    let scope = { vars: q.fre, filters: [] } // XXX filters?
+    let [a,b] = q.arg.map(x => transExpr(x, scope))
     selectGenFilter(a, b)
   }
 
   // map final result
-  let res = transExpr(q)
+  let scope = { vars: q.fre, filters: [] } // XXX filters?
+  let res = transExpr(q, scope)
 
   let ir = {
     assignmentStms,
@@ -1927,7 +1840,7 @@ let compile = (q,{
   // ---- middle tier ----
 
   // 3. Infer dependencies bottom up
-  q = infer(q)
+  q = inferDims(q)
 
   // 4. Extract var->var dependencies due to filters
   extract1(q)
@@ -1937,19 +1850,19 @@ let compile = (q,{
 
   // 6. Backward pass to infer output dimensions
   let out = singleResult ? q.mind : q.dims
-  q = inferBwd0(out)(q)
+  q = inferBound(out)(q)
 
   varsChanged = false
   extract1f(q)
   computeDependenciesf()
-  q = inferBwd1(out)(q)
+  q = inferFree(out)(q)
 
   while (true) {
     varsChanged = false
     extract1f(q)
     if (!varsChanged) break
     computeDependenciesf()
-    q = inferBwd1(out)(q)
+    q = inferFree(out)(q)
   }
 
 
@@ -2099,7 +2012,7 @@ let emitCodeDeep = (q) => {
       else
         return String(q.op)
     } else if (q.key == "var") {
-      if (env.indexOf(q.op) < 0) {        
+      if (env.indexOf(q.op) < 0) {
         buf.push("// ERROR: var '"+q.op+"' not defined in "+env)
         console.error("// ERROR: var '"+q.op+"' not defined")
       }
@@ -2118,9 +2031,9 @@ let emitCodeDeep = (q) => {
       return "{}"
     } else if (q.key == "mkset") {
       let [e1] = q.arg.map(codegen1)
-      return "rt.singleton("+e1+")"      
+      return "rt.singleton("+e1+")"
     } else if (q.key == "stateful" || q.key == "prefix" || q.key == "update") {
- 
+
       let i = stmCount++
 
       let bound
@@ -2216,7 +2129,7 @@ let compilePrimitive = (q,{
 
   reset()
 
-  let trace = { 
+  let trace = {
     log: () => {}
     // log: console.log
   }
@@ -2236,7 +2149,7 @@ let compilePrimitive = (q,{
   // ---- middle tier ----
 
   // 3. Infer dependencies bottom up
-  q = infer(q)
+  q = inferDims(q)
 
   // 4. Extract var->var dependencies due to filters
   extract1(q)
@@ -2246,19 +2159,19 @@ let compilePrimitive = (q,{
 
   // 6. Backward pass to infer output dimensions
   let out = singleResult ? q.mind : q.dims
-  q = inferBwd0(out)(q)
+  q = inferBound(out)(q)
 
   varsChanged = false
   extract1f(q)
   computeDependenciesf()
-  q = inferBwd1(out)(q)
+  q = inferFree(out)(q)
 
   while (true) {
     varsChanged = false
     extract1f(q)
     if (!varsChanged) break
     computeDependenciesf()
-    q = inferBwd1(out)(q)
+    q = inferFree(out)(q)
   }
 
 
@@ -2314,7 +2227,7 @@ let compilePrimitive = (q,{
   wrap.explain = {
     src,
     ir: { filters },
-    pseudo, code 
+    pseudo, code
   }
   return wrap
 }
