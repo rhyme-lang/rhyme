@@ -1702,7 +1702,7 @@ test("day16-part1", () => {
   expect(res).toBe(46)
 })
 
-test("day17-part1", () => {
+test("day17-part1-array", () => {
   let input = `2413432311323
 3215453535623
 3255245654254
