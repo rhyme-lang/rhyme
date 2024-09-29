@@ -453,11 +453,12 @@ test("redBlackTree1", () => {
   let udf = {
     redBlackTree: () => RedBlackTree()
   }
+  let tree = udf.redBlackTree()
 
   let query = rh`update (udf.redBlackTree 0) data.* (count data.*)`
 
   let func = compile(query)
-  let res = func({data, udf})
+  let res = func({data, udf, tree})
 
   expect([...res]).toEqual([
     ['0',1],

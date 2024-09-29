@@ -12,6 +12,7 @@
 
 const { api, pipe } = require('../src/rhyme')
 const { rh } = require('../src/parser')
+const { compile } = require('../src/simple-eval')
 
 let udf_stdlib = {
   split: d => s => s.split(d),
@@ -1796,7 +1797,7 @@ test("day17-part1", () => {
     next: [rh`${next} | udf.split " " | udf.toNum .*`]
   }
 
-  let func = api.compileNew(query)
+  let func = compile(query)
 
   while (state.visiting[0] != graph.n - 1 || state.visiting[1] != graph.m - 1) {
     let {newQueue, newMap, next} = func({input, udf, state, minHeatLoss, graph, queue})
@@ -1806,6 +1807,353 @@ test("day17-part1", () => {
 
     delete queue[next.join(" ")]
     state.visiting = next
+  }
+
+  let res = minHeatLoss[udf.toStr(state.visiting)]
+  expect(res).toBe(102)
+})
+
+test("day17-part1-rbtree", () => {
+  let input = `2413432311323
+3215453535623
+3255245654254
+3446585845452
+4546657867536
+1438598798454
+4457876987766
+3637877979653
+4654967986887
+4564679986453
+1224686865563
+2546548887735
+4322674655533`
+
+  // (Sedgewick's left leaning variant)
+
+  function lookup(elem, key) {
+    if (!elem) return undefined
+    if (key < elem.key)
+      return lookup(elem.left, key)
+    else if (key == elem.key)
+      return elem.value
+    else
+      return lookup(elem.right, key)
+  }
+  function insert(elem, key, value) {
+    if (!elem) return {key,value,red:true}
+    if (key < elem.key)
+      elem = {...elem, left: insert(elem.left,key,value)}
+    // else if (key == elem.key)
+    //   elem = {...elem, value}
+    else
+      elem = {...elem, right: insert(elem.right,key,value)}
+    if (isRed(elem.right) && !isRed(elem.left))
+      elem = rotateLeft(elem)
+    if (isRed(elem.left) && isRed(elem.left.left))
+      elem = rotateRight(elem)
+    if (isRed(elem.left) && isRed(elem.right))
+      elem = colorFlip(elem)
+    return elem
+  }
+  function isRed(elem) {
+    return elem && elem.red
+  }
+  function colorFlip(elem) {
+    // we know both children are red
+    elem.red = !elem.red
+    elem.left.red = !elem.left.red
+    elem.right.red = !elem.right.red
+    return elem
+  }
+  function rotateLeft(elem) {
+    // assert(isRed(elem.right))
+    let x = elem.right
+    elem.right = x.left
+    x.left = elem
+    x.red = elem.red//!x.left.red
+    //x.left.red = true
+    elem.red = true
+    return x
+  }
+  function rotateRight(elem) {
+    // assert(isRed(elem.left) && isRed(elem.left.left))
+    let x = elem.left
+    elem.left = x.right
+    x.right = elem
+    x.red = elem.red//x.right.red
+    //x.right.red = true
+    elem.red = true
+    return x
+  }
+  function moveRedLeft(elem) {
+    colorFlip(elem)
+    if (isRed(elem.right.left)) {
+      elem.right = rotateRight(elem.right)
+      elem = rotateLeft(elem)
+      colorFlip(elem)
+    }
+    return elem
+  }
+  function deleteMin(elem) {
+    if (!elem.left) return undefined
+    
+    if (!isRed(elem.left) && !isRed(elem.left.left))
+      elem = moveRedLeft(elem)
+
+    elem.left = deleteMin(elem.left)
+
+    if (isRed(elem.right))
+      elem = rotateLeft(elem)
+    if (isRed(elem.left) && isRed(elem.left.left))
+      elem = rotateRight(elem)
+    if (isRed(elem.left) && isRed(elem.right))
+      elem = colorFlip(elem)
+    return elem
+  }
+  function getMin(elem) {
+    return elem.left ? getMin(elem.left) : [elem.key, elem.value]
+  }
+  function emit(elem, buf, depth) {
+    if (!elem) return
+    let tmp = ". ".repeat(depth) + `k: ${elem.key}, v: ${elem.value} color: ${elem.red ? "R" : "B"}`
+
+    buf.push(tmp)
+    emit(elem.left, buf, depth + 1)
+    emit(elem.right, buf, depth + 1)
+  }
+
+  let RedBlackTreeProxy = {
+    get(target, prop, receiver) {
+      if (prop === "toString") {
+        let buf = []
+        emit(target.root, buf, 0)
+        return buf.join("\n")
+      }
+      if (prop === "min") {
+        return target.root ? getMin(target.root) : undefined
+      }
+      if (prop === Symbol.iterator) {
+        return (function*() {
+          let rec = function* rec(elem) {
+            if (!elem) return
+            yield* rec(elem.left)
+            yield ([elem.key, elem.value])
+            yield* rec(elem.right)
+          }
+          yield* rec(target.root)
+        })
+      }
+      return lookup(target.root, prop)
+    },
+    has(target, prop) {
+      return lookup(target.root, prop) ?? false
+    },
+    set(target, prop, value) {
+      let key = Number(prop.split(";")[0])
+      target.root = insert(target.root, key, value)
+      target.root.red = false
+      return target.root
+    },
+    deleteProperty(target, prop) {
+      if (prop === "min" && target.root) {
+        target.root = deleteMin(target.root)
+        target.root.red = false
+        return true
+      }
+      return false
+    },
+    ownKeys(target) {
+      let res = new Array
+      let rec = elem => {
+        if (!elem) return
+        rec(elem.left)
+        res.push(elem.key)
+        rec(elem.right)
+      }
+      rec(target.root)
+      return res
+    },
+    getOwnPropertyDescriptor(target, prop) {
+      return { configurable: true, enumerable: true }
+    }
+  }
+
+  let RedBlackTree = () => {
+    return new Proxy({root:null}, RedBlackTreeProxy)
+  }
+
+  // left: [0, 1] => [-1, 0], [1, 0] => [0, 1], [0, -1] => [1, 0], [-1, 0] => [0, -1]
+  // right: [0, 1] => [1, 0], [1, 0] => [0, -1], [0, -1] => [-1, 0], [-1, 0] => [0, 1]
+  let id = 0
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    andThen: (a, b) => b, // just to add a as dependency
+    getNeighbors: (curr) => {
+      let straight = [curr[0] + curr[2], curr[1] + curr[3], curr[2], curr[3], curr[4] + 1]
+      let left = [curr[0] - curr[3], curr[1] + curr[2], -curr[3], curr[2], 1]
+      let right = [curr[0] + curr[3], curr[1] - curr[2], curr[3], -curr[2], 1]
+      return [straight, left, right]
+    },
+    getNode: (graph, i, j) => graph?.[i]?.[j],
+    notContain: (map, k) => map[k] === undefined,
+    toIdStr: (a, b) => `${a};${b}`,
+    deleteMin: (_, q) => delete q.min,
+    ...udf_stdlib
+  }
+  
+  let lines = rh`.input | udf.split "\\n" | .*line
+                        | udf.split "" | .*char
+                        | group *char | group *line`
+  let n = rh`.input | udf.split "\\n" | .length`
+  let m = rh`.input | udf.split "\\n" | .0.length`
+
+  let graphQuery = {
+    graph: lines, n, m
+  }
+
+  // no need to process input in every iteration
+  let getGraph = api.compile(graphQuery)
+  let graph = getGraph({input, udf})
+
+  let visiting = [0, 0, 0, 1, 0]
+  let queue = RedBlackTree()
+  let minHeatLoss = {
+    "0 0 0 1 0": 0
+  }
+
+  // Get the list of possible next positions
+  // Caldulate the heat loss for each of them
+  // Get the next position to be visited (min in the queue)
+
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+
+  let neighbors = rh`udf.getNeighbors .visiting | .*neighbors`
+  let inRangeAndNotVisited = rh`udf.logicalAnd (udf.logicalAnd (udf.getNode graph.graph ${neighbors}.0 ${neighbors}.1) (udf.notContain .minHeatLoss (${neighbors} | udf.join " "))) (udf.isLessOrEqual ${neighbors}.4 3)`
+
+  let newState = rh`${neighbors} | ${filterBy("*f", inRangeAndNotVisited)}`
+
+  let newHeatLoss = rh`.minHeatLoss.(.visiting | udf.join " ") + (udf.toNum (udf.getNode graph.graph ${newState}.0 ${newState}.1)) | first | group (${newState} | udf.join " ")`
+  let newMap = rh`update_inplace .minHeatLoss *heatLoss first(${newHeatLoss}.*heatLoss)`
+
+  let updatedQueue = rh`update_inplace .queue (udf.toIdStr ${newHeatLoss}.*heatLoss *heatLoss) first(*heatLoss)`
+  let next = rh`${updatedQueue}.min.1 | udf.split " " | udf.toNum .* | array`
+
+  let deleted = rh`udf.deleteMin ${next} ${updatedQueue}`
+
+  let query = {
+    next: rh`${updatedQueue}.min.1 | udf.split " " | udf.toNum .* | array`,
+    newMap, deleted
+  }
+
+  let func = compile(query)
+
+  while (visiting[0] != graph.n - 1 || visiting[1] != graph.m - 1) {
+    let {newMap, next, deleted} = func({input, udf, visiting, minHeatLoss, graph, queue})
+    console.assert(deleted)
+    visiting = next
+  }
+
+  let res = minHeatLoss[visiting.join(" ")]
+  expect(res).toBe(102)
+})
+
+test("day17-part1-old", () => {
+  let input = `2413432311323
+3215453535623
+3255245654254
+3446585845452
+4546657867536
+1438598798454
+4457876987766
+3637877979653
+4654967986887
+4564679986453
+1224686865563
+2546548887735
+4322674655533`
+
+  // left: [0, 1] => [-1, 0], [1, 0] => [0, 1], [0, -1] => [1, 0], [-1, 0] => [0, -1]
+  // right: [0, 1] => [1, 0], [1, 0] => [0, -1], [0, -1] => [-1, 0], [-1, 0] => [0, 1]
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    andThen: (a, b) => b, // just to add a as dependency
+    getNeighbors: (curr) => {
+      let straight = [curr[0] + curr[2], curr[1] + curr[3], curr[2], curr[3], curr[4] + 1]
+      let left = [curr[0] - curr[3], curr[1] + curr[2], -curr[3], curr[2], 1]
+      let right = [curr[0] + curr[3], curr[1] - curr[2], curr[3], -curr[2], 1]
+      return [straight, left, right]
+    },
+    getNode: (graph, i, j) => graph?.[i]?.[j],
+    notContain: (map, k) => map[k] === undefined,
+    mapGet: (map, k) => map[k],
+    merge: (a, b) => [...a, ...b],
+    toStr: (state) => state.join(" "),
+    ...udf_stdlib
+  }
+  
+  let lines = rh`.input | udf.split "\\n" | .*line
+                        | udf.split "" | .*char
+                        | group *char | group *line`
+  let n = rh`.input | udf.split "\\n" | .length`
+  let m = rh`.input | udf.split "\\n" | .0.length`
+
+  let graphQuery = {
+    graph: lines, n, m
+  }
+
+  // no need to process input in every iteration
+  let getGraph = api.compile(graphQuery)
+  let graph = getGraph({input, udf})
+
+  // console.log(graph)
+
+  let state = {
+    visiting: [0, 0, 0, 1, 0],
+  }
+  let queue = new Set()
+  let minHeatLoss = {
+    "0 0 0 1 0": 0
+  }
+  // console.log(minHeatLoss)
+
+  // Get the list of possible next positions
+  // Caldulate the heat loss for each of them
+  // Get the next position to be visited (min in the queue)
+
+  // Need a priority queue implementation?
+
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+
+  let neighbors = rh`udf.getNeighbors state.visiting | .*neighbors`
+  let inRangeAndNotVisited = rh`udf.logicalAnd (udf.logicalAnd (udf.getNode graph.graph ${neighbors}.0 ${neighbors}.1) (udf.notContain .minHeatLoss (udf.toStr ${neighbors}))) (udf.isLessOrEqual ${neighbors}.4 3)`
+
+  let newMinHeatLoss = {
+    state: neighbors,
+    heatLoss: rh`(udf.mapGet .minHeatLoss (udf.toStr state.visiting)) + (udf.toNum (udf.getNode graph.graph ${neighbors}.0 ${neighbors}.1))`
+  }
+  let query = [rh`${newMinHeatLoss} | ${filterBy("*f", inRangeAndNotVisited)}`]
+
+  let func = compile(query)
+
+  while (state.visiting[0] != graph.n - 1 || state.visiting[1] != graph.m - 1) {
+    let updated = func({input, udf, state, minHeatLoss, graph})
+
+    for (let i in updated) {
+      queue.add(updated[i].state)
+      minHeatLoss[udf.toStr(updated[i].state)] = updated[i].heatLoss
+    }
+
+    let minState = undefined
+    let min = Number.MAX_VALUE
+    queue.forEach(k => {
+      if (minHeatLoss[udf.toStr(k)] < min) {
+        minState = k
+        min = minHeatLoss[udf.toStr(k)]
+      }
+    })
+
+    state.visiting = minState
+    queue.delete(minState)
   }
 
   let res = minHeatLoss[udf.toStr(state.visiting)]
