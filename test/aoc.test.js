@@ -2015,6 +2015,8 @@ test("day17-part1-rbtree", () => {
   let getGraph = api.compile(graphQuery)
   let graph = getGraph({input, udf})
 
+  // The current node we are visiting
+  // [posi, posj, diri, dirj, streak]
   let visiting = [0, 0, 0, 1, 0]
   let queue = RedBlackTree()
   let minHeatLoss = {
@@ -2030,25 +2032,32 @@ test("day17-part1-rbtree", () => {
   let neighbors = rh`udf.getNeighbors .visiting | .*neighbors`
   let inRangeAndNotVisited = rh`udf.logicalAnd (udf.logicalAnd (udf.getNode graph.graph ${neighbors}.0 ${neighbors}.1) (udf.notContain .minHeatLoss (${neighbors} | udf.join " "))) (udf.isLessOrEqual ${neighbors}.4 3)`
 
+  // The term "state" refers to the array representing the current position, direction and streak
+  // [posi, posj, diri, dirj, streak]
   let newState = rh`${neighbors} | ${filterBy("*f", inRangeAndNotVisited)}`
 
-  let newHeatLoss = rh`.minHeatLoss.(.visiting | udf.join " ") + (udf.toNum (udf.getNode graph.graph ${newState}.0 ${newState}.1)) | first | group (${newState} | udf.join " ")`
-  let newMap = rh`update_inplace .minHeatLoss *heatLoss first(${newHeatLoss}.*heatLoss)`
+  // Stores the new entries in the minHeatLoss map
+  let newMapEntries = rh`.minHeatLoss.(.visiting | udf.join " ") + (udf.toNum (udf.getNode graph.graph ${newState}.0 ${newState}.1)) | first | group (${newState} | udf.join " ")`
 
-  let updatedQueue = rh`update_inplace .queue (udf.toIdStr ${newHeatLoss}.*heatLoss *heatLoss) first(*heatLoss)`
+  // Perform inplace update on map and queue 
+  let updatedMap = rh`update_inplace .minHeatLoss *heatLoss first(${newMapEntries}.*heatLoss)`
+  let updatedQueue = rh`update_inplace .queue (udf.toIdStr ${newMapEntries}.*heatLoss *heatLoss) first(*heatLoss)`
+
+  // Find the next node to be visited from the queue
   let next = rh`${updatedQueue}.min.1 | udf.split " " | udf.toNum .* | array`
 
+  // Delete the min from the queue
   let deleted = rh`udf.deleteMin ${next} ${updatedQueue}`
 
   let query = {
     next: rh`${updatedQueue}.min.1 | udf.split " " | udf.toNum .* | array`,
-    newMap, deleted
+    updatedMap, deleted
   }
 
   let func = compile(query)
 
   while (visiting[0] != graph.n - 1 || visiting[1] != graph.m - 1) {
-    let {newMap, next, deleted} = func({input, udf, visiting, minHeatLoss, graph, queue})
+    let {next, deleted} = func({input, udf, visiting, minHeatLoss, graph, queue})
     console.assert(deleted)
     visiting = next
   }
