@@ -603,7 +603,7 @@ let inferFree = out => q => {
     // - an extra K from outer grouping
     q.fre = intersect(union(trans(q.bnd), union(e1.fre, extra)), out)
 
-    let fre2 = intersect(transf(union(q.bnd, union(e1.fre, extra))), out)
+    let fre2 = intersect(union(e1.fre, union(transf(q.bnd),extra)), out)
 
     // XXXX is transf1 enough?
     // What if a in (q.bnd \ out), b in (transf1(a) \ out), c in (transf1(b) & out)
@@ -668,8 +668,8 @@ let inferFree = out => q => {
     // free variables: see note at stateful above
     q.fre = intersect(union(trans(q.bnd), union(fv, extra)), out)
 
-    let fre2 = intersect(transf(union(q.bnd, union(fv, extra))), out)
 
+    let fre2 = intersect(union(fv, union(transf(q.bnd),extra)), out)
     // assertSame(q.fre, intersect(transf(q.fre),out), "FRE2 "+pretty(q))
 
     if (checkDimsFreeTrans) assertSame(q.fre, fre2, "FRE2.1 "+pretty(q))
