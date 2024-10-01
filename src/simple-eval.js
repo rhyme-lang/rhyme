@@ -624,7 +624,6 @@ let inferFree = out => q => {
 
   } else if (q.key == "update") {
     let e0 = inferFree(out)(q.arg[0]) // what are we extending
-    let e1 = inferFree(out)(q.arg[1]) // key variable
     let e1 = inferFree(union(out,q.arg[1].dims))(q.arg[1]) // key variable
 
     let e1Body
