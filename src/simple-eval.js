@@ -1110,7 +1110,7 @@ let emitStmInit = (q, scope) => {
   }
 }
 
-let emitStm = (q, scope) => {
+let emitStmUpdate = (q, scope) => {
   if (q.key == "prefix") {
     let [e1] = q.arg.map(x => codegen(x, scope))
     // XXX TODO: add prefix wrapper?
@@ -1389,24 +1389,6 @@ let emitCode = (q, order) => {
 
     // emit initialization first (so that sum empty = 0)
     if (q.key == "stateful" && (q.op+"_init") in runtime.stateful || q.key == "update") {
-
-      // XXX what is the right iteration space?
-      //
-      // 1. use fv2 = q.free
-      //
-      //    most intuitive: want precisely the space of dimensions
-      //
-      //    4 failing tests -- groupTestNested1, etc
-      //
-      //    there, we're loosing the correlation via * between *B and K2=data3.*.key
-      //
-      // 2. use fv2 = trans(q.free)
-      //
-      //    this seems to work on all tests -- explicitly include
-      //    any correlated variables
-      //
-      //    now done in inferBwd (could be refined there)
-
       emitFilters1(scope,q.fre,[])(buf, codegen)(scope1 => {
         let xs = [i,...q.fre.map(quoteVar)]
         let ys = xs.map(x => ","+x).join("")
@@ -1419,7 +1401,7 @@ let emitCode = (q, order) => {
       let xs = [i,...q.fre.map(quoteVar)]
       let ys = xs.map(x => ","+x).join("")
 
-      buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStm(q, scope1) + ")")
+      buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStmUpdate(q, scope1) + ")")
     })
 
     buf.push("")
@@ -1600,7 +1582,7 @@ let emitStmInitCPP = (q) => {
   }
 }
 
-let emitStmCPP = (agg, q) => {
+let emitStmUpdateCPP = (agg, q) => {
   if (q.key == "prefix") {
     console.error("unsupported op", q)
   } else if (q.key == "stateful") {
@@ -1679,7 +1661,7 @@ let emitCodeCPP = (q, order) => {
 
       let deps = [...fv,...q.tmps.map(tmpSym)] // XXX rhs dims only?
 
-      assign(emitStmCPP("tmp"+ys, q), sym, q.fre, deps)
+      assign(emitStmUpdateCPP("tmp"+ys, q), sym, q.fre, deps)
     }
   }
 
@@ -1801,7 +1783,7 @@ let translateToNewCodegen = q => {
       let deps = [...fv,...q.tmps.map(tmpSym)] // XXX rhs dims only?
 
       let scope = { vars: q.fre, filters: [] } // XXX filters?
-      assign("rt.update(tmp"+ys+")("+ emitStm(q,scope) + ")", sym, q.fre, deps)
+      assign("rt.update(tmp"+ys+")("+ emitStmUpdate(q,scope) + ")", sym, q.fre, deps)
     }
   }
 
@@ -2102,7 +2084,7 @@ let emitCodeDeep = (q) => {
       // let env1 = union(env, bound)
       // let codegen2 = q => codegen(q, env1)
 
-      let emitStm = (q, scope) => {
+      let emitStmUpdate = (q, scope) => {
         if (q.key == "prefix") {
           let [e1] = q.arg.map(x => codegen(x, scope))
           return "rt.stateful.prefix(rt.stateful."+q.op+"("+e1+"))"
@@ -2129,7 +2111,7 @@ let emitCodeDeep = (q) => {
 
       // emit main computation
       emitFilters1(scope, q.fre, bound)(buf, codegen)(scope1 => {
-        buf.push("tmp"+i+" = "+emitStm(q, scope1) + ".next(tmp"+i+")")
+        buf.push("tmp"+i+" = "+emitStmUpdate(q, scope1) + ".next(tmp"+i+")")
       })
 
       buf.push("/* --- end "+q.key+"_"+i+" */")
