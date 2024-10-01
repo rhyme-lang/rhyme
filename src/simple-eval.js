@@ -117,6 +117,9 @@ let defaultSettings = {
   altInfer: false,
   antiSubstGroupKey: false,
   singleResult: true, // TODO: elim flag? 14 tests failing when false globally
+  
+  extractFilters: true,
+
   newCodegen: false,
   backend: "js"
 }
@@ -1060,7 +1063,9 @@ let codegen = (q, scope) => {
     let q1 = assignments[q.op]
     let xs = [String(q.op),...q1.fre]
     return quoteIndexVarsXS("tmp", xs)
-  } else if (q.key == "get" && "filter" in q && scope.filters.indexOf(q.filter) >= 0) {
+  } else if (settings.extractFilters 
+          && q.key == "get" && "filter" in q
+          && scope.filters.indexOf(q.filter) >= 0) {
     return "gen"+q.filter
   } else if (q.key == "get" && isDeepVarExp(q.arg[1])) {
     let [e1,e2] = q.arg.map(x => codegen(x,scope))
@@ -1269,8 +1274,14 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
       let v1 = f.arg[1].op
       let g1 = f.arg[0]
 
-      let avail = g1.fre.every(x => seen[x]) &&
-                  subset(g1.filters, filtersInScope)
+      let avail = g1.fre.every(x => seen[x])
+
+      // NOTE: doesn't work yet for nested codegen: filters 
+      // propagates too far -- it should only propagate 
+      // as far upwards as they are used!
+
+      if (settings.extractFilters)
+         avail &&= subset(g1.filters, filtersInScope)
 
       if (avail)
         available.push(i) // TODO: insert in proper place
