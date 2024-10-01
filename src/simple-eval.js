@@ -118,6 +118,7 @@ let defaultSettings = {
   antiSubstGroupKey: false,
   singleResult: true, // TODO: elim flag? 14 tests failing when false globally
   
+  extractAssignments: true,
   extractFilters: true,
 
   newCodegen: false,
@@ -1051,6 +1052,7 @@ let quoteIndexVarsXS = (s,vs) => s + vs.map(quoteVarXS).map(quoteIndex).join("")
 let codegen = (q, scope) => {
   console.assert(scope.vars)
   console.assert(scope.filters)
+  // console.assert(scope.buf)
   if (q.key == "input") {
     return "inp"
   } else if (q.key == "const") {
@@ -1063,6 +1065,11 @@ let codegen = (q, scope) => {
   } else if (q.key == "var") {
     // TODO: check that variables are always defined
     // console.assert(scope.vars.indexOf(q.op) >= 0)
+    if (!settings.extractAssignments) // TODO: fails otherwise...
+      if (scope.vars.indexOf(q.op) < 0) {
+        scope.buf.push("// ERROR: var '"+q.op+"' not defined in "+scope.vars)
+        console.error("// ERROR: var '"+q.op+"' not defined")
+      }
     return quoteVar(q.op)
   } else if (q.key == "ref") {
     let q1 = assignments[q.op]
@@ -1089,6 +1096,12 @@ let codegen = (q, scope) => {
   } else if (q.key == "mkset") {
     let [e1] = q.arg.map(x => codegen(x,scope))
     return "rt.singleton("+e1+")"
+  } else if (q.key == "stateful" || q.key == "prefix" || q.key == "update") {
+    if (settings.extractAssignments) {
+      console.error("unexpected nested assignment "+pretty(q))
+    } else {
+      return emitStmInline(q, scope)
+    }
   } else {
     console.error("unknown op", pretty(q))
     return "<?"+q.key+"?>"
@@ -1232,7 +1245,7 @@ let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
     // (how to access? could grab and store the scope passed to 
     // emitFilters2's body)
 
-    let scope1 = { vars: [...scope.vars,...iter], filters: scope.filters }
+    let scope1 = {...scope, vars: [...scope.vars,...iter]}
     body(scope1)
 
     buf.push(closing)
@@ -1319,8 +1332,8 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
       // buf.push("// "+g1.filters+" | "+filtersInScope + " " +found)
 
       // buf.push("// FILTER "+i+" := "+pretty(f))
-      let scopeg1 = {vars:g1.fre,filters:filtersInScope}
-      let scopef = {vars:f.fre,filters:filtersInScope}
+      let scopeg1 = {...scope, vars:g1.fre, filters:filtersInScope}
+      let scopef = {...scope, vars:f.fre,filters:filtersInScope}
 
       // Contract: input is already transitively closed, so we don't
       // depend on any variables that we don't want to iterate over.
@@ -1365,10 +1378,56 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
   // if (buf.length > watermark) buf.push("// main loop")
   // buf.push(...buf1)
 
-  let scope1 = {vars: [...scope.vars, ...iter], filters: [...filtersInScope]}
+  let scope1 = {...scope, vars: [...scope.vars, ...iter], filters: [...filtersInScope]}
   body(scope1)
 
   buf.push(closing)
+}
+
+
+let emitStmInline = (q, scope) => {
+  let buf = scope.buf
+  if (!("stmCount" in scope)) 
+    scope.stmCount = [0]
+  let i = scope.stmCount[0]++
+
+  let bound
+  if (q.key == "update") {
+    bound = diff(q.arg[1].vars, scope.vars) // explicit var -- still no traversal if already in scope
+  } else
+    bound = diff(q.arg[0].dims, scope.vars)
+
+
+  buf.push("/* --- begin "+q.key+"_"+i+" --- "+pretty(q)+" ---*/")
+  buf.push("// env: "+scope.vars+" dims: "+q.dims+" bound: "+bound)
+
+  if (!same(bound,q.bnd)) {
+    buf.push("// WARNING! q.bound "+q.bnd)
+    console.warn("// WARNING! bound "+bound+" -> q.bnd "+q.bnd)
+  }
+  bound = q.bnd
+
+  if (intersect(bound,scope.vars).length > 0) {
+    buf.push("// WARNING: var '"+bound+"' already defined in "+scope.vars)
+    console.warn("// WARNING: var '"+bound+"' already defined in "+scope.vars)
+  }
+
+  // emit initialization
+  if (q.key == "stateful" && (q.op+"_init") in runtime.stateful || q.key == "update") {
+      buf.push("let tmp"+i+" = "+ emitStmInit(q, scope)+"()")
+  } else {
+      buf.push("let tmp"+i)
+  }
+
+  // emit main computation
+  emitFilters1(scope, q.fre, bound)(buf, codegen)(scope1 => {
+    buf.push("tmp"+i+" = "+emitStmUpdate(q, scope1) + ".next(tmp"+i+")")
+  })
+
+  buf.push("/* --- end "+q.key+"_"+i+" */")
+
+  // return reference
+  return "tmp"+i
 }
 
 
@@ -1377,39 +1436,41 @@ let emitCode = (q, order) => {
   buf.push("(inp => {")
   buf.push("let tmp = {}")
 
+  if (settings.extractAssignments) {
+    for (let is of order) {
+      if (is.length > 1)
+        console.error("cycle "+is)
+      let [i] = is
+      let q = assignments[i]
 
-  for (let is of order) {
-    if (is.length > 1)
-      console.error("cycle "+is)
-    let [i] = is
-    let q = assignments[i]
+      buf.push("// --- tmp"+i+" ---")
+      let scope = { vars:[], filters:[], buf }
 
-    buf.push("// --- tmp"+i+" ---")
-    let scope = { vars:[], filters:[] }
+      // emit initialization first (so that sum empty = 0)
+      if (q.key == "stateful" && (q.op+"_init") in runtime.stateful || q.key == "update") {
+        emitFilters1(scope,q.fre,[])(buf, codegen)(scope1 => {
+          let xs = [i,...q.fre.map(quoteVar)]
+          let ys = xs.map(x => ","+x).join("")
 
-    // emit initialization first (so that sum empty = 0)
-    if (q.key == "stateful" && (q.op+"_init") in runtime.stateful || q.key == "update") {
-      emitFilters1(scope,q.fre,[])(buf, codegen)(scope1 => {
+          buf.push("  rt.init(tmp"+ys+")\n  ("+ emitStmInit(q, scope1) + ")")
+        })
+      }
+
+      emitFilters1(scope,q.fre,q.bnd)(buf, codegen)(scope1 => {
         let xs = [i,...q.fre.map(quoteVar)]
         let ys = xs.map(x => ","+x).join("")
 
-        buf.push("  rt.init(tmp"+ys+")\n  ("+ emitStmInit(q, scope1) + ")")
+        buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStmUpdate(q, scope1) + ")")
       })
+
+      buf.push("")
     }
 
-    emitFilters1(scope,q.fre,q.bnd)(buf, codegen)(scope1 => {
-      let xs = [i,...q.fre.map(quoteVar)]
-      let ys = xs.map(x => ","+x).join("")
-
-      buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStmUpdate(q, scope1) + ")")
-    })
-
-    buf.push("")
+    buf.push("// --- res ---")
   }
 
-  buf.push("// --- res ---")
   console.assert(same(q.fre,[]))
-  let scope = { vars:[], filters: [] }
+  let scope = { vars:[], filters: [], buf }
   buf.push("return "+codegen(q,scope))
 
   buf.push("})")
@@ -1770,7 +1831,7 @@ let translateToNewCodegen = q => {
           init_deps = [...union(init_arg.fre, init_arg.bnd),...init_arg.tmps.map(tmpSym)]
         }
 
-        let scope = { vars: q.fre, filters: [] } // XXX filters?
+        let scope = { vars: q.fre, filters: [], buf: [] } // XXX filters?
         assign("rt.init(tmp"+ys+")("+ emitStmInit(q,scope) + ")", sym, q.fre, init_deps)
     }
 
@@ -1782,7 +1843,7 @@ let translateToNewCodegen = q => {
 
       let deps = [...fv,...q.tmps.map(tmpSym)] // XXX rhs dims only?
 
-      let scope = { vars: q.fre, filters: [] } // XXX filters?
+      let scope = { vars: q.fre, filters: [], buf: [] } // XXX filters?
       assign("rt.update(tmp"+ys+")("+ emitStmUpdate(q,scope) + ")", sym, q.fre, deps)
     }
   }
@@ -1901,8 +1962,10 @@ let compile = (q,userSettings={}) => {
 
   // ---- middle tier, imperative form ----
 
-  // 7. Extract assignments
-  q = extract2(q)
+  if (settings.extractAssignments) {
+    // 7. Extract assignments
+    q = extract2(q)
+  }
 
   // 8. Extract filters
   for (let e of assignments)
@@ -1998,145 +2061,13 @@ let execPromise = function(cmd) {
 }
 
 
-// ------- an alternative code generator follows (currently not used) ------ //
-
-let emitCodeDeep = (q) => {
-  let buf = []
-  buf.push("// "+pretty(q))
-  buf.push("(inp => {")
-
-  let stmCount = 0
-
-  let codegen = (q, scope) => {
-    // recurse and emit in-place (following codegen(q))
-    console.assert(scope.vars)
-    console.assert(scope.filters)
-    if (q.key == "input") {
-      return "inp"
-    } else if (q.key == "const") {
-      if (typeof q.op === "string")
-        return "'"+q.op+"'"
-      else if (typeof q.op === "object" && Object.keys(q.op).length == 0)
-        return "{}"
-      else
-        return String(q.op)
-    } else if (q.key == "var") {
-      if (scope.vars.indexOf(q.op) < 0) {
-        buf.push("// ERROR: var '"+q.op+"' not defined in "+scope.vars)
-        console.error("// ERROR: var '"+q.op+"' not defined")
-      }
-      return quoteVar(q.op)
-    } else if (q.key == "get" && isDeepVarExp(q.arg[1])) {
-      let [e1,e2] = q.arg.map(x => codegen(x,scope))
-      return "rt.deepGet("+e1+","+e2+")"
-    } else if (q.key == "get") {
-      let [e1,e2] = q.arg.map(x => codegen(x,scope))
-      return e1+quoteIndex(e2)
-    } else if (q.key == "pure") {
-      let es = q.arg.map(x => codegen(x,scope))
-      return "rt.pure."+q.op+"("+es.join(",")+")"
-    } else if (q.key == "hint") {
-      // no-op!
-      return "{}"
-    } else if (q.key == "mkset") {
-      let [e1] = q.arg.map(x => codegen(x,scope))
-      return "rt.singleton("+e1+")"
-    } else if (q.key == "stateful" || q.key == "prefix" || q.key == "update") {
-
-      let i = stmCount++
-
-      let bound
-      if (q.key == "update") {
-        bound = diff(q.arg[1].vars, scope.vars) // explicit var -- still no traversal if already in scope
-      } else
-        bound = diff(q.arg[0].dims, scope.vars)
-
-
-      buf.push("/* --- begin "+q.key+"_"+i+" --- "+pretty(q)+" ---*/")
-      buf.push("// env: "+scope.vars+" dims: "+q.dims+" bound: "+bound)
-
-      if (!same(bound,q.bnd)) {
-        buf.push("// WARNING! q.bound "+q.bnd)
-        console.warn("// WARNING! bound "+bound+" -> q.bnd "+q.bnd)
-      }
-      bound = q.bnd
-
-      if (intersect(bound,scope.vars).length > 0) {
-        buf.push("// WARNING: var '"+bound+"' already defined in "+scope.vars)
-        console.warn("// WARNING: var '"+bound+"' already defined in "+scope.vars)
-      }
-
-
-      let emitStmInit = (q, scope) => {
-        if (q.key == "stateful") {
-          return "rt.stateful."+q.op+"_init"
-        } else if (q.key == "update") {
-          let e0 = codegen(q.arg[0], scope)
-          if (q.mode == "inplace" || isFresh(q.arg[0]))
-            return "(() => "+e0+")"
-          else
-            return "rt.stateful.update_init("+e0+")" // need to create copy
-        } else {
-          console.error("unknown op", q)
-        }
-      }
-
-      // let env1 = union(env, bound)
-      // let codegen2 = q => codegen(q, env1)
-
-      let emitStmUpdate = (q, scope) => {
-        if (q.key == "prefix") {
-          let [e1] = q.arg.map(x => codegen(x, scope))
-          return "rt.stateful.prefix(rt.stateful."+q.op+"("+e1+"))"
-        } else if (q.key == "stateful") {
-          let [e1] = q.arg.map(x => codegen(x, scope))
-          return "rt.stateful."+q.op+"("+e1+")"
-        } else if (q.key == "update") {
-          let e0 = "null/*XXX inited separately!*/"//codegen(q.arg[0], env)
-          let e2 = codegen(q.arg[2], scope)
-          let e1 = q.arg[1].vars.map(quoteVar)
-          return "rt.stateful.update("+e0+", ["+e1+"], "+e2+")" // XXX: init is still needed for tree paths
-        } else {
-          console.error("unknown op", q)
-        }
-      }
-
-
-      // emit initialization
-      if (q.key == "stateful" && (q.op+"_init") in runtime.stateful || q.key == "update") {
-          buf.push("let tmp"+i+" = "+ emitStmInit(q, scope)+"()")
-      } else {
-          buf.push("let tmp"+i)
-      }
-
-      // emit main computation
-      emitFilters1(scope, q.fre, bound)(buf, codegen)(scope1 => {
-        buf.push("tmp"+i+" = "+emitStmUpdate(q, scope1) + ".next(tmp"+i+")")
-      })
-
-      buf.push("/* --- end "+q.key+"_"+i+" */")
-
-      // return reference
-      return "tmp"+i
-
-    } else {
-      console.error("unknown op", pretty(q))
-      return "<?"+q.key+"?>"
-    }
-  }
-
-    let scope = { vars:[], filters: [] }
-    buf.push("return "+codegen(q,scope)+"")
-  buf.push("})")
-
-  return buf.join("\n")
-}
-
+// ------- an alternative code generator follows ------ //
 
 let compilePrimitive = (q,userSettings={}) => {
 
   reset(userSettings)
 
+  settings.extractAssignments = false
   settings.extractFilters = false
 
   let trace = {
@@ -2217,7 +2148,7 @@ let compilePrimitive = (q,userSettings={}) => {
   let pseudo = emitPseudo(q)
 
   // 11. Codegen
-  let code = emitCodeDeep(q/*,order*/)
+  let code = emitCode(q/*,order*/)
 
   code = fixIndent(code)
 
