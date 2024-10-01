@@ -562,6 +562,8 @@ let inferFree = out => q => {
   if (q.key == "input" || q.key == "const" || q.key == "placeholder") {
     q.fre = []
   } else if (q.key == "var") {
+    // TODO: check that variables are always defined -- currently not for K vars
+    console.assert(subset([q.op], out) || isCorrelatedKeyVar(q.op))
     q.fre = [q.op]
   } else if (q.key == "get" || q.key == "pure"  || q.key == "hint" || q.key == "mkset") {
     let es = q.arg.map(inferFree(out))
@@ -623,9 +625,11 @@ let inferFree = out => q => {
   } else if (q.key == "update") {
     let e0 = inferFree(out)(q.arg[0]) // what are we extending
     let e1 = inferFree(out)(q.arg[1]) // key variable
+    let e1 = inferFree(union(out,q.arg[1].dims))(q.arg[1]) // key variable
 
     let e1Body
     if (q.arg[3]) {
+      // XXX NOTE: we should do this properly -- wrap it in a count(...) or something
       let out3 = union(out, union([/*e1.op*/], diff(q.arg[3].dims, [e1.op]))) // e3 includes e1.op (union left for clarity)
       let e3 = inferFree(out3)(q.arg[3]) // filter expr
       console.assert(e3.key == "get")
@@ -1058,6 +1062,8 @@ let codegen = (q, scope) => {
     else
       return String(q.op)
   } else if (q.key == "var") {
+    // TODO: check that variables are always defined
+    // console.assert(scope.vars.indexOf(q.op) >= 0)
     return quoteVar(q.op)
   } else if (q.key == "ref") {
     let q1 = assignments[q.op]
@@ -1066,6 +1072,8 @@ let codegen = (q, scope) => {
   } else if (settings.extractFilters 
           && q.key == "get" && "filter" in q
           && scope.filters.indexOf(q.filter) >= 0) {
+    // TODO: check that filters are always defined (currently still best-effort)
+    // console.assert(scope.filters.indexOf(q.filter) >= 0)
     return "gen"+q.filter
   } else if (q.key == "get" && isDeepVarExp(q.arg[1])) {
     let [e1,e2] = q.arg.map(x => codegen(x,scope))
