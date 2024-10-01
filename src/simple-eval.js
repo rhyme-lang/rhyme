@@ -1366,7 +1366,7 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
   // if (buf.length > watermark) buf.push("// main loop")
   // buf.push(...buf1)
 
-  let scope1 = {vars: scope.vars, filters: [...filtersInScope]}
+  let scope1 = {vars: [...scope.vars, ...iter], filters: [...filtersInScope]}
   body(scope1)
 
   buf.push(closing)
@@ -2026,10 +2026,10 @@ let emitCodeDeep = (q) => {
 
   let stmCount = 0
 
-  let codegen = (q,env) => {
+  let codegen = (q, scope) => {
     // recurse and emit in-place (following codegen(q))
-    let codegen1 = q => codegen(q,env)
-
+    console.assert(scope.vars)
+    console.assert(scope.filters)
     if (q.key == "input") {
       return "inp"
     } else if (q.key == "const") {
@@ -2040,25 +2040,25 @@ let emitCodeDeep = (q) => {
       else
         return String(q.op)
     } else if (q.key == "var") {
-      if (env.indexOf(q.op) < 0) {
-        buf.push("// ERROR: var '"+q.op+"' not defined in "+env)
+      if (scope.vars.indexOf(q.op) < 0) {
+        buf.push("// ERROR: var '"+q.op+"' not defined in "+scope.vars)
         console.error("// ERROR: var '"+q.op+"' not defined")
       }
       return quoteVar(q.op)
     } else if (q.key == "get" && isDeepVarExp(q.arg[1])) {
-      let [e1,e2] = q.arg.map(codegen1)
+      let [e1,e2] = q.arg.map(x => codegen(x,scope))
       return "rt.deepGet("+e1+","+e2+")"
     } else if (q.key == "get") {
-      let [e1,e2] = q.arg.map(codegen1)
+      let [e1,e2] = q.arg.map(x => codegen(x,scope))
       return e1+quoteIndex(e2)
     } else if (q.key == "pure") {
-      let es = q.arg.map(codegen1)
+      let es = q.arg.map(x => codegen(x,scope))
       return "rt.pure."+q.op+"("+es.join(",")+")"
     } else if (q.key == "hint") {
       // no-op!
       return "{}"
     } else if (q.key == "mkset") {
-      let [e1] = q.arg.map(codegen1)
+      let [e1] = q.arg.map(x => codegen(x,scope))
       return "rt.singleton("+e1+")"
     } else if (q.key == "stateful" || q.key == "prefix" || q.key == "update") {
 
@@ -2066,13 +2066,13 @@ let emitCodeDeep = (q) => {
 
       let bound
       if (q.key == "update") {
-        bound = diff(q.arg[1].vars, env) // explicit var -- still no traversal if already in scope
+        bound = diff(q.arg[1].vars, scope.vars) // explicit var -- still no traversal if already in scope
       } else
-        bound = diff(q.arg[0].dims, env)
+        bound = diff(q.arg[0].dims, scope.vars)
 
 
       buf.push("/* --- begin "+q.key+"_"+i+" --- "+pretty(q)+" ---*/")
-      buf.push("// env: "+env+" dims: "+q.dims+" bound: "+bound)
+      buf.push("// env: "+scope.vars+" dims: "+q.dims+" bound: "+bound)
 
       if (!same(bound,q.bnd)) {
         buf.push("// WARNING! q.bound "+q.bnd)
@@ -2080,17 +2080,17 @@ let emitCodeDeep = (q) => {
       }
       bound = q.bnd
 
-      if (intersect(bound,env).length > 0) {
-        buf.push("// WARNING: var '"+bound+"' already defined in "+env)
-        console.warn("// WARNING: var '"+bound+"' already defined in "+env)
+      if (intersect(bound,scope.vars).length > 0) {
+        buf.push("// WARNING: var '"+bound+"' already defined in "+scope.vars)
+        console.warn("// WARNING: var '"+bound+"' already defined in "+scope.vars)
       }
 
 
-      let emitStmInit = (q) => {
+      let emitStmInit = (q, scope) => {
         if (q.key == "stateful") {
           return "rt.stateful."+q.op+"_init"
         } else if (q.key == "update") {
-          let e0 = codegen(q.arg[0],env)
+          let e0 = codegen(q.arg[0], scope)
           if (q.mode == "inplace" || isFresh(q.arg[0]))
             return "(() => "+e0+")"
           else
@@ -2100,19 +2100,19 @@ let emitCodeDeep = (q) => {
         }
       }
 
-      let env1 = union(env, bound)
-      let codegen2 = q => codegen(q, env1)
+      // let env1 = union(env, bound)
+      // let codegen2 = q => codegen(q, env1)
 
-      let emitStm = (q) => {
+      let emitStm = (q, scope) => {
         if (q.key == "prefix") {
-          let [e1] = q.arg.map(codegen2)
+          let [e1] = q.arg.map(x => codegen(x, scope))
           return "rt.stateful.prefix(rt.stateful."+q.op+"("+e1+"))"
         } else if (q.key == "stateful") {
-          let [e1] = q.arg.map(codegen2)
+          let [e1] = q.arg.map(x => codegen(x, scope))
           return "rt.stateful."+q.op+"("+e1+")"
         } else if (q.key == "update") {
           let e0 = "null/*XXX inited separately!*/"//codegen(q.arg[0], env)
-          let e2 = codegen2(q.arg[2])
+          let e2 = codegen(q.arg[2], scope)
           let e1 = q.arg[1].vars.map(quoteVar)
           return "rt.stateful.update("+e0+", ["+e1+"], "+e2+")" // XXX: init is still needed for tree paths
         } else {
@@ -2123,14 +2123,14 @@ let emitCodeDeep = (q) => {
 
       // emit initialization
       if (q.key == "stateful" && (q.op+"_init") in runtime.stateful || q.key == "update") {
-          buf.push("let tmp"+i+" = "+ emitStmInit(q)+"()")
+          buf.push("let tmp"+i+" = "+ emitStmInit(q, scope)+"()")
       } else {
           buf.push("let tmp"+i)
       }
 
       // emit main computation
-      emitFilters1(env, q.fre, bound)(buf, codegen)(() => {
-        buf.push("tmp"+i+" = "+emitStm(q) + ".next(tmp"+i+")")
+      emitFilters1(scope, q.fre, bound)(buf, codegen)(scope1 => {
+        buf.push("tmp"+i+" = "+emitStm(q, scope1) + ".next(tmp"+i+")")
       })
 
       buf.push("/* --- end "+q.key+"_"+i+" */")
@@ -2144,7 +2144,8 @@ let emitCodeDeep = (q) => {
     }
   }
 
-    buf.push("return "+codegen(q,[])+"")
+    let scope = { vars:[], filters: [] }
+    buf.push("return "+codegen(q,scope)+"")
   buf.push("})")
 
   return buf.join("\n")
@@ -2154,6 +2155,8 @@ let emitCodeDeep = (q) => {
 let compilePrimitive = (q,userSettings={}) => {
 
   reset(userSettings)
+
+  settings.extractFilters = false
 
   let trace = {
     log: () => {}
