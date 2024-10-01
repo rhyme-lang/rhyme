@@ -675,7 +675,7 @@ let inferFree = out => q => {
     if (checkDimsFreeTrans) assertSame(q.fre, fre2, "FRE2.1 "+pretty(q))
     // fre2 = diff(fre2, transf1(fre2))
     // assertSame(q.fre, fre2, "FRE2.2 "+pretty(q))
-    // q.fre = fre2
+    q.fre = fre2
 
 
   } else {
