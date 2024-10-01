@@ -111,7 +111,20 @@ let join = (obj1, obj2) => (schema1, schema2, schema3) => func => {
 }
 
 
+// ----- configuration space -----
+
+let defaultSettings = {
+  altInfer: false,
+  antiSubstGroupKey: false,
+  singleResult: true, // TODO: elim flag? 14 tests failing when false globally
+  newCodegen: false,
+  backend: "js"
+}
+
+
 // ----- auxiliary state -----
+
+let settings
 
 let prefixes      // canonicalize * for every prefix, e.g., data.* (preproc)
 let path          // current grouping path variables (extract)
@@ -121,7 +134,9 @@ let hints
 let filters
 let assignments
 
-let reset = () => {
+let reset = (userSettings) => {
+  settings = { ...defaultSettings, ...userSettings }
+
   prefixes = []
   path = []
 
@@ -1796,15 +1811,9 @@ let translateToNewCodegen = q => {
 
 
 
-let compile = (q,{
-  altInfer = false,
-  antiSubstGroupKey = false,
-  singleResult = true, // TODO: elim flag? 14 tests failing when false globally
-  newCodegen = false,
-  backend = "js"
-}={}) => {
+let compile = (q,userSettings={}) => {
 
-  reset()
+  reset(userSettings)
 
   let trace = {
     log: () => {}
@@ -1817,7 +1826,7 @@ let compile = (q,{
   q = preproc(q)
   let src = q
 
-  if (altInfer) { // alternative analysis implementation
+  if (settings.altInfer) { // alternative analysis implementation
     trace.log(q)
     let q0 = JSON.parse(JSON.stringify(q))
     let q1 = deno(q0)(x => {
@@ -1831,7 +1840,7 @@ let compile = (q,{
   // 2. Extract
   q = extract0(q) // basic massaging
 
-  if (antiSubstGroupKey && !newCodegen) {
+  if (settings.antiSubstGroupKey && !settings.newCodegen) {
     // anti-substitution: find occurrences of group key
     // in body and replace with K variable
     q = extract0b(q,[])
@@ -1849,7 +1858,7 @@ let compile = (q,{
   computeDependencies()
 
   // 6. Backward pass to infer output dimensions
-  let out = singleResult ? q.mind : q.dims
+  let out = settings.singleResult ? q.mind : q.dims
   q = inferBound(out)(q)
 
   varsChanged = false
@@ -1911,11 +1920,11 @@ let compile = (q,{
 
   // 11. Codegen
 
-  if (newCodegen)
+  if (settings.newCodegen)
     return translateToNewCodegen(q)
 
 
-  if (backend == "c" || backend == "cpp") {
+  if (settings.backend == "c" || settings.backend == "cpp") {
     const fs = require('node:fs/promises')
     const os = require('node:child_process')
 
@@ -1929,7 +1938,7 @@ let execPromise = function(cmd) {
 }
 
     let code, cc, filename, flags
-    if (backend == "c") {
+    if (settings.backend == "c") {
       code = fixIndent(emitCodeC(q,order))
       cc = "gcc"
       filename = "test.c"
@@ -2123,11 +2132,9 @@ let emitCodeDeep = (q) => {
 }
 
 
-let compilePrimitive = (q,{
-  singleResult = true // TODO: elim flag?
-}={}) => {
+let compilePrimitive = (q,userSettings={}) => {
 
-  reset()
+  reset(userSettings)
 
   let trace = {
     log: () => {}
@@ -2158,7 +2165,7 @@ let compilePrimitive = (q,{
   computeDependencies()
 
   // 6. Backward pass to infer output dimensions
-  let out = singleResult ? q.mind : q.dims
+  let out = settings.singleResult ? q.mind : q.dims
   q = inferBound(out)(q)
 
   varsChanged = false
