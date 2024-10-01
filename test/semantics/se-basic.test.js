@@ -256,6 +256,11 @@ test("testZipNested2", () => {
   // ])
 })
 
+
+// XXX 24/08/28 
+// NOTE:   (group *A (group *B (group *C ...))) behaves different from group (group *ANY ...)
+// REASON: add an entry for each *A key before knowing which are filtered due to *B
+
 test("testZipNested3", () => {
   let query = rh`nested.*A.*B.value + nestedB.*C.*B.value` // neither *B dominates!
 // debug = true

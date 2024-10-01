@@ -809,6 +809,28 @@ test("etaIndirect2", () => { // BUG -- eta via array constr
     // NOTE: requires recursion fix
 })
 
+// simplified from 
+test("etaIndirect2-simpl", () => { // BUG -- eta via array constr
+    let data = { 0: 2, 1: 2, 2: 2 }
+    let data1 = ["data.*E"]
+    let q0 = rh`count ${data1}.*A | group ${data1}.*A`
+    let func = compile(q0)
+    let res = func({ data })
+
+    // console.log(func.explain.pseudo0)
+    // console.log(func.explain.pseudo)
+    // console.log(func.explain.code)
+
+    let expected = {
+      2: 3
+    }
+    let bug = {
+      2: 1
+    }
+    expect(res).toEqual(expected)
+})
+
+
 /*
 
 The issue:
