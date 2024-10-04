@@ -1747,8 +1747,6 @@ let emitCodeCPP = (q, order) => {
   return generate(ir, "cpp")
 }
 
-
-
 let fixIndent = s => {
   let lines = s.split("\n")
   let out = []
@@ -1764,6 +1762,135 @@ let fixIndent = s => {
   return out.join("\n")
 }
 
+let emitStmInitSql = (q, scope) => {
+  if (q.key == "stateful") {
+    if (q.op == "sum") {
+      return "= 0"
+    } else if (q.op == "product") {
+      return "= 1"
+    } else {
+      "not supported"
+    }
+  } else if (q.key == "update") {
+    return "not supported"
+  } else {
+    console.error("unknown op", q)
+  }
+}
+
+let emitStmUpdateSql = (q, scope) => {
+  if (q.key == "stateful") {
+    if (q.op == "sum") {
+      return "+= 1"
+    } else if (q.op == "product") {
+      return "*= 2"
+    } else {
+      "not supported"
+    }
+  } else if (q.key == "update") {
+    return "not supported"
+  } else {
+    console.error("unknown op", q)
+  }
+}
+
+let emitFilterSql = (buf, csvSchema) => (body) => {
+  buf.push("int i = 0;")
+  buf.push("while (inp[i] != '\\n') {")
+  buf.push("i++;")
+  buf.push("}")
+
+  buf.push("while (1) {")
+  buf.push("if (i >= n) break;")
+  for (let i in csvSchema) {
+    buf.push(`// reading ${csvSchema[i]}`)
+    let delim = i == csvSchema.length - 1 ? "\\n" : ","
+    buf.push(`int start${i} = i;`)
+    buf.push("while (1) {")
+    buf.push(`char c${i} = inp[i];`)
+    buf.push(`if (c${i} == '${delim}') break;`)
+    buf.push("i++;")
+    buf.push("}")
+    buf.push(`int end${i} = i;`)
+    buf.push("i++;")
+  }
+  body()
+
+  buf.push("}")
+}
+
+let emitCodeCSql = (q, order, csvSchema) => {
+  let buf = []
+  buf.push("#include <stdio.h>")
+  buf.push("#include <fcntl.h>")
+  buf.push("#include <sys/mman.h>")
+  buf.push("#include <sys/stat.h>")
+  buf.push("#include <unistd.h>")
+
+  buf.push("int query(char *inp, int n);")
+
+  buf.push("int fsize(int fd) {")
+  buf.push("struct stat stat;")
+  buf.push("int res = fstat(fd,&stat);")
+  buf.push("return stat.st_size;")
+  buf.push("}")
+
+  buf.push("int main(int argc, char *argv[]) {")
+  buf.push("if (argc < 2) {")
+  buf.push("printf(\"Usage: %s <csv_file>\\n\", argv[0]);")
+  buf.push("return 1;")
+  buf.push("}")
+  
+  buf.push("// perform the actual loadCSV operation here")
+  buf.push("int fd = open(argv[1], 0);")
+  buf.push("int size = fsize(fd);")
+  buf.push("char* file = mmap(0, size, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0);")
+  
+  buf.push("printf(\"%d\\n\", query(file, size));")
+  
+  buf.push("close(fd);")
+  buf.push("return 0;")
+  buf.push("}")
+
+  buf.push("int query(char *inp, int n) {")
+
+  let prefixToId = {}
+  
+  let getNewName = (prefix) => {
+    prefixToId[prefix] ??= 0
+    let name = prefix + prefixToId[prefix]
+    prefixToId[prefix] += 1
+    return name
+  }
+
+  for (let is of order) {
+    if (is.length > 1)
+      console.error("cycle "+is)
+    let [i] = is
+    let q = assignments[i]
+
+    buf.push(`// emit tmp${i}`)
+    if (q.key == "stateful") {
+      buf.push(`int tmp${i} ${emitStmInitSql(q)};`)
+    }
+
+    // emit filter
+    // we know the filters all comes from the input
+
+    let iter = union(q.fre, q.bnd)
+    if (iter.length == 0) {
+      break;
+    }
+    emitFilterSql(buf, csvSchema)(() => {
+      buf.push(`tmp${i} ${emitStmUpdateSql(q)};`)
+    })
+  }
+
+  buf.push("return tmp0;");
+  buf.push("}");
+
+  return buf.join("\n")
+}
 
 let translateToNewCodegen = q => {
 
@@ -2034,6 +2161,40 @@ let execPromise = function(cmd) {
     return wrap
   }
 
+  if (settings.backend == "c-sql") {
+    const fs = require('node:fs/promises')
+    const os = require('node:child_process')
+
+    let execPromise = function(cmd) {
+      return new Promise(function(resolve, reject) {
+        os.exec(cmd, function(err, stdout) {
+          if (err) return reject(err);
+          resolve(stdout);
+        })
+      })
+    }
+
+    // Assumptions:
+    // A var will always be from inp
+    // A "get" will always get from a var which is the generator on all table rows
+    // and the op will be the name of the column
+    // eg. sum(.*.value)
+
+    let code = fixIndent(emitCodeCSql(q, order, settings.csvSchema))
+    let func = (async () => {
+      await fs.writeFile(`out/sql.c`, code);
+      await execPromise(`gcc out/sql.c -o out/sql`)
+      return 'out/sql'
+    })()
+
+    let wrap = async (input) => {
+      let file = await func
+      let res = await execPromise(`${file} ${input}`)
+      return res
+    }
+
+    return wrap
+  }
 
   let code = emitCode(q,order)
 
