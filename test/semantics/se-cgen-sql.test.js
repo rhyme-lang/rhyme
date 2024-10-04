@@ -42,13 +42,13 @@ int main() {
 })
 
 test("testExample", async () => {
-  await execPromise('gcc out/example.c -o out/example')
-  let res = await execPromise('out/example out/small_example.csv')
+  await execPromise('gcc cgen-sql/example.c -o out/example')
+  let res = await execPromise('out/example cgen-sql/small_example.csv')
 
   expect(res).toEqual("41\n")
 })
 
-test("testSimpleSum", async () => {
+test("testSimpleSum0", async () => {
   // Currently using an object to represent CSV filename and schema
   let schema = ["Phrase", "Year", "MatchCount", "VolumeCount"]
 
@@ -56,6 +56,18 @@ test("testSimpleSum", async () => {
 
   let func = compile(query, { backend: "c-sql", csvSchema: schema })
 
-  let res = await func("out/small_example.csv")
-  console.log(res)
+  let res = await func("cgen-sql/small_example.csv")
+  expect(res).toEqual("41\n")
 })
+
+// test("testSimpleSum1", async () => {
+//   // Currently using an object to represent CSV filename and schema
+//   let schema = ["Phrase", "Year", "MatchCount", "VolumeCount"]
+
+//   let query = rh`sum .*.VolumeCount`
+
+//   let func = compile(query, { backend: "c-sql", csvSchema: schema })
+
+//   let res = await func("out/example.csv")
+//   console.log(res)
+// })

@@ -1762,6 +1762,67 @@ let fixIndent = s => {
   return out.join("\n")
 }
 
+let prefixToId = {}
+  
+let getNewName = (prefix) => {
+  prefixToId[prefix] ??= 0
+  let name = prefix + prefixToId[prefix]
+  prefixToId[prefix] += 1
+  return name
+}
+
+let codegenCSql = (q, buf, csvSchema) => {
+  if (q.key == "input") {
+    return "inp"
+  } else if (q.key == "const") {
+    if (typeof q.op === "string") {
+      let idx = csvSchema.indexOf(q.op)
+      if (idx < 0) {
+        console.error("unknown field ", q.op)
+        return "<?"+q.key+"?>"
+      }
+
+      // Assume the string holds a integer value
+      buf.push("// converting string to number")
+
+      let start = "start" + idx
+      let end = "end" + idx
+      buf.push(`int ${q.op} = 0;`)
+      let cursor = getNewName("curr")
+      let multiplier = getNewName("mul")
+      buf.push(`int ${cursor} = ${end} - 1;`)
+      buf.push(`int ${multiplier} = 1;`)
+      buf.push(`while (${cursor} >= ${start}) {`)
+      buf.push(`${q.op} += (inp[${cursor}] - '0') * ${multiplier};`)
+      buf.push(`${multiplier} *= 10;`)
+      buf.push(`${cursor}--;`)
+      buf.push("}")
+
+      return q.op
+    } else {
+      console.error("unsupported constant ", pretty(q))
+      return String(q.op)
+    }
+  } else if (q.key == "var") {
+    return "var"
+  } else if (q.key == "ref") {
+    return "not supported"
+  } else if (q.key == "get" && isDeepVarExp(q.arg[1])) {
+    return "not supported"
+  } else if (q.key == "get") {
+    if (q.arg[1].key == "const") {
+      return codegenCSql(q.arg[1], buf, csvSchema)
+    } else {
+      console.error("malformed get", pretty(q))
+      return "<?"+q.key+"?>"
+    }
+    
+  }else {
+    console.error("unknown op ", pretty(q))
+    return "<?"+q.key+"?>"
+  }
+}
+
 let emitStmInitSql = (q, scope) => {
   if (q.key == "stateful") {
     if (q.op == "sum") {
@@ -1778,12 +1839,13 @@ let emitStmInitSql = (q, scope) => {
   }
 }
 
-let emitStmUpdateSql = (q, scope) => {
+let emitStmUpdateSql = (q, buf, csvSchema) => {
   if (q.key == "stateful") {
+    let [e1] = q.arg.map(arg => codegenCSql(arg, buf, csvSchema))
     if (q.op == "sum") {
-      return "+= 1"
+      return `+= ${e1}`
     } else if (q.op == "product") {
-      return "*= 2"
+      return `*= ${e1}`
     } else {
       "not supported"
     }
@@ -1854,15 +1916,6 @@ let emitCodeCSql = (q, order, csvSchema) => {
 
   buf.push("int query(char *inp, int n) {")
 
-  let prefixToId = {}
-  
-  let getNewName = (prefix) => {
-    prefixToId[prefix] ??= 0
-    let name = prefix + prefixToId[prefix]
-    prefixToId[prefix] += 1
-    return name
-  }
-
   for (let is of order) {
     if (is.length > 1)
       console.error("cycle "+is)
@@ -1882,7 +1935,7 @@ let emitCodeCSql = (q, order, csvSchema) => {
       break;
     }
     emitFilterSql(buf, csvSchema)(() => {
-      buf.push(`tmp${i} ${emitStmUpdateSql(q)};`)
+      buf.push(`tmp${i} ${emitStmUpdateSql(q, buf, csvSchema)};`)
     })
   }
 
