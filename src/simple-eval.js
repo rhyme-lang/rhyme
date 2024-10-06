@@ -1789,13 +1789,11 @@ let codegenCSql = (q, buf, csvSchema) => {
       let end = "end" + idx
       buf.push(`int ${q.op} = 0;`)
       let cursor = getNewName("curr")
-      let multiplier = getNewName("mul")
-      buf.push(`int ${cursor} = ${end} - 1;`)
-      buf.push(`int ${multiplier} = 1;`)
-      buf.push(`while (${cursor} >= ${start}) {`)
-      buf.push(`${q.op} += (inp[${cursor}] - '0') * ${multiplier};`)
-      buf.push(`${multiplier} *= 10;`)
-      buf.push(`${cursor}--;`)
+      buf.push(`int ${cursor} = ${start};`)
+      buf.push(`while (${cursor} < ${end}) {`)
+      buf.push(`${q.op} *= 10;`)
+      buf.push(`${q.op} += (inp[${cursor}] - '0');`)
+      buf.push(`${cursor}++;`)
       buf.push("}")
 
       return q.op
