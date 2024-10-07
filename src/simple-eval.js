@@ -1804,18 +1804,23 @@ let codegenCSql = (q, buf, csvSchema) => {
   } else if (q.key == "var") {
     return "var"
   } else if (q.key == "ref") {
-    return "not supported"
+    return `tmp${q.op}`
   } else if (q.key == "get" && isDeepVarExp(q.arg[1])) {
     return "not supported"
   } else if (q.key == "get") {
-    if (q.arg[1].key == "const") {
+    if (q.arg[1].key == "const" && q.arg[0].key == "get") {
       return codegenCSql(q.arg[1], buf, csvSchema)
+    } if (q.arg[1].key == "var" && q.arg[0].key == "input") {
+      return "not supported"
     } else {
       console.error("malformed get", pretty(q))
       return "<?"+q.key+"?>"
-    }
-    
-  }else {
+    }  
+  } else if (q.key == "pure") {
+    let es = q.arg.map(x => codegenCSql(x, buf, csvSchema))
+
+    return `${es[0]} + ${es[1]}`
+  } else {
     console.error("unknown op ", pretty(q))
     return "<?"+q.key+"?>"
   }
@@ -1855,24 +1860,25 @@ let emitStmUpdateSql = (q, buf, csvSchema) => {
 }
 
 let emitFilterSql = (buf, csvSchema) => (body) => {
-  buf.push("int i = 0;")
-  buf.push("while (inp[i] != '\\n') {")
-  buf.push("i++;")
+  let cursor = getNewName("i")
+  buf.push(`int ${cursor} = 0;`)
+  buf.push(`while (inp[${cursor}] != '\\n') {`)
+  buf.push(`${cursor}++;`)
   buf.push("}")
 
   buf.push("while (1) {")
-  buf.push("if (i >= n) break;")
+  buf.push(`if (${cursor} >= n) break;`)
   for (let i in csvSchema) {
     buf.push(`// reading ${csvSchema[i]}`)
     let delim = i == csvSchema.length - 1 ? "\\n" : ","
-    buf.push(`int start${i} = i;`)
+    buf.push(`int start${i} = ${cursor};`)
     buf.push("while (1) {")
-    buf.push(`char c${i} = inp[i];`)
+    buf.push(`char c${i} = inp[${cursor}];`)
     buf.push(`if (c${i} == '${delim}') break;`)
-    buf.push("i++;")
+    buf.push(`${cursor}++;`)
     buf.push("}")
-    buf.push(`int end${i} = i;`)
-    buf.push("i++;")
+    buf.push(`int end${i} = ${cursor};`)
+    buf.push(`${cursor}++;`)
   }
   body()
 
@@ -1880,6 +1886,7 @@ let emitFilterSql = (buf, csvSchema) => (body) => {
 }
 
 let emitCodeCSql = (q, order, csvSchema) => {
+  prefixToId = {}
   let buf = []
   buf.push("#include <stdio.h>")
   buf.push("#include <fcntl.h>")
@@ -1937,7 +1944,7 @@ let emitCodeCSql = (q, order, csvSchema) => {
     })
   }
 
-  buf.push("return tmp0;");
+  buf.push(`return ${codegenCSql(q)};`);
   buf.push("}");
 
   return buf.join("\n")

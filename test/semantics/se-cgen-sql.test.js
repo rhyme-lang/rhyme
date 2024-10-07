@@ -2,18 +2,8 @@ const { api, pipe } = require('../../src/rhyme')
 const { rh, parse } = require('../../src/parser')
 const { compile } = require('../../src/simple-eval')
 
-
 const fs = require('node:fs/promises')
 const os = require('node:child_process')
-
-
-// ---------- begin C gen tests -------- //
-
-let data = [
-  { key: "A", value: 10 },
-  { key: "B", value: 20 },
-  { key: "A", value: 30 }
-]
 
 let execPromise = function (cmd) {
   return new Promise(function (resolve, reject) {
@@ -49,7 +39,6 @@ test("testExample", async () => {
 })
 
 test("testSimpleSum0", async () => {
-  // Currently using an object to represent CSV filename and schema
   let schema = ["Phrase", "Year", "MatchCount", "VolumeCount"]
 
   let query = rh`sum .*.VolumeCount`
@@ -60,14 +49,25 @@ test("testSimpleSum0", async () => {
   expect(res).toEqual("41\n")
 })
 
-// test("testSimpleSum1", async () => {
-//   // Currently using an object to represent CSV filename and schema
-//   let schema = ["Phrase", "Year", "MatchCount", "VolumeCount"]
+test("testSimpleSum1", async () => {
+  let schema = ["A", "B", "C", "D"]
 
-//   let query = rh`sum .*.VolumeCount`
+  let query = rh`sum .*.C`
 
-//   let func = compile(query, { backend: "c-sql", csvSchema: schema })
+  let func = compile(query, { backend: "c-sql", csvSchema: schema })
 
-//   let res = await func("out/example.csv")
-//   console.log(res)
-// })
+  let res = await func("cgen-sql/simple.csv")
+  expect(res).toEqual("228\n")
+})
+
+test("testSimpleSum2", async () => {
+  let schema = ["A", "B", "C", "D"]
+
+  let query = rh`sum(.*A.C) + sum(.*B.B)`
+
+  let func = compile(query, { backend: "c-sql", csvSchema: schema })
+
+  let res = await func("cgen-sql/simple.csv")
+  expect(res).toEqual("243\n")
+})
+
