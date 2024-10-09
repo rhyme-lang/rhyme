@@ -23,6 +23,7 @@ int main() {
   return 0;
 }
 `
+  await execPromise('mkdir -p out')
 
   await fs.writeFile('out/sql.c', content);
   await execPromise('gcc out/sql.c -o out/sql')
