@@ -38,6 +38,17 @@ test("testExample", async () => {
   expect(res).toEqual("41\n")
 })
 
+test("testTrivial", async () => {
+  let schema = ["A", "B", "C", "D"]
+
+  let query = rh`10 + 10`
+
+  let func = compile(query, { backend: "c-sql", csvSchema: schema })
+
+  let res = await func("cgen-sql/simple.csv")
+  expect(res).toEqual("20\n")
+})
+
 test("testSimpleSum0", async () => {
   let schema = ["Phrase", "Year", "MatchCount", "VolumeCount"]
 
@@ -60,6 +71,28 @@ test("testSimpleSum1", async () => {
   expect(res).toEqual("228\n")
 })
 
+test("testSimpleSum2", async () => {
+  let schema = ["A", "B", "C", "D"]
+
+  let query = rh`sum(.*.C + 10)`
+
+  let func = compile(query, { backend: "c-sql", csvSchema: schema })
+
+  let res = await func("cgen-sql/simple.csv")
+  expect(res).toEqual("268\n")
+})
+
+test("testSimpleSum3", async () => {
+  let schema = ["A", "B", "C", "D"]
+
+  let query = rh`sum(.*.C) + 10`
+
+  let func = compile(query, { backend: "c-sql", csvSchema: schema })
+
+  let res = await func("cgen-sql/simple.csv")
+  expect(res).toEqual("238\n")
+})
+
 test("testSimpleSumRef", async () => {
   let schema = ["A", "B", "C", "D"]
 
@@ -69,5 +102,16 @@ test("testSimpleSumRef", async () => {
 
   let res = await func("cgen-sql/simple.csv")
   expect(res).toEqual("243\n")
+})
+
+test("testSimpleSumRef", async () => {
+  let schema = ["A", "B", "C", "D"]
+
+  let query = rh`sum(.*A.C) + sum(.*B.B) + 10`
+
+  let func = compile(query, { backend: "c-sql", csvSchema: schema })
+
+  let res = await func("cgen-sql/simple.csv")
+  expect(res).toEqual("253\n")
 })
 
