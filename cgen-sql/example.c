@@ -23,15 +23,15 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 int query(char *inp, int n) {
-    // emit tmp1
-    int tmp1 = 0;
+    // emit tmp0
+    int tmp0 = 0;
     int i0 = 0;
     while (inp[i0] != '\n') {
         i0++;
     }
     while (1) {
         if (i0 >= n) break;
-        // reading A
+        // reading Phrase
         int start0 = i0;
         while (1) {
             char c0 = inp[i0];
@@ -40,7 +40,7 @@ int query(char *inp, int n) {
         }
         int end0 = i0;
         i0++;
-        // reading B
+        // reading Year
         int start1 = i0;
         while (1) {
             char c1 = inp[i0];
@@ -49,7 +49,7 @@ int query(char *inp, int n) {
         }
         int end1 = i0;
         i0++;
-        // reading C
+        // reading MatchCount
         int start2 = i0;
         while (1) {
             char c2 = inp[i0];
@@ -58,7 +58,7 @@ int query(char *inp, int n) {
         }
         int end2 = i0;
         i0++;
-        // reading D
+        // reading VolumeCount
         int start3 = i0;
         while (1) {
             char c3 = inp[i0];
@@ -68,68 +68,14 @@ int query(char *inp, int n) {
         int end3 = i0;
         i0++;
         // converting string to number
-        int B = 0;
-        int curr0 = start1;
-        while (curr0 < end1) {
-            B *= 10;
-            B += (inp[curr0] - '0');
+        int VolumeCount = 0;
+        int curr0 = start3;
+        while (curr0 < end3) {
+            VolumeCount *= 10;
+            VolumeCount += (inp[curr0] - '0');
             curr0++;
         }
-        tmp1 += B;
+        tmp0 += VolumeCount;
     }
-    // emit tmp0
-    int tmp0 = 0;
-    int i1 = 0;
-    while (inp[i1] != '\n') {
-        i1++;
-    }
-    while (1) {
-        if (i1 >= n) break;
-        // reading A
-        int start0 = i1;
-        while (1) {
-            char c0 = inp[i1];
-            if (c0 == ',') break;
-            i1++;
-        }
-        int end0 = i1;
-        i1++;
-        // reading B
-        int start1 = i1;
-        while (1) {
-            char c1 = inp[i1];
-            if (c1 == ',') break;
-            i1++;
-        }
-        int end1 = i1;
-        i1++;
-        // reading C
-        int start2 = i1;
-        while (1) {
-            char c2 = inp[i1];
-            if (c2 == ',') break;
-            i1++;
-        }
-        int end2 = i1;
-        i1++;
-        // reading D
-        int start3 = i1;
-        while (1) {
-            char c3 = inp[i1];
-            if (c3 == '\n') break;
-            i1++;
-        }
-        int end3 = i1;
-        i1++;
-        // converting string to number
-        int C = 0;
-        int curr1 = start2;
-        while (curr1 < end2) {
-            C *= 10;
-            C += (inp[curr1] - '0');
-            curr1++;
-        }
-        tmp0 += C;
-    }
-    return tmp0 + tmp1;
+    return tmp0;
 }

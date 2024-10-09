@@ -60,7 +60,7 @@ test("testSimpleSum1", async () => {
   expect(res).toEqual("228\n")
 })
 
-test("testSimpleSum2", async () => {
+test("testSimpleSumRef", async () => {
   let schema = ["A", "B", "C", "D"]
 
   let query = rh`sum(.*A.C) + sum(.*B.B)`

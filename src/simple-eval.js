@@ -1762,20 +1762,13 @@ let fixIndent = s => {
   return out.join("\n")
 }
 
-let prefixToId = {}
-  
-let getNewName = (prefix) => {
-  prefixToId[prefix] ??= 0
-  let name = prefix + prefixToId[prefix]
-  prefixToId[prefix] += 1
-  return name
-}
-
-let codegenCSql = (q, buf, csvSchema) => {
+let codegenCSql = (q, scope) => {
+  let {buf, csvSchema, getNewName} = scope
   if (q.key == "input") {
-    return "inp"
+    return "not supported"
   } else if (q.key == "const") {
     if (typeof q.op === "string") {
+      // the string should be a column name
       let idx = csvSchema.indexOf(q.op)
       if (idx < 0) {
         console.error("unknown field ", q.op)
@@ -1785,48 +1778,63 @@ let codegenCSql = (q, buf, csvSchema) => {
       // Assume the string holds a integer value
       buf.push("// converting string to number")
 
+      let col = getNewName(q.op)
       let start = "start" + idx
       let end = "end" + idx
-      buf.push(`int ${q.op} = 0;`)
+      buf.push(`int ${col} = 0;`)
       let cursor = getNewName("curr")
       buf.push(`int ${cursor} = ${start};`)
       buf.push(`while (${cursor} < ${end}) {`)
-      buf.push(`${q.op} *= 10;`)
-      buf.push(`${q.op} += (inp[${cursor}] - '0');`)
+      buf.push(`${col} *= 10;`)
+      buf.push(`${col} += (inp[${cursor}] - '0');`)
       buf.push(`${cursor}++;`)
       buf.push("}")
 
+      return col
+    } else if (typeof q.op == "number") {
       return q.op
     } else {
       console.error("unsupported constant ", pretty(q))
       return String(q.op)
     }
   } else if (q.key == "var") {
-    return "var"
+    return "not supported"
   } else if (q.key == "ref") {
     return `tmp${q.op}`
+  } else if (settings.extractFilters 
+          && q.key == "get" && "filter" in q
+          && scope.filters.indexOf(q.filter) >= 0) {
+    // TODO: check that filters are always defined (currently still best-effort)
+    // console.assert(scope.filters.indexOf(q.filter) >= 0)
+    return "not supported"
   } else if (q.key == "get" && isDeepVarExp(q.arg[1])) {
     return "not supported"
   } else if (q.key == "get") {
     if (q.arg[1].key == "const" && q.arg[0].key == "get") {
-      return codegenCSql(q.arg[1], buf, csvSchema)
+      return codegenCSql(q.arg[1], scope)
     } if (q.arg[1].key == "var" && q.arg[0].key == "input") {
       return "not supported"
     } else {
       console.error("malformed get", pretty(q))
       return "<?"+q.key+"?>"
-    }  
+    }
   } else if (q.key == "pure") {
-    let es = q.arg.map(x => codegenCSql(x, buf, csvSchema))
-
+    let es = q.arg.map(x => codegenCSql(x, scope))
     return `${es[0]} + ${es[1]}`
+  } else if (q.key == "hint") {
+    // no-op!
+    return "not supported"
+  } else if (q.key == "mkset") {
+    return "not supported"
+  } else if (q.key == "stateful" || q.key == "prefix" || q.key == "update") {
+    return "not supported"
   } else {
-    console.error("unknown op ", pretty(q))
+    console.error("unknown op", pretty(q))
     return "<?"+q.key+"?>"
   }
 }
 
-let emitStmInitSql = (q, scope) => {
+let emitStmInitCSql = (q, scope) => {
   if (q.key == "stateful") {
     if (q.op == "sum") {
       return "= 0"
@@ -1842,9 +1850,11 @@ let emitStmInitSql = (q, scope) => {
   }
 }
 
-let emitStmUpdateSql = (q, buf, csvSchema) => {
-  if (q.key == "stateful") {
-    let [e1] = q.arg.map(arg => codegenCSql(arg, buf, csvSchema))
+let emitStmUpdateCSql = (q, scope) => {
+  if (q.key == "prefix") {
+    return "not supported"
+  } if (q.key == "stateful") {
+    let [e1] = q.arg.map(x => codegenCSql(x, scope))
     if (q.op == "sum") {
       return `+= ${e1}`
     } else if (q.op == "product") {
@@ -1859,7 +1869,18 @@ let emitStmUpdateSql = (q, buf, csvSchema) => {
   }
 }
 
-let emitFilterSql = (buf, csvSchema) => (body) => {
+let emitFiltersCSql = (scope, free, bnd) => (buf, codegen) => body => {
+  let iter = union(free, bnd)
+
+  if (iter.length == 0) return body(scope)
+
+  let full = transf(union(free, bnd))
+
+  assertSame(full, iter)
+
+  let csvSchema = scope.csvSchema
+  let getNewName = scope.getNewName
+
   let cursor = getNewName("i")
   buf.push(`int ${cursor} = 0;`)
   buf.push(`while (inp[${cursor}] != '\\n') {`)
@@ -1880,13 +1901,12 @@ let emitFilterSql = (buf, csvSchema) => (body) => {
     buf.push(`int end${i} = ${cursor};`)
     buf.push(`${cursor}++;`)
   }
-  body()
+  body(scope)
 
   buf.push("}")
 }
 
 let emitCodeCSql = (q, order, csvSchema) => {
-  prefixToId = {}
   let buf = []
   buf.push("#include <stdio.h>")
   buf.push("#include <fcntl.h>")
@@ -1921,6 +1941,14 @@ let emitCodeCSql = (q, order, csvSchema) => {
 
   buf.push("int query(char *inp, int n) {")
 
+  let map = {}
+  let getNewName = (prefix) => {
+    map[prefix] ??= 0
+    let name = prefix + map[prefix]
+    map[prefix] += 1
+    return name
+  }
+
   for (let is of order) {
     if (is.length > 1)
       console.error("cycle "+is)
@@ -1928,23 +1956,19 @@ let emitCodeCSql = (q, order, csvSchema) => {
     let q = assignments[i]
 
     buf.push(`// emit tmp${i}`)
-    if (q.key == "stateful") {
-      buf.push(`int tmp${i} ${emitStmInitSql(q)};`)
+    if (q.key == "stateful" && (q.op+"_init") in runtime.stateful || q.key == "update") {
+      buf.push(`int tmp${i} ${emitStmInitCSql(q)};`)
     }
 
     // emit filter
-    // we know the filters all comes from the input
-
-    let iter = union(q.fre, q.bnd)
-    if (iter.length == 0) {
-      break;
-    }
-    emitFilterSql(buf, csvSchema)(() => {
-      buf.push(`tmp${i} ${emitStmUpdateSql(q, buf, csvSchema)};`)
+    // filters always come from inp
+    let scope = {buf, csvSchema, getNewName}
+    emitFiltersCSql(scope, q.fre, q.bnd)(buf, codegenCSql)(scope1 => {
+      buf.push(`tmp${i} ${emitStmUpdateCSql(q, scope1)};`)
     })
   }
 
-  buf.push(`return ${codegenCSql(q)};`);
+  buf.push(`return ${codegenCSql(q, {buf, csvSchema})};`);
   buf.push("}");
 
   return buf.join("\n")
