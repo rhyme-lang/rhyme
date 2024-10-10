@@ -4,7 +4,7 @@ const { scc } = require('./scc')
 const { generate } = require('./new-codegen')
 const { preproc } = require('./preprocess')
 const { runtime } = require('./simple-runtime')
-
+const { generateCSql } = require('./sql-codegen')
 
 
 // ----- utils -----
@@ -1747,8 +1747,6 @@ let emitCodeCPP = (q, order) => {
   return generate(ir, "cpp")
 }
 
-
-
 let fixIndent = s => {
   let lines = s.split("\n")
   let out = []
@@ -1763,7 +1761,6 @@ let fixIndent = s => {
   }
   return out.join("\n")
 }
-
 
 let translateToNewCodegen = q => {
 
@@ -2034,6 +2031,9 @@ let execPromise = function(cmd) {
     return wrap
   }
 
+  if (settings.backend == "c-sql") {
+    return generateCSql(q, assignments, order, settings.csvSchema)
+  }
 
   let code = emitCode(q,order)
 
