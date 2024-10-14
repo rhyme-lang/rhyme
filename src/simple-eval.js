@@ -5,6 +5,7 @@ const { generate } = require('./new-codegen')
 const { preproc } = require('./preprocess')
 const { runtime } = require('./simple-runtime')
 const { generateCSql } = require('./sql-codegen')
+const { typing } = require('./typing')
 
 
 // ----- utils -----
@@ -122,7 +123,9 @@ let defaultSettings = {
   extractFilters: true,
 
   newCodegen: false,
-  backend: "js"
+  backend: "js",
+
+  schema: typing.any,
 }
 
 
@@ -1957,6 +1960,9 @@ let compile = (q,userSettings={}) => {
     //  2: multiple vars encoded using (vars *A *B *C)
   }
 
+  // Perform type checking, and modify ast to include types.
+  typing.validateIR(settings.schema, q);
+
   // ---- middle tier, imperative form ----
 
   if (settings.extractAssignments) {
@@ -2136,9 +2142,10 @@ let compilePrimitive = (q,userSettings={}) => {
     //  1: no embedded 'single' (not needed)
     //  2: multiple vars encoded using (vars *A *B *C)
   }
-
+  
   // ---- middle tier, imperative form ----
 
+  
   // 8. Extract filters
   extract3(q)
 
