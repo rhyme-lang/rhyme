@@ -279,8 +279,11 @@ typing["_validateIRQuery"] = (schema, cseMap, boundKeys, q) => {
     if(q === undefined)
         throw new Error("Undefined query.");
     if (q.key === "input") {
+        if (q.op === "csv") {
+            return q.schema;
+        }
         return schema;
-    } else if(q.key === "csv") {
+    } else if(q.key === "csv") { // not used
         return q.schema;
     } else if(q.key === "const") {
         if(typeof q.op === "object" && objKeyList(q.op).length == 0)
