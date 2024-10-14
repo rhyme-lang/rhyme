@@ -48,6 +48,17 @@ let preproc = q => {
     if (q.xxparam == "inp") return { key: "input" }
     else if (!Number.isNaN(Number(q.xxparam))) return { key: "const", op: Number(q.xxparam) }
     else return { key: "const", op: q.xxparam }
+  } else if (q.xxpath == "csv") {
+    // Only process the first argument which is the filename
+    // We want to extract the type info from xxparam[1] instead of evaluating it as a Rhyme query
+    let e1 = preproc(q.xxparam[0])
+    if (e1.key != "const" || typeof e1.op != "string") {
+      console.error("const string expected for filename")
+    }
+    if (q.xxparam[1] === undefined) {
+      console.error("csv schema expected")
+    }
+    return { key: "csv", file: e1.op, schema: q.xxparam[1]}
   } else if (q.xxpath == "ident") {
     if (isVar(q.xxparam)) return { key: "var", op: q.xxparam }
     else return { key: "const", op: q.xxparam }

@@ -1,6 +1,7 @@
 const { api, pipe } = require('../../src/rhyme')
 const { rh, parse } = require('../../src/parser')
 const { compile } = require('../../src/simple-eval')
+const { preproc } = require('../../src/preprocess')
 
 const fs = require('node:fs/promises')
 const os = require('node:child_process')
@@ -99,3 +100,18 @@ test("testSimpleSum5", async () => {
   expect(res).toEqual("243\n")
 })
 
+test("testLoadCSV", () => {
+  let schema = [{
+    A: "int32", B: "int32"
+  }]
+  
+  let query = preproc(rh`loadCSV "simple.csv" ${schema}`)
+  
+  expect(query).toStrictEqual(
+  	{
+      key: 'csv',
+      file: 'simple.csv',
+      schema: [{ A: 'int32', B: 'int32' }]
+    }
+  )
+})
