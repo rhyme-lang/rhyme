@@ -440,6 +440,8 @@ typing["_validateIRQuery"] = (schema, cseMap, boundKeys, q) => {
 }
 
 typing["validateIR"] = (schema, q) => {
+    if(schema === typing.any)
+        return;
     let boundKeys = {};
     let cseMap = {};
     let res = typing.validateIRQuery(schema, cseMap, boundKeys, q);
