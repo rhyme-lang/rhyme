@@ -4,6 +4,7 @@ const ir = require('./c1-ir')
 const graphics = require('./graphics')
 
 const simpleEval = require('../src/simple-eval')
+const { typing } = require('./typing')
 // const primitiveEval = require('../src/primitive-eval')
 
 // ---------- API ----------
@@ -149,12 +150,12 @@ api["exec"] = (query, data) => {
 //     generators: generatorStms
 //   }
 // }
-api["query"] = api["compile"] = (query) => {
+api["query"] = api["compile"] = (query, schema=typing.any) => {
     let rep = ir.createIR(query)
     let c1 = codegen.generate(rep)
     let c1_opt = new_codegen.generate(rep)
-    let c2 = simpleEval.compile(query)
-    let c2_new = simpleEval.compile(query, { newCodegen: true })
+    let c2 = simpleEval.compile(query, {schema: schema})
+    let c2_new = simpleEval.compile(query, {schema: schema, newCodegen: true })
     let wrapper = (x) => {
         let res1 = c1(x)
         let res1_opt = c1_opt(x)
