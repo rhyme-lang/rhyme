@@ -266,14 +266,7 @@ let emitCodeCSql = (q, ir) => {
   buf.push("return stat.st_size;")
   buf.push("}")
 
-  buf.push("int main(int argc, char *argv[]) {")
-  
-  buf.push("printf(\"%d\\n\", query());")
-
-  buf.push("return 0;")
-  buf.push("}")
-
-  buf.push("int query() {")
+  buf.push("int main() {")
 
   let map = {}
   let getNewName = (prefix) => {
@@ -305,7 +298,10 @@ let emitCodeCSql = (q, ir) => {
   for (let file in csvFiles) {
     buf.push(`close(${csvFiles[file].fd});`)
   }
-  buf.push(`return ${codegenCSql(q, {buf, ir, getNewName})};`);
+
+  buf.push(`int res = ${codegenCSql(q, {buf, ir, getNewName})};`)
+  buf.push("printf(\"%d\\n\", res);")
+  buf.push("return 0;")
   buf.push("}");
 
   return buf.join("\n")

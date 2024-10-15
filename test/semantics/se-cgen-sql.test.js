@@ -104,8 +104,6 @@ test("testSimpleSum5", async () => {
 
   let func = compile(query, { backend: "c-sql", schema: typing.nothing })
 
-  console.log(func.explain.code)
-
   let res = await func()
   expect(res).toEqual("243\n")
 })
