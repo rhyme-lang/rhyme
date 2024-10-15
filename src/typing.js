@@ -215,6 +215,8 @@ let prettyPrintType = (schema) => {
     return `{${objKeyList(schema).map((key) => `${typing.isKeySym(key) ? String(key) : key}: ${prettyPrintType(schema[key])}`).join(", ")}}`;
 }
 
+typing.prettyPrintType = prettyPrintType
+
 typing["validateIRQuery"] = (schema, cseMap, boundKeys, q) => {
     //if(cseMap[JSON.stringify(q)])
     //    return cseMap[JSON.stringify(q)];

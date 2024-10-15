@@ -950,6 +950,7 @@ let emitPseudo = (q) => {
   for (let i in filters) {
     let q = filters[i]
     buf.push(("gen"+i + prettyPath(q.fre)).padEnd(margin) + " = " + pretty(q))
+    buf.push("".padEnd(margin) + " : " + typing.prettyPrintType(q.schema))
     if (pseudoVerbose && q.fre.length)
       buf.push("  " + q.fre)
   }
@@ -957,6 +958,7 @@ let emitPseudo = (q) => {
   for (let i in hints) {
     let q = hints[i]
     buf.push(("hint"+i + prettyPath(q.fre)).padEnd(margin) + " = " + pretty(q))
+    buf.push("".padEnd(margin) + " : " + typing.prettyPrintType(q.schema))
     if (pseudoVerbose && q.fre.length)
       buf.push("  " + q.fre)
   }
@@ -979,6 +981,7 @@ let emitPseudo = (q) => {
   for (let i in assignments) {
     let q = assignments[i]
     buf.push(("tmp"+i + prettyPath(q.fre) + prettyPath(q.bnd)).padEnd(margin) + " = " + pretty(q))
+    buf.push("".padEnd(margin) + " : " + typing.prettyPrintType(q.schema))
     if (!pseudoVerbose) continue
     if (q.path?.length > 0)
       buf.push("  pth: " + q.path.map(pretty))
@@ -1006,6 +1009,7 @@ let emitPseudo = (q) => {
       buf.push("  bnd: " + q.bnd)
   }
   buf.push(pretty(q))
+  buf.push(": " + typing.prettyPrintType(q.schema))
   if (q.fre?.length > 0)
     buf.push("  " + q.fre)
   return buf.join("\n")
