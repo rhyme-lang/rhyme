@@ -285,8 +285,6 @@ typing["_validateIRQuery"] = (schema, cseMap, boundKeys, q) => {
             return q.schema;
         }
         return schema;
-    } else if(q.key === "csv") { // not used
-        return q.schema;
     } else if (q.key === "const") {
         if (typeof q.op === "object" && objKeyList(q.op).length == 0)
             return {};
