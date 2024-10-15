@@ -178,8 +178,12 @@ let emitFiltersCSql = (scope, free, bnd) => (buf, codegen) => body => {
   }
   let getNewName = scope.getNewName
 
-  // Currently we don't want nested loops
-  console.assert(pending.length == 1)
+  // Currently we don't want nested loops or same var from different prefix
+  if (pending.length != 1) {
+    
+    console.error("pending has length", pending.length)
+    return;
+  }
 
   for (let i of pending) {
     let f = filters[i]
