@@ -62,7 +62,7 @@ let codegenCSql = (q, scope) => {
       let { buffer } = csvFiles[file]
 
       if (q.schema == typing.number) {
-        buf.push("// converting string to number")
+        buf.push(`// extracting number from column ${q.op}`)
 
         // Assume the string holds a integer value
         buf.push(`int ${col} = 0;`)
