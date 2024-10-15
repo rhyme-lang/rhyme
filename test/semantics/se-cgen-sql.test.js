@@ -36,87 +36,89 @@ int main() {
 
 
 test("testTrivial", async () => {
-  let schema = ["A", "B", "C", "D"]
-
   let query = rh`1 + 200`
 
-  let func = compile(query, { backend: "c-sql", csvSchema: schema })
+  let func = compile(query, { backend: "c-sql" })
 
-  let res = await func("cgen-sql/simple.csv")
+  let res = await func()
   expect(res).toEqual("201\n")
 })
 
-// test("testSimpleSum1", async () => {
-//   let schema = ["A", "B", "C", "D"]
-
-//   let query = rh`sum .*.C`
-
-//   let func = compile(query, { backend: "c-sql", csvSchema: schema })
-
-//   let res = await func("cgen-sql/simple.csv")
-//   expect(res).toEqual("228\n")
-// })
-
-// test("testSimpleSum2", async () => {
-//   let schema = ["A", "B", "C", "D"]
-
-//   let query = rh`sum(.*.C + 10)`
-
-//   let func = compile(query, { backend: "c-sql", csvSchema: schema })
-
-//   let res = await func("cgen-sql/simple.csv")
-//   expect(res).toEqual("268\n")
-// })
-
-// test("testSimpleSum3", async () => {
-//   let schema = ["A", "B", "C", "D"]
-
-//   let query = rh`sum(.*.C) + 10`
-
-//   let func = compile(query, { backend: "c-sql", csvSchema: schema })
-
-//   let res = await func("cgen-sql/simple.csv")
-//   expect(res).toEqual("238\n")
-// })
-
-// test("testSimpleSum4", async () => {
-//   let schema = ["A", "B", "C", "D"]
-
-//   let query = rh`sum(.*A.C) + sum(.*B.B)`
-
-//   let func = compile(query, { backend: "c-sql", csvSchema: schema })
-
-//   let res = await func("cgen-sql/simple.csv")
-//   expect(res).toEqual("243\n")
-// })
-
-// test("testSimpleSum5", async () => {
-//   let schema = ["A", "B", "C", "D"]
-
-//   let query = rh`sum(.*A.C + .*A.B)`
-
-//   let func = compile(query, { backend: "c-sql", csvSchema: schema })
-
-//   let res = await func("cgen-sql/simple.csv")
-//   expect(res).toEqual("243\n")
-// })
-
-test("testLoadCSV", async () => {
-  let schema = {
-    [Symbol("*A")]: {
-      A: typing.string,
-      B: typing.number,
-      C: typing.number,
-      D: typing.number
-    }
+let schema = {
+  [Symbol("*A")]: {
+    A: typing.string,
+    B: typing.number,
+    C: typing.number,
+    D: typing.number
   }
+}
 
-  let query = rh`loadCSV "simple.csv" ${schema} | .*.C | sum`
-  console.log(query)
+test("testSimpleSum1", async () => {
+  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+
+  let query = rh`${csv}.*.C | sum`
 
   let func = compile(query, { backend: "c-sql", schema: typing.nothing, csvSchema: ["A", "B", "C", "D"] })
   
-  
-  let res = await func("cgen-sql/simple.csv")
+  let res = await func()
   expect(res).toEqual("228\n")
 })
+
+test("testSimpleSum2", async () => {
+  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+
+  let query = rh`${csv}.*.C + 10 | sum`
+
+  let func = compile(query, { backend: "c-sql", schema: typing.nothing })
+
+  let res = await func()
+  expect(res).toEqual("268\n")
+})
+
+test("testSimpleSum3", async () => {
+  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+
+  let query = rh`(${csv}.*.C | sum) + 10`
+
+  let func = compile(query, { backend: "c-sql", schema: typing.nothing })
+
+  let res = await func()
+  expect(res).toEqual("238\n")
+})
+
+test("testSimpleSum4", async () => {
+  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+
+  let query = rh`sum(${csv}.*A.C) + sum(${csv}.*B.D)`
+
+  let func = compile(query, { backend: "c-sql", schema: typing.nothing })
+
+  let res = await func()
+  expect(res).toEqual("243\n")
+})
+
+test("testSimpleSum5", async () => {
+  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+
+  let query = rh`sum(${csv}.*A.C) + sum(${csv}.*A.D)`
+
+  let func = compile(query, { backend: "c-sql", schema: typing.nothing })
+
+  console.log(func.explain.code)
+
+  let res = await func()
+  expect(res).toEqual("243\n")
+})
+
+test("testLoadCSVMultipleFiles", async () => {
+  let csv1 = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+  let csv2 = rh`loadCSV "./cgen-sql/simple_copy.csv" ${schema}`
+
+  let query = rh`sum(${csv1}.*A.C) + sum(${csv2}.*B.D)`
+
+  let func = compile(query, { backend: "c-sql", schema: typing.nothing })
+
+  let res = await func()
+  expect(res).toEqual("231\n")
+})
+

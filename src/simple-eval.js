@@ -383,7 +383,10 @@ let extract3 = q => {
       let ix = filters.map(x => JSON.stringify(x)).indexOf(str)
       if (ix < 0) {
         ix = filters.length
-        let q1 = JSON.parse(str)
+        // JSON.stringify removes keys of type Symbol
+        // Only add the schema at the top level for now
+        // In codegen we extract row schema from filters
+        let q1 = { ...JSON.parse(str), schema: q.schema }
         filters.push(q1) // deep copy...
       }
       // NOTE: we leave the expression in place, and just add
@@ -2038,7 +2041,8 @@ let execPromise = function(cmd) {
   }
 
   if (settings.backend == "c-sql") {
-    return generateCSql(q, assignments, order, settings.csvSchema)
+    let ir = {filters, assignments, vars, order}
+    return generateCSql(q, ir)
   }
 
   let code = emitCode(q,order)
