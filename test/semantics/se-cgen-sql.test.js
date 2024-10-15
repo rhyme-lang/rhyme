@@ -58,7 +58,7 @@ test("testSimpleSum1", async () => {
 
   let query = rh`${csv}.*.C | sum`
 
-  let func = compile(query, { backend: "c-sql", schema: typing.nothing, csvSchema: ["A", "B", "C", "D"] })
+  let func = compile(query, { backend: "c-sql", schema: typing.nothing })
   
   let res = await func()
   expect(res).toEqual("228\n")
