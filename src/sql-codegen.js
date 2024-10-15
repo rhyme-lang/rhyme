@@ -258,8 +258,6 @@ let emitCodeCSql = (q, ir) => {
   buf.push("#include <sys/stat.h>")
   buf.push("#include <unistd.h>")
 
-  buf.push("int query();")
-
   buf.push("int fsize(int fd) {")
   buf.push("struct stat stat;")
   buf.push("int res = fstat(fd,&stat);")
