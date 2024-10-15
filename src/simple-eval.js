@@ -1308,7 +1308,7 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
       // as far upwards as they are used!
 
       if (settings.extractFilters)
-         avail &&= subset(g1.filters, filtersInScope)
+         avail &&= subset(g1.filters??[], filtersInScope) // plusTest4a has g1.filters null?
 
       if (avail)
         available.push(i) // TODO: insert in proper place
