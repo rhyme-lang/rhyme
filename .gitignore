@@ -2,4 +2,9 @@
 node_modules
 umd
 
+cgen/inp.json
+cgen/test.c
+cgen/test.cpp
+cgen/test.out
+
 out
