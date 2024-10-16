@@ -118,7 +118,7 @@ let defaultSettings = {
   altInfer: false,
   antiSubstGroupKey: false,
   singleResult: true, // TODO: elim flag? 14 tests failing when false globally
-  
+
   extractAssignments: true,
   extractFilters: true,
 
@@ -1051,6 +1051,8 @@ let quoteIndex = s => "?.["+s+"]"
 
 let quoteIndexVars = (s,vs) => s + vs.map(quoteVar).map(quoteIndex).join("")
 
+let quoteStr = s => "\""+s+"\""
+
 // XXX trouble with tmp path vars, see testPathGroup3
 let quoteVarXS = s => isDeepVarStr(s) ? quoteVar(s)+".join('-')+'-'" : quoteVar(s)
 let quoteIndexVarsXS = (s,vs) => s + vs.map(quoteVarXS).map(quoteIndex).join("")
@@ -1082,7 +1084,7 @@ let codegen = (q, scope) => {
     let q1 = assignments[q.op]
     let xs = [String(q.op),...q1.fre]
     return quoteIndexVarsXS("tmp", xs)
-  } else if (settings.extractFilters 
+  } else if (settings.extractFilters
           && q.key == "get" && "filter" in q
           && scope.filters.indexOf(q.filter) >= 0) {
     // TODO: check that filters are always defined (currently still best-effort)
@@ -1245,11 +1247,11 @@ let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
 
     // NOTE: right now we don't add any generator variables for the
     // loops we're in -- technically we're reading from 'proj', not
-    // evaluating the filters proper. 
+    // evaluating the filters proper.
 
     // TODO: another choice would be to add variables for *all*
     // filters -- investigate if that works
-    // (how to access? could grab and store the scope passed to 
+    // (how to access? could grab and store the scope passed to
     // emitFilters2's body)
 
     let scope1 = {...scope, vars: [...scope.vars,...iter]}
@@ -1303,8 +1305,8 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
 
       let avail = g1.fre.every(x => seen[x])
 
-      // NOTE: doesn't work yet for nested codegen: filters 
-      // propagates too far -- it should only propagate 
+      // NOTE: doesn't work yet for nested codegen: filters
+      // propagates too far -- it should only propagate
       // as far upwards as they are used!
 
       if (settings.extractFilters)
@@ -1394,7 +1396,7 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
 
 let emitStmInline = (q, scope) => {
   let buf = scope.buf
-  if (!("stmCount" in scope)) 
+  if (!("stmCount" in scope))
     scope.stmCount = [0]
   let i = scope.stmCount[0]++
 
@@ -1566,6 +1568,9 @@ let emitCodeC = (q, order) => {
   return buf.join("\n")
 }
 
+let tyEnv = {}
+let nameEnv = {}
+
 let quoteIndexVarsXS_CPP = (s, vs) => {
   let res = s
   for (let v of vs) {
@@ -1574,17 +1579,224 @@ let quoteIndexVarsXS_CPP = (s, vs) => {
   return res
 }
 
+let quoteCppOp = op => {
+  if (op == "plus") {
+    return "+"
+  } else if (op == "minus") {
+    return "-"
+  } else if (op == "times") {
+    return "*"
+  } else if (op == "and") {
+    return "&&"
+  } else {
+    console.error("Unsupported Op")
+  }
+}
+
+let quoteGet = (a, b) => a+"["+b+"]"
+let quoteGets = (s, vs) => {
+  let res = s
+  for (let v of vs) {
+    res = quoteGet(res, v)
+  }
+  return res
+}
+
+let tmpSym = i => "tmp"+i
+
+let quoteStateful = op => "stateful_"+op
+
+let quoteExpr = q => {
+  if (q.key == "stateful") {
+    let es = q.arg.map(quoteExpr).filter(x => x != "hint")
+    return quoteStateful(q.op)+"("+es.join(",")+")"
+  } else if (q.key == "update") {
+    console.error("unsupported op", pretty(q))
+  } else {
+    if (q.key == "input") {
+      return "inp"
+    } else if (q.key == "const") {
+      if (typeof q.op === "number") {
+        return `${q.op}`
+      } else if (typeof q.op === "string") {
+        return quoteStr(q.op)
+      } else if (typeof q.op === "object" && Object.keys(q.op).length == 0){
+        return "{}"
+      } else {
+        console.error("unsupported constant ", pretty(q))
+        return String(q.op)
+      }
+    } else if (q.key == "var") {
+      return quoteVar(q.op)
+    } else if (q.key == "ref") {
+      let q1 = assignments[q.op]
+      let xs = [...q1.fre]
+      return quoteGets(tmpSym(q.op), xs)
+    } else if (q.key == "get") {
+      // TODO: check deep get
+      let [e1,e2] = q.arg.map(quoteExpr)
+      return quoteGet(e1, e2)
+    } else if (q.key == "pure") {
+      let es = q.arg.map(quoteExpr).filter(x => x != "hint")
+      if (es.length == 0) return "hint"
+      else if (es.length == 1) return es[0]
+      else return q.op+"("+es.join(",")+")"
+    } else if (q.key == "hint") {
+      // no-op!
+      return "hint"
+    } else if (q.key == "mkset") {
+      let [e1] = q.arg.map(quoteExpr)
+      return "singleton("+e1+")"
+    } else {
+      console.error("unknown op ", pretty(q))
+      return "<?"+q.key+"?>"
+    }
+  }
+}
+
+let defaultTy = {type: "object"}
+let getScalarTy = elem => {
+  return {type:"scalar", elemTy:elem}
+}
+let intTy = getScalarTy("int")
+let floatTy = getScalarTy("float")
+let stringTy = getScalarTy("string")
+let getTy = x => {
+  if (x in tyEnv) return tyEnv[x]
+  else return defaultTy
+}
+
+let isDefaultTy = ty => {
+  return ty == undefined || ty.type == "object"
+}
+
+let hasTy = x => !isDefaultTy(getTy(x))
+let sameTy = (a,b) => JSON.stringify(a) == JSON.stringify(b)
+
+let getGenTy = ty => {
+  let elemTy
+  if (ty.type == "dense" || ty.type == "sparse") elemTy = "int"
+  else elemTy = "string"
+  return getScalarTy(elemTy)
+}
+
+let getValTy = ty => {
+  if (ty.type == "dense" || ty.type == "sparse") {
+    if (ty.shape == "2d") {
+      return {type:ty.type, shape:"1d", elemTy:ty.elemTy}
+    } else {
+      return getScalarTy(ty.elemTy)
+    }
+  } else {
+    return defaultTy
+  }
+}
+
+let inferTy = q => {
+  let retTy
+  let expr = quoteExpr(q)
+  if (hasTy(expr)) return getTy(expr)
+  if (q.key == "stateful") {
+    if (q.op == "sum" || q.op == "product") {
+      let ty = inferTy(q.arg[0])
+      if (isDefaultTy(ty)) retTy = floatTy
+      else retTy = ty
+    } else if (q.op == "count")
+      retTy = intTy
+    else if (q.op == "array")
+      console.error("unsupported op", q)
+    else
+      console.error("unsupported op", q)
+  } else if (q.key == "update") {
+    console.error("unsupported op", q)
+  } else {
+    if (q.key == "input") {
+      retTy = defaultTy
+    } else if (q.key == "const") {
+      if (typeof q.op === "number") {
+        if (Number.isInteger(q.op))
+          retTy = intTy
+        else
+          retTy = floatTy
+      } else if (typeof q.op === "string") {
+        retTy = stringTy
+      } else if (typeof q.op === "object" && Object.keys(q.op).length == 0){
+        retTy = defaultTy
+      } else {
+        console.error("unsupported constant ", pretty(q))
+        retTy = defaultTy
+      }
+    } else if (q.key == "var") {
+      // generators default to string type
+      retTy = stringTy
+    } else if (q.key == "ref") {
+      if (q1.fre.length != 0) {
+        console.error("unhandled type infer!!")
+      }
+      let ty = inferTy(assignments[q.op])
+      tyEnv[expr] = ty
+      retTy = ty
+    } else if (q.key == "get") {
+      // TODO: consider deep get
+      let [e1, e2] = q.arg.map(quoteExpr)
+      let [ty1, ty2] = q.arg.map(inferTy)
+      let kty = getGenTy(ty1)
+      if (!sameTy(kty, ty2)) {
+        console.error("bad type!!")
+      }
+
+      tyEnv[e1] = ty1
+      tyEnv[e2] = kty
+      let ty = getValTy(ty1)
+      tyEnv[expr] = ty
+      retTy = ty
+    } else if (q.key == "pure") {
+      let tys = []
+      for (let i in q.arg) {
+        let e = quoteExpr(q.arg[i])
+        if (e != "hint") {
+          let ty = inferTy(q.arg[i])
+          tys.push(ty)
+          tyEnv[e] = ty
+        }
+      }
+      if (tys.length == 0) retTy = defaultTy
+      else if (tys.length == 1) retTy = tys[0]
+      else {
+        if (tys.every(ty => sameTy(ty, tys[0]))) {
+          retTy = tys[0]
+        } else {
+          console.error("bad type!!")
+          retTy = defaultTy
+        }
+      }
+    } else if (q.key == "hint") {
+      retTy = defaultTy
+    } else if (q.key == "mkset") {
+      let [e1] = q.arg.map(quoteExpr)
+      // TODO: handle this
+      retTy = defaultTy
+    } else {
+      console.error("unknown op ", pretty(q))
+      retTy = defaultTy
+    }
+  }
+  tyEnv[expr] = retTy
+  return retTy
+}
+
+// TODO: add explicit type cast when type does not check
 let codegenCPP = q => {
+  let expr = quoteExpr(q)
+  let ty = inferTy(q)
+  if (expr in nameEnv) return nameEnv[expr]
   if (q.key == "input") {
     return "inp"
   } else if (q.key == "const") {
     if (typeof q.op === "number") {
-      if (Number.isInteger(q.op))
-        return "rt_const_int("+q.op+")"
-      else
-        return "rt_const_float("+q.op+")"
+      return String(q.op)
     } else if (typeof q.op === "string") {
-      return "\""+q.op+"\""
+      return quoteStr(q.op)
     } else if (typeof q.op === "object" && Object.keys(q.op).length == 0){
       return "rt_const_obj()"
     } else {
@@ -1594,33 +1806,38 @@ let codegenCPP = q => {
   } else if (q.key == "var") {
     return quoteVar(q.op)
   } else if (q.key == "ref") {
-    let q1 = assignments[q.op]
-    let xs = ["\""+q.op+"\"",...q1.fre]
-    return quoteIndexVarsXS_CPP("tmp", xs)
-  } else if (q.key == "get" && isDeepVarExp(q.arg[1])) {
-    let [e1,e2] = q.arg.map(codegenCPP)
-    return "rt_deepGet("+e1+","+e2+")"
+    return expr
   } else if (q.key == "get") {
+    // TODO: handle deep get
     let [e1,e2] = q.arg.map(codegenCPP)
     return e1+"["+e2+"]"
   } else if (q.key == "pure") {
-    let es = q.arg.map(codegenCPP)
-    return "rt_pure_"+q.op+"("+es.join(",")+")"
+    let es = q.arg.map(codegenCPP).filter(x => x != "hint")
+    if (es.length == 0) return "hint"
+    else if (es.length == 1) return es[0]
+    else {
+      if (!isDefaultTy(ty)) {
+        return "("+es.join(" "+quoteCppOp(q.op)+" ")+")"
+      } else {
+        return "rt_pure_"+q.op+"("+es.join(",")+")"
+      }
+    }
   } else if (q.key == "hint") {
     // no-op!
-    return "rt_const_int(1)"
+    return "hint"
   } else if (q.key == "mkset") {
-    let [e1] = q.arg.map(codegenCPP)
-    return "rt_singleton("+e1+")"
+    console.error("unhandled op ", pretty(q))
+    return "<?"+q.key+"?>"
   } else {
     console.error("unknown op ", pretty(q))
     return "<?"+q.key+"?>"
   }
 }
 
-let statefulOpCPP = (q) => {
+let statefulOpCPP = (q, typed = false) => {
   if (q.op == "sum")
-    return "rt_pure_plus"
+    if (typed) return "+="
+    else return "rt_pure_plus"
   else if (q.op == "product")
     console.error("unsupported op", q)
   else if (q.op == "count")
@@ -1631,10 +1848,44 @@ let statefulOpCPP = (q) => {
     console.error("unsupported op", q)
 }
 
+let quoteElemTyCPP = ty => {
+  if (ty == "string") return "std::string"
+  else return ty
+}
+
+let quoteTypeCPP = ty => {
+  let elemTy = quoteElemTyCPP(ty.elemTy)
+  if (ty.type == "dense") {
+    if (ty.shape == "2d") return "std::vector<std::vector<"+elemTy+">>"
+    else return "std::vector<"+elemTy+">"
+  } else if (ty.type == "sparse") {
+    if (ty.shape == "2d") return "CSRMatrix<"+elemTy+">"
+    else return "CSVector<"+elemTy+">"
+  } else if (ty.type == "scalar") {
+    return elemTy
+  } else {
+    return "rh"
+  }
+}
+
+let quoteFileReadCPP = ty => {
+  let elemTy = quoteElemTyCPP(ty.elemTy)
+  if (ty.type == "dense") {
+    if (ty.shape == "2d") return "read_2D_dense_tensor<"+elemTy+">"
+    else return "read_1D_dense_tensor<"+elemTy+">"
+  } else if (ty.type == "sparse") {
+    console.error("Sparse Tensor read unsupported!!")
+  } else if (ty.type == "scalar") {
+    return "read_elem<"+elemTy+">"
+  } else {
+    return "read_json"
+  }
+}
+
 let emitStmInitCPP = (q) => {
   if (q.key == "stateful") {
     if (q.op == "sum")
-      return "=0"
+      return "= 0"
     else if (q.op == "product")
       console.error("unsupported op", q)
     else if (q.op == "count")
@@ -1654,8 +1905,16 @@ let emitStmUpdateCPP = (agg, q) => {
   if (q.key == "prefix") {
     console.error("unsupported op", q)
   } else if (q.key == "stateful") {
+    let ty = inferTy(q)
     let [e1] = q.arg.map(codegenCPP)
-    return agg+"="+statefulOpCPP(q)+"("+agg+","+e1+")"
+    if (!isDefaultTy(ty)) {
+      let ty1 = inferTy(q.arg[0])
+      let cast = ""
+      if (!sameTy(ty1, ty)) cast = "("+quoteTypeCPP(ty)+")"
+      return agg+" "+statefulOpCPP(q, true)+" "+cast+"("+e1+")"
+    } else {
+      return agg+" = "+statefulOpCPP(q)+"("+agg+","+e1+")"
+    }
   } else if (q.key == "update") {
     console.error("unsupported op", q)
   } else {
@@ -1667,6 +1926,8 @@ let emitCodeCPP = (q, order) => {
   let assignmentStms = []
   let generatorStms = []
   let tmpVarWriteRank = {}
+  tyEnv = {}
+  nameEnv = {}
 
   // generator ir api: mirroring necessary bits from ir.js
   let expr = (txt, ...args) => ({ txt, deps: args })
@@ -1686,21 +1947,102 @@ let emitCodeCPP = (q, order) => {
       assignmentStms.push(e)
   }
 
-  function selectGenFilter(a, b) {
+  let quoteLoop = (e1, e2) => {
+    let ty = inferTy(e1)
+    let source = codegenCPP(e1)
+    let sym = codegenCPP(e2)
+    if (ty.type == "dense") {
+      let sym = quoteExpr(e2)
+      return `for (int ${sym}=0; ${sym}<${source}.size(); ${sym}++) {`
+    } else if (ty.type == "sparse") {
+      return `for (const auto& [${sym}, ${sym}_val] : ${source}) {`
+    } else if (ty.type == "scalar") {
+      console.error("Error type!!")
+    } else {
+      return `for (const auto& [${sym}, ${sym}_val] : ${source}.items()) {`
+    }
+  }
+  function selectGenFilter(e1, e2) {
+    let a = transExpr(e1)
+    let b = transExpr(e2)
     let b1 = b.deps[0]
     let e = expr("FOR", ...a.deps) // "for " + b1 + " <- " + a.txt
     e.sym = b1
     e.rhs = a.txt
+    e.loopTxt = quoteLoop(e1, e2)
     // if (generatorStms.every(e1 => e1.txt != e.txt)) // generator CSE
       generatorStms.push(e)
   }
 
-  let tmpSym = i => "tmp-"+i
 
   let getDeps = q => [...q.fre,...q.tmps.map(tmpSym)]
 
   let transExpr = q => expr(codegenCPP(q), ...getDeps(q))
 
+  let typeInfo = ["dense", "sparse", "scalar", "object"]
+  let shapeInfo = ["1d", "2d"]
+  let elemInfo = ["int","float", "string"]
+  for (let h of hints) {
+    if (h.arg[0].key != "const") continue
+    attributes = h.arg[0].op.split(',')
+    ty = {}
+    for (let attr of attributes) {
+      if (typeInfo.includes(attr)) {
+        ty.type = attr
+      } else if (shapeInfo.includes(attr)) {
+        ty.shape = attr
+      } else if (elemInfo.includes(attr)) {
+        ty.elemTy = attr
+      }
+    }
+    tyEnv[quoteGet("inp", quoteStr(h.op))] = ty
+  }
+
+  let objs = {}
+  let collectObj = q => {
+    if (q.key == "get") {
+      let e1 = quoteExpr(q.arg[0])
+      let obj = q.arg[1].op
+      if (e1 == "inp" && !(obj in objs)) {
+        let expr = quoteExpr(q)
+        objs[obj] = expr
+        nameEnv[expr] = obj
+        return
+      }
+    }
+    if (q.arg) {
+      q.arg.forEach(collectObj)
+    }
+  }
+
+  let getScopedName = (ty, gen) => {
+    if (ty.type == "sparse" || ty.type == "object") {
+      return gen+"_val"
+    }
+  }
+
+  for (let i in filters) {
+    let q = filters[i]
+    let [e1,e2] = q.arg.map(quoteExpr)
+    q.arg.forEach(collectObj)
+    let ty1 = inferTy(q.arg[0])
+    tyEnv[e1] = ty1
+    tyEnv[e2] = getGenTy(ty1)
+    let expr = quoteGet(e1, e2)
+    tyEnv[expr] = getValTy(ty1)
+    let scopedName = getScopedName(ty1, e2)
+    if (scopedName) {
+      nameEnv[expr] = scopedName
+    }
+  }
+
+  for (let i in assignments) {
+    let q = assignments[i]
+    tyEnv[tmpSym(i)] = inferTy(q)
+    collectObj(q)
+  }
+  collectObj(q)
+  let resTy = inferTy(q)
   // map assignments
   for (let i in assignments) {
     let sym = tmpSym(i)
@@ -1708,35 +2050,36 @@ let emitCodeCPP = (q, order) => {
     let q = assignments[i]
 
     // emit initialization (see 'emitCode')
-    if (q.key == "stateful" && (q.op+"_init") in runtime.stateful || q.key == "update") {
-        let xs = [i,...q.fre.map(quoteVar)]
+    if (q.key == "stateful" && (q.op+"_init") in runtime.stateful) {
+        let xs = [...q.fre.map(quoteVar)]
         let ys = xs.map(x => "[\""+x+"\"]").join("")
 
-        let init_deps = []
-        if (q.key == "update") {
-          let init_arg = q.arg[0]
-          init_deps = [...union(init_arg.fre, init_arg.bnd),...init_arg.tmps.map(tmpSym)]
+        if (xs.length > 0) {
+          assign(sym+ys+emitStmInitCPP(q), sym, q.fre, [])
+        } else {
+          // Init temp-i
+          assign(quoteTypeCPP(getTy(sym))+" "+sym+" "+emitStmInitCPP(q), sym, q.fre, [])
         }
-
-        assign("tmp"+ys+emitStmInitCPP(q), sym, q.fre, init_deps)
+    } else if (q.key == "update") {
+        console.error("Unsupported Op")
     }
 
     // emit update (see 'emitCode')
     {
       let fv = union(q.fre, q.bnd)
-      let xs = [i,...q.fre.map(quoteVar)]
+      let xs = [...q.fre.map(quoteVar)]
       let ys = xs.map(x => "[\""+x+"\"]").join("")
 
       let deps = [...fv,...q.tmps.map(tmpSym)] // XXX rhs dims only?
 
-      assign(emitStmUpdateCPP("tmp"+ys, q), sym, q.fre, deps)
+      assign(emitStmUpdateCPP(sym+ys, q), sym, q.fre, deps)
     }
   }
 
   // map filters/generators
   for (let i in filters) {
     let q = filters[i]
-    let [a,b] = q.arg.map(transExpr)
+    let [a,b] = q.arg
     selectGenFilter(a, b)
   }
 
@@ -1744,11 +2087,27 @@ let emitCodeCPP = (q, order) => {
 
   let res = transExpr(q)
 
+  let prolog = []
+  prolog.push("#include \"rhyme.hpp\"")
+  prolog.push("int main() {")
+  for (let obj in objs) {
+    let expr = objs[obj]
+    let ty = getTy(expr)
+    prolog.push(`${quoteTypeCPP(ty)} ${obj} = ${quoteFileReadCPP(ty)}(\"cgen/${obj}.json\");`)
+  }
+
+  let epilog = []
+  epilog.push(quoteTypeCPP(resTy)+" res = "+res.txt+";")
+  epilog.push("write_result(res);")
+  epilog.push("}")
+
   let ir = {
     assignmentStms,
     generatorStms,
     tmpVarWriteRank,
-    res
+    res,
+    prolog,
+    epilog
   }
 
   return generate(ir, "cpp")
@@ -2028,7 +2387,9 @@ let execPromise = function(cmd) {
 
     let wrap = async (input) => {
       let file = await func
-      await fs.writeFile('cgen/inp.json', JSON.stringify(input));
+      for (let obj in input) {
+        await fs.writeFile(`cgen/${obj}.json`, JSON.stringify(input[obj]));
+      }
       let res = await execPromise(file)
       return res
     }
