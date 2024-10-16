@@ -50,7 +50,7 @@ exports.desugar = (p) => {
       // partial application -- this will later turn into a keyval object
       return { xxpath: "group", xxparam: args[0] }
     } else if (p == "loadCSV") {
-      return { xxpath: "raw", xxparam: "csv", xxextra: args }
+      return { xxpath: "loadCSV", xxparam: args[0], xxextra: args[1] }
     } else {
       return { xxpath: "apply", xxparam: [{ xxpath: "ident", xxparam: p }, ...args] }
     }
