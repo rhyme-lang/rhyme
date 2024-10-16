@@ -1873,11 +1873,9 @@ let quoteTypeCPP = ty => {
 
 let quoteFileReadCPP = ty => {
   let elemTy = quoteElemTyCPP(ty.elemTy)
-  if (ty.type == "dense") {
-    if (ty.shape == "2d") return "read_2D_dense_tensor<"+elemTy+">"
-    else return "read_1D_dense_tensor<"+elemTy+">"
-  } else if (ty.type == "sparse") {
-    console.error("Sparse Tensor read unsupported!!")
+  if (ty.type == "dense" || ty.type == "sparse") {
+    if (ty.shape == "2d") return "read_2D_"+ty.type+"_tensor<"+elemTy+">"
+    else return "read_1D_"+ty.type+"_tensor<"+elemTy+">"
   } else if (ty.type == "scalar") {
     return "read_elem<"+elemTy+">"
   } else {
@@ -2511,10 +2509,10 @@ let compilePrimitive = (q,userSettings={}) => {
     //  1: no embedded 'single' (not needed)
     //  2: multiple vars encoded using (vars *A *B *C)
   }
-  
+
   // ---- middle tier, imperative form ----
 
-  
+
   // 8. Extract filters
   extract3(q)
 
