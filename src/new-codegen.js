@@ -229,6 +229,8 @@ exports.generate = (ir, backend = "js") => {
   let stmt2stmtloopAfterloop = deps.stmt2stmtloopAfterloop
 
   let res = ir.res
+  let prolog = ir.prolog
+  let epilog = ir.epilog
   //
   // debug information
   //
@@ -248,10 +250,7 @@ exports.generate = (ir, backend = "js") => {
     if (str.indexOf("}") > 0) indent--
   }
   if (backend == "cpp") {
-    emit("#include \"rhyme.hpp\"")
-    emit("int main() {")
-    emit("rh inp = read_input(); // input?")
-    emit("rh tmp = rt_const_obj();")
+    prolog.forEach(emit)
   } else if (backend == "js") {
     emit("inp => {")
     emit("let tmp = {}")
@@ -349,7 +348,7 @@ exports.generate = (ir, backend = "js") => {
     let [e, ...es] = gensBySym[s] // just pick first -- could be more clever!
     // loop header
     if (backend == "cpp") {
-      emit("for (auto& ["+quoteVar(e.sym)+", "+quoteVar(e.sym)+"_val]"+ " : " + e.rhs + ".items()) {")
+      emit(e.loopTxt)
       // TODO: support multiple filters
     } else if (backend == "js") {
       emit("for (let " + quoteVar(e.sym) + " in " + e.rhs + ") {")
@@ -498,10 +497,7 @@ exports.generate = (ir, backend = "js") => {
   // wrap up codegen
   //
   if (backend == "cpp") {
-    emit("// --- res ---")
-    emit("rh res = "+res.txt+";")
-    emit("write_result(res);")
-    emit("}")
+    epilog.forEach(emit)
     let codeString = code.join("\n")
     return codeString
   } else if (backend == "js") {

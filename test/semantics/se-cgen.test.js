@@ -121,3 +121,24 @@ test("testHint1CPP", async () => {
 
   expect(res).toEqual("70")
 }, 10000)
+
+test("testHint2CPP", async () => {
+  let queryDense = rh`(hint mat \"dense,2d,int\") & (hint vec \"dense,1d,int\") & sum(mat.*i.*j)`
+  let queryRh = rh`sum(mat.*i.*j)`
+
+  let mat = [
+    [10, 20,  0,  0,  0,  0,  0],
+    [ 0, 30,  0, 40,  0,  0,  0],
+    [ 0,  0, 50, 60, 70,  0,  0],
+    [ 0,  0,  0,  0,  0, 80,  0],
+    [ 0,  0,  0,  0,  0,  0,  0],
+  ]
+
+  let funcRh = compile(queryRh, { backend : "cpp" })
+  let resRh = await funcRh({mat})
+  let funcDense = compile(queryDense, { backend : "cpp" })
+  let resDense = await funcDense({mat})
+
+  expect(resRh).toEqual("360")
+  expect(resDense).toEqual("360")
+}, 10000)
