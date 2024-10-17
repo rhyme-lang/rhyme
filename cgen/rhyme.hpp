@@ -137,6 +137,83 @@ inline std::vector<std::vector<T>> parse_2D_dense_tensor(std::string data) {
   return res;
 }
 
+template <typename T>
+inline CSVector<T> parse_1D_sparse_tensor(std::string data) {
+  std::shared_ptr<std::vector<T>> data_p = std::make_shared<std::vector<T>>();
+  std::shared_ptr<std::vector<int>> cols_p = std::make_shared<std::vector<int>>();
+  int start_idx;
+  int end_idx;
+  int len = data.size();
+  assert(data[0] == '{');
+  assert(data[len-1] == '}');
+  assert(data.substr(2, 4) == "data");
+  int start = 8;
+  int end = 9;
+  assert(data[start] == '[');
+  while (data[end]!=']') {
+    end++;
+  }
+  *data_p = std::move(parse_1D_dense_tensor<T>(data.substr(start, end - start + 1)));
+  assert(data.substr(end+3, 4) == "cols");
+  start = end+9;
+  end = start+1;
+  assert(data[start] == '[');
+  while (data[end]!=']') {
+    end++;
+  }
+  *cols_p = std::move(parse_1D_dense_tensor<int>(data.substr(start, end - start + 1)));
+  assert(data.substr(end+3, 5) == "start");
+  start = end+10;
+  end = start+1;
+  while (data[end]!=',') {
+    end++;
+  }
+  start_idx = parse_elem<int>(data.substr(start, end - start));
+  assert(data.substr(end+2, 3) == "end");
+  start = end+7;
+  end = start+1;
+  while (data[end]!=',' && data[end]!='}') {
+    end++;
+  }
+  end_idx = parse_elem<int>(data.substr(start, end - start));
+  return CSVector<T>(data_p, cols_p, start_idx, end_idx);
+}
+
+template <typename T>
+inline CSRMatrix<T> parse_2D_sparse_tensor(std::string data) {
+  std::shared_ptr<std::vector<T>> data_p = std::make_shared<std::vector<T>>();
+  std::shared_ptr<std::vector<int>> cols_p = std::make_shared<std::vector<int>>();
+  std::shared_ptr<std::vector<int>> rows_p = std::make_shared<std::vector<int>>();
+  int len = data.size();
+  assert(data[0] == '{');
+  assert(data[len-1] == '}');
+  assert(data.substr(2, 4) == "data");
+  int start = 8;
+  int end = 9;
+  assert(data[start] == '[');
+  while (data[end]!=']') {
+    end++;
+  }
+  *data_p = std::move(parse_1D_dense_tensor<T>(data.substr(start, end - start + 1)));
+  assert(data.substr(end+3, 4) == "cols");
+  start = end+9;
+  end = start+1;
+  assert(data[start] == '[');
+  while (data[end]!=']') {
+    end++;
+  }
+  *cols_p = std::move(parse_1D_dense_tensor<int>(data.substr(start, end - start + 1)));
+  assert(data.substr(end+3, 4) == "rows");
+  start = end+9;
+  end = start+1;
+  assert(data[start] == '[');
+  while (data[end]!=']') {
+    end++;
+  }
+  *rows_p = std::move(parse_1D_dense_tensor<int>(data.substr(start, end - start + 1)));
+  return CSRMatrix<T>(data_p, cols_p, rows_p);
+}
+
 typedef json rh;
 
 inline rh parse_json(std::string data) {
@@ -211,6 +288,18 @@ template <typename T>
 inline std::vector<std::vector<T>> read_2D_dense_tensor(const char *filename) {
   READFILECODE
   return parse_2D_dense_tensor<T>(data);
+}
+
+template <typename T>
+inline CSVector<T> read_1D_sparse_tensor(const char *filename) {
+  READFILECODE
+  return parse_1D_sparse_tensor<T>(data);
+}
+
+template <typename T>
+inline CSRMatrix<T> read_2D_sparse_tensor(const char *filename) {
+  READFILECODE
+  return parse_2D_sparse_tensor<T>(data);
 }
 
 template <typename T>

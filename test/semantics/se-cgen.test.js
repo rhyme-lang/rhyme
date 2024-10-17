@@ -19,6 +19,35 @@ let execPromise = function(cmd) {
     });
 }
 
+let buildCSV = vec => {
+  let data = []
+  let cols = []
+  let start = 0
+  for (let x in vec) {
+    if (vec[x]) {
+      cols.push(Number(x))
+      data.push(vec[x])
+    }
+  }
+  let end = data.length
+  return {data, cols, start, end}
+}
+
+let buildCSR = mat => {
+  let data = []
+  let cols = []
+  let rows = []
+  for (let y in mat) {
+    rows.push(data.length)
+    for (let x in mat[y]) {
+      if (mat[y][x]) {
+        cols.push(Number(x))
+        data.push(mat[y][x])
+      }
+    }
+  }
+  return {data, cols, rows}
+}
 
 test("testRoundtrip0", async () => {
   let content =
@@ -122,9 +151,33 @@ test("testHint1CPP", async () => {
   expect(res).toEqual("70")
 }, 10000)
 
-test("testHint2CPP", async () => {
-  let queryDense = rh`(hint mat \"dense,2d,int\") & (hint vec \"dense,1d,int\") & sum(mat.*i.*j)`
+test("testHint2VectorCPP", async () => {
+  let queryRh = rh`sum(vec.*i)`
+  let queryDense = rh`(hint vec \"dense,1d,int\") & sum(vec.*i)`
+  let querySparse = rh`(hint csv \"sparse,1d,int\") & sum(csv.*i)`
+
+  let vec = [0, 0, 10, 20, 30, 0, 0, 0, 40, 50, 0, 0, 0, 0, 0, 60, 0, 0, 70, 0, 0, 80]
+
+  let csv = buildCSV(vec)
+
+  let funcRh = compile(queryRh, { backend : "cpp" })
+  let resRh = await funcRh({vec})
+
+  let funcDense = compile(queryDense, { backend : "cpp" })
+  let resDense = await funcDense({vec})
+
+  let funcSparse = compile(querySparse, { backend : "cpp" })
+  let resSparse = await funcSparse({csv})
+
+  expect(resRh).toEqual("360")
+  expect(resDense).toEqual("360")
+  expect(resSparse).toEqual("360")
+}, 10000)
+
+test("testHint3MatrixCPP", async () => {
   let queryRh = rh`sum(mat.*i.*j)`
+  let queryDense = rh`(hint mat \"dense,2d,int\") & sum(mat.*i.*j)`
+  let querySparse = rh`(hint csr \"sparse,2d,int\") & sum(csr.*i.*j)`
 
   let mat = [
     [10, 20,  0,  0,  0,  0,  0],
@@ -134,11 +187,18 @@ test("testHint2CPP", async () => {
     [ 0,  0,  0,  0,  0,  0,  0],
   ]
 
+  let csr = buildCSR(mat)
+
   let funcRh = compile(queryRh, { backend : "cpp" })
   let resRh = await funcRh({mat})
+
   let funcDense = compile(queryDense, { backend : "cpp" })
   let resDense = await funcDense({mat})
 
+  let funcSparse = compile(querySparse, { backend : "cpp" })
+  let resSparse = await funcSparse({csr})
+
   expect(resRh).toEqual("360")
   expect(resDense).toEqual("360")
+  expect(resSparse).toEqual("360")
 }, 10000)
