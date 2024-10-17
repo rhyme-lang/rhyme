@@ -49,8 +49,10 @@ let csvFiles
 let codegenCSql = (q, scope) => {
   let {buf, getNewName, columnPos, file} = scope
   if (q.key == "input") {
+    return "not supported"
+  } else if (q.key == "loadInput") {
     if (q.op == "csv") {
-      return q.file
+      return q.arg[0].op
     }
     return "not supported"
   } else if (q.key == "const") {
@@ -89,7 +91,7 @@ let codegenCSql = (q, scope) => {
   } else if (q.key == "get") {
     let e1 = codegenCSql(q.arg[0], scope)
 
-    if (q.arg[0].key == "input" && q.arg[1].key == "var") {
+    if (q.arg[0].key == "loadInput" && q.arg[1].key == "var") {
       return e1
     }
     if (q.arg[0].key == "get" && q.arg[1].key == "const") {
@@ -99,7 +101,7 @@ let codegenCSql = (q, scope) => {
       let e2 = codegenCSql(q.arg[1], scope1)
       return e2
     }
-    console.err("malformed get")
+    console.error("malformed get")
     return "malformed get"
   } else if (q.key == "pure") {
     let es = q.arg.map(x => codegenCSql(x, scope))
@@ -191,31 +193,34 @@ let emitFiltersCSql = (scope, free, bnd) => (buf, codegen) => body => {
     let g1 = f.arg[0]
 
     let schema = f.schema
-    if (g1.key != "input" || g1.op != "csv") {
+    if (g1.key != "loadInput" || g1.op != "csv") {
       console.error("invalid filter");
       return;
     }
 
+    let filename = g1.arg[0].op
+
     // if file f is not open yet, open it
     // if file is already open for reading, get the mapped buffer name and size
-    if (csvFiles[g1.file] === undefined) {
-      buf.push(`// loadCSV ${g1.file}`)
+    if (csvFiles[filename] === undefined) {
+      buf.push(`// loadCSV ${filename}`)
       let fd = getNewName("fd")
       let buffer = getNewName("csv")
       let size = getNewName("n")
-      buf.push(`int ${fd} = open(\"${g1.file}\", 0);`)
+      buf.push(`int ${fd} = open(\"${filename}\", 0);`)
       buf.push(`if (${fd} == -1) {`)
-      buf.push(`fprintf(stderr, "Unable to open file ${g1.file}\\n");`);
-      buf.push(`exit(1);`)
+      buf.push(`fprintf(stderr, "Unable to open file ${filename}\\n");`);
+      buf.push(`return 1;`)
       buf.push(`}`)
       buf.push(`int ${size} = fsize(${fd});`)
       buf.push(`char *${buffer} = mmap(0, ${size}, PROT_READ, MAP_FILE | MAP_SHARED, ${fd}, 0);`)
+      buf.push(`close(${fd});`)
 
-      csvFiles[g1.file] = { fd, buffer, size }
+      csvFiles[filename] = { fd, buffer, size }
     }
-    let { buffer, size } = csvFiles[g1.file]
+    let { buffer, size } = csvFiles[filename]
 
-    buf.push(`// filter ${v1} <- ${g1.file}`)
+    buf.push(`// filter ${v1} <- ${filename}`)
     let cursor = getNewName("i")
     buf.push(`int ${cursor} = 0;`)
     buf.push(`while (${buffer}[${cursor}] != '\\n') {`)
@@ -256,7 +261,6 @@ let emitCodeCSql = (q, ir) => {
 
   let buf = []
   buf.push("#include <stdio.h>")
-  buf.push("#include <stdlib.h>")
   buf.push("#include <fcntl.h>")
   buf.push("#include <sys/mman.h>")
   buf.push("#include <sys/stat.h>")
@@ -295,10 +299,6 @@ let emitCodeCSql = (q, ir) => {
     emitFiltersCSql(scope, q.fre, q.bnd)(buf, codegenCSql)(scope1 => {
       buf.push(`tmp${i} ${emitStmUpdateCSql(q, scope1)};`)
     })
-  }
-
-  for (let file in csvFiles) {
-    buf.push(`close(${csvFiles[file].fd});`)
   }
 
   buf.push(`int res = ${codegenCSql(q, {buf, ir, getNewName})};`)

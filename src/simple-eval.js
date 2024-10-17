@@ -430,7 +430,7 @@ let inferDims = q => {
     q.vars = [q.op]
     q.mind = [q.op]
     q.dims = [q.op]
-  } else if (q.key == "get" || q.key == "pure" || q.key == "hint" || q.key == "mkset") {
+  } else if (q.key == "get" || q.key == "pure" || q.key == "hint" || q.key == "mkset" || q.key == "loadInput") {
     let es = q.arg.map(inferDims)
     q.vars = unique(es.flatMap(x => x.vars))
     q.mind = unique(es.flatMap(x => x.mind))
@@ -514,7 +514,7 @@ let inferBound = out => q => {
     q.bnd = []
   } else if (q.key == "var") {
     q.bnd = []
-  } else if (q.key == "get" || q.key == "pure" || q.key == "hint" || q.key == "mkset") {
+  } else if (q.key == "get" || q.key == "pure" || q.key == "hint" || q.key == "mkset" || q.key == "loadInput") {
     let es = q.arg.map(inferBound(out))
     q.bnd = []
   } else if (q.key == "stateful" || q.key == "prefix") {
@@ -572,7 +572,7 @@ let inferFree = out => q => {
     // TODO: check that variables are always defined -- currently not for K vars
     console.assert(subset([q.op], out) || isCorrelatedKeyVar(q.op))
     q.fre = [q.op]
-  } else if (q.key == "get" || q.key == "pure"  || q.key == "hint" || q.key == "mkset") {
+  } else if (q.key == "get" || q.key == "pure"  || q.key == "hint" || q.key == "mkset" || q.key == "loadInput") {
     let es = q.arg.map(inferFree(out))
     q.fre = unique(es.flatMap(x => x.fre))
   } else if (q.key == "stateful" || q.key == "prefix") {
@@ -901,6 +901,9 @@ let prettyPath = es => {
 let pretty = q => {
   if (q.key == "input") {
     return "inp"
+  } else if (q.key == "loadInput") {
+    let [e1] = q.arg.map(pretty)
+    return `loadInput('${q.op}', ${e1})`
   } else if (q.key == "const") {
     if (typeof q.op === "object" && Object.keys(q.op).length == 0) return "{}"
     else return ""+q.op
@@ -1067,6 +1070,10 @@ let codegen = (q, scope) => {
   // console.assert(scope.buf)
   if (q.key == "input") {
     return "inp"
+  } else if (q.key == "loadInput") {
+    console.error("op not implemented: ", pretty(q))
+    let [e1] = q.arg.map(x => codegen(x,scope))
+    return `rt.loadInput('${q.op}', ${e1})`
   } else if (q.key == "const") {
     if (typeof q.op === "string")
       return "'"+q.op+"'"
