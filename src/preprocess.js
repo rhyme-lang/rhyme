@@ -50,11 +50,8 @@ let preproc = q => {
     else return { key: "const", op: q.xxparam }
   } else if (q.xxpath == "loadCSV") {
     // Only process the first argument which is the filename
-    // We want to extract the type info from xxparam[1] instead of evaluating it as a Rhyme query
+    // We want to get the type info from xxextra instead of evaluating it as a Rhyme query
     let e1 = preproc(q.xxparam)
-    if (e1.key != "const" || typeof e1.op != "string") {
-      console.error("const string expected for filename")
-    }
     if (q.xxextra === undefined) {
       console.error("csv schema expected")
     }
