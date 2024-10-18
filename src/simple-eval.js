@@ -2438,6 +2438,7 @@ let execPromise = function(cmd) {
 
   wrap.explain = {
     src,
+    resultType: q.schema,
     ir: {filters, assignments, vars, order},
     pseudo, code
   }
