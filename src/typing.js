@@ -1,275 +1,410 @@
 
 let typing = {}
+let types = {}
 exports.typing = typing;
+exports.types = types;
 
-typing["any"] = Symbol("any");
-typing["nothing"] = Symbol("nothing"); // nothing is a set with 1 value in it: nothing
+let typeSyms = {}
 
-typing["boolean"] = Symbol("boolean");
-typing["string"] = Symbol("string"); // All string literal types are a subset of this type.
-typing["number"] = Symbol("number");
+let createType = (str) => Symbol(str);
 
-typing["isKeySym"] = (type) => {
-    if (type === typing.any)
-        return false;
-    if (type === typing.nothing)
-        return false;
-    if (type === typing.void)
-        return false;
-    if (type === typing.unknown)
-        return false;
-    if (type === typing.boolean)
-        return false;
-    if (type === typing.string)
-        return false;
-    if (type === typing.number)
-        return false;
-    return (typeof type === "symbol");
+types["any"] = createType("any"); // Can be anything. In C, must use tag to determine allow.
+types["nothing"] = createType("nothing"); // nothing is a set with 1 value in it: nothing
+let nothingSet = new Set([types.nothing]);
+
+types["boolean"] = createType("boolean");
+types["string"] = createType("string"); // All string literal types are a subset of this type.
+
+types["u8"] = createType("u8");
+types["u16"] = createType("u16");
+types["u32"] = createType("u32");
+types["u64"] = createType("u64");
+// u8 <: u16 <: u32 <: u64 (subtypes)
+
+types["i8"] = createType("i8");
+types["i16"] = createType("i16");
+types["i32"] = createType("i32");
+types["i64"] = createType("i64");
+// i8 <: i16 <: i32 <: i64
+
+types["f32"] = createType("f32");
+types["f64"] = createType("f64");
+// f32 <: f64
+types["emptyObject"] = [];
+
+let numberTypes = [
+    types.u8, types.u16, types.u32, types.u64,
+    types.i8, types.i16, types.i32, types.i64,
+    types.f32, types.f64,
+];
+
+// u8 <: i16, u16 <: i32, u32 <: i64
+// Implicitly or explicitly convert signed to unsigned, and unsigned to same-size signed when needed?
+// And also consider conversion between floats and integers.
+
+typeSyms["union"] = "union"; // arg1 U arg2 U arg3 ...
+typeSyms["dynkey"] = "dynkey"; // wrapped arg is subtype of arg
+typeSyms["function"] = "function"; // (p1, p2, ...) -> r1
+
+let extractUnion = (type) => {
+    if(type.__rh_type === typeSyms.union)
+        return Array.from(type.__rh_type_union_set);
+    return [type];
 }
 
-typing["sum"] = Symbol("sum"); // t1 u t2 u t3 ...
-typing["createSum"] = (...arr) => {
-    if (arr.length === 0)
-        return typing.void;
-    if (arr.length === 1)
+typing.createUnion = (...arr) => {
+    if(arr.includes(types.any))
+        return types.any;
+    if(arr.length === 1)
         return arr[0];
-    let sum_arr = arr.reduce((accumulator, curr) => {
-        if (curr.__rh_type && curr.__rh_type === typing.sum)
-            accumulator.push(... curr.__rh_type_params);
+    let union_arr = arr.reduce((accumulator, curr) => {
+        if(curr.__rh_type && curr.__rh_type === typeSyms.union)
+            accumulator.push(...curr.__rh_type_union_set);
         else
             accumulator.push(curr);
         return accumulator;
     }, []);
-    if (sum_arr.includes(typing.string))
-        sum_arr = sum_arr.filter((elem) => !isSpecificString(elem));
-    return {
-        __rh_type: typing.sum,
-        __rh_type_params: new Set(sum_arr)
-    }
-}
-typing["extractSum"] = (type) => {
-    if (type.__rh_type === typing.sum)
-        return [...(type.__rh_type_params)];
-    return [type];
-}
-
-typing["createMaybe"] = (type) => {
-    return typing.createSum(type, typing.nothing);
-}
-
-typing["function"] = Symbol("function"); // (p1, p2, ...) -> r1
-typing["createFunction"] = (result, ...params) => {
-    return {
-        __rh_type: typing.function,
-        __rh_type_params: [result, params]
-    }
-}
-
-let symIndex = 0;
-let freshSym = (pref) => Symbol(pref + (symIndex++));
-
-typing["typeConforms"] = (type, expectedType) => {
-    if (expectedType === typing.any)
-        return true;
-    if (type === typing.any)
-        return true;
-    let s1;
-    if (type.__rh_type === typing.sum)
-        s1 = new Set(type.__rh_type_params)
-    else
-        s1 = new Set([type])
-    let s2;
-    if (expectedType.__rh_type === typing.sum)
-        s2 = new Set(expectedType.__rh_type_params)
-    else
-        s2 = new Set([expectedType])
-    for (let s1Type of s1.keys()) {
-        let valid = false;
-        for (let s2Type of s2.keys()) {
-            if (s1Type === s2Type) {
-                valid = true;
+    let set = new Set(union_arr);
+    for(let type1 of set.keys()) {
+        for(let type2 of set.keys()) {
+            if(type1 === type2)
+                continue;
+            /*
+            * If A <: B then A | B = B
+            * Example: u8 | u16 = u16.
+            */
+            if(typing.isSubtype(type1, type2)) {
+                set.delete(type1);
                 break;
             }
-            if (s1Type.__rh_type || s2Type.__rh_type) {
-                if (s1Type.__rh_type != s2Type.__rh_type)
-                    continue;
-                if (s1Type.__rh_type === typing.function) {
-                    if (s1Type === s2Type) {
-                        valid = true;
-                        break;
-                    }
-                }
+        }
+    }
+    if(set.size === 1) {
+        return Array.from(set)[0];
+    }
+    return {
+        __rh_type: typeSyms.union,
+        __rh_type_union_set: set
+    }
+}
+
+let createUnionWithSet = (set) => {
+    if(set.has(types.any))
+        return types.any;
+    for(let type1 of set.keys()) {
+        for(let type2 of set.keys()) {
+            if(type1 === type2)
+                continue;
+            if(typing.isSubtype(type1, type2)) {
+                set.delete(type1);
+                break;
             }
-            if (typeof s1Type === "string" && s2Type === typing.string) {
+        }
+    }
+    if(set.size === 1) {
+        return Array.from(set)[0];
+    }
+    return {
+        __rh_type: typeSyms.union,
+        __rh_type_union_set: set
+    }
+}
+
+typing.createMaybe = (type) => {
+    return typing.createUnion(type, types.nothing);
+}
+
+typing.createFunction = (result, ...params) => {
+    return {
+        __rh_type: typeSyms.function,
+        __rh_type_result: result,
+        __rh_type_params: params
+    }
+}
+
+typing.createKey = (supertype, symbolName="Key") => {
+    if(typeof supertype === "string")
+        return supertype;
+    return {
+        __rh_type: typeSyms.dynkey,
+        __rh_type_symbol: freshSym(symbolName),
+        __rh_type_supertype: supertype
+    }
+}
+
+typing.objBuilder = () => {
+    let list = [];
+    let builderObj = {
+        add: (key, value) => {
+            list.push([key, value]);
+            return builderObj;
+        },
+        build: () => list
+    };
+    return builderObj;
+}
+
+typing.createSimpleObject = (obj) => {
+    let list = [];
+    for(let key of Object.keys(obj)) {
+        list.push([key, obj[key]]);
+    }
+    return list;
+}
+
+let performObjectGet = (objectType, keyType) => {
+    if(objectType === types.any)
+        return types.any;
+    let objectTypeList = extractUnion(objectType);
+    let keyTypeList = extractUnion(keyType);
+
+    let possibleResults = new Set([]);
+
+    // NU = Not Unioned.
+    for(let objectTypeNU of objectTypeList) {
+        if(objectTypeNU === types.nothing) {
+            possibleResults.add(types.nothing);
+            continue;
+        }
+        for(let keyTypeNU of keyTypeList) {
+            let nothing = true;
+            for(let keyValue of objectTypeNU) {
+                if(typing.isSubtype(keyValue[0], keyTypeNU)) {
+                    possibleResults.add(keyValue[1]);
+                    nothing = false;
+                    break;
+                }
+                if(typeCanOverlap(keyValue[0], keyTypeNU))
+                    possibleResults.add(keyValue[1]);
+            }
+            if(nothing)
+                possibleResults.add(types.nothing);
+        }
+    }
+    return createUnionWithSet(possibleResults);
+}
+
+const SUBTYPE_ORDERS = [
+    [types.u8, types.u16, types.u32, types.u64],
+    [types.i8, types.i16, types.i32, types.i64],
+    [types.u8, types.i16, types.i32, types.i64],
+    [types.u16, types.i32, types.i64],
+    [types.u32, types.i64],
+];
+
+let typeConforms_NonUnion = (type, expectedType) => {
+    if(type === expectedType)
+        return true;
+    if(typeof type === "string" && expectedType === types.string)
+        return true;
+    for(let subtype_order_arr of SUBTYPE_ORDERS) {
+        let i1 = subtype_order_arr.indexOf(type);
+        if(i1 === -1)
+            continue;
+        let i2 = subtype_order_arr.indexOf(expectedType);
+        if(i2 === -1)
+            continue;
+        if(i1 < i2)
+            return true;
+    }
+    if(expectedType.__rh_type === typeSyms.dynkey) {
+        // If expected type is a dynamic key, there is no guarantee of what it could be. It could be empty. As such, it has no guaranteed subtypes.
+        // It could only be a subtype of itself, but we already know s1Type != s2Type.
+        return false;
+    }
+    if(type.__rh_type === typeSyms.dynkey) {
+        // If supertype of dynkey is subtype of s2, then dynkey is subtype of s2.
+        if(typing.typeConforms(type.__rh_type_supertype, expectedType))
+            return true;
+    }
+    if(type.__rh_type === typeSyms.function) {
+        if(expectedType.__rh_type !== typeSyms.function)
+            return false    
+        // For function subtyping rules:
+        //  S_1 <: T_1 yields T_1 -> any <: S_1 -> any
+        //  S_2 <: T_2 yields any -> S_2 <: any -> T_2
+        // So given the two, T_1 -> S_2 <: S_1 -> T_2
+        if(type.__rh_type_params.length !== expectedType.__rh_type_params.length)
+            return false;
+        let resConforms = typing.typeConforms(type.__rh_type_result, expectedType.__rh_type_result);
+        if(!resConforms)
+            return false;
+        let argsConform = type.__rh_type_params.reduce((acc, _, i) => acc &&
+            typing.typeConforms(expectedType.__rh_type_params[i], type.__rh_type_params[i])
+        );
+        if(!argsConform)
+            return false;
+        return true;
+    }
+    if(Array.isArray(type) && Array.isArray(expectedType)) {
+        let invalid = false;
+        for(let keyValue of expectedType) {
+            // If each potential access doesn't guarantee to have a subtype of the supertype's value for that field
+            // then it could return a value that isn't in the supertype's type. So it doesn't conform.
+            if(!typing.isSubtype(performObjectGet(type, keyValue[0]), keyValue[1])) {
+                invalid = true;
+                break;
+            }
+        }
+        if(!invalid) 
+            return true;
+    }
+    return false;
+}
+
+// typeConforms is same as isSubtype.
+typing.typeConforms = (type, expectedType) => {
+    if(expectedType === types.any)
+        return true;
+
+    let s1 = extractUnion(type);
+    let s2 = extractUnion(expectedType);
+
+    for(let s1Type of s1) {
+        let valid = false;
+        for(let s2Type of s2) {
+            if(typeConforms_NonUnion(s1Type, s2Type)) {
                 valid = true;
                 break;
             }
         }
-        if (!valid)
+        if(!valid)
             return false;
     }
     return true;
 }
+typing.isSubtype = typing.typeConforms; // Alias
 
-let typeOverlaps = (type, type2) => {
-    if (type === type2)
+let typeCanOverlap = (type, type2) => {
+    if(type === type2)
         return true;
-    if (type === typing.any)
+    if(type === types.any)
         return true;
-    if (type2 === typing.any)
+    if(type2 === types.any)
         return true;
-    let s1;
-    if (type.__rh_type === typing.sum)
-        s1 = new Set(type.__rh_type_params)
-    else
-        s1 = new Set([type])
-    let s2;
-    if (type2.__rh_type === typing.sum)
-        s2 = new Set(type2.__rh_type_params)
-    else
-        s2 = new Set([type2])
-    for (let s1Type of s1.keys()) {
-        for (let s2Type of s2.keys()) {
-            if (s1Type === s2Type) {
+    let s1 = extractUnion(type);
+    let s2 = extractUnion(type2);
+    for(let s1Type of s1) {
+        for(let s2Type of s2) {
+            if(typing.isSubtype(s1Type, s2Type))
                 return true;
+            if(typing.isSubtype(s2Type, s1Type))
+                return true;
+            if(s1Type.__rh_type === typeSyms.dynkey) {
+                if(typing.isSubtype(s2Type, s1Type.__rh_type_supertype))
+                    return true;
             }
-            if (typeof s1Type === "string" && s2Type === typing.string) {
-                return true;
+            if(s2Type.__rh_type === typeSyms.dynkey) {
+                if(typing.isSubtype(s1Type, s2Type.__rh_type_supertype))
+                    return true;
             }
-            if (typeof s2Type === "string" && s1Type === typing.string) {
-                return true;
-            }
-            if (typing.isKeySym(s1Type) && (typing.isKeySym(s2Type) || s2Type == typing.string || typeof s2Type === "string"))
-                return true;
-            if (typing.isKeySym(s2Type) && (typing.isKeySym(s1Type) || s1Type == typing.string || typeof s1Type === "string"))
-                return true;
         }
     }
     return false;
 }
 
-// Is any sort of string.
+let isInteger = (type) => {
+    if(type.__rh_type === typeSyms.union)
+        // Validate that every value in the union is a integer. Hence overall, it is a integer.
+        return extractUnion(type).reduce((acc, elem) => acc && isInteger(elem), true);
+    if(type.__rh_type === typeSyms.dynkey)
+        // Dynkeys are subtypes of the supertype. Hence, if supertype is integer, dynkey is integer.
+        return isInteger(type.__rh_type_supertype);
+    if( type === types.u8 || 
+        type === types.u16 || 
+        type === types.u32 || 
+        type === types.u64 || 
+        type === types.i8 || 
+        type === types.i16 || 
+        type === types.i32 || 
+        type === types.i64)
+        return true;
+    return false;
+}
+
+let withoutNothing = (type) => {
+    if(type.__rh_type !== typeSyms.union)
+        return type;
+    return createUnionWithSet(type.__rh_type_union_set.difference(nothingSet));
+}
+
+let isNothingOr = (func, type) => {
+    if(type === types.nothing)
+        return true;
+    return func(withoutNothing(type));
+}
+
+// Same as integer except for strings. Includes string literals.
 let isString = (type) => {
-    if (type === typing.string)
+    if(type.__rh_type === typeSyms.union)
+        return extractUnion(type).reduce((acc, elem) => acc && isString(elem), true);
+    if(type.__rh_type === typeSyms.dynkey)
+        return isString(type.__rh_type_supertype);
+    if(type === types.string)
         return true;
-    if (typeof type === "string")
+    if(typeof type === "string")
         return true;
-    if (isKeySym(type))
-        return true;
-    if (type.__rh_type === typing.sum)
-        return Array.from(type.__rh_type_params).reduce((acc, curr) => acc && (isString(curr)), true);
     return false;
 }
 
-// Is finite-sized string sum
-let isSpecificString = (type) => {
-    if (type === typing.string)
-        return false;
-    if (typeof type === "string")
-        return true;
-    if (typing.isKeySym(type))
-        return true;
-    if (type.__rh_type === typing.sum)
-        return Array.from(type.__rh_type_params).reduce((acc, curr) => acc && (isString(curr)), true);
-    return false;
-}
-
-let objKeyList = (obj) => {
-    if (obj === undefined)
-        throw new Error("Undefined object");
-    return [...Object.getOwnPropertySymbols(obj), ...Object.keys(obj)];
-}
-/*
-let prettyPrintList = [];
 let prettyPrintType = (schema) => {
-    if (prettyPrintList.includes(schema))
-        return "~Recursive~";
-    prettyPrintList.push(schema);
-    let res = _prettyPrintType(schema);
-    prettyPrintList.pop(schema);
-    return res;
-}*/
-let prettyPrintType = (schema) => {
-    if (schema === undefined)
-        return "~Error~";
-    if (schema === typing.any)
-        return "Any";
-    if (schema === typing.nothing)
-        return "Nothing";
-    if (schema === typing.void)
-        return "Void";
-    if (schema === typing.number)
-        return "Number";
-    if (schema === typing.boolean)
-        return "Boolean";
-    if (schema === typing.string)
-        return "String";
-    if (typeof schema === "symbol")
-        return String(schema)
-    if (typeof schema === "string")
+    if(schema === undefined)
+        return "~Undefined~";
+    if(schema === null)
+        return "~Null~";
+    if(Object.values(types).includes(schema))
+        return Object.keys(types).filter((key) => types[key] === schema)[0];
+    if(typeof schema === "string")
         return "\"" + schema + "\"";
-    if (schema.__rh_type === typing.sum)
-        return "(" + Array.from(schema.__rh_type_params).map(type => prettyPrintType(type)).join(" | ") + ")";
-    if (schema.__rh_type === typing.function)
-        return "(" + schema.__rh_type_params[1].map(type => prettyPrintType(type)).join(", ") + ") -> " + prettyPrintType(schema.__rh_type_params[0]);
-    return `{${objKeyList(schema).map((key) => `${typing.isKeySym(key) ? String(key) : key}: ${prettyPrintType(schema[key])}`).join(", ")}}`;
+    if(schema.__rh_type === typeSyms.union)
+        return "(" + Array.from(schema.__rh_type_union_set).map(type => prettyPrintType(type)).join(" | ") + ")";
+    if(schema.__rh_type === typeSyms.function)
+        return "(" + schema.__rh_type_params.map(type => prettyPrintType(type)).join(", ") + ") -> " + prettyPrintType(schema.__rh_type_result);
+    if(schema.__rh_type === typeSyms.dynkey)
+        return "<"+prettyPrintType(schema.__rh_type_supertype)+">";//"(" + String(schema.__rh_type_symbol) + " <: " + prettyPrintType(schema.__rh_type_supertype) + ")";
+    if(Array.isArray(schema))
+        return `{${schema.map((keyValue) => `${prettyPrintType(keyValue[0])}: ${prettyPrintType(keyValue[1])}`).join(", ")}}`;
+    if(typeof schema === "object")
+        return "~UNK:" + JSON.stringify(schema) + "~";
+    return "~Invalid~";
 }
-
-typing.prettyPrintType = prettyPrintType
-
-typing["validateIRQuery"] = (schema, cseMap, boundKeys, q) => {
-    //if (cseMap[JSON.stringify(q)])
-    //    return cseMap[JSON.stringify(q)];
-    let res = typing["_validateIRQuery"](schema, cseMap, boundKeys, q);
-    q.schema = res;
-    //cseMap[JSON.stringify(q)] = res;
-    return res;
-};
+typing.prettyPrintType = prettyPrintType;
 
 let indent = (str) => str.split("\n").join("\n  ");
 
-/*
 let prettyPrint = (q) => {
-    if (prettyPrintList.includes(q))
-        return "~Recursive~";
-    prettyPrintList.push(q);
-    let res = _prettyPrint(q);
-    prettyPrintList.pop(q);
-    return res;
-}*/
-let prettyPrint = (q) => {
-    if (q === undefined)
+    if(q === undefined)
         throw new Error("Undefined query.");
     if (q.key === "input") {
         return "inp";
-    } else if (q.key === "const") {
-        if (typeof q.op === "object")
+    } else if(q.key === "const") {
+        if(typeof q.op === "object")
             return "{}";
         return String(q.op);
-    } else if (q.key === "var") {
+    } else if(q.key === "var") {
         return q.op;
         // TODO
-    } else if (q.key === "get") {
+    } else if(q.key === "get") {
         let [e1, e2] = q.arg.map(prettyPrint);
         return `${e1}[${e2}]`;
-    } else if (q.key === "pure") {
+    } else if(q.key === "pure") {
         let es = q.arg.map(prettyPrint)
         return q.op + "(" + es.join(", ") + ")"
-    } else if (q.key === "hint") {
-        return typing.nothing;
-    } else if (q.key === "mkset") {
+    } else if(q.key === "hint") {
+        return types.nothing;
+    } else if(q.key === "mkset") {
         let [e1] = q.arg.map(prettyPrint);
         return `mkset(${e1})`;
-    } else if (q.key === "prefix") {
+    } else if(q.key === "prefix") {
         let [e1] = q.arg.map(prettyPrint)
         return "prefix_"+q.op+"("+e1+")"
-    } else if (q.key === "stateful") {
+    } else if(q.key === "stateful") {
         let [e1] = q.arg.map(prettyPrint)
         return q.op+"("+e1+")"
-    } else if (q.key === "group") {
+    } else if(q.key === "group") {
         let [e1, e2] = q.arg.map(prettyPrint)
         return "{ "+ e1 + ": " + e2 + " }"
-    } else if (q.key === "update") {
+    } else if(q.key === "update") {
         let [e0,e1,e2,e3] = q.arg.map(prettyPrint)
         if (e3) return `${e0} {\n    ${e1}: ${indent(e2)}\n  } / ${e3} `
         return `(${e0} {\n    ${e1}: ${indent(e2)}\n})`
@@ -277,174 +412,218 @@ let prettyPrint = (q) => {
     throw new Error("Unable to determine type of query: " + q.key + " " + JSON.stringify(q));
 }
 
-typing["_validateIRQuery"] = (schema, cseMap, boundKeys, q) => {
-    if (q === undefined)
+let symIndex = 0;
+let freshSym = (pref) => pref + (symIndex++);
+
+let validateIRQuery = (schema, cseMap, boundKeys, q) => {
+    if(q.schema) {
+        return q.schema;
+    }
+    let res = _validateIRQuery(schema, cseMap, boundKeys, q);
+    q.schema = res;
+    //console.log(prettyPrint(q) + " : " + prettyPrintType(res));
+    return res;
+};
+
+let _validateIRQuery = (schema, cseMap, boundKeys, q) => {
+    if(q === undefined)
         throw new Error("Undefined query.");
     if (q.key === "input") {
         return schema;
-    } else if (q.key === "loadInput") {
-        return q.schema
-    } else if (q.key === "const") {
-        if (typeof q.op === "object" && objKeyList(q.op).length == 0)
-            return {};
-        if (typeof q.op === "number")
-            return typing.number;
-        if (typeof q.op === "string")
+    } else if(q.key === "loadInput") {
+        return q.schema;
+    } else if(q.key === "const") {
+        if(typeof q.op === "object" && Object.keys(q.op).length === 0)
+            return [];
+        if(typeof q.op === "number") {
+            if(q.op < 0) {
+                if(q.op >= -127)
+                    return types.i8;
+                if(q.op >= -32767)
+                    return types.i16;
+                if(q.op >= -2147483647)
+                    return types.i32;
+                return types.i64;
+            }
+            if(q.op < 256)
+                return types.u8;
+            if(q.op >= 65535)
+                return types.u16;
+            if(q.op >= 4294967295)
+                return types.u32;
+            return types.u64;
+        }
+        if(typeof q.op === "string")
             return q.op;
         throw new Error("Unknown const: " + q.op)
-    } else if (q.key === "var") {
-        if (boundKeys[q.op] === undefined) {
+    } else if(q.key === "var") {
+        if(boundKeys[q.op] === undefined) {
+            throw new Error("Unable to determine type of variable, given no context.");
             //console.log("Unable to find var: " + q.op + ", creating a new one.");
-            boundKeys[q.op] = freshSym("var");
+            //boundKeys[q.op] = freshSym("var");
         }
         return boundKeys[q.op];
-    } else if (q.key === "get") {
+    } else if(q.key === "get") {
+
         let [e1, e2] = q.arg;
-        let t1Raw = typing.validateIRQuery(schema, cseMap, boundKeys, e1);
-        let posT1 = typing.extractSum(t1Raw);
-        if (e2.key == "var") {
-            if (!boundKeys[e2.op]) {
+        let t1 = validateIRQuery(schema, cseMap, boundKeys, e1);
+        if(!typing.isSubtype(t1, typing.createMaybe(types.emptyObject))) {
+            throw new Error("Unable to perform get operation on non-object: " + prettyPrintType(t1));
+        }
+        
+        if(e2.key == "var") {
+            if(!boundKeys[e2.op]) {
                 let keys = [];
-                posT1.forEach((elem) => keys.push(...objKeyList(elem)));
-                boundKeys[e2.op] = typing.createSum(...keys);
+                extractUnion(t1).forEach((elem) => {
+                    if(elem === types.nothing)
+                        return;
+                    // Extract all keys from object.
+                    keys.push(...elem.map((entry) => entry[0]));
+                });
+                boundKeys[e2.op] = typing.createUnion(...keys);
             }
         }
-        let t2Raw = typing.validateIRQuery(schema, cseMap, boundKeys, e2);
-        let posT2 = typing.extractSum(t2Raw);
-        let arr = [];
-        for (let t1 of posT1) {
-            if (t1 === typing.any) {
-                arr.push(typing.any);
-                continue;
-            }
-            if (typeof t1 !== "object") {
-                if (t1 !== typing.nothing) {
-                    throw new Error("Error in attempting to access field on type: " + prettyPrintType(t1));
-                }
-                arr.push(typing.nothing);
-                continue;
-            }
-            for (let t2 of posT2) {
-                let nothing = true;
-                for (let key of objKeyList(t1)) {
-                    if (key === t2) {
-                        arr.push(t1[key]);
-                        nothing = false;
-                        break;
-                    }
-                    if (typeOverlaps(key, t2))
-                        arr.push(t1[key]);
-                }
-                if (nothing)
-                    arr.push(typing.nothing);
-            }
-        }
-        return typing.createSum(...arr);
-    } else if (q.key === "pure") {
+
+        let t2 = validateIRQuery(schema, cseMap, boundKeys, e2);
+        
+        return performObjectGet(t1, t2);
+    } else if(q.key === "pure") {
         let [e1, e2] = q.arg;
 
-        let t1 = typing.validateIRQuery(schema, cseMap, boundKeys, e1);
-        if (q.op === "plus") {
-            let t2 = typing.validateIRQuery(schema, cseMap, boundKeys, e2);
-            if (q.op == "plus") {
-                if (typing.typeConforms(t1, typing.number) && typing.typeConforms(t2, typing.number))
-                    return typing.number;
-                if (!typing.typeConforms(t1, typing.createMaybe(typing.number)))
-                    throw new Error("Unable to conform arg type of " + prettyPrintType(t1) + " to (Number | Nothing)");
-                if (!typing.typeConforms(t2, typing.createMaybe(typing.number)))
-                    throw new Error("Unable to conform arg type of " + prettyPrintType(t2) + " to (Number | Nothing)");
-                return typing.createMaybe(typing.number);
+        let t1 = validateIRQuery(schema, cseMap, boundKeys, e1);
+        // If q is a binary operation:
+        if(q.op === "plus") {
+            let t2 = validateIRQuery(schema, cseMap, boundKeys, e2);
+            if(q.op == "plus") {
+                // If q is a plus, find lowest subtype of both values and
+                if(isNothingOr(isInteger, t1) && isNothingOr(isInteger, t2)) {
+                    let possibleResults = new Set([]);
+                    if(!isInteger(t1) || !isInteger(t2)) {
+                        possibleResults.add(types.nothing);
+                    }
+                    for(let numberType of numberTypes) {
+                        if(typing.isSubtype(t1, numberType) && typing.isSubtype(t2, numberType)) {
+                            possibleResults.add(numberType);
+                            break;
+                        }
+                    }
+                    return createUnionWithSet(possibleResults);
+                } else {
+                    throw new Error("Unimplemented ability to type-check addition of non-integer values.")
+                }
             }
         }
         throw new Error("Pure operation not implemented: " + q.op);
-    } else if (q.key === "hint") {
+    } else if(q.key === "hint") {
 
-        return typing.nothing;
-    } else if (q.key === "mkset") {
+        return types.nothing;
+    } else if(q.key === "mkset") {
 
         let [e1] = q.arg;
-        if (e1.key === "const") {
-            return {[e1.op]: true};
-        }
-        return {[freshSym("mkset")]: true}
-    } else if (q.key === "prefix") {
+        let keyType = validateIRQuery(schema, cseMap, boundKeys, e1);
+        if(keyType.__rh_type !== typeSyms.dynkey)
+            return [[typing.createKey(keyType, "Mkset"), types.boolean]];
+        return [[keyType, types.boolean]];
 
-    } else if (q.key === "stateful") {
+    } else if(q.key === "prefix") {
 
-        let argType = typing.validateIRQuery(schema, cseMap, boundKeys, q.arg[0])
+    } else if(q.key === "stateful") {
 
-        if (q.op === "sum" || q.op === "product" || q.op === "min" || q.op === "max") {
+        let argType = validateIRQuery(schema, cseMap, boundKeys, q.arg[0])
+
+        if(q.op === "sum" || q.op === "product") {
             // Check if each arg extends (number | nothing)
-            if (!typing.typeConforms(argType, typing.createMaybe(typing.number))) {
-                throw new Error("Unable to conform arg type of " + prettyPrintType(argType) + " to (Number | Nothing)");
+            if(argType === types.nothing)
+                throw new Error("Unable to " + q.op + " on a query that is always nothing: " + prettyPrint(q));
+            if(!isInteger(argType))
+                throw new Error("Unable to union non-integer values currently. Got: " + prettyPrintType(argType));
+            let possibleResults = new Set([]);
+            for(let argExtract of extractUnion(argType)) {
+                if(argExtract === types.nothing)
+                    continue;
+                if(argExtract.__rh_type === typeSyms.dynkey)
+                    possibleResults.add(argExtract.__rh_type_supertype);
+                else
+                    possibleResults.add(argExtract);
             }
-            return typing.number;
+            return createUnionWithSet(possibleResults);
+        } else if(q.op === "min" || q.op === "max") {
+            // Check if each arg extends (number | nothing)
+            if(argType === types.nothing)
+                throw new Error("Unable to " + q.op + " on a query that is always nothing: " + prettyPrint(q));
+            if(!isInteger(argType))
+                throw new Error("Unable to union non-integer values currently.");
+            return withoutNothing(argType);
         }
-        if (q.op === "count") {
+        if(q.op === "count") {
             // As long as the argument is valid, it doesn't matter what type it is.
-            return typing.number;
+            return types.u32;
         }
-        if (q.op === "single" || q.op === "first" || q.op === "last") {
+        if(q.op === "single" || q.op === "first" || q.op === "last") {
             // It could be the generator is empty. So it could result Nothing
             // TODO: Allow hint to specify it will guaranteed be non-empty.
             return typing.createMaybe(argType);
         }
-        if (q.op === "array") {
+        if(q.op === "array") {
             // If Nothing is included in the object definition, remove it.
             // Because array's only accumulate non-nothing values.
-            if (argType.__rh_type === typing.sum) {
-                if (argType.__rh_type_params.has(typing.nothing))
-                    argType = typing.createSum(...argType.__rh_type_params.difference(new Set([typing.nothing])));
-            }
-            return {[freshSym("array")]: argType};
+            // TODO: See if we should default to size of array as u32 here.
+            return typing.objBuilder()
+                .add(
+                    typing.createKey(types.u32, "Array"),
+                    withoutNothing(argType))
+                .build();
+        }
+        if (q.op === "print") {
+            return typing.number;
         }
         throw new Error("Unimplemented stateful expression " + q.op);
-    } else if (q.key === "group") {
+    } else if(q.key === "group") {
+        throw new Error("Unimplemented");
         let [e1, e2] = q.arg;
-        let t1 = typing.validateIRQuery(schema, cseMap, boundKeys, e1);
-        let t2 = typing.validateIRQuery(schema, cseMap, boundKeys, e2);
-        if (t1 !== typing.string && !typing.isKeySym(t2))
+        let t1 = validateIRQuery(schema, cseMap, boundKeys, e1);
+        let t2 = validateIRQuery(schema, cseMap, boundKeys, e2);
+        if(t1 !== types.string && !typing.isKeySym(t2))
             throw new Error("Unable to use non-string field as key. Found: " + prettyPrintType(t1));
         //return "{ "+ e1 + ": " + e2 + " }"
-        throw new Error("Unimplemented");
         //return {"*": t2};
-    } else if (q.key === "update") {
+    } else if(q.key === "update") {
         let [e1, e2, e3, e4] = q.arg;
-        if (e4 !== undefined) {
-            let _ = typing.validateIRQuery(schema, cseMap, boundKeys, e4);
+        if(e4 !== undefined) {
+            let _ = validateIRQuery(schema, cseMap, boundKeys, e4);
         }
-        let t1 = typing.validateIRQuery(schema, cseMap, boundKeys, e1);
-        if (typeof t1 !== "object")
+        let t1 = validateIRQuery(schema, cseMap, boundKeys, e1);
+        if(!typing.isSubtype(t1, types.emptyObject))
             throw new Error("Unable to update field of type: " + prettyPrintType(t1));
-        let t3 = typing.validateIRQuery(schema, cseMap, boundKeys, e3);
-        if (e2.op === "vars") {
+        let t3 = validateIRQuery(schema, cseMap, boundKeys, e3);
+        if(e2.op === "vars") {
             let currObj = t3;
-            for (let i = e2.arg.length - 1; i >= 0; i--) {
-                let variable = e2.arg[i];
-                let variableType = typing.validateIRQuery(schema, cseMap, boundKeys, variable);
-                if (typeof variableType !== "string" && !typing.isKeySym(variableType))
-                    throw new Error("Unable to use non-specific-string field on updating object. Found: " + prettyPrintType(variableType));
-                if (i === 0) {
-                    t1[variableType] = currObj;
+            for(let i = e2.arg.length - 1; i >= 0; i--) {
+                let keyVar = e2.arg[i];
+                let keyVarType = validateIRQuery(schema, cseMap, boundKeys, keyVar);
+                if(!isInteger(keyVarType) && !isString(keyVarType))
+                    throw new Error("Unable to use type: " + prettyPrintType(keyVarType) + " as object key");
+                if(i === 0) {
+                    return [[keyVarType, currObj], ...t1];
                 } else {
-                    currObj = {[variableType]: currObj};
+                    currObj = [[keyVarType, currObj]];
                 }
             }
-        } else {
-            let t2 = typing.validateIRQuery(schema, cseMap, boundKeys, e2);
-            if (typeof t2 !== "string" && !typing.isKeySym(t2))
-                throw new Error("Unable to use non-specific-string field on updating object. Found: " + prettyPrintType(t2));
-            t1[t2] = t3;
         }
-        return t1;
+        let t2 = validateIRQuery(schema, cseMap, boundKeys, e2);
+        if(!isInteger(t2) && !isString(t2))
+            throw new Error("Unable to use type: " + prettyPrintType(t2) + " as object key");
+        return [[t2, t3], ...t1];
     }
     throw new Error("Unable to determine type of query: " + prettyPrint(q));
 }
 
-typing["validateIR"] = (schema, q) => {
-    if (schema === typing.any)
-        return;
+typing.validateIR = (schema, q) => {
+    if(schema === types.any || schema === undefined)
+        return types.any;
     let boundKeys = {};
     let cseMap = {};
-    let res = typing.validateIRQuery(schema, cseMap, boundKeys, q);
+    let res = validateIRQuery(schema, cseMap, boundKeys, q);
+    //console.log(prettyPrintType(res));
+    return res;
 }

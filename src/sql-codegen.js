@@ -1,5 +1,5 @@
 const { runtime } = require('./simple-runtime')
-const { typing } = require('./typing')
+const { typing, types } = require('./typing')
 
 
 // ----- utils -----
@@ -44,15 +44,23 @@ let subset = (a,b) => {
 
 let same = (a,b) => subset(a,b) && subset(b,a)
 
+let isDeepVarStr = s => s.startsWith("**")
+
+let isDeepVarExp = s => s.key == "var" && isDeepVarStr(s.op)
+
+let quoteVar = s => s.replaceAll("*", "x")
+
 let csvFiles
 
 let codegenCSql = (q, scope) => {
-  let {buf, getNewName, columnPos, file} = scope
+  let {buf, getNewName, fileColumnPos, file} = scope
   if (q.key == "input") {
     return "not supported"
   } else if (q.key == "loadInput") {
     if (q.op == "csv") {
-      return q.arg[0].op
+      scope.file = q.arg[0].op
+      let { mappedFile } = csvFiles[scope.file]
+      return mappedFile
     }
     return "not supported"
   } else if (q.key == "const") {
@@ -60,20 +68,20 @@ let codegenCSql = (q, scope) => {
       // the string should be a column name
 
       let col = getNewName(q.op)
-      let { start, end } = columnPos[q.op]
-      let { buffer } = csvFiles[file]
+      let { start, end } = fileColumnPos[file][q.op]
+      let { mappedFile } = csvFiles[file]
 
-      if (q.schema == typing.number) {
-        buf.push(`// extracting number from column ${q.op}`)
+      if (q.schema == types.i32) {
+        buf.push(`// extracting number from column ${q.op} in file ${file}`)
 
         // Assume the string holds a integer value
         buf.push(`int ${col} = 0;`)
-        let cursor = getNewName("curr")
-        buf.push(`int ${cursor} = ${start};`)
-        buf.push(`while (${cursor} < ${end}) {`)
+        let curr = getNewName("curr")
+        buf.push(`int ${curr} = ${start};`)
+        buf.push(`while (${curr} < ${end}) {`)
         buf.push(`${col} *= 10;`)
-        buf.push(`${col} += (${buffer}[${cursor}] - '0');`)
-        buf.push(`${cursor}++;`)
+        buf.push(`${col} += (${mappedFile}[${curr}] - '0');`)
+        buf.push(`${curr}++;`)
         buf.push("}")
       }
       
@@ -85,21 +93,23 @@ let codegenCSql = (q, scope) => {
       return String(q.op)
     }
   } else if (q.key == "var") {
-    return "not supported"
+    return quoteVar(q.op)
   } else if (q.key == "ref") {
     return `tmp${q.op}`
   } else if (q.key == "get") {
     let e1 = codegenCSql(q.arg[0], scope)
-
     if (q.arg[0].key == "loadInput" && q.arg[1].key == "var") {
-      return e1
+      let e2 = codegenCSql(q.arg[1], scope)
+
+      return e1+"_"+e2
     }
     if (q.arg[0].key == "get" && q.arg[1].key == "const") {
       // We give the schema to the rhs to extract the column value
       q.arg[1].schema = q.schema
-      let scope1 = { ...scope, file: e1 }
-      let e2 = codegenCSql(q.arg[1], scope1)
-      return e2
+      let e2 = codegenCSql(q.arg[1], scope)
+      let e = e1+"_"+e2
+      buf.push(`int ${e} = ${e2};`)
+      return e
     }
     console.error("malformed get")
     return "malformed get"
@@ -122,10 +132,16 @@ let codegenCSql = (q, scope) => {
 
 let emitStmInitCSql = (q, scope) => {
   if (q.key == "stateful") {
-    if (q.op == "sum") {
+    if (q.op == "sum" || q.op == "count") {
       return "= 0"
     } else if (q.op == "product") {
       return "= 1"
+    } else if (q.op == "min") {
+      return "= INT_MAX"
+    } else if (q.op == "max") {
+      return "= INT_MIN"
+    } else if (q.op == "print") {
+      return "= -1"
     } else {
       "not supported"
     }
@@ -136,7 +152,7 @@ let emitStmInitCSql = (q, scope) => {
   }
 }
 
-let emitStmUpdateCSql = (q, scope) => {
+let emitStmUpdateCSql = (q, scope, sym) => {
   if (q.key == "prefix") {
     return "not supported"
   } if (q.key == "stateful") {
@@ -145,6 +161,14 @@ let emitStmUpdateCSql = (q, scope) => {
       return `+= ${e1}`
     } else if (q.op == "product") {
       return `*= ${e1}`
+    } else if (q.op == "min") {
+      return `= ${e1} < ${sym} ? ${e1} : ${sym}`
+    } else if (q.op == "max") {
+      return `= ${e1} > ${sym} ? ${e1} : ${sym}`
+    } else if (q.op == "count") {
+      return `+= 1`
+    } else if (q.op == "print") {
+      return `= 0; printf("%d\\n", ${e1})`
     } else {
       "not supported"
     }
@@ -155,21 +179,106 @@ let emitStmUpdateCSql = (q, scope) => {
   }
 }
 
-let emitFiltersCSql = (scope, free, bnd) => (buf, codegen) => body => {
-  let { filters } = scope.ir
+let emitLoadCSV = (filename, scope) => {
+  let {loadCSVBuf, getNewName} = scope
+  loadCSVBuf.push(`// loadCSV ${filename}`)
+  let fd = getNewName("fd")
+  let mappedFile = getNewName("csv")
+  let size = getNewName("n")
+  loadCSVBuf.push(`int ${fd} = open(\"${filename}\", 0);`)
+  loadCSVBuf.push(`if (${fd} == -1) {`)
+  loadCSVBuf.push(`fprintf(stderr, "Unable to open file ${filename}\\n");`);
+  loadCSVBuf.push(`return 1;`)
+  loadCSVBuf.push(`}`)
+  loadCSVBuf.push(`int ${size} = fsize(${fd});`)
+  loadCSVBuf.push(`char *${mappedFile} = mmap(0, ${size}, PROT_READ, MAP_FILE | MAP_SHARED, ${fd}, 0);`)
+  loadCSVBuf.push(`close(${fd});`)
+  
+  csvFiles[filename] = { fd, mappedFile, size }
+}
 
-  let vars = {}
-  let buf = scope.buf
+let emitLoopHeader = (csvFile, cursor, scope) => {
+  let { buf } = scope
+  let { mappedFile, size } = csvFile
+  
+  buf.push(`int ${cursor} = 0;`)
+  buf.push(`while (${mappedFile}[${cursor}] != '\\n') {`)
+  buf.push(`${cursor}++;`)
+  buf.push("}")
 
-  let iter = union(free, bnd)
+  buf.push("while (1) {")
+  buf.push(`if (${cursor} >= ${size}) break;`)
+}
 
-  if (iter.length == 0)
-    return body(scope)
+let emitRowScanning = (csvFile, cursor, schema, scope) => {
+  let columnPos = {}
+  let { buf, getNewName } = scope
+  let { mappedFile } = csvFile
+
+  let columns = schema
+  for (let i in columns) {
+    buf.push(`// reading column ${columns[i][0]}`)
+    let delim = i == columns.length - 1 ? "\\n" : ","
+    let start = getNewName("start")
+    let end = getNewName("end")
+    buf.push(`int ${start} = ${cursor};`)
+    buf.push("while (1) {")
+    buf.push(`char c = ${mappedFile}[${cursor}];`)
+    buf.push(`if (c == '${delim}') break;`)
+    buf.push(`${cursor}++;`)
+    buf.push("}")
+    buf.push(`int ${end} = ${cursor};`)
+    buf.push(`${cursor}++;`)
+    columnPos[columns[i][0]] = { start, end }
+  }
+
+  return columnPos
+}
+
+let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
+  // approach: build explicit projection first
+  // 1. iterate over transitive iter space to
+  //    build projection map
+  // 2. iterate over projection map to compute
+  //    desired result
+
+  let iter = diff(union(free, bnd), scope.vars)
 
   if (iter.length == 0) return body(scope)
 
+  // let full = transf(union(free, bnd))
+  let full = union(free, bnd)
+
+  if (same(diff(full,scope.vars), iter)) { // XXX should not disregard order?
+    emitFilters2(scope, full)(buf, codegen)(body)
+  } else {
+    console.error("We don't do this for now")
+  }
+}
+
+
+let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
+  let filters = scope.ir.filters
+  let loadCSVBuf = scope.loadCSVBuf
+  let getNewName = scope.getNewName
+
+  // let watermark = buf.length
+  // let buf0 = buf
+  // let buf1 = []
+
+  let vars = {}
+  let seen = {}
+
+  if (iter.length == 0)
+    return body()
+
+  // remember the set of iteration vars
   for (let v of iter) vars[v] = true
 
+  // record current scope
+  for (let v of scope.vars) seen[v] = true
+
+  // only consider filters contributing to iteration vars
   let pending = []
   for (let i in filters) {
     let f = filters[i]
@@ -178,101 +287,163 @@ let emitFiltersCSql = (scope, free, bnd) => (buf, codegen) => body => {
     if (vars[v1]) // not interested in this? skip
       pending.push(i)
   }
-  let getNewName = scope.getNewName
 
-  // Currently we don't want nested loops or same var from different prefix
-  if (pending.length != 1) {
-    
-    console.error("pending has length", pending.length)
-    return;
+  let filtersInScope = [...scope.filters]
+
+  // compute next set of available filters:
+  // all dependent iteration vars have been seen (emitted before)
+  let available = []
+  let next = () => {
+    let p = pending
+    pending = []
+    for (let i of p) {
+      let f = filters[i]
+      let v1 = f.arg[1].op
+      let g1 = f.arg[0]
+
+      let avail = g1.fre.every(x => seen[x])
+
+      // NOTE: doesn't work yet for nested codegen: filters
+      // propagates too far -- it should only propagate
+      // as far upwards as they are used!
+
+      avail &&= subset(g1.filters??[], filtersInScope) // plusTest4a has g1.filters null?
+
+      if (avail)
+        available.push(i) // TODO: insert in proper place
+      else
+        pending.push(i)
+    }
+    return available.length > 0
   }
 
-  for (let i of pending) {
+  let closing = ""
+
+  // record the cursor variable for the current loops that are being generated
+  let cursors = {}
+  let fileColumnPos = {}
+
+  // process filters
+  while (next()) {
+    // sort available by estimated selectivity
+    // crude proxy: number of free vars
+    let selEst = i => filters[i].arg[0].fre.length
+    available.sort((a,b) => selEst(b) - selEst(a))
+
+    let i = available.shift()
+    filtersInScope.push(i)
+
     let f = filters[i]
     let v1 = f.arg[1].op
     let g1 = f.arg[0]
 
     let schema = f.schema
+
     if (g1.key != "loadInput" || g1.op != "csv") {
       console.error("invalid filter");
       return;
     }
 
-    let filename = g1.arg[0].op
-
-    // if file f is not open yet, open it
-    // if file is already open for reading, get the mapped buffer name and size
-    if (csvFiles[filename] === undefined) {
-      buf.push(`// loadCSV ${filename}`)
-      let fd = getNewName("fd")
-      let buffer = getNewName("csv")
-      let size = getNewName("n")
-      buf.push(`int ${fd} = open(\"${filename}\", 0);`)
-      buf.push(`if (${fd} == -1) {`)
-      buf.push(`fprintf(stderr, "Unable to open file ${filename}\\n");`);
-      buf.push(`return 1;`)
-      buf.push(`}`)
-      buf.push(`int ${size} = fsize(${fd});`)
-      buf.push(`char *${buffer} = mmap(0, ${size}, PROT_READ, MAP_FILE | MAP_SHARED, ${fd}, 0);`)
-      buf.push(`close(${fd});`)
-
-      csvFiles[filename] = { fd, buffer, size }
+    if (g1.arg[0].key != "const" || typeof g1.arg[0].op != "string") {
+      console.error("expected filename to be constant string for c-sql backend");
+      return;
     }
-    let { buffer, size } = csvFiles[filename]
 
-    buf.push(`// filter ${v1} <- ${filename}`)
-    let cursor = getNewName("i")
-    buf.push(`int ${cursor} = 0;`)
-    buf.push(`while (${buffer}[${cursor}] != '\\n') {`)
-    buf.push(`${cursor}++;`)
-    buf.push("}")
-
-    buf.push("while (1) {")
-    buf.push(`if (${cursor} >= ${size}) break;`)
-
-    let columnPos = {}
-
-    let columns = Object.keys(schema)
-    for (let i in columns) {
-      buf.push(`// reading column ${columns[i]}`)
-      let delim = i == columns.length - 1 ? "\\n" : ","
-      let start = getNewName("start")
-      let end = getNewName("end")
-      buf.push(`int ${start} = ${cursor};`)
-      buf.push("while (1) {")
-      buf.push(`char c = ${buffer}[${cursor}];`)
-      buf.push(`if (c == '${delim}') break;`)
-      buf.push(`${cursor}++;`)
-      buf.push("}")
-      buf.push(`int ${end} = ${cursor};`)
-      buf.push(`${cursor}++;`)
-      columnPos[columns[i]] = { start, end }
+    let extra = g1.fre.filter(x => !vars[x])
+    if (extra.length != 0) {
+      console.error("extra dependency: "+extra)
     }
-    let scope1 = { ...scope, columnPos }
-    body(scope1)
 
-    buf.push("}")
+    if (isDeepVarStr(v1)) {
+      buf.push("deep var not supported")
+    } else { // ok, just emit current
+      let filename = g1.arg[0].op
+
+      // if file f is not open yet, open it
+      // if file is already open for reading, get the mapped buffer name and size
+      if (csvFiles[filename] === undefined) {
+        emitLoadCSV(filename, scope)
+      }
+      let csvFile = csvFiles[filename]
+
+      buf.push(`// filter ${v1} <- ${filename}`)
+
+      let cursor = getNewName("i")
+      cursors[filename] = cursor
+
+      if (!seen[v1]) {
+        emitLoopHeader(csvFile, cursor, scope)
+        let columnPos = emitRowScanning(csvFile, cursor, schema, scope)
+        fileColumnPos[filename] = columnPos
+        closing = "}\n"+closing
+      } else {
+        loadCSVBuf.push(`int ${cursor} = 0;`)
+        loadCSVBuf.push(`while (${csvFile.mappedFile}[${cursor}] != '\\n') {`)
+        loadCSVBuf.push(`${cursor}++;`)
+        loadCSVBuf.push("}");
+        buf.push(`if (${cursor} >= ${csvFile.size}) break;`)
+        let columnPos = emitRowScanning(csvFile, cursor, schema, scope)
+        fileColumnPos[filename] = columnPos
+      }
+      seen[v1] = true
+    }
   }
+
+  if (pending.length > 0) {
+    let problem = pending.map(i => pretty(filters[i])).join(", ")
+    console.warn("unsolved filter ordering problem: couldn't emit "+problem)
+    for (let i of pending) {
+      buf.push("// ERROR: unsolved filter ordering problem: "+i+" := "+pretty(filters[i]))
+    }
+  }
+
+  let scope1 = {...scope, vars: [...scope.vars, ...iter], filters: [...filtersInScope], fileColumnPos}
+  body(scope1)
+
+  buf.push(closing)
 }
+
+let emitCodeSqlProlog =
+`#include <stdio.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <limits.h>
+
+int fsize(int fd) {
+struct stat stat;
+int res = fstat(fd,&stat);
+return stat.st_size;
+}
+
+int main() {
+`
+
+let emitCodeSqlEpilog =
+`
+printf(\"%d\\n\", res);
+return 0;
+}
+`
+
+let initRequired = {
+  "sum": true,
+  "prodcut": true,
+  "min": true,
+  "max": true,
+  "count": true,
+  "print": true
+}
+
 
 let emitCodeCSql = (q, ir) => {
   csvFiles = {}
+  filters = ir.filters
   let { assignments, order } = ir
 
   let buf = []
-  buf.push("#include <stdio.h>")
-  buf.push("#include <fcntl.h>")
-  buf.push("#include <sys/mman.h>")
-  buf.push("#include <sys/stat.h>")
-  buf.push("#include <unistd.h>")
-
-  buf.push("int fsize(int fd) {")
-  buf.push("struct stat stat;")
-  buf.push("int res = fstat(fd,&stat);")
-  buf.push("return stat.st_size;")
-  buf.push("}")
-
-  buf.push("int main() {")
+  let loadCSVBuf = []
 
   let map = {}
   let getNewName = (prefix) => {
@@ -289,24 +460,22 @@ let emitCodeCSql = (q, ir) => {
     let q = assignments[i]
 
     buf.push("// --- tmp"+i+" ---")
-    if (q.key == "stateful" && (q.op+"_init") in runtime.stateful || q.key == "update") {
+    if (q.key == "stateful" && initRequired[q.op]) {
       buf.push(`int tmp${i} ${emitStmInitCSql(q)};`)
     }
 
     // emit filter
     // filters always come from loadCSV
-    let scope = {buf, ir, getNewName}
-    emitFiltersCSql(scope, q.fre, q.bnd)(buf, codegenCSql)(scope1 => {
-      buf.push(`tmp${i} ${emitStmUpdateCSql(q, scope1)};`)
+    let scope = {buf, loadCSVBuf, ir, getNewName, vars:[], filters:[]}
+    emitFilters1(scope, q.fre, q.bnd)(buf, codegenCSql)(scope1 => {
+      buf.push(`tmp${i} ${emitStmUpdateCSql(q, scope1, `tmp${i}`)};`)
     })
   }
 
   buf.push(`int res = ${codegenCSql(q, {buf, ir, getNewName})};`)
-  buf.push("printf(\"%d\\n\", res);")
-  buf.push("return 0;")
-  buf.push("}");
+  loadCSVBuf.push("")
 
-  return buf.join("\n")
+  return emitCodeSqlProlog + loadCSVBuf.join("\n") + buf.join("\n") + emitCodeSqlEpilog
 }
 
 let fixIndent = s => {
@@ -324,7 +493,7 @@ let fixIndent = s => {
   return out.join("\n")
 }
 
-let generate = (q, ir) => {
+let generateCSql = (q, ir) => {
   const fs = require('node:fs/promises')
   const os = require('node:child_process')
 
@@ -366,4 +535,4 @@ let generate = (q, ir) => {
   return wrap
 }
 
-exports.generateCSql = generate
+exports.generateCSql = generateCSql
