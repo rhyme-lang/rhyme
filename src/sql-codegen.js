@@ -68,7 +68,6 @@ let codegenCSql = (q, scope) => {
       // the string should be a column name
 
       let col = getNewName(q.op)
-      console.log(fileColumnPos, q.op)
       let { start, end } = fileColumnPos[file][q.op]
       let { mappedFile } = csvFiles[file]
 
@@ -339,7 +338,6 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
     let g1 = f.arg[0]
 
     let schema = f.schema
-    console.log(schema)
 
     if (g1.key != "loadInput" || g1.op != "csv") {
       console.error("invalid filter");
