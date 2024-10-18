@@ -72,7 +72,7 @@ let codegenCSql = (q, scope) => {
       let { mappedFile } = csvFiles[file]
 
       if (q.schema == typing.number) {
-        buf.push(`// extracting number from column ${q.op}`)
+        buf.push(`// extracting number from column ${q.op} in file ${file}`)
 
         // Assume the string holds a integer value
         buf.push(`int ${col} = 0;`)
@@ -132,10 +132,16 @@ let codegenCSql = (q, scope) => {
 
 let emitStmInitCSql = (q, scope) => {
   if (q.key == "stateful") {
-    if (q.op == "sum") {
+    if (q.op == "sum" || q.op == "count") {
       return "= 0"
     } else if (q.op == "product") {
       return "= 1"
+    } else if (q.op == "min") {
+      return "= INT_MAX"
+    } else if (q.op == "max") {
+      return "= INT_MIN"
+    } else if (q.op == "print") {
+      return "= -1"
     } else {
       "not supported"
     }
@@ -146,7 +152,7 @@ let emitStmInitCSql = (q, scope) => {
   }
 }
 
-let emitStmUpdateCSql = (q, scope) => {
+let emitStmUpdateCSql = (q, scope, sym) => {
   if (q.key == "prefix") {
     return "not supported"
   } if (q.key == "stateful") {
@@ -155,6 +161,14 @@ let emitStmUpdateCSql = (q, scope) => {
       return `+= ${e1}`
     } else if (q.op == "product") {
       return `*= ${e1}`
+    } else if (q.op == "min") {
+      return `= ${e1} < ${sym} ? ${e1} : ${sym}`
+    } else if (q.op == "max") {
+      return `= ${e1} > ${sym} ? ${e1} : ${sym}`
+    } else if (q.op == "count") {
+      return `+= 1`
+    } else if (q.op == "print") {
+      return `= 0; printf("%d\\n", ${e1})`
     } else {
       "not supported"
     }
@@ -395,6 +409,7 @@ let emitCodeSqlProlog =
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <limits.h>
 
 int fsize(int fd) {
 struct stat stat;
@@ -411,6 +426,15 @@ printf(\"%d\\n\", res);
 return 0;
 }
 `
+
+let initRequired = {
+  "sum": true,
+  "prodcut": true,
+  "min": true,
+  "max": true,
+  "count": true,
+  "print": true
+}
 
 
 let emitCodeCSql = (q, ir) => {
@@ -436,7 +460,7 @@ let emitCodeCSql = (q, ir) => {
     let q = assignments[i]
 
     buf.push("// --- tmp"+i+" ---")
-    if (q.key == "stateful" && (q.op+"_init") in runtime.stateful || q.key == "update") {
+    if (q.key == "stateful" && initRequired[q.op]) {
       buf.push(`int tmp${i} ${emitStmInitCSql(q)};`)
     }
 
@@ -444,7 +468,7 @@ let emitCodeCSql = (q, ir) => {
     // filters always come from loadCSV
     let scope = {buf, loadCSVBuf, ir, getNewName, vars:[], filters:[]}
     emitFilters1(scope, q.fre, q.bnd)(buf, codegenCSql)(scope1 => {
-      buf.push(`tmp${i} ${emitStmUpdateCSql(q, scope1)};`)
+      buf.push(`tmp${i} ${emitStmUpdateCSql(q, scope1, `tmp${i}`)};`)
     })
   }
 

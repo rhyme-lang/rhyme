@@ -398,6 +398,9 @@ typing["_validateIRQuery"] = (schema, cseMap, boundKeys, q) => {
             }
             return {[freshSym("array")]: argType};
         }
+        if (q.op === "print") {
+            return typing.number;
+        }
         throw new Error("Unimplemented stateful expression " + q.op);
     } else if (q.key === "group") {
         let [e1, e2] = q.arg;

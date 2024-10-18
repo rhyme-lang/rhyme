@@ -141,5 +141,53 @@ test("testLoadCSVMultipleFilesJoin", async () => {
   let func = compile(query, { backend: "c-sql", schema: typing.nothing })
 
   let res = await func()
-  console.log(res)
+  expect(res).toEqual("924\n")
+})
+
+test("testMin", async () => {
+  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+
+  let query = rh`min ${csv}.*.B`
+
+  let func = compile(query, { backend: "c-sql", schema: typing.nothing })
+
+  let res = await func()
+  expect(res).toEqual("1\n")
+})
+
+test("testMax", async () => {
+  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+
+  let query = rh`max ${csv}.*.C`
+
+  let func = compile(query, { backend: "c-sql", schema: typing.nothing })
+
+  let res = await func()
+  expect(res).toEqual("123\n")
+})
+
+test("testCount", async () => {
+  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+
+  let query = rh`count ${csv}.*.C`
+
+  let func = compile(query, { backend: "c-sql", schema: typing.nothing })
+
+  let res = await func()
+  expect(res).toEqual("4\n")
+})
+
+test("testStatefulPrint", async () => {
+  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+
+  let query = rh`print ${csv}.*.B`
+
+  let func = compile(query, { backend: "c-sql", schema: typing.nothing })
+
+  let res = await func()
+  expect(res).toEqual(`5
+2
+1
+7
+0\n`)
 })
