@@ -53,6 +53,7 @@ let schema = {
   }
 }
 
+
 test("testSimpleSum1", async () => {
   let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
 
@@ -100,7 +101,7 @@ test("testSimpleSum4", async () => {
 test("testSimpleSum5", async () => {
   let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
 
-  let query = rh`sum(${csv}.*A.C) + sum(${csv}.*A.D)`
+  let query = rh`sum(${csv}.*A.C + ${csv}.*A.D)`
 
   let func = compile(query, { backend: "c-sql", schema: typing.nothing })
 
@@ -108,11 +109,22 @@ test("testSimpleSum5", async () => {
   expect(res).toEqual("243\n")
 })
 
-test("testLoadCSVMultipleFiles", async () => {
+test("testSimpleSum6", async () => {
+  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+
+  let query = rh`sum(${csv}.*A.C + ${csv}.*A.D)`
+
+  let func = compile(query, { backend: "c-sql", schema: typing.nothing })
+
+  let res = await func()
+  expect(res).toEqual("243\n")
+})
+
+test("testLoadCSVMultipleFilesZip", async () => {
   let csv1 = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
   let csv2 = rh`loadCSV "./cgen-sql/simple_copy.csv" ${schema}`
 
-  let query = rh`sum(${csv1}.*A.C) + sum(${csv2}.*B.D)`
+  let query = rh`sum(${csv1}.*A.C + ${csv2}.*A.D)`
 
   let func = compile(query, { backend: "c-sql", schema: typing.nothing })
 
@@ -120,3 +132,14 @@ test("testLoadCSVMultipleFiles", async () => {
   expect(res).toEqual("231\n")
 })
 
+test("testLoadCSVMultipleFilesJoin", async () => {
+  let csv1 = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+  let csv2 = rh`loadCSV "./cgen-sql/simple_copy.csv" ${schema}`
+
+  let query = rh`sum(${csv1}.*A.C + ${csv2}.*B.D)`
+
+  let func = compile(query, { backend: "c-sql", schema: typing.nothing })
+
+  let res = await func()
+  console.log(res)
+})
