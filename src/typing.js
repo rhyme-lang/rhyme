@@ -368,7 +368,7 @@ let prettyPrintType = (schema) => {
         return "~UNK:" + JSON.stringify(schema) + "~";
     return "~Invalid~";
 }
-exports.prettyPrintType = prettyPrintType;
+typing.prettyPrintType = prettyPrintType;
 
 let indent = (str) => str.split("\n").join("\n  ");
 

@@ -1,5 +1,5 @@
 const { runtime } = require('./simple-runtime')
-const { typing } = require('./typing')
+const { typing, types } = require('./typing')
 
 
 // ----- utils -----
@@ -68,10 +68,11 @@ let codegenCSql = (q, scope) => {
       // the string should be a column name
 
       let col = getNewName(q.op)
+      console.log(fileColumnPos, q.op)
       let { start, end } = fileColumnPos[file][q.op]
       let { mappedFile } = csvFiles[file]
 
-      if (q.schema == typing.number) {
+      if (q.schema == types.i32) {
         buf.push(`// extracting number from column ${q.op} in file ${file}`)
 
         // Assume the string holds a integer value
@@ -215,9 +216,9 @@ let emitRowScanning = (csvFile, cursor, schema, scope) => {
   let { buf, getNewName } = scope
   let { mappedFile } = csvFile
 
-  let columns = Object.keys(schema)
+  let columns = schema
   for (let i in columns) {
-    buf.push(`// reading column ${columns[i]}`)
+    buf.push(`// reading column ${columns[i][0]}`)
     let delim = i == columns.length - 1 ? "\\n" : ","
     let start = getNewName("start")
     let end = getNewName("end")
@@ -229,7 +230,7 @@ let emitRowScanning = (csvFile, cursor, schema, scope) => {
     buf.push("}")
     buf.push(`int ${end} = ${cursor};`)
     buf.push(`${cursor}++;`)
-    columnPos[columns[i]] = { start, end }
+    columnPos[columns[i][0]] = { start, end }
   }
 
   return columnPos
@@ -338,6 +339,7 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
     let g1 = f.arg[0]
 
     let schema = f.schema
+    console.log(schema)
 
     if (g1.key != "loadInput" || g1.op != "csv") {
       console.error("invalid filter");

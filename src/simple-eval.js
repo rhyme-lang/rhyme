@@ -379,8 +379,12 @@ let extract3 = q => {
   if (q.key == "get") {
     let [e1,e2] = q.arg
     if (e2.key == "var") {
-      let str = JSON.stringify(q) // extract & cse
-      let ix = filters.map(x => JSON.stringify(x)).indexOf(str)
+      let {schema: qSchema, ...qNoSchema} = q;
+      let str = JSON.stringify(qNoSchema) // extract & cse
+      let ix = filters.map(x => {
+        let {schema: schema, ...xNoSchema} = x;
+        return JSON.stringify(xNoSchema)
+      }).indexOf(str)
       if (ix < 0) {
         ix = filters.length
         // JSON.stringify removes keys of type Symbol
