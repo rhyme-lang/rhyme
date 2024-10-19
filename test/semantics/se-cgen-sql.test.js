@@ -38,7 +38,7 @@ int main() {
 test("testTrivial", async () => {
   let query = rh`1 + 200`
 
-  let func = compile(query, { backend: "c-sql" })
+  let func = compile(query, { backend: "c-sql", schema: types.nothing })
 
   let res = await func()
   expect(res).toEqual("201\n")
@@ -51,7 +51,6 @@ let schema = typing.objBuilder()
     C: types.i32,
     D: types.i32
   })).build()
-
 
 test("testSimpleSum1", async () => {
   let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`

@@ -52,6 +52,34 @@ let quoteVar = s => s.replaceAll("*", "x")
 
 let csvFiles
 
+let convertTypeToCType = (type) => {
+    if(type.__rh_type === "dynkey")
+        return convertTypeToCType(type.__rh_type_superkey);
+    if(type.__rh_type === "union")
+        throw new Error("Unable to convert union type to C type currently.");
+    if(type === types.u8)
+        return "uint8_t";
+    if(type === types.u16)
+        return "uint16_t";
+    if(type === types.u32)
+        return "uint32_t";
+    if(type === types.u64)
+        return "uint64_t";
+    if(type === types.i8)
+        return "int8_t";
+    if(type === types.i16)
+        return "int16_t";
+    if(type === types.i32)
+        return "int32_t";
+    if(type === types.i64)
+        return "int64_t";
+    if(type === types.f32)
+        return "float";
+    if(type === types.f64)
+        return "double";
+    throw new Error("Unknown type: " + typing.prettyPrintType(type));
+}
+
 let codegenCSql = (q, scope) => {
   let {buf, getNewName, fileColumnPos, file} = scope
   if (q.key == "input") {
@@ -71,11 +99,11 @@ let codegenCSql = (q, scope) => {
       let { start, end } = fileColumnPos[file][q.op]
       let { mappedFile } = csvFiles[file]
 
-      if (q.schema == types.i32) {
+      if (typing.isInteger(q.schema)) {
         buf.push(`// extracting number from column ${q.op} in file ${file}`)
 
         // Assume the string holds a integer value
-        buf.push(`int ${col} = 0;`)
+        buf.push(`${convertTypeToCType(q.schema)} ${col} = 0;`)
         let curr = getNewName("curr")
         buf.push(`int ${curr} = ${start};`)
         buf.push(`while (${curr} < ${end}) {`)
@@ -410,6 +438,7 @@ let emitCodeSqlProlog =
 #include <sys/stat.h>
 #include <unistd.h>
 #include <limits.h>
+#include <stdint.h>
 
 int fsize(int fd) {
 struct stat stat;
@@ -461,7 +490,7 @@ let emitCodeCSql = (q, ir) => {
 
     buf.push("// --- tmp"+i+" ---")
     if (q.key == "stateful" && initRequired[q.op]) {
-      buf.push(`int tmp${i} ${emitStmInitCSql(q)};`)
+      buf.push(`${convertTypeToCType(q.schema)} tmp${i} ${emitStmInitCSql(q)};`)
     }
 
     // emit filter
@@ -472,7 +501,7 @@ let emitCodeCSql = (q, ir) => {
     })
   }
 
-  buf.push(`int res = ${codegenCSql(q, {buf, ir, getNewName})};`)
+  buf.push(`${convertTypeToCType(q.schema)} res = ${codegenCSql(q, {buf, ir, getNewName})};`)
   loadCSVBuf.push("")
 
   return emitCodeSqlProlog + loadCSVBuf.join("\n") + buf.join("\n") + emitCodeSqlEpilog

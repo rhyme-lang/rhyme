@@ -5,7 +5,7 @@ const { generate } = require('./new-codegen')
 const { preproc } = require('./preprocess')
 const { runtime } = require('./simple-runtime')
 const { generateCSql } = require('./sql-codegen')
-const { typing } = require('./typing')
+const { typing, types, typeSyms } = require('./typing')
 
 
 // ----- utils -----
@@ -347,6 +347,30 @@ let extract1f = q => {
 
 
 
+let withoutSchema = (q) => {
+    let {arg: arg, schema: schema, ...restQ} = q;
+    if(arg === undefined)
+        return {...restQ};
+    return {
+        arg: arg.map(withoutSchema),
+        ...restQ
+    };
+}
+
+let deepCopy = (q) => {
+    if(Array.isArray(q)) {
+        return q.map(elem => deepCopy(elem));
+    }
+    if(typeof q !== "object")
+        return q;
+    let {schema: schema, ...restQ} = q;
+    let res = {schema: schema};
+    for(let key of Object.keys(restQ)) {
+        res[key] = deepCopy(restQ[key])
+    }
+    return res;
+}
+
 // TODO: cse for array-valued udfs?
 
 // 7: extract assignments
@@ -357,8 +381,8 @@ let extract2 = q => {
   let tmps = unique(es.flatMap(x => x.tmps))
   if (q.key == "prefix" || q.key == "stateful" || q.key == "update") {
     let q1 = { ...q, arg: es, tmps }
-    let str = JSON.stringify(q1) // extract & cse
-    let ix = assignments.map(x => JSON.stringify(x)).indexOf(str)
+    let str = JSON.stringify(withoutSchema(q1)) // extract & cse
+    let ix = assignments.map(x => JSON.stringify(withoutSchema(x))).indexOf(str)
     if (ix < 0) {
       ix = assignments.length
       assignments.push(q1)
@@ -379,18 +403,14 @@ let extract3 = q => {
   if (q.key == "get") {
     let [e1,e2] = q.arg
     if (e2.key == "var") {
-      let {schema: qSchema, ...qNoSchema} = q;
-      let str = JSON.stringify(qNoSchema) // extract & cse
-      let ix = filters.map(x => {
-        let {schema: schema, ...xNoSchema} = x;
-        return JSON.stringify(xNoSchema)
-      }).indexOf(str)
+      let str = JSON.stringify(withoutSchema(q)) // extract & cse
+      let ix = filters.map(x => JSON.stringify(withoutSchema(x))).indexOf(str)
       if (ix < 0) {
         ix = filters.length
         // JSON.stringify removes keys of type Symbol
         // Only add the schema at the top level for now
         // In codegen we extract row schema from filters
-        let q1 = { ...JSON.parse(str), schema: q.schema }
+        let q1 = deepCopy(q);//{ ...JSON.parse(str), schema: q.schema }
         filters.push(q1) // deep copy...
       }
       // NOTE: we leave the expression in place, and just add
@@ -1582,9 +1602,8 @@ let emitCodeC = (q, order) => {
   return buf.join("\n")
 }
 
-let tyEnv = {}
 let nameEnv = {}
-
+/* TODO: Unused. Are they needed anymore?
 let quoteIndexVarsXS_CPP = (s, vs) => {
   let res = s
   for (let v of vs) {
@@ -1605,7 +1624,7 @@ let quoteCppOp = op => {
   } else {
     console.error("Unsupported Op")
   }
-}
+}*/
 
 let quoteGet = (a, b) => a+"["+b+"]"
 let quoteGets = (s, vs) => {
@@ -1668,141 +1687,9 @@ let quoteExpr = q => {
   }
 }
 
-let defaultTy = {type: "object"}
-let getScalarTy = elem => {
-  return {type:"scalar", elemTy:elem}
-}
-let intTy = getScalarTy("int")
-let floatTy = getScalarTy("float")
-let stringTy = getScalarTy("string")
-let getTy = x => {
-  if (x in tyEnv) return tyEnv[x]
-  else return defaultTy
-}
-
-let isDefaultTy = ty => {
-  return ty == undefined || ty.type == "object"
-}
-
-let hasTy = x => !isDefaultTy(getTy(x))
-let sameTy = (a,b) => JSON.stringify(a) == JSON.stringify(b)
-
-let getGenTy = ty => {
-  let elemTy
-  if (ty.type == "dense" || ty.type == "sparse") elemTy = "int"
-  else elemTy = "string"
-  return getScalarTy(elemTy)
-}
-
-let getValTy = ty => {
-  if (ty.type == "dense" || ty.type == "sparse") {
-    if (ty.shape == "2d") {
-      return {type:ty.type, shape:"1d", elemTy:ty.elemTy}
-    } else {
-      return getScalarTy(ty.elemTy)
-    }
-  } else {
-    return defaultTy
-  }
-}
-
-let inferTy = q => {
-  let retTy
-  let expr = quoteExpr(q)
-  if (hasTy(expr)) return getTy(expr)
-  if (q.key == "stateful") {
-    if (q.op == "sum" || q.op == "product") {
-      let ty = inferTy(q.arg[0])
-      if (isDefaultTy(ty)) retTy = floatTy
-      else retTy = ty
-    } else if (q.op == "count")
-      retTy = intTy
-    else if (q.op == "array")
-      console.error("unsupported op", q)
-    else
-      console.error("unsupported op", q)
-  } else if (q.key == "update") {
-    console.error("unsupported op", q)
-  } else {
-    if (q.key == "input") {
-      retTy = defaultTy
-    } else if (q.key == "const") {
-      if (typeof q.op === "number") {
-        if (Number.isInteger(q.op))
-          retTy = intTy
-        else
-          retTy = floatTy
-      } else if (typeof q.op === "string") {
-        retTy = stringTy
-      } else if (typeof q.op === "object" && Object.keys(q.op).length == 0){
-        retTy = defaultTy
-      } else {
-        console.error("unsupported constant ", pretty(q))
-        retTy = defaultTy
-      }
-    } else if (q.key == "var") {
-      // generators default to string type
-      retTy = stringTy
-    } else if (q.key == "ref") {
-      if (q1.fre.length != 0) {
-        console.error("unhandled type infer!!")
-      }
-      let ty = inferTy(assignments[q.op])
-      tyEnv[expr] = ty
-      retTy = ty
-    } else if (q.key == "get") {
-      // TODO: consider deep get
-      let [e1, e2] = q.arg.map(quoteExpr)
-      let [ty1, ty2] = q.arg.map(inferTy)
-      let kty = getGenTy(ty1)
-      if (!sameTy(kty, ty2)) {
-        console.error("bad type!!")
-      }
-
-      tyEnv[e1] = ty1
-      tyEnv[e2] = kty
-      let ty = getValTy(ty1)
-      tyEnv[expr] = ty
-      retTy = ty
-    } else if (q.key == "pure") {
-      let tys = []
-      for (let i in q.arg) {
-        let e = quoteExpr(q.arg[i])
-        if (e != "hint") {
-          let ty = inferTy(q.arg[i])
-          tys.push(ty)
-          tyEnv[e] = ty
-        }
-      }
-      if (tys.length == 0) retTy = defaultTy
-      else if (tys.length == 1) retTy = tys[0]
-      else {
-        if (tys.every(ty => sameTy(ty, tys[0]))) {
-          retTy = tys[0]
-        } else {
-          console.error("bad type!!")
-          retTy = defaultTy
-        }
-      }
-    } else if (q.key == "hint") {
-      retTy = defaultTy
-    } else if (q.key == "mkset") {
-      let [e1] = q.arg.map(quoteExpr)
-      // TODO: handle this
-      retTy = defaultTy
-    } else {
-      console.error("unknown op ", pretty(q))
-      retTy = defaultTy
-    }
-  }
-  tyEnv[expr] = retTy
-  return retTy
-}
-
 // TODO: add explicit type cast when type does not check
 let codegenCPP = q => {
   let expr = quoteExpr(q)
-  let ty = inferTy(q)
   if (expr in nameEnv) return nameEnv[expr]
   if (q.key == "input") {
     return "inp"
@@ -1830,11 +1717,8 @@ let codegenCPP = q => {
     if (es.length == 0) return "hint"
     else if (es.length == 1) return es[0]
     else {
-      if (!isDefaultTy(ty)) {
-        return "("+es.join(" "+quoteCppOp(q.op)+" ")+")"
-      } else {
+
         return "rt_pure_"+q.op+"("+es.join(",")+")"
-      }
     }
   } else if (q.key == "hint") {
     // no-op!
@@ -1862,35 +1746,81 @@ let statefulOpCPP = (q, typed = false) => {
     console.error("unsupported op", q)
 }
 
-let quoteElemTyCPP = ty => {
-  if (ty == "string") return "std::string"
-  else return ty
-}
-
 let quoteTypeCPP = ty => {
-  let elemTy = quoteElemTyCPP(ty.elemTy)
-  if (ty.type == "dense") {
-    if (ty.shape == "2d") return "std::vector<std::vector<"+elemTy+">>"
-    else return "std::vector<"+elemTy+">"
-  } else if (ty.type == "sparse") {
-    if (ty.shape == "2d") return "CSRMatrix<"+elemTy+">"
-    else return "CSVector<"+elemTy+">"
-  } else if (ty.type == "scalar") {
-    return elemTy
-  } else {
-    return "rh"
-  }
+    if(ty === undefined)
+        throw new Error("Unknown undefined type.");
+    if(ty === null)
+        throw new Error("Unknown null type.");
+    if(ty.__rh_type === typeSyms.union)
+        return "rh";
+    if(ty.__rh_type === typeSyms.tagged_type) {
+        if(ty.__rh_type_tag === "dense") {
+            return "std::vector<" + quoteTypeCPP(typing.removeTag(ty)[0][1]) + ">";
+        }
+        if(ty.__rh_type_tag === "sparse") {
+            if(ty.__rh_type_data.dim == 1) {
+                return "CSVector<" + quoteTypeCPP(typing.removeTag(ty)[0][1]) + ", " + quoteTypeCPP(typing.removeTag(ty)[0][0]) + ">";
+            } else if(ty.__rh_type_data.dim == 2) {
+                return "CSRMatrix<" + quoteTypeCPP(typing.removeTag(typing.removeTag(ty)[0][1])[0][1]) + ", " + quoteTypeCPP(typing.removeTag(ty)[0][0]) + ">";
+            }
+            throw new Error("Unknown sparse item with data: " + ty.__rh_type_data);
+        }
+        throw new Error("Unknown tag: " + ty.__rh_type_tag);
+    }
+    if(ty.__rh_type === typeSyms.dynkey) {
+        return quoteTypeCPP(ty.__rh_type_supertype);
+    }
+    if(Object.values(types).includes(ty)) {
+        if(ty === types.u8)
+            return "uint8_t";
+        if(ty === types.u16)
+            return "uint16_t";
+        if(ty === types.u32)
+            return "uint32_t";
+        if(ty === types.u64)
+            return "uint64_t";
+        if(ty === types.i8)
+            return "int8_t";
+        if(ty === types.i16)
+            return "int16_t";
+        if(ty === types.i32)
+            return "int";
+        if(ty === types.i64)
+            return "int64_t";
+        if(ty === types.nothing)
+            return "rh";
+        throw new Error("Unknown CPP type of: " + typing.prettyPrintType(ty));
+    }
+    if(Array.isArray(ty))
+        return "rh";
+    throw new Error("Unknown type: " + JSON.stringify(ty));
 }
 
 let quoteFileReadCPP = ty => {
-  let elemTy = quoteElemTyCPP(ty.elemTy)
-  if (ty.type == "dense" || ty.type == "sparse") {
-    if (ty.shape == "2d") return "read_2D_"+ty.type+"_tensor<"+elemTy+">"
-    else return "read_1D_"+ty.type+"_tensor<"+elemTy+">"
-  } else if (ty.type == "scalar") {
-    return "read_elem<"+elemTy+">"
+  if(ty.__rh_type === typeSyms.tagged_type) {
+    if(ty.__rh_type_tag === "dense") {
+        if(ty.__rh_type_data.dim == 1) {
+            return "read_1D_dense_tensor<" + quoteTypeCPP(typing.removeTag(ty)[0][1]) + ">";
+        } else if(ty.__rh_type_data.dim == 2) {
+            return "read_2D_dense_tensor<" + quoteTypeCPP(typing.removeTag(typing.removeTag(ty)[0][1])[0][1]) + ">";
+        }
+        throw new Error("Unknown dense item with data: " + ty.__rh_type_data);
+    }
+    if(ty.__rh_type_tag === "sparse") {
+        if(ty.__rh_type_data.dim == 1) {
+            return "read_1D_sparse_tensor<" + quoteTypeCPP(typing.removeTag(ty)[0][1]) + ", " + quoteTypeCPP(typing.removeTag(ty)[0][0]) + ">";
+        } else if(ty.__rh_type_data.dim == 2) {
+            return "read_2D_sparse_tensor<" + quoteTypeCPP(typing.removeTag(typing.removeTag(ty)[0][1])[0][1]) + ", " + quoteTypeCPP(typing.removeTag(ty)[0][0]) + ">";
+        }
+        throw new Error("Unknown sparse item with data: " + ty.__rh_type_data);
+    }
+    throw new Error("Unknown tag: " + ty.__rh_type_tag);
   } else {
-    return "read_json"
+    if(Array.isArray(ty)) {
+        return "read_json";
+    } else {
+        throw new Error("Unknown how to read: " + typing.prettyPrintType(ty));
+    }
   }
 }
 
@@ -1917,16 +1847,14 @@ let emitStmUpdateCPP = (agg, q) => {
   if (q.key == "prefix") {
     console.error("unsupported op", q)
   } else if (q.key == "stateful") {
-    let ty = inferTy(q)
+    let ty = q.schema
     let [e1] = q.arg.map(codegenCPP)
-    if (!isDefaultTy(ty)) {
-      let ty1 = inferTy(q.arg[0])
-      let cast = ""
-      if (!sameTy(ty1, ty)) cast = "("+quoteTypeCPP(ty)+")"
+    //if (!isDefaultTy(ty)) {
+      let cast = "("+quoteTypeCPP(ty)+")"
       return agg+" "+statefulOpCPP(q, true)+" "+cast+"("+e1+")"
-    } else {
-      return agg+" = "+statefulOpCPP(q)+"("+agg+","+e1+")"
-    }
+    //} else {
+    //  return agg+" = "+statefulOpCPP(q)+"("+agg+","+e1+")"
+    //}
   } else if (q.key == "update") {
     console.error("unsupported op", q)
   } else {
@@ -1938,7 +1866,6 @@ let emitCodeCPP = (q, order) => {
   let assignmentStms = []
   let generatorStms = []
   let tmpVarWriteRank = {}
-  tyEnv = {}
   nameEnv = {}
 
   // generator ir api: mirroring necessary bits from ir.js
@@ -1960,19 +1887,21 @@ let emitCodeCPP = (q, order) => {
   }
 
   let quoteLoop = (e1, e2) => {
-    let ty = inferTy(e1)
+    let ty = e1.schema
     let source = codegenCPP(e1)
     let sym = codegenCPP(e2)
-    if (ty.type == "dense") {
-      let sym = quoteExpr(e2)
-      return `for (int ${sym}=0; ${sym}<${source}.size(); ${sym}++) {`
-    } else if (ty.type == "sparse") {
-      return `for (const auto& [${sym}, ${sym}_val] : ${source}) {`
-    } else if (ty.type == "scalar") {
-      console.error("Error type!!")
-    } else {
-      return `for (const auto& [${sym}, ${sym}_val] : ${source}.items()) {`
+    if(ty.__rh_type === typeSyms.tagged_type) {
+        if(ty.__rh_type_tag == "dense") {
+            let sym = quoteExpr(e2)
+            return `for (int ${sym}=0; ${sym}<${source}.size(); ${sym}++) {`
+        } else if (ty.__rh_type_tag == "sparse") {
+            return `for (const auto& [${sym}, ${sym}_val] : ${source}) {`
+        }
     }
+    if(Array.isArray(ty)) {
+        return `for (const auto& [${sym}, ${sym}_val] : ${source}.items()) {`
+    }
+    throw new Error("Unknown loop type: " + typing.prettyPrintType(ty));
   }
   function selectGenFilter(e1, e2) {
     let a = transExpr(e1)
@@ -1991,25 +1920,6 @@ let emitCodeCPP = (q, order) => {
 
   let transExpr = q => expr(codegenCPP(q), ...getDeps(q))
 
-  let typeInfo = ["dense", "sparse", "scalar", "object"]
-  let shapeInfo = ["1d", "2d"]
-  let elemInfo = ["int","float", "string"]
-  for (let h of hints) {
-    if (h.arg[0].key != "const") continue
-    attributes = h.arg[0].op.split(',')
-    ty = {}
-    for (let attr of attributes) {
-      if (typeInfo.includes(attr)) {
-        ty.type = attr
-      } else if (shapeInfo.includes(attr)) {
-        ty.shape = attr
-      } else if (elemInfo.includes(attr)) {
-        ty.elemTy = attr
-      }
-    }
-    tyEnv[quoteGet("inp", quoteStr(h.op))] = ty
-  }
-
   let objs = {}
   let collectObj = q => {
     if (q.key == "get") {
@@ -2017,7 +1927,7 @@ let emitCodeCPP = (q, order) => {
       let obj = q.arg[1].op
       if (e1 == "inp" && !(obj in objs)) {
         let expr = quoteExpr(q)
-        objs[obj] = expr
+        objs[obj] = {expr: expr, schema: q.schema}
         nameEnv[expr] = obj
         return
       }
@@ -2028,8 +1938,8 @@ let emitCodeCPP = (q, order) => {
   }
 
   let getScopedName = (ty, gen) => {
-    if (ty.type == "sparse" || ty.type == "object") {
-      return gen+"_val"
+    if(ty.__rh_type === typeSyms.tagged_type && (ty.__rh_type_tag === "sparse") || Array.isArray(ty)) {
+        return gen+"_val"
     }
   }
 
@@ -2037,11 +1947,8 @@ let emitCodeCPP = (q, order) => {
     let q = filters[i]
     let [e1,e2] = q.arg.map(quoteExpr)
     q.arg.forEach(collectObj)
-    let ty1 = inferTy(q.arg[0])
-    tyEnv[e1] = ty1
-    tyEnv[e2] = getGenTy(ty1)
+    let ty1 = q.arg[0].schema
     let expr = quoteGet(e1, e2)
-    tyEnv[expr] = getValTy(ty1)
     let scopedName = getScopedName(ty1, e2)
     if (scopedName) {
       nameEnv[expr] = scopedName
@@ -2050,11 +1957,10 @@ let emitCodeCPP = (q, order) => {
 
   for (let i in assignments) {
     let q = assignments[i]
-    tyEnv[tmpSym(i)] = inferTy(q)
     collectObj(q)
   }
   collectObj(q)
-  let resTy = inferTy(q)
+  let resTy = q.schema
   // map assignments
   for (let i in assignments) {
     let sym = tmpSym(i)
@@ -2070,7 +1976,7 @@ let emitCodeCPP = (q, order) => {
           assign(sym+ys+emitStmInitCPP(q), sym, q.fre, [])
         } else {
           // Init temp-i
-          assign(quoteTypeCPP(getTy(sym))+" "+sym+" "+emitStmInitCPP(q), sym, q.fre, [])
+          assign(quoteTypeCPP(q.schema)+" "+sym+" "+emitStmInitCPP(q), sym, q.fre, [])
         }
     } else if (q.key == "update") {
         console.error("Unsupported Op")
@@ -2104,7 +2010,7 @@ let emitCodeCPP = (q, order) => {
   prolog.push("int main() {")
   for (let obj in objs) {
     let expr = objs[obj]
-    let ty = getTy(expr)
+    let ty = expr.schema
     prolog.push(`${quoteTypeCPP(ty)} ${obj} = ${quoteFileReadCPP(ty)}(\"cgen/${obj}.json\");`)
   }
 
