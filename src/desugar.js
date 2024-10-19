@@ -38,6 +38,7 @@ exports.desugar = (p) => {
     "min":   true,
     "first": true,
     "last":  true,
+    "print": true
   }
 
   // contract: args are already desugared, p is an ident

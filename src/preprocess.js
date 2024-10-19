@@ -116,7 +116,7 @@ let preproc = q => {
       return { key: op, arg: es2 }
     else if (op in runtime.pure)
       return { key: "pure", op: op, arg: es2 }
-    else if (op in runtime.stateful)
+    else if (op in runtime.stateful || op == "print")
       return { key: "stateful", op: op, arg: es2 }
     else if (op.startsWith("prefix_") && op.substring(7) in runtime.stateful)
       return { key: "prefix", op: op.substring(7), arg: es2 }
