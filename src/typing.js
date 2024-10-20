@@ -1,12 +1,13 @@
 
 let typing = {}
 let types = {}
+let typeSyms = {}
 exports.typing = typing;
 exports.types = types;
+exports.typeSyms = typeSyms;
 
-let typeSyms = {}
 
-let createType = (str) => Symbol(str);
+let createType = (str) => ({__rh_type: str});
 
 types["any"] = createType("any"); // Can be anything. In C, must use tag to determine allow.
 types["nothing"] = createType("nothing"); // nothing is a set with 1 value in it: nothing
@@ -45,6 +46,7 @@ let numberTypes = [
 typeSyms["union"] = "union"; // arg1 U arg2 U arg3 ...
 typeSyms["dynkey"] = "dynkey"; // wrapped arg is subtype of arg
 typeSyms["function"] = "function"; // (p1, p2, ...) -> r1
+typeSyms["tagged_type"] = "tagged_type"; // object with a specialized interface to it used by codegen.
 
 let extractUnion = (type) => {
     if(type.__rh_type === typeSyms.union)
@@ -132,6 +134,21 @@ typing.createKey = (supertype, symbolName="Key") => {
     }
 }
 
+typing.removeTag = (type) => {
+    if(type.__rh_type != typeSyms.tagged_type)
+        return type;
+    return typing.removeTag(type.__rh_type_innertype);
+}
+
+typing.createTaggedType = (tag, data, innerType) => {
+    return {
+        __rh_type: typeSyms.tagged_type,
+        __rh_type_tag: tag,
+        __rh_type_data: data,
+        __rh_type_innertype: innerType
+    };
+}
+
 typing.objBuilder = () => {
     let list = [];
     let builderObj = {
@@ -152,6 +169,16 @@ typing.createSimpleObject = (obj) => {
     return list;
 }
 
+typing.createVec = (vecType, keyType, dim, dataType) => {
+    if(dim == 1)
+        return typing.createTaggedType(vecType, {dim: dim},
+            typing.objBuilder().add(typing.createKey(keyType), dataType).build()
+        );
+    return typing.createTaggedType(vecType, {dim: dim},
+        typing.objBuilder().add(typing.createKey(keyType), typing.createVec(vecType, keyType, dim - 1, dataType)).build()
+    );
+}
+
 let performObjectGet = (objectType, keyType) => {
     if(objectType === types.any)
         return types.any;
@@ -159,12 +186,15 @@ let performObjectGet = (objectType, keyType) => {
     let keyTypeList = extractUnion(keyType);
 
     let possibleResults = new Set([]);
-
     // NU = Not Unioned.
     for(let objectTypeNU of objectTypeList) {
         if(objectTypeNU === types.nothing) {
             possibleResults.add(types.nothing);
             continue;
+        }
+        objectTypeNU = typing.removeTag(objectTypeNU);
+        if(!Array.isArray(objectTypeNU)) {
+            throw new Error("Unable to perform object get on non-object type: " + prettyPrintType(objectTypeNU))
         }
         for(let keyTypeNU of keyTypeList) {
             let nothing = true;
@@ -197,16 +227,11 @@ let typeConforms_NonUnion = (type, expectedType) => {
         return true;
     if(typeof type === "string" && expectedType === types.string)
         return true;
-    for(let subtype_order_arr of SUBTYPE_ORDERS) {
-        let i1 = subtype_order_arr.indexOf(type);
-        if(i1 === -1)
-            continue;
-        let i2 = subtype_order_arr.indexOf(expectedType);
-        if(i2 === -1)
-            continue;
-        if(i1 < i2)
-            return true;
-    }
+    if(type.__rh_type === typeSyms.tagged_type)
+        type = type.__rh_type_innertype;
+    if(expectedType.__rh_type === typeSyms.tagged_type)
+        expectedType = expectedType.__rh_type_innertype;
+
     if(expectedType.__rh_type === typeSyms.dynkey) {
         // If expected type is a dynamic key, there is no guarantee of what it could be. It could be empty. As such, it has no guaranteed subtypes.
         // It could only be a subtype of itself, but we already know s1Type != s2Type.
@@ -247,6 +272,16 @@ let typeConforms_NonUnion = (type, expectedType) => {
             }
         }
         if(!invalid) 
+            return true;
+    }
+    for(let subtype_order_arr of SUBTYPE_ORDERS) {
+        let i1 = subtype_order_arr.indexOf(type);
+        if(i1 === -1)
+            continue;
+        let i2 = subtype_order_arr.indexOf(expectedType);
+        if(i2 === -1)
+            continue;
+        if(i1 < i2)
             return true;
     }
     return false;
@@ -290,6 +325,7 @@ let typeCanOverlap = (type, type2) => {
                 return true;
             if(typing.isSubtype(s2Type, s1Type))
                 return true;
+            // TODO Check the rules on this.
             if(s1Type.__rh_type === typeSyms.dynkey) {
                 if(typing.isSubtype(s2Type, s1Type.__rh_type_supertype))
                     return true;
@@ -307,6 +343,7 @@ let isInteger = (type) => {
     if(type.__rh_type === typeSyms.union)
         // Validate that every value in the union is a integer. Hence overall, it is a integer.
         return extractUnion(type).reduce((acc, elem) => acc && isInteger(elem), true);
+    type = typing.removeTag(type);
     if(type.__rh_type === typeSyms.dynkey)
         // Dynkeys are subtypes of the supertype. Hence, if supertype is integer, dynkey is integer.
         return isInteger(type.__rh_type_supertype);
@@ -321,6 +358,7 @@ let isInteger = (type) => {
         return true;
     return false;
 }
+typing.isInteger = isInteger;
 
 let withoutNothing = (type) => {
     if(type.__rh_type !== typeSyms.union)
@@ -338,6 +376,7 @@ let isNothingOr = (func, type) => {
 let isString = (type) => {
     if(type.__rh_type === typeSyms.union)
         return extractUnion(type).reduce((acc, elem) => acc && isString(elem), true);
+    type = typing.removeTag(type);
     if(type.__rh_type === typeSyms.dynkey)
         return isString(type.__rh_type_supertype);
     if(type === types.string)
@@ -361,7 +400,9 @@ let prettyPrintType = (schema) => {
     if(schema.__rh_type === typeSyms.function)
         return "(" + schema.__rh_type_params.map(type => prettyPrintType(type)).join(", ") + ") -> " + prettyPrintType(schema.__rh_type_result);
     if(schema.__rh_type === typeSyms.dynkey)
-        return "<"+prettyPrintType(schema.__rh_type_supertype)+">";//"(" + String(schema.__rh_type_symbol) + " <: " + prettyPrintType(schema.__rh_type_supertype) + ")";
+        return "<"+prettyPrintType(schema.__rh_type_supertype)+">";
+    if(schema.__rh_type === typeSyms.tagged_type)
+        return schema.__rh_type_tag +":"+prettyPrintType(schema.__rh_type_innertype);
     if(Array.isArray(schema))
         return `{${schema.map((keyValue) => `${prettyPrintType(keyValue[0])}: ${prettyPrintType(keyValue[1])}`).join(", ")}}`;
     if(typeof schema === "object")
@@ -447,9 +488,9 @@ let _validateIRQuery = (schema, cseMap, boundKeys, q) => {
             }
             if(q.op < 256)
                 return types.u8;
-            if(q.op >= 65535)
+            if(q.op <= 65535)
                 return types.u16;
-            if(q.op >= 4294967295)
+            if(q.op <= 4294967295)
                 return types.u32;
             return types.u64;
         }
@@ -474,11 +515,12 @@ let _validateIRQuery = (schema, cseMap, boundKeys, q) => {
         if(e2.key == "var") {
             if(!boundKeys[e2.op]) {
                 let keys = [];
-                extractUnion(t1).forEach((elem) => {
-                    if(elem === types.nothing)
+                extractUnion(t1).forEach((ty) => {
+                    if(ty === types.nothing)
                         return;
                     // Extract all keys from object.
-                    keys.push(...elem.map((entry) => entry[0]));
+                    ty = typing.removeTag(ty);
+                    keys.push(...ty.map((entry) => entry[0]));
                 });
                 boundKeys[e2.op] = typing.createUnion(...keys);
             }
@@ -575,7 +617,7 @@ let _validateIRQuery = (schema, cseMap, boundKeys, q) => {
                 .build();
         }
         if (q.op === "print") {
-            return typing.number;
+            return types.i8;
         }
         throw new Error("Unimplemented stateful expression " + q.op);
     } else if(q.key === "group") {

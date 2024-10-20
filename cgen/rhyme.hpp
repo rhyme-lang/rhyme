@@ -1,3 +1,5 @@
+#include <stdint.h>
+
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <iostream>
@@ -9,20 +11,20 @@
 
 using json = nlohmann::json;
 
-template <class T>
+template <class T, class K>
 class CSVector {
   std::shared_ptr<std::vector<T>> data;
-  std::shared_ptr<std::vector<int>> cols;
-  int start_idx;
-  int end_idx;
+  std::shared_ptr<std::vector<K>> cols;
+  K start_idx;
+  K end_idx;
   public:
   class iterator {
     private:
-      const CSVector<T>* container;
-      int index;
+      const CSVector<T, K>* container;
+      K index;
     public:
-    explicit iterator(const CSVector<T>* container, int index) : container(container), index(index) {}
-    std::pair<int, T> operator*() const {
+    explicit iterator(const CSVector<T, K>* container, K index) : container(container), index(index) {}
+    std::pair<K, T> operator*() const {
       return std::make_pair((*container->cols)[index], (*container->data)[index]);
     }
     iterator& operator++() {
@@ -42,28 +44,28 @@ class CSVector {
   iterator end() const {
     return iterator(this, end_idx);
   }
-  explicit CSVector(std::shared_ptr<std::vector<T>> data, std::shared_ptr<std::vector<int>> cols, int start_idx, int end_idx) : data(data), cols(cols), start_idx(start_idx), end_idx(end_idx) {}
+  explicit CSVector(std::shared_ptr<std::vector<T>> data, std::shared_ptr<std::vector<K>> cols, K start_idx, K end_idx) : data(data), cols(cols), start_idx(start_idx), end_idx(end_idx) {}
 
   CSVector(const CSVector& other) : data(other.data), cols(other.cols), start_idx(other.start_idx), end_idx(other.end_idx) {}
   CSVector(CSVector&& other) : data(std::move(other.data)), cols(std::move(other.cols)), start_idx(std::move(other.start_idx)), end_idx(std::move(other.end_idx)) {}
 };
 
-template <class T>
+template <class T, class K>
 class CSRMatrix {
   std::shared_ptr<std::vector<T>> data;
-  std::shared_ptr<std::vector<int>> cols;
-  std::shared_ptr<std::vector<int>> rows;
+  std::shared_ptr<std::vector<K>> cols;
+  std::shared_ptr<std::vector<K>> rows;
   public:
   class iterator {
     private:
-      const CSRMatrix<T>* container;
-      int index;
+      const CSRMatrix<T, K>* container;
+      K index;
     public:
-    explicit iterator(const CSRMatrix<T>* container, int index) : container(container), index(index) {}
-    std::pair<int, CSVector<T>> operator*() const {
-      int start_idx = (*container->rows)[index];
-      int end_idx = index == container->rows->size() - 1 ? container->data->size() : (*container->rows)[index+1];
-      return std::make_pair(std::move(index), std::move(::CSVector<T>(container->data, container->cols, start_idx, end_idx)));
+    explicit iterator(const CSRMatrix<T, K>* container, K index) : container(container), index(index) {}
+    std::pair<K, CSVector<T, K>> operator*() const {
+      K start_idx = (*container->rows)[index];
+      K end_idx = index == container->rows->size() - 1 ? container->data->size() : (*container->rows)[index+1];
+      return std::make_pair(std::move(index), std::move(::CSVector<T, K>(container->data, container->cols, start_idx, end_idx)));
     }
     iterator& operator++() {
       ++index;
@@ -82,7 +84,7 @@ class CSRMatrix {
   iterator end() const {
     return iterator(this, rows->size());
   }
-  explicit CSRMatrix(std::shared_ptr<std::vector<T>> data, std::shared_ptr<std::vector<int>> cols, std::shared_ptr<std::vector<int>> rows) : data(data), cols(cols), rows(rows) {}
+  explicit CSRMatrix(std::shared_ptr<std::vector<T>> data, std::shared_ptr<std::vector<K>> cols, std::shared_ptr<std::vector<K>> rows) : data(data), cols(cols), rows(rows) {}
   CSRMatrix(const CSRMatrix& other) : data(other.data), cols(other.cols), rows(other.rows) {}
   CSRMatrix(CSRMatrix&& other) : data(std::move(other.data)), cols(std::move(other.cols)), rows(std::move(other.rows)) {}
 };
@@ -90,7 +92,21 @@ class CSRMatrix {
 template <typename T>
 inline T parse_elem(std::string data) {
   T res;
-  if constexpr (std::is_same<T, int>::value) {
+  if constexpr (std::is_same<T, uint8_t>::value) {
+    return std::stoi(data);
+  } else if constexpr (std::is_same<T, uint16_t>::value) {
+    return std::stoi(data);
+  } else if constexpr (std::is_same<T, uint32_t>::value) {
+    return std::stoi(data);
+  } else if constexpr (std::is_same<T, uint64_t>::value) {
+    return std::stoi(data);
+  } else if constexpr (std::is_same<T, int8_t>::value) {
+    return std::stoi(data);
+  } else if constexpr (std::is_same<T, int16_t>::value) {
+    return std::stoi(data);
+  } else if constexpr (std::is_same<T, int32_t>::value) {
+    return std::stoi(data);
+  } else if constexpr (std::is_same<T, int64_t>::value) {
     return std::stoi(data);
   } else if (std::is_same<T, float>::value) {
     return std::stof(data);
@@ -137,10 +153,10 @@ inline std::vector<std::vector<T>> parse_2D_dense_tensor(std::string data) {
   return res;
 }
 
-template <typename T>
-inline CSVector<T> parse_1D_sparse_tensor(std::string data) {
+template <typename T, typename K>
+inline CSVector<T, K> parse_1D_sparse_tensor(std::string data) {
   std::shared_ptr<std::vector<T>> data_p = std::make_shared<std::vector<T>>();
-  std::shared_ptr<std::vector<int>> cols_p = std::make_shared<std::vector<int>>();
+  std::shared_ptr<std::vector<K>> cols_p = std::make_shared<std::vector<K>>();
   int start_idx;
   int end_idx;
   int len = data.size();
@@ -161,7 +177,7 @@ inline CSVector<T> parse_1D_sparse_tensor(std::string data) {
   while (data[end]!=']') {
     end++;
   }
-  *cols_p = std::move(parse_1D_dense_tensor<int>(data.substr(start, end - start + 1)));
+  *cols_p = std::move(parse_1D_dense_tensor<K>(data.substr(start, end - start + 1)));
   assert(data.substr(end+3, 5) == "start");
   start = end+10;
   end = start+1;
@@ -176,14 +192,14 @@ inline CSVector<T> parse_1D_sparse_tensor(std::string data) {
     end++;
   }
   end_idx = parse_elem<int>(data.substr(start, end - start));
-  return CSVector<T>(data_p, cols_p, start_idx, end_idx);
+  return CSVector<T, K>(data_p, cols_p, start_idx, end_idx);
 }
 
-template <typename T>
-inline CSRMatrix<T> parse_2D_sparse_tensor(std::string data) {
+template <typename T, typename K>
+inline CSRMatrix<T, K> parse_2D_sparse_tensor(std::string data) {
   std::shared_ptr<std::vector<T>> data_p = std::make_shared<std::vector<T>>();
-  std::shared_ptr<std::vector<int>> cols_p = std::make_shared<std::vector<int>>();
-  std::shared_ptr<std::vector<int>> rows_p = std::make_shared<std::vector<int>>();
+  std::shared_ptr<std::vector<K>> cols_p = std::make_shared<std::vector<K>>();
+  std::shared_ptr<std::vector<K>> rows_p = std::make_shared<std::vector<K>>();
   int len = data.size();
   assert(data[0] == '{');
   assert(data[len-1] == '}');
@@ -202,7 +218,7 @@ inline CSRMatrix<T> parse_2D_sparse_tensor(std::string data) {
   while (data[end]!=']') {
     end++;
   }
-  *cols_p = std::move(parse_1D_dense_tensor<int>(data.substr(start, end - start + 1)));
+  *cols_p = std::move(parse_1D_dense_tensor<K>(data.substr(start, end - start + 1)));
   assert(data.substr(end+3, 4) == "rows");
   start = end+9;
   end = start+1;
@@ -210,8 +226,8 @@ inline CSRMatrix<T> parse_2D_sparse_tensor(std::string data) {
   while (data[end]!=']') {
     end++;
   }
-  *rows_p = std::move(parse_1D_dense_tensor<int>(data.substr(start, end - start + 1)));
-  return CSRMatrix<T>(data_p, cols_p, rows_p);
+  *rows_p = std::move(parse_1D_dense_tensor<K>(data.substr(start, end - start + 1)));
+  return CSRMatrix<T, K>(data_p, cols_p, rows_p);
 }
 
 typedef json rh;
@@ -290,16 +306,16 @@ inline std::vector<std::vector<T>> read_2D_dense_tensor(const char *filename) {
   return parse_2D_dense_tensor<T>(data);
 }
 
-template <typename T>
-inline CSVector<T> read_1D_sparse_tensor(const char *filename) {
+template <typename T, typename K>
+inline CSVector<T, K> read_1D_sparse_tensor(const char *filename) {
   READFILECODE
-  return parse_1D_sparse_tensor<T>(data);
+  return parse_1D_sparse_tensor<T, K>(data);
 }
 
-template <typename T>
-inline CSRMatrix<T> read_2D_sparse_tensor(const char *filename) {
+template <typename T, typename K>
+inline CSRMatrix<T, K> read_2D_sparse_tensor(const char *filename) {
   READFILECODE
-  return parse_2D_sparse_tensor<T>(data);
+  return parse_2D_sparse_tensor<T, K>(data);
 }
 
 template <typename T>

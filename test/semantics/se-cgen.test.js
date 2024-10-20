@@ -5,6 +5,7 @@ const { compile } = require('../../src/simple-eval')
 
 const fs = require('node:fs/promises')
 const os = require('node:child_process')
+const { typing, types } = require('../../src/typing')
 
 
 // ---------- begin C gen tests -------- //
@@ -67,6 +68,16 @@ int main() {
 
 let data = {}
 
+let dataInnerObj = typing.createSimpleObject({
+    key: types.string,
+    value: types.i16
+});
+let schema = typing.createSimpleObject({
+    data: typing.objBuilder()
+        .add(typing.createKey(types.string), dataInnerObj)
+        .build()
+});
+
 test("testTrivial0", async () => {
   let query = rh`1 + 4`
 
@@ -96,7 +107,7 @@ test("testTrivial1", async () => {
 test("testScalar1", async () => {
   let query = rh`sum data.*.value`
 
-  let func = compile(query, { backend : "c" })
+  let func = compile(query, { backend : "c", schema: schema });
   // console.log(func.explain.code)
   let res = await func({data})
 
@@ -104,9 +115,11 @@ test("testScalar1", async () => {
 })
 
 test("testHint1", async () => {
-  let query = rh`(hint dense data) & (sum data.*.value)`
+  let query = rh`sum data.*.value` // (hint dense data) & 
 
-  let func = compile(query, { backend : "c" })
+  let func = compile(query, { backend : "c", schema: typing.createSimpleObject({
+    data: typing.createVec("dense", types.string, 1, dataInnerObj),
+  }) })
   // console.log(func.explain.code)
   // console.log(func.explain.pseudo)
   let res = await func({data})
@@ -123,50 +136,60 @@ data = {
 test("testTrivial1CPP", async () => {
   let query = rh`data.A.value`
 
-  let func = compile(query, { backend : "cpp" })
+  let func = compile(query, { backend : "cpp", schema: schema })
   // console.log(func.explain.code)
   let res = await func({data})
 
   expect(res).toEqual("40")
 }, 10000)
-
 test("testScalar1CPP", async () => {
   let query = rh`sum data.*.value`
 
-  let func = compile(query, { backend : "cpp" })
+  let func = compile(query, { backend : "cpp", schema: schema })
   // console.log(func.explain.code)
   let res = await func({data})
 
   expect(res).toEqual("70")
 }, 10000)
 
-test("testHint1CPP", async () => {
-  let query = rh`(hint dense data) & (sum data.*.value)`
+// TODO: Determine what is desired with this test.
+// "Data" is indexed by a string, but dense vectors can only be indexed by a number.
+/*test("testHint1CPP", async () => {
+  let query = rh`sum data.*.value` // Where data is dense
 
-  let func = compile(query, { backend : "cpp" })
+  let func = compile(query, { backend : "cpp", schema: typing.createSimpleObject({
+    data: typing.createVec("dense", types.string, 1, dataInnerObj),
+  }) })
   // console.log(func.explain.code)
   // console.log(func.explain.pseudo)
   let res = await func({data})
 
   expect(res).toEqual("70")
-}, 10000)
+}, 10000)*/
+
 
 test("testHint2VectorCPP", async () => {
   let queryRh = rh`sum(vec.*i)`
-  let queryDense = rh`(hint vec \"dense,1d,int\") & sum(vec.*i)`
-  let querySparse = rh`(hint csv \"sparse,1d,int\") & sum(csv.*i)`
+  let queryDense = rh`sum(vec.*i)`
+  let querySparse = rh`sum(csv.*i)`
 
   let vec = [0, 0, 10, 20, 30, 0, 0, 0, 40, 50, 0, 0, 0, 0, 0, 60, 0, 0, 70, 0, 0, 80]
 
   let csv = buildCSV(vec)
 
-  let funcRh = compile(queryRh, { backend : "cpp" })
+  let funcRh = compile(queryRh, { backend : "cpp", schema: typing.createSimpleObject({
+    vec: typing.createVec("dense", types.u16, 1, types.u16)
+  })});
   let resRh = await funcRh({vec})
 
-  let funcDense = compile(queryDense, { backend : "cpp" })
+  let funcDense = compile(queryDense, { backend : "cpp", schema: typing.createSimpleObject({
+    vec: typing.createVec("dense", types.u16, 1, types.u16)
+  })});
   let resDense = await funcDense({vec})
 
-  let funcSparse = compile(querySparse, { backend : "cpp" })
+  let funcSparse = compile(querySparse, { backend : "cpp", schema: typing.createSimpleObject({
+    csv: typing.createVec("sparse", types.u16, 1, types.u16)
+  })});
   let resSparse = await funcSparse({csv})
 
   expect(resRh).toEqual("360")
@@ -174,10 +197,11 @@ test("testHint2VectorCPP", async () => {
   expect(resSparse).toEqual("360")
 }, 10000)
 
+
 test("testHint3MatrixCPP", async () => {
   let queryRh = rh`sum(mat.*i.*j)`
-  let queryDense = rh`(hint mat \"dense,2d,int\") & sum(mat.*i.*j)`
-  let querySparse = rh`(hint csr \"sparse,2d,int\") & sum(csr.*i.*j)`
+  let queryDense = rh`sum(mat.*i.*j)`
+  let querySparse = rh`sum(csr.*i.*j)`
 
   let mat = [
     [10, 20,  0,  0,  0,  0,  0],
@@ -189,13 +213,24 @@ test("testHint3MatrixCPP", async () => {
 
   let csr = buildCSR(mat)
 
-  let funcRh = compile(queryRh, { backend : "cpp" })
+  let funcRh = compile(queryRh, { backend : "cpp", schema: typing.createSimpleObject({
+    mat: typing.objBuilder()
+        .add(typing.createKey(types.string), typing.objBuilder()
+            .add(typing.createKey(types.string), types.u16)
+            .build())
+        .build()
+    })
+  });
   let resRh = await funcRh({mat})
 
-  let funcDense = compile(queryDense, { backend : "cpp" })
+  let funcDense = compile(queryDense, { backend : "cpp", schema: typing.createSimpleObject({
+    mat: typing.createVec("dense", types.u8, 2, types.u16)
+  })});
   let resDense = await funcDense({mat})
 
-  let funcSparse = compile(querySparse, { backend : "cpp" })
+  let funcSparse = compile(querySparse, { backend : "cpp", schema: typing.createSimpleObject({
+    csr: typing.createVec("sparse", types.u8, 2, types.u16)
+  })});
   let resSparse = await funcSparse({csr})
 
   expect(resRh).toEqual("360")
