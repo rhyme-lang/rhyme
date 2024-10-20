@@ -135,9 +135,7 @@ let codegenCSql = (q, scope) => {
       // We give the schema to the rhs to extract the column value
       q.arg[1].schema = q.schema
       let e2 = codegenCSql(q.arg[1], scope)
-      let e = e1+"_"+e2
-      buf.push(`int ${e} = ${e2};`)
-      return e
+      return e2
     }
     console.error("malformed get")
     return "malformed get"

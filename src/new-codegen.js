@@ -249,7 +249,7 @@ exports.generate = (ir, backend = "js") => {
     if (str.indexOf("{") >= 0) indent++
     if (str.indexOf("}") > 0) indent--
   }
-  if (backend == "cpp") {
+  if (backend == "cpp" || backend == "c-sql") {
     prolog.forEach(emit)
   } else if (backend == "js") {
     emit("inp => {")
@@ -350,6 +350,26 @@ exports.generate = (ir, backend = "js") => {
     if (backend == "cpp") {
       emit(e.loopTxt)
       // TODO: support multiple filters
+    } else if (backend == "c-sql") { 
+      let loops = gensBySym[s]
+      let loopTxts = loops.map(x => x.getLoopTxt())
+      // initialize cursors
+      for (let loopTxt of loopTxts) {
+        loopTxt.initCursor.map(emit)
+      }
+      
+      for (let loopTxt of loopTxts) {
+        emit(loopTxt.info)
+      }
+
+      emit(loopTxts[0].loopHeader)
+      for (let loopTxt of loopTxts) {
+        emit(loopTxt.boundsChecking)
+      }
+
+      for (let loopTxt of loopTxts) {
+        loopTxt.rowScanning.map(emit)
+      }
     } else if (backend == "js") {
       emit("for (let " + quoteVar(e.sym) + " in " + e.rhs + ") {")
       // filters
@@ -496,7 +516,7 @@ exports.generate = (ir, backend = "js") => {
   //
   // wrap up codegen
   //
-  if (backend == "cpp") {
+  if (backend == "cpp" || backend == "c-sql") {
     epilog.forEach(emit)
     let codeString = code.join("\n")
     return codeString

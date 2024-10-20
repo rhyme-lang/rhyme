@@ -1,81 +1,64 @@
-#include <stdio.h>
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <unistd.h>
-int query(char *inp, int n);
-int fsize(int fd) {
-    struct stat stat;
-    int res = fstat(fd,&stat);
-    return stat.st_size;
-}
-int main(int argc, char *argv[]) {
-    if (argc < 2) {
-        printf("Usage: %s <csv_file>\n", argv[0]);
+/*
+ * Generated from the query: loadCSV("./cgen-sql/simple.csv").*.B | sum
+ */
+
+#include "../cgen-sql/rhyme-sql.h"
+int main() {
+    // loadCSV ./cgen-sql/simple.csv
+    int fd0 = open("./cgen-sql/simple.csv", 0);
+    if (fd0 == -1) {
+        fprintf(stderr, "Unable to open file ./cgen-sql/simple.csv\n");
         return 1;
     }
-    // perform the actual loadCSV operation here
-    int fd = open(argv[1], 0);
-    int size = fsize(fd);
-    char* file = mmap(0, size, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0);
-    printf("%d\n", query(file, size));
-    close(fd);
-    return 0;
-}
-int query(char *inp, int n) {
-    // emit tmp0
-    int tmp0 = 0;
+    int n0 = fsize(fd0);
+    char *csv0 = mmap(0, n0, PROT_READ, MAP_FILE | MAP_SHARED, fd0, 0);
+    close(fd0);
+    int32_t tmp0 = 0;
     int i0 = 0;
-    while (inp[i0] != '\n') {
+    while (i0 < n0 && csv0[i0] != '\n') {
         i0++;
     }
+    // generator: D0 <- loadCSV("./cgen-sql/simple.csv")
     while (1) {
-        if (i0 >= n) break;
-        // reading Phrase
-        int start0 = i0;
+        if (i0 >= n0) break;
+        // reading column A
+        int csv0_D0_A_start = i0;
         while (1) {
-            char c0 = inp[i0];
-            if (c0 == ',') break;
+            char c = csv0[i0];
+            if (c == ',') break;
             i0++;
         }
-        int end0 = i0;
+        int csv0_D0_A_end = i0;
         i0++;
-        // reading Year
-        int start1 = i0;
+        // reading column B
+        int csv0_D0_B_start = i0;
         while (1) {
-            char c1 = inp[i0];
-            if (c1 == ',') break;
+            char c = csv0[i0];
+            if (c == ',') break;
             i0++;
         }
-        int end1 = i0;
+        int csv0_D0_B_end = i0;
         i0++;
-        // reading MatchCount
-        int start2 = i0;
+        // reading column C
+        int csv0_D0_C_start = i0;
         while (1) {
-            char c2 = inp[i0];
-            if (c2 == ',') break;
+            char c = csv0[i0];
+            if (c == ',') break;
             i0++;
         }
-        int end2 = i0;
+        int csv0_D0_C_end = i0;
         i0++;
-        // reading VolumeCount
-        int start3 = i0;
+        // reading column D
+        int csv0_D0_D_start = i0;
         while (1) {
-            char c3 = inp[i0];
-            if (c3 == '\n') break;
+            char c = csv0[i0];
+            if (c == '\n') break;
             i0++;
         }
-        int end3 = i0;
+        int csv0_D0_D_end = i0;
         i0++;
-        // converting string to number
-        int VolumeCount = 0;
-        int curr0 = start3;
-        while (curr0 < end3) {
-            VolumeCount *= 10;
-            VolumeCount += (inp[curr0] - '0');
-            curr0++;
-        }
-        tmp0 += VolumeCount;
+        tmp0 += extract_int(csv0, csv0_D0_B_start, csv0_D0_B_end);
     }
-    return tmp0;
+    printf("res = %d\n", tmp0);
+    return 0;
 }
