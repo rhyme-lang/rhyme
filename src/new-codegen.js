@@ -353,20 +353,25 @@ exports.generate = (ir, backend = "js") => {
     } else if (backend == "c-sql") { 
       let loops = gensBySym[s]
       let loopTxts = loops.map(x => x.getLoopTxt())
-      // initialize cursors
+      // initialize cursors for all loops
       for (let loopTxt of loopTxts) {
         loopTxt.initCursor.map(emit)
       }
       
+      // emit comment line for each generated filter
       for (let loopTxt of loopTxts) {
         emit(loopTxt.info)
       }
 
+      // we only want to emit the loop header for the first loop
       emit(loopTxts[0].loopHeader)
+
+      // emit bounds checking for all loops
       for (let loopTxt of loopTxts) {
         emit(loopTxt.boundsChecking)
       }
 
+      // emit row scanning for all loops
       for (let loopTxt of loopTxts) {
         loopTxt.rowScanning.map(emit)
       }
