@@ -4,8 +4,6 @@ const { typing, types } = require('./typing')
 
 let filters
 let assignments
-let vars
-let order
 
 let csvFiles
 
@@ -334,7 +332,7 @@ let emitCodeCSql = (q, ir) => {
   let transExpr = q => expr(codegenCSql(q), ...getDeps(q))
 
   let prolog = []
-  prolog.push(`#include "../cgen-sql/rhyme-sql.h"`)
+  prolog.push(`#include "rhyme-sql.h"`)
   prolog.push("int main() {")
 
   for (let i in filters) {
@@ -426,9 +424,9 @@ let generateCSqlNew = (q, ir) => {
   let code = emitCodeCSql(q, ir)
 
   let func = (async () => {
-    await fs.writeFile(`out/sql-new.c`, code);
-    await execPromise(`gcc out/sql-new.c -g -o out/sql-new`)
-    return 'out/sql-new'
+    await fs.writeFile(`cgen-sql/out.c`, code);
+    await execPromise(`gcc cgen-sql/out.c -o cgen-sql/out`)
+    return 'cgen-sql/out'
   })()
 
   let wrap = async (input) => {
