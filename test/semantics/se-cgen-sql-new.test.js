@@ -100,6 +100,17 @@ test("testLoadCSVMultipleFilesZip", async () => {
   expect(res).toEqual("res = 231\n")
 })
 
+test("testLoadCSVSingleFileJoin", async () => {
+  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+
+  let query = rh`sum(${csv}.*A.C + ${csv}.*B.D)`
+
+  let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
+
+  let res = await func()
+  expect(res).toEqual("res = 972\n")
+})
+
 test("testLoadCSVMultipleFilesJoin", async () => {
   let csv1 = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
   let csv2 = rh`loadCSV "./cgen-sql/simple_copy.csv" ${schema}`
@@ -154,7 +165,7 @@ test("testStatefulPrint", async () => {
 
   let res = await func()
   expect(res).toEqual(
-`| 5 |
+    `| 5 |
 | 2 |
 | 1 |
 | 7 |
