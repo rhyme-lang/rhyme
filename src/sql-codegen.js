@@ -80,6 +80,34 @@ let convertTypeToCType = (type) => {
     throw new Error("Unknown type: " + typing.prettyPrintType(type));
 }
 
+let getFormatSpecifier = (type) => {
+  if (type.__rh_type === "dynkey")
+    return getFormatSpecifier(type.__rh_type_superkey);
+  if (type.__rh_type === "union")
+    throw new Error("Unable to convert union type to C type currently.");
+  if (type === types.u8)
+    return "hhu";
+  if (type === types.u16)
+    return "hu";
+  if (type === types.u32)
+    return "u";
+  if (type === types.u64)
+    return "lu";
+  if (type === types.i8)
+    return "hhd";
+  if (type === types.i16)
+    return "hd";
+  if (type === types.i32)
+    return "d";
+  if (type === types.i64)
+    return "ld";
+  if (type === types.f32)
+    return "f";
+  if (type === types.f64)
+    return "lf";
+  throw new Error("Unknown type: " + typing.prettyPrintType(type));
+}
+
 let codegenCSql = (q, scope) => {
   let {buf, getNewName, fileColumnPos, file} = scope
   if (q.key == "input") {
@@ -156,18 +184,16 @@ let codegenCSql = (q, scope) => {
   }
 }
 
-let emitStmInitCSql = (q, scope) => {
+let emitStmInitCSql = (q, sym) => {
   if (q.key == "stateful") {
     if (q.op == "sum" || q.op == "count") {
-      return "= 0"
+      return `${convertTypeToCType(q.schema)} ${sym} = 0;`
     } else if (q.op == "product") {
-      return "= 1"
+      return `${convertTypeToCType(q.schema)} ${sym} = 1;`
     } else if (q.op == "min") {
-      return "= INT_MAX"
+      return `${convertTypeToCType(q.schema)} ${sym} = INT_MAX;`
     } else if (q.op == "max") {
-      return "= INT_MIN"
-    } else if (q.op == "print") {
-      return "= -1"
+      return `${convertTypeToCType(q.schema)} ${sym} = INT_MIN;`
     } else {
       "not supported"
     }
@@ -184,17 +210,17 @@ let emitStmUpdateCSql = (q, scope, sym) => {
   } if (q.key == "stateful") {
     let [e1] = q.arg.map(x => codegenCSql(x, scope))
     if (q.op == "sum") {
-      return `+= ${e1}`
+      return `${sym} += ${e1};`
     } else if (q.op == "product") {
-      return `*= ${e1}`
+      return `${sym} *= ${e1};`
     } else if (q.op == "min") {
-      return `= ${e1} < ${sym} ? ${e1} : ${sym}`
+      return `${sym} = ${e1} < ${sym} ? ${e1} : ${sym};`
     } else if (q.op == "max") {
-      return `= ${e1} > ${sym} ? ${e1} : ${sym}`
+      return `${sym} = ${e1} > ${sym} ? ${e1} : ${sym};`
     } else if (q.op == "count") {
-      return `+= 1`
+      return `${sym} += 1;`
     } else if (q.op == "print") {
-      return `= 0; printf("%d\\n", ${e1})`
+      return `printf("%${getFormatSpecifier(q.arg[0].schema)}\\n", ${e1});`
     } else {
       "not supported"
     }
@@ -448,11 +474,11 @@ int main() {
 `
 
 let emitCodeSqlEpilog =
-`
-printf(\"%d\\n\", res);
-return 0;
+`return 0;
 }
 `
+
+
 
 let initRequired = {
   "sum": true,
@@ -488,18 +514,21 @@ let emitCodeCSql = (q, ir) => {
 
     buf.push("// --- tmp"+i+" ---")
     if (q.key == "stateful" && initRequired[q.op]) {
-      buf.push(`${convertTypeToCType(q.schema)} tmp${i} ${emitStmInitCSql(q)};`)
+      buf.push(emitStmInitCSql(q, `tmp${i}`))
     }
 
     // emit filter
     // filters always come from loadCSV
     let scope = {buf, loadCSVBuf, ir, getNewName, vars:[], filters:[]}
     emitFilters1(scope, q.fre, q.bnd)(buf, codegenCSql)(scope1 => {
-      buf.push(`tmp${i} ${emitStmUpdateCSql(q, scope1, `tmp${i}`)};`)
+      buf.push(emitStmUpdateCSql(q, scope1, `tmp${i}`))
     })
   }
 
-  buf.push(`${convertTypeToCType(q.schema)} res = ${codegenCSql(q, {buf, ir, getNewName})};`)
+  if (q.schema != types.nothing) {
+    buf.push(`${convertTypeToCType(q.schema)} res = ${codegenCSql(q, {buf, ir, getNewName})};`)
+    buf.push(`printf(\"%${getFormatSpecifier(q.schema)}\\n\", res);`)
+  }
   loadCSVBuf.push("")
 
   return emitCodeSqlProlog + loadCSVBuf.join("\n") + buf.join("\n") + emitCodeSqlEpilog
