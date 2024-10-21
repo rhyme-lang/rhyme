@@ -33,18 +33,6 @@ let initRequired = {
   "print": true
 }
 
-let fillWithProlog = (buf) => {
-  buf.push(`#include "../cgen-sql/rhyme-sql.h"`)
-
-  buf.push("int fsize(int fd) {")
-  buf.push("struct stat stat;")
-  buf.push("int res = fstat(fd,&stat);")
-  buf.push("return stat.st_size;")
-  buf.push("}")
-
-  buf.push("int main() {")
-}
-
 let emitLoadCSV = (buf, filename, id) => {
   buf.push(`// loadCSV ${filename}`)
   let fd = "fd" + id

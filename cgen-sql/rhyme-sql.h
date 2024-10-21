@@ -20,6 +20,5 @@ int extract_int(char *file, int start, int end) {
     res += file[curr] - '0';
     curr++;
   }
-
   return res;
 }
