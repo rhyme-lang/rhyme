@@ -7,4 +7,6 @@ cgen/test.c
 cgen/test.cpp
 cgen/test.out
 
+cgen-sql/out*
+
 out

@@ -5,6 +5,7 @@ const { generate } = require('./new-codegen')
 const { preproc } = require('./preprocess')
 const { runtime } = require('./simple-runtime')
 const { generateCSql } = require('./sql-codegen')
+const { generateCSqlNew } = require('./sql-newcodegen')
 const { typing, types, typeSyms } = require('./typing')
 
 
@@ -1912,7 +1913,7 @@ let emitCodeCPP = (q, order) => {
     e.rhs = a.txt
     e.loopTxt = quoteLoop(e1, e2)
     // if (generatorStms.every(e1 => e1.txt != e.txt)) // generator CSE
-      generatorStms.push(e)
+    generatorStms.push(e)
   }
 
 
@@ -2323,6 +2324,11 @@ let execPromise = function(cmd) {
   if (settings.backend == "c-sql") {
     let ir = {filters, assignments, vars, order}
     return generateCSql(q, ir)
+  }
+
+  if (settings.backend == "c-sql-new") {
+    let ir = {filters, assignments, vars, order}
+    return generateCSqlNew(q, ir)
   }
 
   let code = emitCode(q,order)
