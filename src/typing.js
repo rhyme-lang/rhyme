@@ -617,7 +617,7 @@ let _validateIRQuery = (schema, cseMap, boundKeys, q) => {
                 .build();
         }
         if (q.op === "print") {
-            return types.i8;
+            return types.nothing;
         }
         throw new Error("Unimplemented stateful expression " + q.op);
     } else if(q.key === "group") {
