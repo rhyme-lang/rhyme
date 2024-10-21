@@ -30,7 +30,6 @@ let initRequired = {
   "min": true,
   "max": true,
   "count": true,
-  "print": true
 }
 
 let emitLoadCSV = (buf, filename, id) => {
@@ -178,18 +177,16 @@ let codegenCSql = (q) => {
   }
 }
 
-let emitStmInitCSql = (q, scope) => {
+let emitStmInitCSql = (q, sym) => {
   if (q.key == "stateful") {
     if (q.op == "sum" || q.op == "count") {
-      return "= 0"
+      return `${convertToCType(q.schema)} ${sym} = 0`
     } else if (q.op == "product") {
-      return "= 1"
+      return `${convertToCType(q.schema)} ${sym} = 1`
     } else if (q.op == "min") {
-      return "= INT_MAX"
+      return `${convertToCType(q.schema)} ${sym} = INT_MAX`
     } else if (q.op == "max") {
-      return "= INT_MIN"
-    } else if (q.op == "print") {
-      return "= 0"
+      return `${convertToCType(q.schema)} ${sym} = INT_MIN`
     } else {
       "not supported"
     }
@@ -206,17 +203,17 @@ let emitStmUpdateCSql = (q, sym) => {
   } if (q.key == "stateful") {
     let [e1] = q.arg.map(x => codegenCSql(x))
     if (q.op == "sum") {
-      return `+= ${e1}`
+      return `${sym} += ${e1}`
     } else if (q.op == "product") {
-      return `*= ${e1}`
+      return `${sym} *= ${e1}`
     } else if (q.op == "min") {
-      return `= ${e1} < ${sym} ? ${e1} : ${sym}`
+      return `${sym} = ${e1} < ${sym} ? ${e1} : ${sym}`
     } else if (q.op == "max") {
-      return `= ${e1} > ${sym} ? ${e1} : ${sym}`
+      return `${sym} = ${e1} > ${sym} ? ${e1} : ${sym}`
     } else if (q.op == "count") {
-      return `+= 1`
+      return `${sym} += 1`
     } else if (q.op == "print") {
-      return `= 0; printf("| %${getFormatSpecifier(q.arg[0].schema)} |\\n", ${e1})`
+      return `printf("%${getFormatSpecifier(q.arg[0].schema)}\\n", ${e1})`
     } else {
       "not supported"
     }
@@ -359,20 +356,22 @@ let emitCodeCSql = (q, ir) => {
 
     // emit init
     if (q.key == "stateful" && initRequired[q.op]) {
-      assign(`${convertToCType(q.schema)} ${sym} ${emitStmInitCSql(q)}`, sym, q.fre, [])
+      assign(emitStmInitCSql(q, sym), sym, q.fre, [])
     }
 
     // emit update
     let fv = union(q.fre, q.bnd)
     let deps = [...fv, ...q.tmps.map(tmpSym)] // XXX rhs dims only?
 
-    assign(`${sym} ${emitStmUpdateCSql(q, sym)}`, sym, q.fre, deps)
+    assign(emitStmUpdateCSql(q, sym), sym, q.fre, deps)
   }
 
   let res = transExpr(q)
 
   let epilog = []
-  epilog.push(`printf("res = %${getFormatSpecifier(q.schema)}\\n", ${res.txt});`)
+  if (q.schema !== types.nothing) {
+    epilog.push(`printf("%${getFormatSpecifier(q.schema)}\\n", ${res.txt});`)
+  }
   epilog.push("return 0;")
   epilog.push("}");
 
