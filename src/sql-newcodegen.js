@@ -105,72 +105,62 @@ let getFormatSpecifier = (type) => {
   throw new Error("Unknown type: " + typing.prettyPrintType(type));
 }
 
-let codegenCSql = (q) => {
-  if (q.key == "input") {
-    return "not supported"
-  } else if (q.key == "loadInput") {
-    if (q.op == "csv") {
-      let { mappedFile } = csvFiles[q.arg[0].op]
-      currentPath = [mappedFile]
-      return mappedFile
-    }
-    return "not supported"
+let codegenCSql = (q, extract = true) => {
+  if (q.key == "loadInput") {
+    console.error("stand-alone loadInput")
+    return "// stand-alone loadInput not supported"
   } else if (q.key == "const") {
-    if (typeof q.op === "string") {
-      // the string should be a column name
-      let mappedFile = currentPath[0]
-
-      let prefix = currentPath.join("_")
-      let start = prefix + `_${q.op}_start`
-      let end = prefix + `_${q.op}_end`
-
-      let res = undefined
-
-      if (typing.isInteger(q.schema)) {
-        res = `extract_int(${mappedFile}, ${start}, ${end})`
-      }
-
-      return res
-    } else if (typeof q.op == "number") {
+    if (typeof q.op == "number") {
       return q.op
     } else {
       console.error("unsupported constant ", pretty(q))
       return String(q.op)
     }
   } else if (q.key == "var") {
-    return quoteVar(q.op)
+    console.error("stand-alone var")
+    return "// stand-alone var not supported"
   } else if (q.key == "ref") {
     return tmpSym(q.op)
   } else if (q.key == "get") {
-    let e1 = codegenCSql(q.arg[0])
-    if (q.arg[0].key == "loadInput" && q.arg[1].key == "var") {
-      let e2 = codegenCSql(q.arg[1])
-      currentPath.push(e2)
-      return e1 + "_" + e2
+    let [e1, e2] = q.arg
+    // check if the get is valid
+    if (!(e1.key == "get" && e2.key == "const")) {
+      console.error("malformed get")
+      return "// malformed get"
     }
-    if (q.arg[0].key == "get" && q.arg[1].key == "const") {
-      // We give the schema to the rhs to extract the column value
-      q.arg[1].schema = q.schema
-      let e2 = codegenCSql(q.arg[1])
-      return e2
+    if (!(e1.arg[0].key == "loadInput" && e1.arg[1].key == "var")) {
+      console.error("malformed get")
+      return "// malformed get"
     }
-    console.error("malformed get")
-    return "malformed get"
+    if (typeof e2.op != "string") {
+      console.error("column name is not a constant string")
+      return "// column name is not a constant string"
+    }
+
+    let filename = e1.arg[0].arg[0].op
+    let { mappedFile } = csvFiles[filename]
+
+    let v = e1.arg[1].op
+
+    let start = [mappedFile, quoteVar(v), e2.op, "start"].join("_")
+    let end = [mappedFile, quoteVar(v), e2.op, "end"].join("_")
+
+    if (extract) {
+      if (typing.isInteger(q.schema)) {
+        return `extract_int(${mappedFile}, ${start}, ${end})`
+      }
+    } 
+
+    return { file: mappedFile, start, end }
   } else if (q.key == "pure") {
     let es = q.arg.map(x => codegenCSql(x))
     // only do plus for now
     if (q.op == "plus") {
       return `${es[0]} + ${es[1]}`
     } else {
+      console.error("pure op not supported")
       return "not supported"
     }
-  } else if (q.key == "hint") {
-    // no-op!
-    return "not supported"
-  } else if (q.key == "mkset") {
-    return "not supported"
-  } else if (q.key == "stateful" || q.key == "prefix" || q.key == "update") {
-    return "not supported"
   } else {
     console.error("unknown op", pretty(q))
     return "<?" + q.key + "?>"
@@ -213,6 +203,10 @@ let emitStmUpdateCSql = (q, sym) => {
     } else if (q.op == "count") {
       return `${sym} += 1`
     } else if (q.op == "print") {
+      if (q.arg[0].schema == types.string) {
+        let [e1] = q.arg.map(x => codegenCSql(x, false))
+        return `println(${e1.file}, ${e1.start}, ${e1.end})`
+      }
       return `printf("%${getFormatSpecifier(q.arg[0].schema)}\\n", ${e1})`
     } else {
       "not supported"
@@ -224,17 +218,15 @@ let emitStmUpdateCSql = (q, sym) => {
   }
 }
 
-let generateRowScanning = (buf, cursor, schema, mappedFile, e2) => {
+let generateRowScanning = (buf, cursor, schema, mappedFile, size, e2) => {
   let columns = schema
   for (let i in columns) {
     buf.push(`// reading column ${columns[i][0]}`)
     let delim = i == columns.length - 1 ? "\\n" : ","
-    let start = `${mappedFile}_${quoteVar(e2.op)}_${columns[i][0]}_start`
-    let end = `${mappedFile}_${quoteVar(e2.op)}_${columns[i][0]}_end`
+    let start = [mappedFile, quoteVar(e2.op), columns[i][0], "start"].join("_")
+    let end = [mappedFile, quoteVar(e2.op), columns[i][0], "end"].join("_")
     buf.push(`int ${start} = ${cursor};`)
-    buf.push("while (1) {")
-    buf.push(`char c = ${mappedFile}[${cursor}];`)
-    buf.push(`if (c == '${delim}') break;`)
+    buf.push(`while (${cursor} < ${size} && ${mappedFile}[${cursor}] != '${delim}') {`)
     buf.push(`${cursor}++;`)
     buf.push("}")
     buf.push(`int ${end} = ${cursor};`)
@@ -256,12 +248,13 @@ let getLoopTxt = (e1, e2, schema) => () => {
   initCursor.push(`while (${cursor} < ${size} && ${mappedFile}[${cursor}] != '\\n') {`)
   initCursor.push(`${cursor}++;`)
   initCursor.push("}")
+  initCursor.push(`${cursor}++;`)
 
   let loopHeader = "while (1) {"
   let boundsChecking = `if (${cursor} >= ${size}) break;`
 
   let rowScanning = []
-  generateRowScanning(rowScanning, cursor, schema, mappedFile, e2)
+  generateRowScanning(rowScanning, cursor, schema, mappedFile, size, e2)
 
   return {
     info, initCursor, loopHeader, boundsChecking, rowScanning
@@ -301,14 +294,11 @@ let emitCodeCSql = (q, ir) => {
   }
 
   function selectGenFilter(e1, e2, schema) {
-    let a = transExpr(e1)
-    let b = transExpr(e2)
-    let b1 = b.deps[0]
-    let e = expr("FOR", ...a.deps) // "for " + b1 + " <- " + a.txt
-    e.sym = b1
-    e.rhs = a.txt
+    let a = getDeps(e1)
+    let b = getDeps(e2)
+    let e = expr("FOR", ...a)
+    e.sym = b[0]
     e.getLoopTxt = getLoopTxt(e1, e2, schema)
-    // if (generatorStms.every(e1 => e1.txt != e.txt)) // generator CSE
     generatorStms.push(e)
   }
 
