@@ -36,7 +36,7 @@ let schema = typing.objBuilder()
 test("testSimpleSum1", async () => {
   let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
 
-  let query = rh`${csv}.*.C | sum`
+  let query = rh`${csv}.*A.C | sum`
 
   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
@@ -156,7 +156,7 @@ test("testCount", async () => {
   expect(res).toEqual("4\n")
 })
 
-test("testStatefulPrint", async () => {
+test("testStatefulPrint1", async () => {
   let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
 
   let query = rh`print ${csv}.*.B`
@@ -168,6 +168,22 @@ test("testStatefulPrint", async () => {
 2
 1
 7
+`
+  )
+})
+
+test("testStatefulPrint2", async () => {
+  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+
+  let query = rh`print ${csv}.*.A`
+
+  let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
+
+  let res = await func()
+  expect(res).toEqual(`valA
+valB
+valC
+valD
 `
   )
 })

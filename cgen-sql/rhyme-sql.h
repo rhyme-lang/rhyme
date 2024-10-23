@@ -22,3 +22,12 @@ int extract_int(char *file, int start, int end) {
   }
   return res;
 }
+
+void println(char *file, int start, int end) {
+  int curr = start;
+  while (curr < end) {
+    putchar(file[curr]);
+    curr++;
+  }
+  putchar('\n');
+}
