@@ -188,7 +188,7 @@ valD
   )
 })
 
-test("testLoadCSVDynamicFilename", () => {
+test("testLoadCSVDynamicFilename", async () => {
   let files_schema = typing.objBuilder()
     .add(typing.createKey(types.u32), typing.createSimpleObject({
       file: types.string
@@ -198,9 +198,28 @@ test("testLoadCSVDynamicFilename", () => {
 
   let csv = rh`loadCSV ${filenames} ${schema}`
 
-  let query = rh`sum (${csv}.*A.B + ${csv}.*B.D)`
+  let query = rh`sum ${csv}.*A.D`
   
-  let func = compile(query, { schema: types.nothing })
+  let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
-  console.log(func.explain.code)
+  let res = await func()
+  expect(res).toEqual("18\n")
+})
+
+test("testLoadCSVDynamicFilenameJoin", async () => {
+  let files_schema = typing.objBuilder()
+    .add(typing.createKey(types.u32), typing.createSimpleObject({
+      file: types.string
+    })).build()
+
+  let filenames = rh`(loadCSV "./cgen-sql/files.csv" ${files_schema}).*f.file`
+
+  let csv = rh`loadCSV ${filenames} ${schema}`
+
+  let query = rh`sum (${csv}.*A.D + ${csv}.*B.B)`
+  
+  let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
+
+  let res = await func()
+  expect(res).toEqual("192\n")
 })

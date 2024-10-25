@@ -336,7 +336,11 @@ exports.generate = (ir, backend = "js") => {
   }
   function emitStatement(i) {
     let e = getStmt(i)
-    emit(e.txt)
+    if (backend == "c-sql") {
+      e.txt.map(emit)
+    } else {
+      emit(e.txt)
+    }
     emittedStmts[i] = true
     // initialize closedLoopByStmt
     // when a statement is emitted, all of its loops are not closed
@@ -353,6 +357,10 @@ exports.generate = (ir, backend = "js") => {
     } else if (backend == "c-sql") { 
       let loops = gensBySym[s]
       let loopTxts = loops.map(x => x.getLoopTxt())
+      for (let loopTxt of loopTxts) {
+        loopTxt.loadCSV.map(emit)
+      }
+
       // initialize cursors for all loops
       for (let loopTxt of loopTxts) {
         loopTxt.initCursor.map(emit)

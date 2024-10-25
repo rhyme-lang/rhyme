@@ -32,12 +32,16 @@ let initRequired = {
   "count": true,
 }
 
-let emitLoadCSV = (buf, filename, id) => {
+let emitLoadCSV = (buf, filename, id, quote = true) => {
   buf.push(`// loadCSV ${filename}`)
   let fd = "fd" + id
   let mappedFile = "csv" + id
   let size = "n" + id
-  buf.push(`int ${fd} = open(\"${filename}\", 0);`)
+  if (quote) {
+    buf.push(`int ${fd} = open("${filename}", 0);`)
+  } else {
+    buf.push(`int ${fd} = open(${filename}, 0);`)
+  }
   buf.push(`if (${fd} == -1) {`)
   buf.push(`fprintf(stderr, "Unable to open file ${filename}\\n");`);
   buf.push(`return 1;`)
@@ -105,7 +109,7 @@ let getFormatSpecifier = (type) => {
   throw new Error("Unknown type: " + typing.prettyPrintType(type));
 }
 
-let codegenCSql = (q, extract = true) => {
+let codegenCSql = (q, buf, extract = true) => {
   if (q.key == "loadInput") {
     console.error("stand-alone loadInput")
     return "// stand-alone loadInput not supported"
@@ -137,7 +141,15 @@ let codegenCSql = (q, extract = true) => {
       return "// column name is not a constant string"
     }
 
-    let filename = e1.arg[0].arg[0].op
+    let file = e1.arg[0].arg[0]
+    let filename
+    if (file.key == "const" && typeof file.op == "string") {
+      filename = file.op
+    } else {
+      // extract filename, we don't want it to push more stuff into the buf
+      filename = codegenCSql(file, [])
+    }
+
     let { mappedFile } = csvFiles[filename]
 
     let v = e1.arg[1].op
@@ -146,14 +158,23 @@ let codegenCSql = (q, extract = true) => {
     let end = [mappedFile, quoteVar(v), e2.op, "end"].join("_")
 
     if (extract) {
+      let name = [mappedFile, quoteVar(v), e2.op].join("_")
       if (typing.isInteger(q.schema)) {
-        return `extract_int(${mappedFile}, ${start}, ${end})`
+        buf.push(`${convertToCType(q.schema)} ${name} = extract_int(${mappedFile}, ${start}, ${end});`)
+        return name
+      } else if (q.schema == types.string) {
+        buf.push(`char ${name}[${end} - ${start} + 1];`)
+        buf.push(`extract_str(${mappedFile}, ${start}, ${end}, ${name});`)
+        return name
+      } else {
+        console.error("cannot extract value of type " + typing.prettyPrintType(q.schema))
+        return "// cannot extract value of type " + typing.prettyPrintType(q.schema)
       }
-    } 
+    }
 
     return { file: mappedFile, start, end }
   } else if (q.key == "pure") {
-    let es = q.arg.map(x => codegenCSql(x))
+    let es = q.arg.map(x => codegenCSql(x, buf))
     // only do plus for now
     if (q.op == "plus") {
       return `${es[0]} + ${es[1]}`
@@ -170,52 +191,56 @@ let codegenCSql = (q, extract = true) => {
 let emitStmInitCSql = (q, sym) => {
   if (q.key == "stateful") {
     if (q.op == "sum" || q.op == "count") {
-      return `${convertToCType(q.schema)} ${sym} = 0`
+      return [`${convertToCType(q.schema)} ${sym} = 0;`]
     } else if (q.op == "product") {
-      return `${convertToCType(q.schema)} ${sym} = 1`
+      return [`${convertToCType(q.schema)} ${sym} = 1;`]
     } else if (q.op == "min") {
-      return `${convertToCType(q.schema)} ${sym} = INT_MAX`
+      return [`${convertToCType(q.schema)} ${sym} = INT_MAX;`]
     } else if (q.op == "max") {
-      return `${convertToCType(q.schema)} ${sym} = INT_MIN`
+      return [`${convertToCType(q.schema)} ${sym} = INT_MIN;`]
     } else {
-      "not supported"
+      return ["not supported"]
     }
   } else if (q.key == "update") {
-    return "not supported"
+    return ["not supported"]
   } else {
     console.error("unknown op", q)
+    return []
   }
 }
 
 let emitStmUpdateCSql = (q, sym) => {
+  let buf = []
   if (q.key == "prefix") {
     return "not supported"
   } if (q.key == "stateful") {
-    let [e1] = q.arg.map(x => codegenCSql(x))
+    let [e1] = q.arg.map(x => codegenCSql(x, buf))
     if (q.op == "sum") {
-      return `${sym} += ${e1}`
+      buf.push(`${sym} += ${e1};`)
     } else if (q.op == "product") {
-      return `${sym} *= ${e1}`
+      buf.push(`${sym} *= ${e1};`)
     } else if (q.op == "min") {
-      return `${sym} = ${e1} < ${sym} ? ${e1} : ${sym}`
+      buf.push(`${sym} = ${e1} < ${sym} ? ${e1} : ${sym};`)
     } else if (q.op == "max") {
-      return `${sym} = ${e1} > ${sym} ? ${e1} : ${sym}`
+      buf.push(`${sym} = ${e1} > ${sym} ? ${e1} : ${sym};`)
     } else if (q.op == "count") {
-      return `${sym} += 1`
+      buf.push(`${sym} += 1;`)
     } else if (q.op == "print") {
       if (q.arg[0].schema == types.string) {
-        let [e1] = q.arg.map(x => codegenCSql(x, false))
-        return `println(${e1.file}, ${e1.start}, ${e1.end})`
+        let [e1] = q.arg.map(x => codegenCSql(x, buf, false))
+        buf.push(`println(${e1.file}, ${e1.start}, ${e1.end});`)
+      } else {
+        buf.push(`printf("%${getFormatSpecifier(q.arg[0].schema)}\\n", ${e1});`)
       }
-      return `printf("%${getFormatSpecifier(q.arg[0].schema)}\\n", ${e1})`
     } else {
-      "not supported"
+      buf.push("not supported")
     }
   } else if (q.key == "update") {
-    return "not supported"
+    buf.push("not supported")
   } else {
     console.error("unknown op", q)
   }
+  return buf
 }
 
 let generateRowScanning = (buf, cursor, schema, mappedFile, size, e2) => {
@@ -234,14 +259,12 @@ let generateRowScanning = (buf, cursor, schema, mappedFile, size, e2) => {
   }
 }
 
-let getLoopTxt = (e1, e2, schema) => () => {
-  let filename = e1.arg[0].op
-
+let getLoopTxt = (e1, e2, filename, loadCSV, schema) => () => {
   let { mappedFile, size } = csvFiles[filename]
 
   let initCursor = []
 
-  let info = `// generator: ${e2.op} <- loadCSV("${filename}")`
+  let info = `// generator: ${e2.op} <- loadCSV ${filename}`
 
   let cursor = getNewName("i")
   initCursor.push(`int ${cursor} = 0;`)
@@ -257,7 +280,7 @@ let getLoopTxt = (e1, e2, schema) => () => {
   generateRowScanning(rowScanning, cursor, schema, mappedFile, size, e2)
 
   return {
-    info, initCursor, loopHeader, boundsChecking, rowScanning
+    info, loadCSV, initCursor, loopHeader, boundsChecking, rowScanning
   }
 }
 
@@ -279,7 +302,7 @@ let emitCodeCSql = (q, ir) => {
   let expr = (txt, ...args) => ({ txt, deps: args })
 
   let assign = (txt, lhs_root_sym, lhs_deps, rhs_deps) => {
-    let e = expr(txt + ";", ...lhs_deps, ...rhs_deps) // lhs.txt + " " + op + " " + rhs.txt
+    let e = expr(txt, ...lhs_deps, ...rhs_deps) // lhs.txt + " " + op + " " + rhs.txt
     e.lhs = expr("LHS", ...lhs_deps)
     e.op = "=?="
     e.rhs = expr("RHS", ...rhs_deps)
@@ -293,18 +316,16 @@ let emitCodeCSql = (q, ir) => {
     assignmentStms.push(e)
   }
 
-  function selectGenFilter(e1, e2, schema) {
+  function selectGenFilter(e1, e2, filename, loadCSV, schema) {
     let a = getDeps(e1)
     let b = getDeps(e2)
     let e = expr("FOR", ...a)
     e.sym = b[0]
-    e.getLoopTxt = getLoopTxt(e1, e2, schema)
+    e.getLoopTxt = getLoopTxt(e1, e2, filename, loadCSV, schema)
     generatorStms.push(e)
   }
 
   let getDeps = q => [...q.fre, ...q.tmps.map(tmpSym)]
-
-  let transExpr = q => expr(codegenCSql(q), ...getDeps(q))
 
   let prolog = []
   prolog.push(`#include "rhyme-sql.h"`)
@@ -324,23 +345,31 @@ let emitCodeCSql = (q, ir) => {
       return
     }
 
+    let loadCsvBuf = []
+
+    let filename
     // constant string filename
     if (g1.arg[0].key != "const" || typeof g1.arg[0].op != "string") {
-      console.error("expected filename to be constant string for c-sql backend")
-      return
-    }
+      // console.error("expected filename to be constant string for c-sql backend")
+      filename = codegenCSql(g1.arg[0], loadCsvBuf)
 
-    let filename = g1.arg[0].op
-    
-    // emit loadCSV to prolog if the filename is a contant string
-    // TODO: otherwise, the loadCSV should be in the loop prolog before the cursor is initialized
-    if (csvFiles[filename] == undefined) {
-      emitLoadCSV(prolog, filename, i)
-    }
+      if (csvFiles[filename] == undefined) {
+        emitLoadCSV(loadCsvBuf, filename, i, false)
+      } else {
+        loadCsvBuf = []
+      }
 
+    } else {
+      filename = g1.arg[0].op
+
+      // emit loadCSV to prolog if the filename is a constant string
+      if (csvFiles[filename] == undefined) {
+        emitLoadCSV(prolog, filename, i)
+      }
+    }
     console.assert(csvFiles[filename] != undefined)
 
-    selectGenFilter(f.arg[0], f.arg[1], schema)
+    selectGenFilter(f.arg[0], f.arg[1], filename, loadCsvBuf, schema)
   }
 
   for (let i in assignments) {
@@ -360,11 +389,11 @@ let emitCodeCSql = (q, ir) => {
     assign(emitStmUpdateCSql(q, sym), sym, q.fre, deps)
   }
 
-  let res = transExpr(q)
+  let res = codegenCSql(q, [])
 
   let epilog = []
   if (q.schema !== types.nothing) {
-    epilog.push(`printf("%${getFormatSpecifier(q.schema)}\\n", ${res.txt});`)
+    epilog.push(`printf("%${getFormatSpecifier(q.schema)}\\n", ${res});`)
   }
   epilog.push("return 0;")
   epilog.push("}");

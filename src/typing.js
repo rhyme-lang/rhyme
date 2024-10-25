@@ -457,9 +457,9 @@ let symIndex = 0;
 let freshSym = (pref) => pref + (symIndex++);
 
 let validateIRQuery = (schema, cseMap, boundKeys, q) => {
-    if(q.schema) {
-        return q.schema;
-    }
+    // if(q.schema) {
+    //     return q.schema;
+    // }
     let res = _validateIRQuery(schema, cseMap, boundKeys, q);
     q.schema = res;
     //console.log(prettyPrint(q) + " : " + prettyPrintType(res));
@@ -472,6 +472,11 @@ let _validateIRQuery = (schema, cseMap, boundKeys, q) => {
     if (q.key === "input") {
         return schema;
     } else if(q.key === "loadInput") {
+        let [e1] = q.arg;
+        let t1 = validateIRQuery(schema, cseMap, boundKeys, e1);
+        if ((e1.key != "const" || typeof e1.op != "string") && t1 != types.string) {
+            throw new Error("Filename in loadInput expected to be a string but got " + prettyPrintType(t1))
+        }
         return q.schema;
     } else if(q.key === "const") {
         if(typeof q.op === "object" && Object.keys(q.op).length === 0)

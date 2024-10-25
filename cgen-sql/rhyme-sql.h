@@ -23,6 +23,15 @@ int extract_int(char *file, int start, int end) {
   return res;
 }
 
+void extract_str(char *file, int start, int end, char *dest) {
+  int i = 0;
+  while (start + i < end) {
+    dest[i] = file[start + i];
+    i++;
+  }
+  dest[i] = '\0';
+}
+
 void println(char *file, int start, int end) {
   int curr = start;
   while (curr < end) {
