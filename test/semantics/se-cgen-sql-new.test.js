@@ -187,3 +187,20 @@ valD
 `
   )
 })
+
+test("testLoadCSVDynamicFilename", () => {
+  let files_schema = typing.objBuilder()
+    .add(typing.createKey(types.u32), typing.createSimpleObject({
+      file: types.string
+    })).build()
+
+  let filenames = rh`(loadCSV "./cgen-sql/files.csv" ${files_schema}).*f.file`
+
+  let csv = rh`loadCSV ${filenames} ${schema}`
+
+  let query = rh`sum (${csv}.*A.B + ${csv}.*B.D)`
+  
+  let func = compile(query, { schema: types.nothing })
+
+  console.log(func.explain.code)
+})

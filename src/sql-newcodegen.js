@@ -324,12 +324,16 @@ let emitCodeCSql = (q, ir) => {
       return
     }
 
+    // constant string filename
     if (g1.arg[0].key != "const" || typeof g1.arg[0].op != "string") {
       console.error("expected filename to be constant string for c-sql backend")
       return
     }
 
     let filename = g1.arg[0].op
+    
+    // emit loadCSV to prolog if the filename is a contant string
+    // TODO: otherwise, the loadCSV should be in the loop prolog before the cursor is initialized
     if (csvFiles[filename] == undefined) {
       emitLoadCSV(prolog, filename, i)
     }

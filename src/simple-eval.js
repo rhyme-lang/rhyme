@@ -1098,7 +1098,7 @@ let codegen = (q, scope) => {
   } else if (q.key == "loadInput") {
     console.error("op not implemented: ", pretty(q))
     let [e1] = q.arg.map(x => codegen(x,scope))
-    return `rt.loadInput('${q.op}', ${e1})`
+    return `loadInput('${q.op}', ${e1})`
   } else if (q.key == "const") {
     if (typeof q.op === "string")
       return "'"+q.op+"'"
