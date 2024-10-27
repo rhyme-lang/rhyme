@@ -30,6 +30,18 @@ rt.special.merge = rt.special.keyval = true
 
 // TODO: deal with NaN specially?
 
+rt.pure.equal = (x1, x2) => {
+  if (x1 === undefined) return undefined
+  if (x2 === undefined) return undefined
+  return x1 === x2
+}
+
+rt.pure.notEqual = (x1, x2) => {
+  if (x1 === undefined) return undefined
+  if (x2 === undefined) return undefined
+  return x1 !== x2
+}
+
 rt.pure.plus = (x1,x2) => {
   if (x1 === undefined) return undefined
   if (x2 === undefined) return undefined

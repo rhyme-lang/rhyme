@@ -539,7 +539,7 @@ let _validateIRQuery = (schema, cseMap, boundKeys, q) => {
 
         let t1 = validateIRQuery(schema, cseMap, boundKeys, e1);
         // If q is a binary operation:
-        if(q.op === "plus") {
+        if(q.op === "plus" || q.op === "equal" || q.op === "and") {
             let t2 = validateIRQuery(schema, cseMap, boundKeys, e2);
             if(q.op == "plus") {
                 // If q is a plus, find lowest subtype of both values and
@@ -558,6 +558,12 @@ let _validateIRQuery = (schema, cseMap, boundKeys, q) => {
                 } else {
                     throw new Error("Unimplemented ability to type-check addition of non-integer values.")
                 }
+            } else if (q.op == "equal") {
+                // TODO: validate types for equal
+                return types.boolean
+            } else if (q.op == "and") {
+                // TODO: validate types for and
+                return t2
             }
         }
         throw new Error("Pure operation not implemented: " + q.op);

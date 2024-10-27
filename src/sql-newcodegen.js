@@ -214,6 +214,16 @@ let emitStmUpdateCSql = (q, sym) => {
   if (q.key == "prefix") {
     return "not supported"
   } if (q.key == "stateful") {
+    if (q.op == "print") {
+      if (q.arg[0].schema == types.string) {
+        let [e1] = q.arg.map(x => codegenCSql(x, buf, false))
+        buf.push(`println(${e1.file}, ${e1.start}, ${e1.end});`)
+      } else {
+        let [e1] = q.arg.map(x => codegenCSql(x, buf))
+        buf.push(`printf("%${getFormatSpecifier(q.arg[0].schema)}\\n", ${e1});`)
+      }
+      return buf
+    }
     let [e1] = q.arg.map(x => codegenCSql(x, buf))
     if (q.op == "sum") {
       buf.push(`${sym} += ${e1};`)
@@ -225,13 +235,6 @@ let emitStmUpdateCSql = (q, sym) => {
       buf.push(`${sym} = ${e1} > ${sym} ? ${e1} : ${sym};`)
     } else if (q.op == "count") {
       buf.push(`${sym} += 1;`)
-    } else if (q.op == "print") {
-      if (q.arg[0].schema == types.string) {
-        let [e1] = q.arg.map(x => codegenCSql(x, buf, false))
-        buf.push(`println(${e1.file}, ${e1.start}, ${e1.end});`)
-      } else {
-        buf.push(`printf("%${getFormatSpecifier(q.arg[0].schema)}\\n", ${e1});`)
-      }
     } else {
       buf.push("not supported")
     }

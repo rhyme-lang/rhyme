@@ -223,3 +223,18 @@ test("testLoadCSVDynamicFilenameJoin", async () => {
   let res = await func()
   expect(res).toEqual("192\n")
 })
+
+test("testStringComparison", async () => {
+  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+
+  let query = rh`print ${csv}.*A.A`
+  
+  let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
+
+  let res = await func()
+  expect(res).toEqual(`valA
+valB
+valC
+valD
+`)
+})
