@@ -541,7 +541,7 @@ let _validateIRQuery = (schema, cseMap, boundKeys, q) => {
 
         let t1 = validateIRQuery(schema, cseMap, boundKeys, e1);
         // If q is a binary operation:
-        if(q.op === "plus" || q.op === "equal" || q.op === "and") {
+        if(q.op === "plus" || q.op === "equal" || q.op === "and" || q.op === "notEqual") {
             let t2 = validateIRQuery(schema, cseMap, boundKeys, e2);
             if(q.op == "plus") {
                 // If q is a plus, find lowest subtype of both values and
@@ -562,6 +562,9 @@ let _validateIRQuery = (schema, cseMap, boundKeys, q) => {
                 }
             } else if (q.op == "equal") {
                 // TODO: validate types for equal
+                return types.boolean
+            } else if (q.op == "notEqual") {
+                // TODO: validate types for notEqual
                 return types.boolean
             } else if (q.op == "and") {
                 // TODO: validate types for and
