@@ -9,6 +9,8 @@ let csvFiles
 
 let currentPath
 
+let closing
+
 let unique = xs => xs.filter((x, i) => xs.indexOf(x) == i)
 let union = (a, b) => unique([...a, ...b])
 
@@ -109,13 +111,23 @@ let getFormatSpecifier = (type) => {
   throw new Error("Unknown type: " + typing.prettyPrintType(type));
 }
 
-let codegenCSql = (q, buf, extract = true) => {
+// returns an object that contains info about the symbol generated
+// since sometimes we need the start and end index istead of the value
+// For column access: 
+// { type, file, start, end }
+// For constant string / integer
+// { type, symbol }
+let codegenCSql = (q, buf) => {
   if (q.key == "loadInput") {
     console.error("stand-alone loadInput")
     return "// stand-alone loadInput not supported"
   } else if (q.key == "const") {
     if (typeof q.op == "number") {
       return q.op
+    } else if (typeof q.op == "string") {
+      let name = getNewName("const_str")
+      buf.push(`const char *${name} = "${q.op}";`)
+      return name
     } else {
       console.error("unsupported constant ", pretty(q))
       return String(q.op)
@@ -157,33 +169,46 @@ let codegenCSql = (q, buf, extract = true) => {
     let start = [mappedFile, quoteVar(v), e2.op, "start"].join("_")
     let end = [mappedFile, quoteVar(v), e2.op, "end"].join("_")
 
-    if (extract) {
-      let name = [mappedFile, quoteVar(v), e2.op].join("_")
-      if (typing.isInteger(q.schema)) {
-        buf.push(`${convertToCType(q.schema)} ${name} = extract_int(${mappedFile}, ${start}, ${end});`)
-        return name
-      } else if (q.schema == types.string) {
-        buf.push(`char ${name}[${end} - ${start} + 1];`)
-        buf.push(`extract_str(${mappedFile}, ${start}, ${end}, ${name});`)
-        return name
-      } else {
-        console.error("cannot extract value of type " + typing.prettyPrintType(q.schema))
-        return "// cannot extract value of type " + typing.prettyPrintType(q.schema)
-      }
+    // if (extract) {
+    let name = [mappedFile, quoteVar(v), e2.op].join("_")
+    if (typing.isInteger(q.schema)) {
+      buf.push(`${convertToCType(q.schema)} ${name} = extract_int(${mappedFile}, ${start}, ${end});`)
+      return name
+    } else if (q.schema == types.string) {
+      buf.push(`char ${name}[${end} - ${start} + 1];`)
+      buf.push(`extract_str(${mappedFile}, ${start}, ${end}, ${name});`)
+      return name
+    } else {
+      console.error("cannot extract value of type " + typing.prettyPrintType(q.schema))
+      return "// cannot extract value of type " + typing.prettyPrintType(q.schema)
     }
+    // }
 
-    return { file: mappedFile, start, end }
+    // return { file: mappedFile, start, end }
   } else if (q.key == "pure") {
     let es = q.arg.map(x => codegenCSql(x, buf))
     // only do plus for now
     if (q.op == "plus") {
       return `${es[0]} + ${es[1]}`
+    } else if (q.op == "equal") {
+      if (typing.isString(q.arg[0].schema) && typing.isString(q.arg[1].schema)) {
+        return `compare_str(${es[0]}, ${es[1]}) == 0`
+      } else if (typing.isInteger(q.arg[0].schema) && typing.isInteger(q.arg[1].schema)) {
+        return `${es[0]} == ${es[1]}`
+      } else {
+        console.error("invalid comparison")
+        return "// cannot compare values of type " + typing.prettyPrintType(q.arg[0].schema) + " and " + typing.prettyPrintType(q.arg[1].schema)
+      }
+    } else if (q.op == "and") {
+      buf.push(`if (${es[0]}) {`)
+      closing += 1
+      return es[1]
     } else {
       console.error("pure op not supported")
       return "not supported"
     }
   } else {
-    console.error("unknown op", pretty(q))
+    console.error("unknown op")
     return "<?" + q.key + "?>"
   }
 }
@@ -211,16 +236,20 @@ let emitStmInitCSql = (q, sym) => {
 
 let emitStmUpdateCSql = (q, sym) => {
   let buf = []
+  closing = 0
   if (q.key == "prefix") {
     return "not supported"
   } if (q.key == "stateful") {
     if (q.op == "print") {
-      if (q.arg[0].schema == types.string) {
+      if (typing.isString(q.arg[0].schema)) {
         let [e1] = q.arg.map(x => codegenCSql(x, buf, false))
-        buf.push(`println(${e1.file}, ${e1.start}, ${e1.end});`)
+        buf.push(`printf("%s\\n", ${e1});`)
       } else {
         let [e1] = q.arg.map(x => codegenCSql(x, buf))
         buf.push(`printf("%${getFormatSpecifier(q.arg[0].schema)}\\n", ${e1});`)
+      }
+      for (let i = 0; i < closing; i++) {
+        buf.push("}")
       }
       return buf
     }
@@ -242,6 +271,9 @@ let emitStmUpdateCSql = (q, sym) => {
     buf.push("not supported")
   } else {
     console.error("unknown op", q)
+  }
+  for (let i = 0; i < closing; i++) {
+    buf.push("}")
   }
   return buf
 }
@@ -365,9 +397,8 @@ let emitCodeCSql = (q, ir) => {
     } else {
       filename = g1.arg[0].op
 
-      // emit loadCSV to prolog if the filename is a constant string
       if (csvFiles[filename] == undefined) {
-        emitLoadCSV(prolog, filename, i)
+        emitLoadCSV(loadCsvBuf, filename, i)
       }
     }
     console.assert(csvFiles[filename] != undefined)

@@ -386,6 +386,8 @@ let isString = (type) => {
     return false;
 }
 
+typing.isString = isString
+
 let prettyPrintType = (schema) => {
     if(schema === undefined)
         return "~Undefined~";
@@ -474,7 +476,7 @@ let _validateIRQuery = (schema, cseMap, boundKeys, q) => {
     } else if(q.key === "loadInput") {
         let [e1] = q.arg;
         let t1 = validateIRQuery(schema, cseMap, boundKeys, e1);
-        if ((e1.key != "const" || typeof e1.op != "string") && t1 != types.string) {
+        if (!isString(t1)) {
             throw new Error("Filename in loadInput expected to be a string but got " + prettyPrintType(t1))
         }
         return q.schema;

@@ -224,17 +224,24 @@ test("testLoadCSVDynamicFilenameJoin", async () => {
   expect(res).toEqual("192\n")
 })
 
-test("testStringComparison", async () => {
+test("testFilter1", async () => {
   let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
 
-  let query = rh`print ${csv}.*A.A`
+  let query = rh`print ((${csv}.*A.A == "valB") & ${csv}.*A.C)`
   
   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
   let res = await func()
-  expect(res).toEqual(`valA
-valB
-valC
-valD
-`)
+  expect(res).toEqual("123\n")
+})
+
+test("testFilter2", async () => {
+  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+
+  let query = rh`print ((${csv}.*A.C == 123) & ${csv}.*A.A)`
+  
+  let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
+
+  let res = await func()
+  expect(res).toEqual("valB\n")
 })
