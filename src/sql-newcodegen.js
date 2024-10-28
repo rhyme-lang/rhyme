@@ -183,7 +183,7 @@ let codegenCSql = (q, buf, scope, extractStr = false) => {
       if (extractStr) {
         // only extract the string column if we need to
         // e.g. we need a null-terminated string to call open()
-        buf.push(`char *${name};`)
+        buf.push(`char ${name}[${end} - ${start} + 1];`)
         buf.push(`extract_str(${mappedFile}, ${start}, ${end}, ${name});`)
         return name
       } else {
