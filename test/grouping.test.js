@@ -106,10 +106,6 @@ let data = [
     { region: "Asia", name: "Seoul", value: 22 },
 ]
 
-test("jsGroupBy", () => {
-  let res = Object.groupBy(data, (data) => data.region)
-})
-
 // interaction of array and object construction
 
 test("arrayWithinGrouping", () => {

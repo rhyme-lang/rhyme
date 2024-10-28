@@ -49,7 +49,8 @@ let schema = typing.objBuilder()
     A: types.string,
     B: types.i32,
     C: types.i32,
-    D: types.i32
+    D: types.i32,
+    String: types.string
   })).build()
 
 test("testSimpleSum1", async () => {
@@ -109,7 +110,7 @@ test("testSimpleSum5", async () => {
 
 test("testLoadCSVMultipleFilesZip", async () => {
   let csv1 = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
-  let csv2 = rh`loadCSV "./cgen-sql/simple_copy.csv" ${schema}`
+  let csv2 = rh`loadCSV "./cgen-sql/simple1.csv" ${schema}`
 
   let query = rh`sum(${csv1}.*A.C + ${csv2}.*A.D)`
 
@@ -121,7 +122,7 @@ test("testLoadCSVMultipleFilesZip", async () => {
 
 test("testLoadCSVMultipleFilesJoin", async () => {
   let csv1 = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
-  let csv2 = rh`loadCSV "./cgen-sql/simple_copy.csv" ${schema}`
+  let csv2 = rh`loadCSV "./cgen-sql/simple1.csv" ${schema}`
 
   let query = rh`sum(${csv1}.*A.C + ${csv2}.*B.D)`
 
