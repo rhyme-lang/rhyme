@@ -5,6 +5,7 @@
   "description": "Rhyme: An Expressive Data-Centric Query Language",
   "scripts": {
     "test": "jest",
+    "shell": "node ./src/shell.js",
     "prepublishOnly": "./node_modules/.bin/webpack"
   },
   "keywords": [],
