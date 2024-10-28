@@ -1,5 +1,4 @@
 const { generate } = require('./new-codegen')
-const { runtime } = require('./simple-runtime')
 const { typing, types } = require('./typing')
 
 let filters
@@ -7,7 +6,7 @@ let assignments
 
 let csvFiles
 
-let currentPath
+let closing
 
 let unique = xs => xs.filter((x, i) => xs.indexOf(x) == i)
 let union = (a, b) => unique([...a, ...b])
@@ -32,14 +31,22 @@ let initRequired = {
   "count": true,
 }
 
-let emitLoadCSV = (buf, filename, id) => {
+let emitLoadCSV = (buf, filename, id, isConstStr = true) => {
   buf.push(`// loadCSV ${filename}`)
   let fd = "fd" + id
   let mappedFile = "csv" + id
   let size = "n" + id
-  buf.push(`int ${fd} = open(\"${filename}\", 0);`)
+  if (isConstStr) {
+    buf.push(`int ${fd} = open("${filename}", 0);`)
+  } else {
+    buf.push(`int ${fd} = open(${filename}, 0);`)
+  }
   buf.push(`if (${fd} == -1) {`)
-  buf.push(`fprintf(stderr, "Unable to open file ${filename}\\n");`);
+  if (isConstStr) {
+    buf.push(`fprintf(stderr, "Unable to open file ${filename}\\n");`);
+  } else {
+    buf.push(`fprintf(stderr, "Unable to open file ${filename}: %s\\n", ${filename});`);
+  }
   buf.push(`return 1;`)
   buf.push(`}`)
   buf.push(`int ${size} = fsize(${fd});`)
@@ -105,13 +112,23 @@ let getFormatSpecifier = (type) => {
   throw new Error("Unknown type: " + typing.prettyPrintType(type));
 }
 
-let codegenCSql = (q, extract = true) => {
+// returns an object that contains info about the symbol generated
+// since sometimes we need the start and end index istead of the value
+// For column access: 
+// { type, file, start, end }
+// For constant string / integer
+// { type, symbol }
+let codegenCSql = (q, buf, scope, extractStr = false) => {
   if (q.key == "loadInput") {
     console.error("stand-alone loadInput")
     return "// stand-alone loadInput not supported"
   } else if (q.key == "const") {
     if (typeof q.op == "number") {
       return q.op
+    } else if (typeof q.op == "string") {
+      let name = getNewName("tmp_str")
+      buf.push(`char ${name}[${q.op.length + 1}] = "${q.op}";`)
+      return extractStr ? name : { file: name, start: 0, end: q.op.length }
     } else {
       console.error("unsupported constant ", pretty(q))
       return String(q.op)
@@ -137,7 +154,15 @@ let codegenCSql = (q, extract = true) => {
       return "// column name is not a constant string"
     }
 
-    let filename = e1.arg[0].arg[0].op
+    let file = e1.arg[0].arg[0]
+    let filename
+    if (file.key == "const" && typeof file.op == "string") {
+      filename = file.op
+    } else {
+      // extract filename, we don't want it to push more stuff into the buf
+      filename = codegenCSql(file, [], scope, true)
+    }
+
     let { mappedFile } = csvFiles[filename]
 
     let v = e1.arg[1].op
@@ -145,24 +170,63 @@ let codegenCSql = (q, extract = true) => {
     let start = [mappedFile, quoteVar(v), e2.op, "start"].join("_")
     let end = [mappedFile, quoteVar(v), e2.op, "end"].join("_")
 
-    if (extract) {
-      if (typing.isInteger(q.schema)) {
-        return `extract_int(${mappedFile}, ${start}, ${end})`
-      }
-    } 
+    let name = [mappedFile, quoteVar(v), e2.op].join("_")
 
-    return { file: mappedFile, start, end }
+    if (typing.isInteger(q.schema)) {
+      if (scope[name]) {
+        return name
+      }
+      buf.push(`${convertToCType(q.schema)} ${name} = extract_int(${mappedFile}, ${start}, ${end});`)
+      scope[name] = true
+      return name
+    } else if (q.schema == types.string) {
+      if (extractStr) {
+        // only extract the string column if we need to
+        // e.g. we need a null-terminated string to call open()
+        buf.push(`char ${name}[${end} - ${start} + 1];`)
+        buf.push(`extract_str(${mappedFile}, ${start}, ${end}, ${name});`)
+        return name
+      } else {
+        return { file: mappedFile, start, end }
+      }
+    } else {
+      console.error("cannot extract value of type " + typing.prettyPrintType(q.schema))
+      return "// cannot extract value of type " + typing.prettyPrintType(q.schema)
+    }
   } else if (q.key == "pure") {
-    let es = q.arg.map(x => codegenCSql(x))
-    // only do plus for now
+    let e1 = codegenCSql(q.arg[0], buf, scope)
     if (q.op == "plus") {
-      return `${es[0]} + ${es[1]}`
+      let e2 = codegenCSql(q.arg[1], buf, scope)
+      return `${e1} + ${e2}`
+    } else if (q.op == "equal") {
+      let e2 = codegenCSql(q.arg[1], buf, scope)
+      if (typing.isString(q.arg[0].schema) && typing.isString(q.arg[1].schema)) {
+        let { file: file1, start: start1, end: end1 } = e1
+        let { file: file2, start: start2, end: end2 } = e2
+        return `compare_str1(${file1}, ${start1}, ${end1}, ${file2}, ${start2}, ${end2}) == 0`
+      } else if (typing.isInteger(q.arg[0].schema) && typing.isInteger(q.arg[1].schema)) {
+        return `${e1} == ${e2}`
+      }
+    } else if (q.op == "notEqual") {
+      let e2 = codegenCSql(q.arg[1], buf, scope)
+      if (typing.isString(q.arg[0].schema) && typing.isString(q.arg[1].schema)) {
+        let { file: file1, start: start1, end: end1 } = e1
+        let { file: file2, start: start2, end: end2 } = e2
+        return `compare_str1(${file1}, ${start1}, ${end1}, ${file2}, ${start2}, ${end2}) != 0`
+      } else if (typing.isInteger(q.arg[0].schema) && typing.isInteger(q.arg[1].schema)) {
+        return `${e1} != ${e2}`
+      }
+    } else if (q.op == "and") {
+      buf.push(`if (${e1}) {`)
+      let e2 = codegenCSql(q.arg[1], buf, scope)
+      closing += 1
+      return e2
     } else {
       console.error("pure op not supported")
       return "not supported"
     }
   } else {
-    console.error("unknown op", pretty(q))
+    console.error("unknown op")
     return "<?" + q.key + "?>"
   }
 }
@@ -170,52 +234,68 @@ let codegenCSql = (q, extract = true) => {
 let emitStmInitCSql = (q, sym) => {
   if (q.key == "stateful") {
     if (q.op == "sum" || q.op == "count") {
-      return `${convertToCType(q.schema)} ${sym} = 0`
+      return [`${convertToCType(q.schema)} ${sym} = 0;`]
     } else if (q.op == "product") {
-      return `${convertToCType(q.schema)} ${sym} = 1`
+      return [`${convertToCType(q.schema)} ${sym} = 1;`]
     } else if (q.op == "min") {
-      return `${convertToCType(q.schema)} ${sym} = INT_MAX`
+      return [`${convertToCType(q.schema)} ${sym} = INT_MAX;`]
     } else if (q.op == "max") {
-      return `${convertToCType(q.schema)} ${sym} = INT_MIN`
+      return [`${convertToCType(q.schema)} ${sym} = INT_MIN;`]
     } else {
-      "not supported"
+      return ["not supported"]
     }
   } else if (q.key == "update") {
-    return "not supported"
+    return ["not supported"]
   } else {
     console.error("unknown op", q)
+    return []
   }
 }
 
 let emitStmUpdateCSql = (q, sym) => {
+  let buf = []
+  let scope = {}
+  closing = 0
   if (q.key == "prefix") {
     return "not supported"
   } if (q.key == "stateful") {
-    let [e1] = q.arg.map(x => codegenCSql(x))
-    if (q.op == "sum") {
-      return `${sym} += ${e1}`
-    } else if (q.op == "product") {
-      return `${sym} *= ${e1}`
-    } else if (q.op == "min") {
-      return `${sym} = ${e1} < ${sym} ? ${e1} : ${sym}`
-    } else if (q.op == "max") {
-      return `${sym} = ${e1} > ${sym} ? ${e1} : ${sym}`
-    } else if (q.op == "count") {
-      return `${sym} += 1`
-    } else if (q.op == "print") {
-      if (q.arg[0].schema == types.string) {
-        let [e1] = q.arg.map(x => codegenCSql(x, false))
-        return `println(${e1.file}, ${e1.start}, ${e1.end})`
+    if (q.op == "print") {
+      if (typing.isString(q.arg[0].schema)) {
+        let [e1] = q.arg.map(x => codegenCSql(x, buf, scope))
+        let { file, start, end } = e1
+        buf.push(`println(${file}, ${start}, ${end});`)
+      } else {
+        let [e1] = q.arg.map(x => codegenCSql(x, buf, scope))
+        buf.push(`printf("%${getFormatSpecifier(q.arg[0].schema)}\\n", ${e1});`)
       }
-      return `printf("%${getFormatSpecifier(q.arg[0].schema)}\\n", ${e1})`
+      for (let i = 0; i < closing; i++) {
+        buf.push("}")
+      }
+      return buf
+    }
+    let [e1] = q.arg.map(x => codegenCSql(x, buf, scope))
+    if (q.op == "sum") {
+      buf.push(`${sym} += ${e1};`)
+    } else if (q.op == "product") {
+      buf.push(`${sym} *= ${e1};`)
+    } else if (q.op == "min") {
+      buf.push(`${sym} = ${e1} < ${sym} ? ${e1} : ${sym};`)
+    } else if (q.op == "max") {
+      buf.push(`${sym} = ${e1} > ${sym} ? ${e1} : ${sym};`)
+    } else if (q.op == "count") {
+      buf.push(`${sym} += 1;`)
     } else {
-      "not supported"
+      buf.push("not supported")
     }
   } else if (q.key == "update") {
-    return "not supported"
+    buf.push("not supported")
   } else {
     console.error("unknown op", q)
   }
+  for (let i = 0; i < closing; i++) {
+    buf.push("}")
+  }
+  return buf
 }
 
 let generateRowScanning = (buf, cursor, schema, mappedFile, size, e2) => {
@@ -234,14 +314,12 @@ let generateRowScanning = (buf, cursor, schema, mappedFile, size, e2) => {
   }
 }
 
-let getLoopTxt = (e1, e2, schema) => () => {
-  let filename = e1.arg[0].op
-
+let getLoopTxt = (e1, e2, filename, loadCSV, schema) => () => {
   let { mappedFile, size } = csvFiles[filename]
 
   let initCursor = []
 
-  let info = `// generator: ${e2.op} <- loadCSV("${filename}")`
+  let info = `// generator: ${e2.op} <- loadCSV ${filename}`
 
   let cursor = getNewName("i")
   initCursor.push(`int ${cursor} = 0;`)
@@ -257,7 +335,7 @@ let getLoopTxt = (e1, e2, schema) => () => {
   generateRowScanning(rowScanning, cursor, schema, mappedFile, size, e2)
 
   return {
-    info, initCursor, loopHeader, boundsChecking, rowScanning
+    info, loadCSV, initCursor, loopHeader, boundsChecking, rowScanning
   }
 }
 
@@ -279,7 +357,7 @@ let emitCodeCSql = (q, ir) => {
   let expr = (txt, ...args) => ({ txt, deps: args })
 
   let assign = (txt, lhs_root_sym, lhs_deps, rhs_deps) => {
-    let e = expr(txt + ";", ...lhs_deps, ...rhs_deps) // lhs.txt + " " + op + " " + rhs.txt
+    let e = expr(txt, ...lhs_deps, ...rhs_deps) // lhs.txt + " " + op + " " + rhs.txt
     e.lhs = expr("LHS", ...lhs_deps)
     e.op = "=?="
     e.rhs = expr("RHS", ...rhs_deps)
@@ -293,18 +371,16 @@ let emitCodeCSql = (q, ir) => {
     assignmentStms.push(e)
   }
 
-  function selectGenFilter(e1, e2, schema) {
+  function selectGenFilter(e1, e2, filename, loadCSV, schema) {
     let a = getDeps(e1)
     let b = getDeps(e2)
     let e = expr("FOR", ...a)
     e.sym = b[0]
-    e.getLoopTxt = getLoopTxt(e1, e2, schema)
+    e.getLoopTxt = getLoopTxt(e1, e2, filename, loadCSV, schema)
     generatorStms.push(e)
   }
 
   let getDeps = q => [...q.fre, ...q.tmps.map(tmpSym)]
-
-  let transExpr = q => expr(codegenCSql(q), ...getDeps(q))
 
   let prolog = []
   prolog.push(`#include "rhyme-sql.h"`)
@@ -324,19 +400,29 @@ let emitCodeCSql = (q, ir) => {
       return
     }
 
+    let loadCsvBuf = []
+
+    let filename
+    // constant string filename
     if (g1.arg[0].key != "const" || typeof g1.arg[0].op != "string") {
-      console.error("expected filename to be constant string for c-sql backend")
-      return
-    }
+      filename = codegenCSql(g1.arg[0], loadCsvBuf, {}, true)
 
-    let filename = g1.arg[0].op
-    if (csvFiles[filename] == undefined) {
-      emitLoadCSV(prolog, filename, i)
-    }
+      if (csvFiles[filename] == undefined) {
+        emitLoadCSV(loadCsvBuf, filename, i, false)
+      } else {
+        loadCsvBuf = []
+      }
 
+    } else {
+      filename = g1.arg[0].op
+
+      if (csvFiles[filename] == undefined) {
+        emitLoadCSV(loadCsvBuf, filename, i)
+      }
+    }
     console.assert(csvFiles[filename] != undefined)
 
-    selectGenFilter(f.arg[0], f.arg[1], schema)
+    selectGenFilter(f.arg[0], f.arg[1], filename, loadCsvBuf, schema)
   }
 
   for (let i in assignments) {
@@ -356,11 +442,11 @@ let emitCodeCSql = (q, ir) => {
     assign(emitStmUpdateCSql(q, sym), sym, q.fre, deps)
   }
 
-  let res = transExpr(q)
+  let res = codegenCSql(q, [], {})
 
   let epilog = []
   if (q.schema !== types.nothing) {
-    epilog.push(`printf("%${getFormatSpecifier(q.schema)}\\n", ${res.txt});`)
+    epilog.push(`printf("%${getFormatSpecifier(q.schema)}\\n", ${res});`)
   }
   epilog.push("return 0;")
   epilog.push("}");

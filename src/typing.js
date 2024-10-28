@@ -386,6 +386,8 @@ let isString = (type) => {
     return false;
 }
 
+typing.isString = isString
+
 let prettyPrintType = (schema) => {
     if(schema === undefined)
         return "~Undefined~";
@@ -457,9 +459,9 @@ let symIndex = 0;
 let freshSym = (pref) => pref + (symIndex++);
 
 let validateIRQuery = (schema, cseMap, boundKeys, q) => {
-    if(q.schema) {
-        return q.schema;
-    }
+    // if(q.schema) {
+    //     return q.schema;
+    // }
     let res = _validateIRQuery(schema, cseMap, boundKeys, q);
     q.schema = res;
     //console.log(prettyPrint(q) + " : " + prettyPrintType(res));
@@ -472,6 +474,11 @@ let _validateIRQuery = (schema, cseMap, boundKeys, q) => {
     if (q.key === "input") {
         return schema;
     } else if(q.key === "loadInput") {
+        let [e1] = q.arg;
+        let t1 = validateIRQuery(schema, cseMap, boundKeys, e1);
+        if (!isString(t1)) {
+            throw new Error("Filename in loadInput expected to be a string but got " + prettyPrintType(t1))
+        }
         return q.schema;
     } else if(q.key === "const") {
         if(typeof q.op === "object" && Object.keys(q.op).length === 0)
@@ -534,7 +541,7 @@ let _validateIRQuery = (schema, cseMap, boundKeys, q) => {
 
         let t1 = validateIRQuery(schema, cseMap, boundKeys, e1);
         // If q is a binary operation:
-        if(q.op === "plus") {
+        if(q.op === "plus" || q.op === "equal" || q.op === "and" || q.op === "notEqual") {
             let t2 = validateIRQuery(schema, cseMap, boundKeys, e2);
             if(q.op == "plus") {
                 // If q is a plus, find lowest subtype of both values and
@@ -553,6 +560,15 @@ let _validateIRQuery = (schema, cseMap, boundKeys, q) => {
                 } else {
                     throw new Error("Unimplemented ability to type-check addition of non-integer values.")
                 }
+            } else if (q.op == "equal") {
+                // TODO: validate types for equal
+                return types.boolean
+            } else if (q.op == "notEqual") {
+                // TODO: validate types for notEqual
+                return types.boolean
+            } else if (q.op == "and") {
+                // TODO: validate types for and
+                return t2
             }
         }
         throw new Error("Pure operation not implemented: " + q.op);
