@@ -1089,7 +1089,6 @@ let quoteVarXS = s => isDeepVarStr(s) ? quoteVar(s)+".join('-')+'-'" : quoteVar(
 let quoteIndexVarsXS = (s,vs) => s + vs.map(quoteVarXS).map(quoteIndex).join("")
 
 let isCSVColAcess = (q) => {
-  console.log(q)
   let [e1, e2] = q.arg
   if (!e1.arg) {
     return false
