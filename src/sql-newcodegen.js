@@ -417,7 +417,7 @@ let emitCodeCSql = (q, ir) => {
       filename = g1.arg[0].op
 
       if (csvFiles[filename] == undefined) {
-        emitLoadCSV(loadCsvBuf, filename, i)
+        emitLoadCSV(prolog, filename, i)
       }
     }
     console.assert(csvFiles[filename] != undefined)

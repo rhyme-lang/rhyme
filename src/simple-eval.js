@@ -1088,6 +1088,27 @@ let quoteStr = s => "\""+s+"\""
 let quoteVarXS = s => isDeepVarStr(s) ? quoteVar(s)+".join('-')+'-'" : quoteVar(s)
 let quoteIndexVarsXS = (s,vs) => s + vs.map(quoteVarXS).map(quoteIndex).join("")
 
+let isCSVColAcess = (q) => {
+  console.log(q)
+  let [e1, e2] = q.arg
+  if (!e1.arg) {
+    return false
+  }
+  let [e11, e12] = e1.arg
+
+  return e11.key == "loadInput" &&
+         e12.key == "var" &&
+         e2.key == "const" && typeof e2.op == "string"
+}
+
+let quoteCSVColAcess = (q) => {
+  let [e1, e2] = q.arg
+  let [e11, e12] = e1.arg
+
+  let mappedFile = "csv0"
+  return ["csv0", quoteVar(e12.op), e2.op].join("_")
+}
+
 
 let codegen = (q, scope) => {
   console.assert(scope.vars)
@@ -1129,8 +1150,19 @@ let codegen = (q, scope) => {
     let [e1,e2] = q.arg.map(x => codegen(x,scope))
     return "rt.deepGet("+e1+","+e2+")"
   } else if (q.key == "get") {
-    let [e1,e2] = q.arg.map(x => codegen(x,scope))
-    return e1+quoteIndex(e2)
+    // Check for the specific shape of get here:
+    // loadInput(...).var.const_str
+    if (isCSVColAcess(q)) {
+      let [e1, e2] = q.arg
+      let [e11, e12] = e1.arg
+
+      return quoteCSVColAcess(q)
+    } else {
+      let [e1,e2] = q.arg.map(x => codegen(x,scope))
+      return e1+quoteIndex(e2)
+    }
+
+    
   } else if (q.key == "pure") {
     let es = q.arg.map(x => codegen(x,scope))
     return "rt.pure."+q.op+"("+es.join(",")+")"
@@ -1397,15 +1429,57 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
         seen[v1] = true
         closing = "})\n"+closing
       } else { // ok, just emit current
-        if (!seen[v1]) {
-          buf.push("for (let ["+quoteVar(v1)+", gen"+i+"] of Object.entries("+codegen(g1,scopeg1)+"??{})) {")
-        //   buf.push("for (let "+quoteVar(v1)+" in "+codegen(g1,scopeg1)+") {")
-        //   buf.push("let gen"+i+" = "+codegen(f,scopef))
+
+        // Loops generated for loadInput will be different
+        if (g1.key == "loadInput") {
+          // only do codegen for the filename
+          let filename = codegen(g1.arg[0], scopeg1)
+          buf.push(`// filter ${v1} <- ${filename}`)
+          buf.push(`let csv0 = fs.readFileSync(${filename}, 'utf8')`)
+          buf.push(`let i0 = 0`)
+          buf.push(`while (i0 < csv0.length && csv0[i0] != '\\n') {`)
+          buf.push(`i0++`)
+          buf.push("}")
+          buf.push(`i0++`)
+          buf.push(`while (i0 < csv0.length) {`)
+
+          let columns = f.schema
+          let mappedFile = "csv0"
+          let cursor = "i0"
+          let size = "csv0.length"
+          for (let i in columns) {
+            buf.push(`// reading column ${columns[i][0]}`)
+            let delim = i == columns.length - 1 ? "\\n" : ","
+            let start = [mappedFile, quoteVar(v1), columns[i][0], "start"].join("_")
+            let end = [mappedFile, quoteVar(v1), columns[i][0], "end"].join("_")
+            let colname = [mappedFile, quoteVar(v1), columns[i][0]].join("_")
+            if (typing.isInteger(columns[i][1])) {
+              buf.push(`let ${colname} = 0`)
+            }
+            buf.push(`let ${start} = ${cursor};`)
+            buf.push(`while (${cursor} < ${size} && ${mappedFile}[${cursor}] != '${delim}') {`)
+            if (typing.isInteger(columns[i][1])) {
+              buf.push(`${colname} *= 10`)
+              buf.push(`${colname} += Number(${mappedFile}[${cursor}])`)
+            }
+            buf.push(`${cursor}++;`)
+            buf.push("}")
+            buf.push(`let ${end} = ${cursor};`)
+            buf.push(`${cursor}++;`)
+          }
+
+          closing = "}\n"+closing
         } else {
-          buf.push("if ("+quoteVar(v1)+" in ("+codegen(g1,scopeg1)+"??[])) {")
+          if (!seen[v1]) {
+            buf.push("for (let ["+quoteVar(v1)+", gen"+i+"] of Object.entries("+codegen(g1,scopeg1)+"??{})) {")
+          //   buf.push("for (let "+quoteVar(v1)+" in "+codegen(g1,scopeg1)+") {")
+          //   buf.push("let gen"+i+" = "+codegen(f,scopef))
+          } else {
+            buf.push("if ("+quoteVar(v1)+" in ("+codegen(g1,scopeg1)+"??[])) {")
+          }
+          seen[v1] = true
+          closing = "}\n"+closing
         }
-        seen[v1] = true
-        closing = "}\n"+closing
       }
     // }
   }
@@ -2342,6 +2416,7 @@ let execPromise = function(cmd) {
   // ---- link / eval ----
 
   let rt = runtime // make available in scope for generated code
+  let fs = require('fs')
   let func = eval(code)
 
   let wrap = (input) => {
