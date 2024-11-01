@@ -6,6 +6,11 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+typedef struct group {
+    char *key[1024];
+    void *val[1024];
+} group_t;
+
 int fsize(int fd) {
     struct stat stat;
     int res = fstat(fd, &stat);

@@ -200,7 +200,7 @@ test("testLoadCSVDynamicFilename", async () => {
   let csv = rh`loadCSV ${filenames} ${schema}`
 
   let query = rh`sum ${csv}.*A.D`
-  
+
   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
   let res = await func()
@@ -218,7 +218,7 @@ test("testLoadCSVDynamicFilenameJoin", async () => {
   let csv = rh`loadCSV ${filenames} ${schema}`
 
   let query = rh`sum (${csv}.*A.D + ${csv}.*B.B)`
-  
+
   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
   let res = await func()
@@ -227,7 +227,7 @@ test("testLoadCSVDynamicFilenameJoin", async () => {
 
 test("testConstStr", async () => {
   let query = rh`print "Hello, World!"`
-  
+
   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
   let res = await func()
@@ -238,7 +238,7 @@ test("testFilter1", async () => {
   let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
 
   let query = rh`print ((${csv}.*A.C == 123) & ${csv}.*A.A)`
-  
+
   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
   let res = await func()
@@ -249,7 +249,7 @@ test("testFilter2", async () => {
   let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
 
   let query = rh`print ((${csv}.*A.C != 123) & ${csv}.*A.A)`
-  
+
   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
   let res = await func()
@@ -263,7 +263,7 @@ test("testFilter3", async () => {
   let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
 
   let query = rh`print ((${csv}.*A.A == "valB") & ${csv}.*A.C)`
-  
+
   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
   let res = await func()
@@ -276,7 +276,7 @@ test("testFilter4", async () => {
   // a little bit tricky that column a is used twice
   // but it should only be extracted once
   let query = rh`print ((${csv}.*A.A == "valC") & ${csv}.*A.A)`
-  
+
   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
   let res = await func()
@@ -287,7 +287,7 @@ test("testFilter5", async () => {
   let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
 
   let query = rh`print ((${csv}.*A.A != ${csv}.*A.String) & ${csv}.*A.A)`
-  
+
   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
   let res = await func()
@@ -296,3 +296,26 @@ valB
 valC
 `)
 })
+
+let data = [
+  { A: "valA", B: 5, C: 13, D: 1, String: "string1" },
+  { A: "valB", B: 2, C: 123, D: 2, String: "string2" },
+  { A: "valC", B: 1, C: 92, D: 0, String: "string3" },
+  { A: "valD", B: 7, C: 0, D: 12, String: "valD" },
+]
+
+// test("tesGroupBy", () => {
+//   let inputSchema = typing.createSimpleObject({
+//     data: schema
+//   })
+//   let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+
+//   let query = rh`data.*A.C`
+
+//   let func = compile(query, { newCodegen: true, schema: inputSchema })
+
+//   console.log(func.explain.code)
+
+//   let res = func({ data })
+//   console.log(res)
+// })

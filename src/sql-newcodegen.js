@@ -203,7 +203,9 @@ let codegenCSql = (q, buf, scope, extractStr = false) => {
       if (typing.isString(q.arg[0].schema) && typing.isString(q.arg[1].schema)) {
         let { file: file1, start: start1, end: end1 } = e1
         let { file: file2, start: start2, end: end2 } = e2
-        return `compare_str1(${file1}, ${start1}, ${end1}, ${file2}, ${start2}, ${end2}) == 0`
+        let name = getNewName("tmp_cmpstr")
+        buf.push(`int ${name} = compare_str1(${file1}, ${start1}, ${end1}, ${file2}, ${start2}, ${end2}) == 0;`)
+        return name
       } else if (typing.isInteger(q.arg[0].schema) && typing.isInteger(q.arg[1].schema)) {
         return `${e1} == ${e2}`
       }
@@ -212,14 +214,18 @@ let codegenCSql = (q, buf, scope, extractStr = false) => {
       if (typing.isString(q.arg[0].schema) && typing.isString(q.arg[1].schema)) {
         let { file: file1, start: start1, end: end1 } = e1
         let { file: file2, start: start2, end: end2 } = e2
-        return `compare_str1(${file1}, ${start1}, ${end1}, ${file2}, ${start2}, ${end2}) != 0`
+        let name = getNewName("tmp_cmpstr")
+        buf.push(`int ${name} = compare_str1(${file1}, ${start1}, ${end1}, ${file2}, ${start2}, ${end2}) != 0;`)
+        return name
       } else if (typing.isInteger(q.arg[0].schema) && typing.isInteger(q.arg[1].schema)) {
         return `${e1} != ${e2}`
       }
     } else if (q.op == "and") {
-      buf.push(`if (${e1}) {`)
+      buf.push(`if (!(${e1})) {`)
+      buf.push(`continue;`)
+      buf.push(`}`)
       let e2 = codegenCSql(q.arg[1], buf, scope)
-      closing += 1
+      // closing += 1
       return e2
     } else {
       console.error("pure op not supported")
@@ -255,7 +261,6 @@ let emitStmInitCSql = (q, sym) => {
 let emitStmUpdateCSql = (q, sym) => {
   let buf = []
   let scope = {}
-  closing = 0
   if (q.key == "prefix") {
     return "not supported"
   } if (q.key == "stateful") {
@@ -267,9 +272,6 @@ let emitStmUpdateCSql = (q, sym) => {
       } else {
         let [e1] = q.arg.map(x => codegenCSql(x, buf, scope))
         buf.push(`printf("%${getFormatSpecifier(q.arg[0].schema)}\\n", ${e1});`)
-      }
-      for (let i = 0; i < closing; i++) {
-        buf.push("}")
       }
       return buf
     }
