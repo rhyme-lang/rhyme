@@ -304,18 +304,31 @@ let data = [
   { A: "valD", B: 7, C: 0, D: 12, String: "valD" },
 ]
 
-// test("tesGroupBy", () => {
-//   let inputSchema = typing.createSimpleObject({
-//     data: schema
-//   })
-//   let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+test("testGroupByJS", () => {
+  let inputSchema = typing.createSimpleObject({
+    data: schema
+  })
+  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
 
-//   let query = rh`data.*A.C`
+  let query = rh`sum data.*A.C | group data.*A.A`
 
-//   let func = compile(query, { newCodegen: true, schema: inputSchema })
+  let func = compile(query, { newCodegen: true, schema: inputSchema })
 
-//   console.log(func.explain.code)
+  console.log(func.explain.code)
 
-//   let res = func({ data })
-//   console.log(res)
-// })
+  let res = func({ data })
+  console.log(res)
+})
+
+test("testGroupBy", async () => {
+  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+
+  let query = rh`sum ${csv}.*A.C | group ${csv}.*A.A`
+
+  let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
+
+  console.log(func.explain.code)
+
+  let res = await func()
+  console.log(res)
+})

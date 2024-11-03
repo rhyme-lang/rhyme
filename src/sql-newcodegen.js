@@ -15,11 +15,11 @@ let tmpSym = i => "tmp" + i
 
 let quoteVar = s => s.replaceAll("*", "x")
 
-let map = {}
+let nameIdMap = {}
 let getNewName = (prefix) => {
-  map[prefix] ??= 0
-  let name = prefix + map[prefix]
-  map[prefix] += 1
+  nameIdMap[prefix] ??= 0
+  let name = prefix + nameIdMap[prefix]
+  nameIdMap[prefix] += 1
   return name
 }
 
@@ -181,10 +181,14 @@ let codegenCSql = (q, buf, scope, extractStr = false) => {
       return name
     } else if (q.schema == types.string) {
       if (extractStr) {
+        if (scope[name]) {
+          return name
+        }
         // only extract the string column if we need to
         // e.g. we need a null-terminated string to call open()
         buf.push(`char ${name}[${end} - ${start} + 1];`)
         buf.push(`extract_str(${mappedFile}, ${start}, ${end}, ${name});`)
+        scope[name] = true
         return name
       } else {
         return { file: mappedFile, start, end }
@@ -237,57 +241,106 @@ let codegenCSql = (q, buf, scope, extractStr = false) => {
   }
 }
 
-let emitStmInitCSql = (q, sym) => {
-  if (q.key == "stateful") {
-    if (q.op == "sum" || q.op == "count") {
-      return [`${convertToCType(q.schema)} ${sym} = 0;`]
-    } else if (q.op == "product") {
-      return [`${convertToCType(q.schema)} ${sym} = 1;`]
-    } else if (q.op == "min") {
-      return [`${convertToCType(q.schema)} ${sym} = INT_MAX;`]
-    } else if (q.op == "max") {
-      return [`${convertToCType(q.schema)} ${sym} = INT_MIN;`]
-    } else {
-      return ["not supported"]
-    }
-  } else if (q.key == "update") {
-    return ["not supported"]
-  } else {
-    console.error("unknown op", q)
-    return []
-  }
+let emitTmpInit = (q, sym) => {
+  let buf = []
+  buf.push(`// init ${sym}`)
+  buf.push(`${convertToCType(q.schema)} *${sym}[1024] = { 0 };`)
+
+  return buf
 }
 
-let emitStmUpdateCSql = (q, sym) => {
+let emitStmInitCSql = (q, sym, fre) => {
   let buf = []
+  buf.push(`// init ${sym}`)
+  if (q.key == "stateful") {
+    if (fre.length > 0) {
+      let name = `${sym}[${fre[0]}]` // always one free var?
+      buf.push(`if (${name} == NULL) {`)
+      buf.push(`${name} = (${convertToCType(q.schema)} *)malloc(sizeof(${convertToCType(q.schema)}));`)
+      if (q.op == "sum" || q.op == "count") {
+        buf.push(`*${name} = 0;`)
+      } else if (q.op == "product") {
+        buf.push(`*${name} = 1;`)
+      } else if (q.op == "min") {
+        buf.push(`*${name} = INT_MAX;`)
+      } else if (q.op == "max") {
+        buf.push(`*${name} = INT_MIN;`)
+      } else {
+        buf.push("not supported")
+      }
+      buf.push(`}`)
+    } else {
+      if (q.op == "sum" || q.op == "count") {
+        buf.push(`${convertToCType(q.schema)} ${sym} = 0;`)
+      } else if (q.op == "product") {
+        buf.push(`${convertToCType(q.schema)} ${sym} = 1;`)
+      } else if (q.op == "min") {
+        buf.push(`${convertToCType(q.schema)} ${sym} = INT_MAX;`)
+      } else if (q.op == "max") {
+        buf.push(`${convertToCType(q.schema)} ${sym} = INT_MIN;`)
+      } else {
+        buf.push("not supported")
+      }
+    }
+
+  } else if (q.key == "update") {
+    buf.push("not supported")
+  } else {
+    console.error("unknown op", q)
+  }
+
+  return buf
+}
+
+let emitStmUpdateCSql = (q, sym, fre) => {
+  let buf = []
+  buf.push(`// update ${sym}`)
   let scope = {}
   if (q.key == "prefix") {
     return "not supported"
   } if (q.key == "stateful") {
-    if (q.op == "print") {
-      if (typing.isString(q.arg[0].schema)) {
-        let [e1] = q.arg.map(x => codegenCSql(x, buf, scope))
-        let { file, start, end } = e1
-        buf.push(`println(${file}, ${start}, ${end});`)
+    if (fre.length > 0) {
+      let name = `${sym}[${fre[0]}]`
+      let [e1] = q.arg.map(x => codegenCSql(x, buf, scope))
+      if (q.op == "sum") {
+        buf.push(`*${name} += ${e1};`)
+      } else if (q.op == "product") {
+        buf.push(`*${name} *= ${e1};`)
+      } else if (q.op == "min") {
+        buf.push(`*${name} = ${e1} < ${sym} ? ${e1} : ${sym};`)
+      } else if (q.op == "max") {
+        buf.push(`*${name} = ${e1} > ${sym} ? ${e1} : ${sym};`)
+      } else if (q.op == "count") {
+        buf.push(`*${name} += 1;`)
       } else {
-        let [e1] = q.arg.map(x => codegenCSql(x, buf, scope))
-        buf.push(`printf("%${getFormatSpecifier(q.arg[0].schema)}\\n", ${e1});`)
+        buf.push("not supported")
       }
-      return buf
-    }
-    let [e1] = q.arg.map(x => codegenCSql(x, buf, scope))
-    if (q.op == "sum") {
-      buf.push(`${sym} += ${e1};`)
-    } else if (q.op == "product") {
-      buf.push(`${sym} *= ${e1};`)
-    } else if (q.op == "min") {
-      buf.push(`${sym} = ${e1} < ${sym} ? ${e1} : ${sym};`)
-    } else if (q.op == "max") {
-      buf.push(`${sym} = ${e1} > ${sym} ? ${e1} : ${sym};`)
-    } else if (q.op == "count") {
-      buf.push(`${sym} += 1;`)
     } else {
-      buf.push("not supported")
+      if (q.op == "print") {
+        if (typing.isString(q.arg[0].schema)) {
+          let [e1] = q.arg.map(x => codegenCSql(x, buf, scope))
+          let { file, start, end } = e1
+          buf.push(`println(${file}, ${start}, ${end});`)
+        } else {
+          let [e1] = q.arg.map(x => codegenCSql(x, buf, scope))
+          buf.push(`printf("%${getFormatSpecifier(q.arg[0].schema)}\\n", ${e1});`)
+        }
+        return buf
+      }
+      let [e1] = q.arg.map(x => codegenCSql(x, buf, scope))
+      if (q.op == "sum") {
+        buf.push(`${sym} += ${e1};`)
+      } else if (q.op == "product") {
+        buf.push(`${sym} *= ${e1};`)
+      } else if (q.op == "min") {
+        buf.push(`${sym} = ${e1} < ${sym} ? ${e1} : ${sym};`)
+      } else if (q.op == "max") {
+        buf.push(`${sym} = ${e1} > ${sym} ? ${e1} : ${sym};`)
+      } else if (q.op == "count") {
+        buf.push(`${sym} += 1;`)
+      } else {
+        buf.push("not supported")
+      }
     }
   } else if (q.key == "update") {
     buf.push("not supported")
@@ -346,7 +399,7 @@ let emitCodeCSql = (q, ir) => {
   let assignmentStms = []
   let generatorStms = []
   let tmpVarWriteRank = {}
-  map = {}
+  nameIdMap = {}
 
   filters = ir.filters
   assignments = ir.assignments
@@ -373,12 +426,26 @@ let emitCodeCSql = (q, ir) => {
     assignmentStms.push(e)
   }
 
-  function selectGenFilter(e1, e2, filename, loadCSV, schema) {
+  let createGenerator = (e1, e2, filename, loadCSV, schema) => {
     let a = getDeps(e1)
     let b = getDeps(e2)
     let e = expr("FOR", ...a)
     e.sym = b[0]
     e.getLoopTxt = getLoopTxt(e1, e2, filename, loadCSV, schema)
+    generatorStms.push(e)
+  }
+
+  let createMkset = (e1, e2, val) => {
+    let a = getDeps(e1)
+    let b = getDeps(e2)
+    let e = expr("MKSET", ...a)
+    e.sym = b[0]
+    let info = `// generator: ${e2.op} <- mkset`
+    let rowScanning = []
+    rowScanning.push(`unsigned long ${e.sym} = hash(${val.file}, ${val.start}, ${val.end}) % 1024;`)
+    e.getLoopTxt = () => ({
+      info, loadCSV: [], initCursor: [], loopHeader: "{", boundsChecking: "// singleton value here", rowScanning
+    })
     generatorStms.push(e)
   }
 
@@ -397,34 +464,37 @@ let emitCodeCSql = (q, ir) => {
 
     let schema = f.schema
 
-    if (g1.key != "loadInput" || g1.op != "csv") {
-      console.error("invalid filter")
-      return
-    }
+    if (g1.key == "loadInput" && g1.op == "csv") {
+      let loadCsvBuf = []
 
-    let loadCsvBuf = []
+      let filename
+      // constant string filename
+      if (g1.arg[0].key == "const" && typeof g1.arg[0].op == "string") {
+        filename = g1.arg[0].op
 
-    let filename
-    // constant string filename
-    if (g1.arg[0].key != "const" || typeof g1.arg[0].op != "string") {
-      filename = codegenCSql(g1.arg[0], loadCsvBuf, {}, true)
-
-      if (csvFiles[filename] == undefined) {
-        emitLoadCSV(loadCsvBuf, filename, i, false)
+        if (csvFiles[filename] == undefined) {
+          emitLoadCSV(prolog, filename, i)
+        }
       } else {
-        loadCsvBuf = []
-      }
+        filename = codegenCSql(g1.arg[0], loadCsvBuf, {}, true)
 
+        if (csvFiles[filename] == undefined) {
+          emitLoadCSV(loadCsvBuf, filename, i, false)
+        }
+      }
+      console.assert(csvFiles[filename] != undefined)
+
+      createGenerator(f.arg[0], f.arg[1], filename, loadCsvBuf, schema)
+    } else if (g1.key == "mkset") {
+      if (!typing.isString(g1.arg[0].schema)) {
+        throw new Error("mkset with non-string value")
+      }
+      let val = codegenCSql(g1.arg[0], [], {})
+      createMkset(f.arg[0], f.arg[1], val)
     } else {
-      filename = g1.arg[0].op
-
-      if (csvFiles[filename] == undefined) {
-        emitLoadCSV(loadCsvBuf, filename, i)
-      }
+      console.error("invalid filter: ", f)
+      return "error"
     }
-    console.assert(csvFiles[filename] != undefined)
-
-    selectGenFilter(f.arg[0], f.arg[1], filename, loadCsvBuf, schema)
   }
 
   for (let i in assignments) {
@@ -434,21 +504,37 @@ let emitCodeCSql = (q, ir) => {
 
     // emit init
     if (q.key == "stateful" && initRequired[q.op]) {
-      assign(emitStmInitCSql(q, sym), sym, q.fre, [])
+      // if q.fre is not empty, then initialization of the table is required
+      if (q.fre.length != 0) {
+        assign(emitTmpInit(q, sym), sym, [], []);
+      }
+      assign(emitStmInitCSql(q, sym, q.fre), sym, q.fre, [])
     }
 
-    // emit update
-    let fv = union(q.fre, q.bnd)
-    let deps = [...fv, ...q.tmps.map(tmpSym)] // XXX rhs dims only?
+    if (q.key == "stateful") {
+      // emit update
+      let fv = union(q.fre, q.bnd)
+      let deps = [...fv, ...q.tmps.map(tmpSym)] // XXX rhs dims only?
 
-    assign(emitStmUpdateCSql(q, sym), sym, q.fre, deps)
+      assign(emitStmUpdateCSql(q, sym, q.fre), sym, q.fre, deps)
+    }
   }
 
   let res = codegenCSql(q, [], {})
 
   let epilog = []
   if (q.schema !== types.nothing) {
-    epilog.push(`printf("%${getFormatSpecifier(q.schema)}\\n", ${res});`)
+    try {
+      epilog.push(`printf("%${getFormatSpecifier(q.schema)}\\n", ${res});`)
+    } catch (e) {
+      // Object
+      let valType = q.schema[0][1]
+      epilog.push(`for (int i = 0; i < 1024; i++) {`)
+      epilog.push(`if (${res}[i] != NULL) {`)
+      epilog.push(`printf("%${getFormatSpecifier(valType)}\\n", *${res}[i]);`)
+      epilog.push(`}`)
+      epilog.push(`}`)
+    }
   }
   epilog.push("return 0;")
   epilog.push("}");
