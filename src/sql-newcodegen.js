@@ -87,12 +87,18 @@ let getFormatSpecifier = (type) => {
   throw new Error("Unknown type: " + typing.prettyPrintType(type));
 }
 
+let prettyPath = es => {
+  if (es === undefined) return "[?]"
+  let sub = x => typeof (x) === "string" ? x : pretty(x)
+  return "[" + es.map(sub).join(",") + "]"
+}
+
 let pretty = q => {
   if (q.key == "input") {
     return "inp"
   } else if (q.key == "loadInput") {
     let [e1] = q.arg.map(pretty)
-    return `loadInput('${q.op}', ${e1})`
+    return `loadCSV(${e1})`
   } else if (q.key == "const") {
     if (typeof q.op === "object" && Object.keys(q.op).length == 0) return "{}"
     else return "" + q.op
@@ -156,7 +162,7 @@ let extractUsedCols = (q, extractStr = false) => {
       if (!typing.isString(e1.arg[0].schema)) {
         throw new Error("only support mkset with strings: " + pretty(e1))
       }
-      e1.arg.map(extractUsedCols)
+      e1.arg.map(x => extractUsedCols(x))
       return
     }
 
@@ -191,7 +197,7 @@ let extractUsedCols = (q, extractStr = false) => {
   } else if (q.key == "ref") {
     let e1 = assignments[q.op]
     extractUsedCols(e1)
-  } else if (q.arg) q.arg.map(extractUsedCols)
+  } else if (q.arg) q.arg.map(x => extractUsedCols(x))
 }
 
 let emitLoadCSV = (buf, filename, id, isConstStr = true) => {
@@ -330,7 +336,7 @@ let emitStmInitCSql = (q, sym, fre) => {
       } else if (q.op == "max") {
         buf.push(`*${name} = INT_MIN;`)
       } else {
-        buf.push("not supported")
+        throw new Error("stateful op not supported: " + pretty(q))
       }
       buf.push(`}`)
     } else {
@@ -343,12 +349,12 @@ let emitStmInitCSql = (q, sym, fre) => {
       } else if (q.op == "max") {
         buf.push(`${convertToCType(q.schema)} ${sym} = INT_MIN;`)
       } else {
-        buf.push("not supported")
+        throw new Error("stateful op not supported: " + pretty(q))
       }
     }
 
   } else if (q.key == "update") {
-    throw new Error("update not implemented" + pretty(q))
+    throw new Error("update not implemented: " + pretty(q))
   } else {
     throw new Error("unknown op: " + pretty(q))
   }
@@ -360,7 +366,7 @@ let emitStmUpdateCSql = (q, sym, fre) => {
   let buf = []
   buf.push(`// update ${sym}`)
   if (q.key == "prefix") {
-    return "not supported"
+    throw new Error("prefix op not supported: " + pretty(q))
   } if (q.key == "stateful") {
     let lhs
     if (fre.length > 0) {
@@ -390,11 +396,14 @@ let emitStmUpdateCSql = (q, sym, fre) => {
       buf.push(`${lhs} = ${e1} > ${lhs} ? ${e1} : ${lhs};`)
     } else if (q.op == "count") {
       buf.push(`${lhs} += 1;`)
+    } else if (q.op == "single") {
+      buf.push(`// stateful single, need to check if the key is already there`)
+      buf.push(`${lhs} = ${e1};`)
     } else {
-      buf.push("not supported")
+      throw new Error("stateful op not supported: " + pretty(q))
     }
   } else if (q.key == "update") {
-    throw new Error("update not implemented" + pretty(q))
+    throw new Error("update not implemented: " + pretty(q))
   } else {
     throw new Error("unknown op: " + pretty(q))
   }
@@ -419,31 +428,27 @@ let emitRowScanning = (f, filename, cursor, schema) => {
     let end = [mappedFile, quoteVar(v), colName, "end"].join("_")
     let name = [mappedFile, quoteVar(v), colName].join("_")
 
-    if (needToExtract) {
-      if (typing.isInteger(type)) {
-        buf.push(`${convertToCType(type)} ${name} = 0;`)
-      }
+    if (needToExtract && typing.isInteger(type)) {
+      buf.push(`${convertToCType(type)} ${name} = 0;`)
     }
 
     let delim = i == columns.length - 1 ? "\\n" : ","
     buf.push(`int ${start} = ${cursor};`)
     buf.push(`while (${cursor} < ${size} && ${mappedFile}[${cursor}] != '${delim}') {`)
-    if (needToExtract) {
-      if (typing.isInteger(type)) {
-        buf.push(`${name} *= 10;`)
-        buf.push(`${name} += ${mappedFile}[${cursor}] - '0';`)
-      }
+
+    if (needToExtract && typing.isInteger(type)) {
+      buf.push(`${name} *= 10;`)
+      buf.push(`${name} += ${mappedFile}[${cursor}] - '0';`)
     }
+
     buf.push(`${cursor}++;`)
     buf.push("}")
     buf.push(`int ${end} = ${cursor};`)
     buf.push(`${cursor}++;`)
 
-    if (needToExtract) {
-      if (typing.isString(type)) {
-        buf.push(`char ${name}[${end} - ${start} + 1];`)
-        buf.push(`extract_str(${mappedFile}, ${start}, ${end}, ${name});`)
-      }
+    if (needToExtract && typing.isString(type)) {
+      buf.push(`char ${name}[${end} - ${start} + 1];`)
+      buf.push(`extract_str(${mappedFile}, ${start}, ${end}, ${name});`)
     }
   }
 
@@ -456,7 +461,7 @@ let getLoopTxt = (f, filename, loadCSV) => () => {
 
   let initCursor = []
 
-  let info = [`// generator: ${v} <- loadCSV ${filename}`]
+  let info = [`// generator: ${v} <- ${pretty(f.arg[0])}`]
 
   let cursor = getNewName("i")
   initCursor.push(`int ${cursor} = 0;`)
@@ -525,7 +530,7 @@ let emitCodeCSql = (q, ir) => {
     let b = getDeps(e2)
     let e = expr("MKSET", ...a)
     e.sym = b[0]
-    let info = [`// generator: ${e2.op} <- mkset`]
+    let info = [`// generator: ${e2.op} <- ${pretty(e1)}`]
     let rowScanning = []
     rowScanning.push(`unsigned long ${e.sym} = hash(${val.file}, ${val.start}, ${val.end}) % 1024;`)
     e.getLoopTxt = () => ({
@@ -584,22 +589,21 @@ let emitCodeCSql = (q, ir) => {
 
     let q = assignments[i]
 
-    // emit init
-    if (q.key == "stateful" && initRequired[q.op]) {
+    if (q.key == "stateful" && q.fre.length != 0) {
       // if q.fre is not empty, then initialization of the table is required
-      if (q.fre.length != 0) {
-        assign(emitTmpInit(q, sym), sym, [], []);
-      }
+      assign(emitTmpInit(q, sym), sym, [], []);
+    }
+
+    // emit init
+    if (q.key == "stateful" && initRequired[q.op] || q.key == "update") {
       assign(emitStmInitCSql(q, sym, q.fre), sym, q.fre, [])
     }
 
-    if (q.key == "stateful") {
-      // emit update
-      let fv = union(q.fre, q.bnd)
-      let deps = [...fv, ...q.tmps.map(tmpSym)] // XXX rhs dims only?
+    // emit update
+    let fv = union(q.fre, q.bnd)
+    let deps = [...fv, ...q.tmps.map(tmpSym)] // XXX rhs dims only?
 
-      assign(emitStmUpdateCSql(q, sym, q.fre), sym, q.fre, deps)
-    }
+    assign(emitStmUpdateCSql(q, sym, q.fre), sym, q.fre, deps)
   }
 
   let res = codegenCSql(q, [], {})
@@ -609,6 +613,7 @@ let emitCodeCSql = (q, ir) => {
     try {
       epilog.push(`printf("%${getFormatSpecifier(q.schema)}\\n", ${res});`)
     } catch (e) {
+      console.log(typing.prettyPrintType(q.schema))
       // Object
       let valType = q.schema[0][1]
       epilog.push(`for (int i = 0; i < 1024; i++) {`)
