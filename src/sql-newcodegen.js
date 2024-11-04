@@ -225,7 +225,7 @@ let emitLoadCSV = (buf, filename, id, isConstStr = true) => {
 // { type, file, start, end }
 // For constant string / integer
 // { type, symbol }
-let codegenCSql = (q, buf, scope, extractStr = false) => {
+let codegenCSql = (q, buf, extractStr = false) => {
   if (q.key == "loadInput") {
     throw new Error("cannot have stand-alone loadInput")
   } else if (q.key == "const") {
@@ -251,7 +251,7 @@ let codegenCSql = (q, buf, scope, extractStr = false) => {
       filename = file.op
     } else {
       // extract filename, we don't want it to push more stuff into the buf
-      filename = codegenCSql(file, [], scope, true)
+      filename = codegenCSql(file, [], true)
     }
 
     let { mappedFile } = csvFilesEnv[filename]
@@ -275,13 +275,13 @@ let codegenCSql = (q, buf, scope, extractStr = false) => {
       throw new Error("cannot extract value of type " + typing.prettyPrintType(q.schema))
     }
   } else if (q.key == "pure") {
-    let e1 = codegenCSql(q.arg[0], buf, scope)
+    let e1 = codegenCSql(q.arg[0], buf)
     let op = operators[q.op]
     if (q.op == "plus" || q.op == "minus" || q.op == "times" || q.op == "fdiv" || q.op == "div" || q.op == "mod") {
-      let e2 = codegenCSql(q.arg[1], buf, scope)
+      let e2 = codegenCSql(q.arg[1], buf)
       return `${e1} ${op} ${e2}`
     } else if (q.op == "equal" || q.op == "notEqual") {
-      let e2 = codegenCSql(q.arg[1], buf, scope)
+      let e2 = codegenCSql(q.arg[1], buf)
       if (typing.isString(q.arg[0].schema) && typing.isString(q.arg[1].schema)) {
         let { file: file1, start: start1, end: end1 } = e1
         let { file: file2, start: start2, end: end2 } = e2
@@ -295,7 +295,7 @@ let codegenCSql = (q, buf, scope, extractStr = false) => {
       buf.push(`if (!(${e1})) {`)
       buf.push(`continue;`)
       buf.push(`}`)
-      let e2 = codegenCSql(q.arg[1], buf, scope)
+      let e2 = codegenCSql(q.arg[1], buf)
       return e2
     } else {
       throw new Error("pure operation not supported: " + pretty(q))
@@ -348,7 +348,7 @@ let emitStmInitCSql = (q, sym, fre) => {
     }
 
   } else if (q.key == "update") {
-    buf.push("not supported")
+    throw new Error("update not implemented" + pretty(q))
   } else {
     throw new Error("unknown op: " + pretty(q))
   }
@@ -359,55 +359,42 @@ let emitStmInitCSql = (q, sym, fre) => {
 let emitStmUpdateCSql = (q, sym, fre) => {
   let buf = []
   buf.push(`// update ${sym}`)
-  let scope = {}
   if (q.key == "prefix") {
     return "not supported"
   } if (q.key == "stateful") {
+    let lhs
     if (fre.length > 0) {
-      let name = `${sym}[${fre[0]}]`
-      let [e1] = q.arg.map(x => codegenCSql(x, buf, scope))
-      if (q.op == "sum") {
-        buf.push(`*${name} += ${e1};`)
-      } else if (q.op == "product") {
-        buf.push(`*${name} *= ${e1};`)
-      } else if (q.op == "min") {
-        buf.push(`*${name} = ${e1} < ${sym} ? ${e1} : ${sym};`)
-      } else if (q.op == "max") {
-        buf.push(`*${name} = ${e1} > ${sym} ? ${e1} : ${sym};`)
-      } else if (q.op == "count") {
-        buf.push(`*${name} += 1;`)
-      } else {
-        throw new Error("not supported: " + pretty(q))
-      }
+      lhs = `*${sym}[${fre[0]}]`
     } else {
-      if (q.op == "print") {
-        if (typing.isString(q.arg[0].schema)) {
-          let [e1] = q.arg.map(x => codegenCSql(x, buf, scope))
-          let { file, start, end } = e1
-          buf.push(`println(${file}, ${start}, ${end});`)
-        } else {
-          let [e1] = q.arg.map(x => codegenCSql(x, buf, scope))
-          buf.push(`printf("%${getFormatSpecifier(q.arg[0].schema)}\\n", ${e1});`)
-        }
-        return buf
-      }
-      let [e1] = q.arg.map(x => codegenCSql(x, buf, scope))
-      if (q.op == "sum") {
-        buf.push(`${sym} += ${e1};`)
-      } else if (q.op == "product") {
-        buf.push(`${sym} *= ${e1};`)
-      } else if (q.op == "min") {
-        buf.push(`${sym} = ${e1} < ${sym} ? ${e1} : ${sym};`)
-      } else if (q.op == "max") {
-        buf.push(`${sym} = ${e1} > ${sym} ? ${e1} : ${sym};`)
-      } else if (q.op == "count") {
-        buf.push(`${sym} += 1;`)
+      lhs = sym
+    }
+    if (q.op == "print") {
+      if (typing.isString(q.arg[0].schema)) {
+        let [e1] = q.arg.map(x => codegenCSql(x, buf))
+        let { file, start, end } = e1
+        buf.push(`println(${file}, ${start}, ${end});`)
       } else {
-        buf.push("not supported")
+        let [e1] = q.arg.map(x => codegenCSql(x, buf))
+        buf.push(`printf("%${getFormatSpecifier(q.arg[0].schema)}\\n", ${e1});`)
       }
+      return buf
+    }
+    let [e1] = q.arg.map(x => codegenCSql(x, buf))
+    if (q.op == "sum") {
+      buf.push(`${lhs} += ${e1};`)
+    } else if (q.op == "product") {
+      buf.push(`${lhs} *= ${e1};`)
+    } else if (q.op == "min") {
+      buf.push(`${lhs} = ${e1} < ${lhs} ? ${e1} : ${lhs};`)
+    } else if (q.op == "max") {
+      buf.push(`${lhs} = ${e1} > ${lhs} ? ${e1} : ${lhs};`)
+    } else if (q.op == "count") {
+      buf.push(`${lhs} += 1;`)
+    } else {
+      buf.push("not supported")
     }
   } else if (q.key == "update") {
-    buf.push("not supported")
+    throw new Error("update not implemented" + pretty(q))
   } else {
     throw new Error("unknown op: " + pretty(q))
   }
@@ -425,7 +412,7 @@ let emitRowScanning = (f, filename, cursor, schema) => {
     let type = columns[i][1]
     let prefix = pretty(f)
     let needToExtract = usedCols[prefix][colName]
-    
+
     buf.push(`// reading column ${colName}`)
 
     let start = [mappedFile, quoteVar(v), colName, "start"].join("_")
@@ -585,7 +572,7 @@ let emitCodeCSql = (q, ir) => {
       let getLoopTxtFunc = getLoopTxt(f, filename, loadCSV)
       createGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
     } else if (g1.key == "mkset") {
-      let val = codegenCSql(g1.arg[0], [], {})
+      let val = codegenCSql(g1.arg[0], [])
       createMkset(f.arg[0], f.arg[1], val)
     } else {
       throw new Error("invalid filter: " + pretty(f))
@@ -669,15 +656,15 @@ let generateCSqlNew = (q, ir) => {
 
   let code = emitCodeCSql(q, ir)
 
-  let func = (async () => {
+  let func = async () => {
     await fs.writeFile(`cgen-sql/out.c`, code);
     await execPromise(`gcc cgen-sql/out.c -o cgen-sql/out`)
-    return 'cgen-sql/out'
-  })()
+    return './cgen-sql/out'
+  }
 
   let wrap = async (input) => {
-    let file = await func
-    let res = await execPromise(`${file}`)
+    let file = await func()
+    let res = await execPromise(file)
     return res
   }
 
