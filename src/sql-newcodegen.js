@@ -354,7 +354,10 @@ let emitStmInitCSql = (q, sym, fre) => {
     }
 
   } else if (q.key == "update") {
-    throw new Error("update not implemented: " + pretty(q))
+    let valType = q.schema[0][1]
+    buf.push(`// update init ${sym}`)
+    buf.push(`${convertToCType(valType)} *${sym}[1024] = { 0 };`)
+    // throw new Error("update not implemented: " + pretty(q))
   } else {
     throw new Error("unknown op: " + pretty(q))
   }
@@ -403,7 +406,12 @@ let emitStmUpdateCSql = (q, sym, fre) => {
       throw new Error("stateful op not supported: " + pretty(q))
     }
   } else if (q.key == "update") {
-    throw new Error("update not implemented: " + pretty(q))
+    let val = codegenCSql(q.arg[2], buf)
+    let v = q.arg[1].op
+    let lhs = `${sym}[${v}]`
+    buf.push(`// update update`)
+    buf.push(`${lhs} = ${val}[${v}];`)
+    // throw new Error("update not implemented: " + pretty(q))
   } else {
     throw new Error("unknown op: " + pretty(q))
   }
@@ -613,7 +621,6 @@ let emitCodeCSql = (q, ir) => {
     try {
       epilog.push(`printf("%${getFormatSpecifier(q.schema)}\\n", ${res});`)
     } catch (e) {
-      console.log(typing.prettyPrintType(q.schema))
       // Object
       let valType = q.schema[0][1]
       epilog.push(`for (int i = 0; i < 1024; i++) {`)

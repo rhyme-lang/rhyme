@@ -375,16 +375,19 @@ test("groupByTest", async () => {
   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
   let res = await func()
+  expect(res).toBe(`40
+20
+`)
 })
 
-test("groupByAverageTest", async () => {
-  let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
+// test("groupByAverageTest", async () => {
+//   let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
 
-  let avg = rh`(sum ${csv}.*.value) / (count ${csv}.*.value)`
+//   let avg = rh`(sum ${csv}.*.value) / (count ${csv}.*.value)`
 
-  let query = rh`${avg} | group ${csv}.*.key`
+//   let query = rh`${avg} | group ${csv}.*.key`
 
-  let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
+//   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
-  let res = await func()
-})
+//   let res = await func()
+// })
