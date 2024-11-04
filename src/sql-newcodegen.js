@@ -1,12 +1,12 @@
+const { isString } = require('node:util')
 const { generate } = require('./new-codegen')
 const { typing, types } = require('./typing')
 
 let filters
 let assignments
 
-let csvFiles
-
-let closing
+let csvFilesEnv
+let usedCols
 
 let unique = xs => xs.filter((x, i) => xs.indexOf(x) == i)
 let union = (a, b) => unique([...a, ...b])
@@ -31,36 +31,11 @@ let initRequired = {
   "count": true,
 }
 
-let emitLoadCSV = (buf, filename, id, isConstStr = true) => {
-  buf.push(`// loadCSV ${filename}`)
-  let fd = "fd" + id
-  let mappedFile = "csv" + id
-  let size = "n" + id
-  if (isConstStr) {
-    buf.push(`int ${fd} = open("${filename}", 0);`)
-  } else {
-    buf.push(`int ${fd} = open(${filename}, 0);`)
-  }
-  buf.push(`if (${fd} == -1) {`)
-  if (isConstStr) {
-    buf.push(`fprintf(stderr, "Unable to open file ${filename}\\n");`);
-  } else {
-    buf.push(`fprintf(stderr, "Unable to open file ${filename}: %s\\n", ${filename});`);
-  }
-  buf.push(`return 1;`)
-  buf.push(`}`)
-  buf.push(`int ${size} = fsize(${fd});`)
-  buf.push(`char *${mappedFile} = mmap(0, ${size}, PROT_READ, MAP_FILE | MAP_SHARED, ${fd}, 0);`)
-  buf.push(`close(${fd});`)
-
-  csvFiles[filename] = { fd, mappedFile, size }
-}
-
 let convertToCType = (type) => {
   if (type.__rh_type === "dynkey")
     return convertToCType(type.__rh_type_superkey);
   if (type.__rh_type === "union")
-    throw new Error("Unable to convert union type to C type currently.");
+    throw new Error("Unable to convert union type to C type currently: " + typing.prettyPrintType(type));
   if (type === types.u8)
     return "uint8_t";
   if (type === types.u16)
@@ -88,7 +63,7 @@ let getFormatSpecifier = (type) => {
   if (type.__rh_type === "dynkey")
     return getFormatSpecifier(type.__rh_type_superkey);
   if (type.__rh_type === "union")
-    throw new Error("Unable to convert union type to C type currently.");
+    throw new Error("Unable to get type specifier for union tpyes currently: " + typing.prettyPrintType(type));
   if (type === types.u8)
     return "hhu";
   if (type === types.u16)
@@ -112,6 +87,138 @@ let getFormatSpecifier = (type) => {
   throw new Error("Unknown type: " + typing.prettyPrintType(type));
 }
 
+let pretty = q => {
+  if (q.key == "input") {
+    return "inp"
+  } else if (q.key == "loadInput") {
+    let [e1] = q.arg.map(pretty)
+    return `loadInput('${q.op}', ${e1})`
+  } else if (q.key == "const") {
+    if (typeof q.op === "object" && Object.keys(q.op).length == 0) return "{}"
+    else return "" + q.op
+  } else if (q.key == "var") {
+    return q.op
+  } else if (q.key == "ref") {
+    let e1 = assignments[q.op]
+    return "tmp" + q.op + prettyPath(e1.fre)
+  } else if (q.key == "get") {
+    let [e1, e2] = q.arg.map(pretty)
+    if (e1 == "inp") return e2
+    // if (q.arg[1].key == "var") { // hampers CSE pre-extract
+    // if (q.filter === undefined) // def
+    // return e2 + " <- " + e1
+    // }
+    return e1 + "[" + e2 + "]"
+  } else if (q.key == "pure") {
+    let es = q.arg.map(pretty)
+    return q.op + "(" + es.join(", ") + ")"
+  } else if (q.key == "hint") {
+    let es = q.arg.map(pretty)
+    return q.op + "(" + es.join(", ") + ")"
+  } else if (q.key == "mkset") {
+    let [e1] = q.arg.map(pretty)
+    return "mkset(" + e1 + ")"
+  } else if (q.key == "prefix") {
+    let [e1] = q.arg.map(pretty)
+    return "prefix_" + q.op + "(" + e1 + ")"
+  } else if (q.key == "stateful") {
+    let [e1] = q.arg.map(pretty)
+    return q.op + "(" + e1 + ")"
+  } else if (q.key == "group") {
+    let [e1, e2] = q.arg.map(pretty)
+    return "{ " + e1 + ": " + e2 + " }"
+  } else if (q.key == "update") {
+    let [e0, e1, e2, e3] = q.arg.map(pretty)
+    if (e3) return e0 + "{ " + e1 + ": " + e2 + " } / " + e3
+    return e0 + "{ " + e1 + ": " + e2 + " }"
+  } else {
+    console.error("unknown op", q)
+  }
+}
+
+let operators = {
+  equal: "==",
+  notEqual: "!=",
+
+  plus: "+",
+  minus: "-",
+  times: "*",
+  fdiv: "/",
+  div: "/",
+  mod: "%",
+}
+
+let extractUsedCols = (q, extractStr = false) => {
+  if (q.key == "get") {
+    let [e1, e2] = q.arg
+    // if mkset
+    if (e1.key == "mkset" && e2.key == "var") {
+      if (!typing.isString(e1.arg[0].schema)) {
+        throw new Error("only support mkset with strings: " + pretty(e1))
+      }
+      e1.arg.map(extractUsedCols)
+      return
+    }
+
+    // otherwise, check if the get is valid
+    if (!(e1.key == "get" && e2.key == "const")) {
+      throw new Error("malformed get: " + pretty(q))
+    }
+    if (!(e1.arg[0].key == "loadInput" && e1.arg[1].key == "var")) {
+      throw new Error("malformed e1 in get: " + pretty(e1))
+    }
+    if (typeof e2.op != "string") {
+      throw new Error("column name is not a constant string: " + pretty(e2))
+    }
+
+    let prefix = pretty(e1) // does this always work?
+    usedCols[prefix] ??= {}
+
+    if (typing.isInteger(q.schema)) {
+      usedCols[prefix][e2.op] = true
+    } else if (typing.isString(q.schema)) {
+      // only extract the string if we need a null-terminated string
+      // e.g. filename used for open()
+      if (extractStr) {
+        usedCols[prefix][e2.op] = true
+      }
+    } else {
+      throw new Error("column data type not supported: " + pretty(q) + " has type " + typing.prettyPrintType(q.schema))
+    }
+
+    // extract used columns for the filename
+    extractUsedCols(e1.arg[0].arg[0], true)
+  } else if (q.key == "ref") {
+    let e1 = assignments[q.op]
+    extractUsedCols(e1)
+  } else if (q.arg) q.arg.map(extractUsedCols)
+}
+
+let emitLoadCSV = (buf, filename, id, isConstStr = true) => {
+  buf.push(`// loadCSV ${filename}`)
+  let fd = "fd" + id
+  let mappedFile = "csv" + id
+  let size = "n" + id
+  if (isConstStr) {
+    buf.push(`int ${fd} = open("${filename}", 0);`)
+  } else {
+    buf.push(`int ${fd} = open(${filename}, 0);`)
+  }
+  buf.push(`if (${fd} == -1) {`)
+  if (isConstStr) {
+    buf.push(`fprintf(stderr, "Unable to open file ${filename}\\n");`);
+  } else {
+    buf.push(`fprintf(stderr, "Unable to open file ${filename}: %s\\n", ${filename});`);
+  }
+  buf.push(`return 1;`)
+  buf.push(`}`)
+  buf.push(`int ${size} = fsize(${fd});`)
+  buf.push(`char *${mappedFile} = mmap(0, ${size}, PROT_READ, MAP_FILE | MAP_SHARED, ${fd}, 0);`)
+  buf.push(`close(${fd});`)
+
+  csvFilesEnv[filename] = { mappedFile, size }
+}
+
 // returns an object that contains info about the symbol generated
 // since sometimes we need the start and end index istead of the value
 // For column access: 
@@ -120,8 +227,7 @@ let getFormatSpecifier = (type) => {
 // { type, symbol }
 let codegenCSql = (q, buf, scope, extractStr = false) => {
   if (q.key == "loadInput") {
-    console.error("stand-alone loadInput")
-    return "// stand-alone loadInput not supported"
+    throw new Error("cannot have stand-alone loadInput")
   } else if (q.key == "const") {
     if (typeof q.op == "number") {
       return q.op
@@ -130,29 +236,14 @@ let codegenCSql = (q, buf, scope, extractStr = false) => {
       buf.push(`char ${name}[${q.op.length + 1}] = "${q.op}";`)
       return extractStr ? name : { file: name, start: 0, end: q.op.length }
     } else {
-      console.error("unsupported constant ", pretty(q))
-      return String(q.op)
+      throw new Error("constant not supported: " + pretty(q))
     }
   } else if (q.key == "var") {
-    console.error("stand-alone var")
-    return "// stand-alone var not supported"
+    throw new Error("cannot have stand-alone var")
   } else if (q.key == "ref") {
     return tmpSym(q.op)
   } else if (q.key == "get") {
     let [e1, e2] = q.arg
-    // check if the get is valid
-    if (!(e1.key == "get" && e2.key == "const")) {
-      console.error("malformed get")
-      return "// malformed get"
-    }
-    if (!(e1.arg[0].key == "loadInput" && e1.arg[1].key == "var")) {
-      console.error("malformed get")
-      return "// malformed get"
-    }
-    if (typeof e2.op != "string") {
-      console.error("column name is not a constant string")
-      return "// column name is not a constant string"
-    }
 
     let file = e1.arg[0].arg[0]
     let filename
@@ -163,7 +254,7 @@ let codegenCSql = (q, buf, scope, extractStr = false) => {
       filename = codegenCSql(file, [], scope, true)
     }
 
-    let { mappedFile } = csvFiles[filename]
+    let { mappedFile } = csvFilesEnv[filename]
 
     let v = e1.arg[1].op
 
@@ -173,71 +264,44 @@ let codegenCSql = (q, buf, scope, extractStr = false) => {
     let name = [mappedFile, quoteVar(v), e2.op].join("_")
 
     if (typing.isInteger(q.schema)) {
-      if (scope[name]) {
-        return name
-      }
-      buf.push(`${convertToCType(q.schema)} ${name} = extract_int(${mappedFile}, ${start}, ${end});`)
-      scope[name] = true
       return name
     } else if (q.schema == types.string) {
       if (extractStr) {
-        if (scope[name]) {
-          return name
-        }
-        // only extract the string column if we need to
-        // e.g. we need a null-terminated string to call open()
-        buf.push(`char ${name}[${end} - ${start} + 1];`)
-        buf.push(`extract_str(${mappedFile}, ${start}, ${end}, ${name});`)
-        scope[name] = true
         return name
       } else {
         return { file: mappedFile, start, end }
       }
     } else {
-      console.error("cannot extract value of type " + typing.prettyPrintType(q.schema))
-      return "// cannot extract value of type " + typing.prettyPrintType(q.schema)
+      throw new Error("cannot extract value of type " + typing.prettyPrintType(q.schema))
     }
   } else if (q.key == "pure") {
     let e1 = codegenCSql(q.arg[0], buf, scope)
-    if (q.op == "plus") {
+    let op = operators[q.op]
+    if (q.op == "plus" || q.op == "minus" || q.op == "times" || q.op == "fdiv" || q.op == "div" || q.op == "mod") {
       let e2 = codegenCSql(q.arg[1], buf, scope)
-      return `${e1} + ${e2}`
-    } else if (q.op == "equal") {
-      let e2 = codegenCSql(q.arg[1], buf, scope)
-      if (typing.isString(q.arg[0].schema) && typing.isString(q.arg[1].schema)) {
-        let { file: file1, start: start1, end: end1 } = e1
-        let { file: file2, start: start2, end: end2 } = e2
-        let name = getNewName("tmp_cmpstr")
-        buf.push(`int ${name} = compare_str1(${file1}, ${start1}, ${end1}, ${file2}, ${start2}, ${end2}) == 0;`)
-        return name
-      } else if (typing.isInteger(q.arg[0].schema) && typing.isInteger(q.arg[1].schema)) {
-        return `${e1} == ${e2}`
-      }
-    } else if (q.op == "notEqual") {
+      return `${e1} ${op} ${e2}`
+    } else if (q.op == "equal" || q.op == "notEqual") {
       let e2 = codegenCSql(q.arg[1], buf, scope)
       if (typing.isString(q.arg[0].schema) && typing.isString(q.arg[1].schema)) {
         let { file: file1, start: start1, end: end1 } = e1
         let { file: file2, start: start2, end: end2 } = e2
         let name = getNewName("tmp_cmpstr")
-        buf.push(`int ${name} = compare_str1(${file1}, ${start1}, ${end1}, ${file2}, ${start2}, ${end2}) != 0;`)
+        buf.push(`int ${name} = compare_str1(${file1}, ${start1}, ${end1}, ${file2}, ${start2}, ${end2}) ${op} 0;`)
         return name
       } else if (typing.isInteger(q.arg[0].schema) && typing.isInteger(q.arg[1].schema)) {
-        return `${e1} != ${e2}`
+        return `${e1} ${op} ${e2}`
       }
     } else if (q.op == "and") {
       buf.push(`if (!(${e1})) {`)
       buf.push(`continue;`)
       buf.push(`}`)
       let e2 = codegenCSql(q.arg[1], buf, scope)
-      // closing += 1
       return e2
     } else {
-      console.error("pure op not supported")
-      return "not supported"
+      throw new Error("pure operation not supported: " + pretty(q))
     }
   } else {
-    console.error("unknown op")
-    return "<?" + q.key + "?>"
+    throw new Error("unknown op: " + pretty(q))
   }
 }
 
@@ -286,7 +350,7 @@ let emitStmInitCSql = (q, sym, fre) => {
   } else if (q.key == "update") {
     buf.push("not supported")
   } else {
-    console.error("unknown op", q)
+    throw new Error("unknown op: " + pretty(q))
   }
 
   return buf
@@ -313,7 +377,7 @@ let emitStmUpdateCSql = (q, sym, fre) => {
       } else if (q.op == "count") {
         buf.push(`*${name} += 1;`)
       } else {
-        buf.push("not supported")
+        throw new Error("not supported: " + pretty(q))
       }
     } else {
       if (q.op == "print") {
@@ -345,36 +409,67 @@ let emitStmUpdateCSql = (q, sym, fre) => {
   } else if (q.key == "update") {
     buf.push("not supported")
   } else {
-    console.error("unknown op", q)
-  }
-  for (let i = 0; i < closing; i++) {
-    buf.push("}")
+    throw new Error("unknown op: " + pretty(q))
   }
   return buf
 }
 
-let generateRowScanning = (buf, cursor, schema, mappedFile, size, e2) => {
+let emitRowScanning = (f, filename, cursor, schema) => {
+  let buf = []
+  let v = f.arg[1].op
+  let { mappedFile, size } = csvFilesEnv[filename]
+
   let columns = schema
   for (let i in columns) {
-    buf.push(`// reading column ${columns[i][0]}`)
+    let colName = columns[i][0]
+    let type = columns[i][1]
+    let prefix = pretty(f)
+    let needToExtract = usedCols[prefix][colName]
+    
+    buf.push(`// reading column ${colName}`)
+
+    let start = [mappedFile, quoteVar(v), colName, "start"].join("_")
+    let end = [mappedFile, quoteVar(v), colName, "end"].join("_")
+    let name = [mappedFile, quoteVar(v), colName].join("_")
+
+    if (needToExtract) {
+      if (typing.isInteger(type)) {
+        buf.push(`${convertToCType(type)} ${name} = 0;`)
+      }
+    }
+
     let delim = i == columns.length - 1 ? "\\n" : ","
-    let start = [mappedFile, quoteVar(e2.op), columns[i][0], "start"].join("_")
-    let end = [mappedFile, quoteVar(e2.op), columns[i][0], "end"].join("_")
     buf.push(`int ${start} = ${cursor};`)
     buf.push(`while (${cursor} < ${size} && ${mappedFile}[${cursor}] != '${delim}') {`)
+    if (needToExtract) {
+      if (typing.isInteger(type)) {
+        buf.push(`${name} *= 10;`)
+        buf.push(`${name} += ${mappedFile}[${cursor}] - '0';`)
+      }
+    }
     buf.push(`${cursor}++;`)
     buf.push("}")
     buf.push(`int ${end} = ${cursor};`)
     buf.push(`${cursor}++;`)
+
+    if (needToExtract) {
+      if (typing.isString(type)) {
+        buf.push(`char ${name}[${end} - ${start} + 1];`)
+        buf.push(`extract_str(${mappedFile}, ${start}, ${end}, ${name});`)
+      }
+    }
   }
+
+  return buf
 }
 
-let getLoopTxt = (e1, e2, filename, loadCSV, schema) => () => {
-  let { mappedFile, size } = csvFiles[filename]
+let getLoopTxt = (f, filename, loadCSV) => () => {
+  let v = f.arg[1].op
+  let { mappedFile, size } = csvFilesEnv[filename]
 
   let initCursor = []
 
-  let info = `// generator: ${e2.op} <- loadCSV ${filename}`
+  let info = [`// generator: ${v} <- loadCSV ${filename}`]
 
   let cursor = getNewName("i")
   initCursor.push(`int ${cursor} = 0;`)
@@ -383,11 +478,11 @@ let getLoopTxt = (e1, e2, filename, loadCSV, schema) => () => {
   initCursor.push("}")
   initCursor.push(`${cursor}++;`)
 
-  let loopHeader = "while (1) {"
-  let boundsChecking = `if (${cursor} >= ${size}) break;`
+  let loopHeader = ["while (1) {"]
+  let boundsChecking = [`if (${cursor} >= ${size}) break;`]
 
-  let rowScanning = []
-  generateRowScanning(rowScanning, cursor, schema, mappedFile, size, e2)
+  let schema = f.schema
+  let rowScanning = emitRowScanning(f, filename, cursor, schema)
 
   return {
     info, loadCSV, initCursor, loopHeader, boundsChecking, rowScanning
@@ -399,14 +494,17 @@ let emitCodeCSql = (q, ir) => {
   let assignmentStms = []
   let generatorStms = []
   let tmpVarWriteRank = {}
-  nameIdMap = {}
 
   filters = ir.filters
   assignments = ir.assignments
   vars = ir.vars
   order = ir.ordeer
 
-  csvFiles = {}
+  csvFilesEnv = {}
+  nameIdMap = {}
+  usedCols = {}
+
+  extractUsedCols(q)
 
   // generator ir api: mirroring necessary bits from ir.js
   let expr = (txt, ...args) => ({ txt, deps: args })
@@ -426,12 +524,12 @@ let emitCodeCSql = (q, ir) => {
     assignmentStms.push(e)
   }
 
-  let createGenerator = (e1, e2, filename, loadCSV, schema) => {
+  let createGenerator = (e1, e2, getLoopTxtFunc) => {
     let a = getDeps(e1)
     let b = getDeps(e2)
     let e = expr("FOR", ...a)
     e.sym = b[0]
-    e.getLoopTxt = getLoopTxt(e1, e2, filename, loadCSV, schema)
+    e.getLoopTxt = getLoopTxtFunc
     generatorStms.push(e)
   }
 
@@ -440,11 +538,11 @@ let emitCodeCSql = (q, ir) => {
     let b = getDeps(e2)
     let e = expr("MKSET", ...a)
     e.sym = b[0]
-    let info = `// generator: ${e2.op} <- mkset`
+    let info = [`// generator: ${e2.op} <- mkset`]
     let rowScanning = []
     rowScanning.push(`unsigned long ${e.sym} = hash(${val.file}, ${val.start}, ${val.end}) % 1024;`)
     e.getLoopTxt = () => ({
-      info, loadCSV: [], initCursor: [], loopHeader: "{", boundsChecking: "// singleton value here", rowScanning
+      info, loadCSV: [], initCursor: [], loopHeader: ["{", "// singleton value here"], boundsChecking: [], rowScanning
     })
     generatorStms.push(e)
   }
@@ -465,35 +563,32 @@ let emitCodeCSql = (q, ir) => {
     let schema = f.schema
 
     if (g1.key == "loadInput" && g1.op == "csv") {
-      let loadCsvBuf = []
-
+      let loadCSV = []
       let filename
       // constant string filename
+
+      // TODO: need to have a better way to do CSE
+      // should be done when the loop is actually emitted by new-codegen
+      // where we have the info about the current scope
       if (g1.arg[0].key == "const" && typeof g1.arg[0].op == "string") {
         filename = g1.arg[0].op
-
-        if (csvFiles[filename] == undefined) {
+        if (csvFilesEnv[filename] == undefined) {
           emitLoadCSV(prolog, filename, i)
         }
       } else {
-        filename = codegenCSql(g1.arg[0], loadCsvBuf, {}, true)
-
-        if (csvFiles[filename] == undefined) {
-          emitLoadCSV(loadCsvBuf, filename, i, false)
+        filename = codegenCSql(g1.arg[0], [], {}, true)
+        if (csvFilesEnv[filename] == undefined) {
+          emitLoadCSV(loadCSV, filename, i, false)
         }
       }
-      console.assert(csvFiles[filename] != undefined)
 
-      createGenerator(f.arg[0], f.arg[1], filename, loadCsvBuf, schema)
+      let getLoopTxtFunc = getLoopTxt(f, filename, loadCSV)
+      createGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
     } else if (g1.key == "mkset") {
-      if (!typing.isString(g1.arg[0].schema)) {
-        throw new Error("mkset with non-string value")
-      }
       let val = codegenCSql(g1.arg[0], [], {})
       createMkset(f.arg[0], f.arg[1], val)
     } else {
-      console.error("invalid filter: ", f)
-      return "error"
+      throw new Error("invalid filter: " + pretty(f))
     }
   }
 

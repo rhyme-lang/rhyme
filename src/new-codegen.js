@@ -368,15 +368,15 @@ exports.generate = (ir, backend = "js") => {
       
       // emit comment line for each generated filter
       for (let loopTxt of loopTxts) {
-        emit(loopTxt.info)
+        loopTxt.info.map(emit)
       }
 
       // we only want to emit the loop header for the first loop
-      emit(loopTxts[0].loopHeader)
+      loopTxts[0].loopHeader.map(emit)
 
       // emit bounds checking for all loops
       for (let loopTxt of loopTxts) {
-        emit(loopTxt.boundsChecking)
+        loopTxt.boundsChecking.map(emit)
       }
 
       // emit row scanning for all loops
