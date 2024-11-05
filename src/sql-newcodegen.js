@@ -154,7 +154,7 @@ let operators = {
   mod: "%",
 }
 
-let extractUsedCols = (q, extractStr = false) => {
+let validateAndExtractUsedCols = (q, extractStr = false) => {
   if (q.key == "get") {
     let [e1, e2] = q.arg
     // if mkset
@@ -400,7 +400,16 @@ let emitStmUpdateCSql = (q, sym, fre) => {
     } else if (q.op == "count") {
       buf.push(`${lhs} += 1;`)
     } else if (q.op == "single") {
+      // Since init is not required, the table entry could be NULL
+      // call malloc if necessary
+      // TODO: change the logic here, cannot assume lhs is a pointer dereference
+      let name = lhs.slice(1)
       buf.push(`// stateful single, need to check if the key is already there`)
+      buf.push(`if (${name} == NULL) {`)
+      buf.push(`${name} = (${convertToCType(q.schema)} *)malloc(sizeof(${convertToCType(q.schema)}));`)
+      buf.push(`} else {`)
+      buf.push(`fprintf(stderr, "warning: single value expected but got multiple\\n");`)
+      buf.push(`}`)
       buf.push(`${lhs} = ${e1};`)
     } else {
       throw new Error("stateful op not supported: " + pretty(q))
@@ -504,7 +513,7 @@ let emitCodeCSql = (q, ir) => {
   nameIdMap = {}
   usedCols = {}
 
-  extractUsedCols(q)
+  validateAndExtractUsedCols(q)
 
   // generator ir api: mirroring necessary bits from ir.js
   let expr = (txt, ...args) => ({ txt, deps: args })

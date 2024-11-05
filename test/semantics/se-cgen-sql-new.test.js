@@ -309,6 +309,7 @@ test("testGroupByJS", () => {
   let query = rh`sum data.*A.C | group data.*A.A`
 
   let func = compile(query, { newCodegen: true, schema: inputSchema })
+  // console.log(func.explain.code)
 
   let res = func({ data })
   // console.log(res)
@@ -380,14 +381,14 @@ test("groupByTest", async () => {
 `)
 })
 
-// test("groupByAverageTest", async () => {
-//   let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
+test("groupByAverageTest", async () => {
+  let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
 
-//   let avg = rh`(sum ${csv}.*.value) / (count ${csv}.*.value)`
+  let avg = rh`(sum ${csv}.*.value) / (count ${csv}.*.value)`
 
-//   let query = rh`${avg} | group ${csv}.*.key`
+  let query = rh`${avg} | group ${csv}.*.key`
 
-//   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
+  let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
-//   let res = await func()
-// })
+  let res = await func()
+})
