@@ -1,3 +1,7 @@
+let api = {}
+exports.api = api
+exports.pipe = pipe
+
 const codegen = require('./c1-codegen')
 const new_codegen = require('./new-codegen')
 const ir = require('./c1-ir')
@@ -6,13 +10,6 @@ const graphics = require('./graphics')
 const simpleEval = require('../src/simple-eval')
 const { typing } = require('./typing')
 // const primitiveEval = require('../src/primitive-eval')
-
-// ---------- API ----------
-//
-//
-let api = {}
-exports.api = api
-exports.pipe = pipe
 
 //
 // reducer (e.g., sum) expressions
