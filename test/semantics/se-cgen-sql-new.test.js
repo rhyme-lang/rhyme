@@ -295,7 +295,7 @@ valC
 `)
 })
 
-let data = [
+let simple = [
   { A: "valA", B: 5, C: 13, D: 1, String: "string1" },
   { A: "valB", B: 2, C: 123, D: 2, String: "string2" },
   { A: "valC", B: 1, C: 92, D: 0, String: "string3" },
@@ -311,7 +311,7 @@ test("testGroupByJS", () => {
   let func = compile(query, { newCodegen: true, schema: inputSchema })
   // console.log(func.explain.code)
 
-  let res = func({ data })
+  let res = func({ data: simple })
   // console.log(res)
 })
 
@@ -391,4 +391,7 @@ test("groupByAverageTest", async () => {
   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
   let res = await func()
+  expect(res).toBe(`20
+20
+`)
 })

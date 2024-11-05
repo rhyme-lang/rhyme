@@ -157,16 +157,8 @@ let operators = {
 let validateAndExtractUsedCols = (q, extractStr = false) => {
   if (q.key == "get") {
     let [e1, e2] = q.arg
-    // if mkset
-    if (e1.key == "mkset" && e2.key == "var") {
-      if (!typing.isString(e1.arg[0].schema)) {
-        throw new Error("only support mkset with strings: " + pretty(e1))
-      }
-      e1.arg.map(x => extractUsedCols(x))
-      return
-    }
 
-    // otherwise, check if the get is valid
+    // check if the get is valid
     if (!(e1.key == "get" && e2.key == "const")) {
       throw new Error("malformed get: " + pretty(q))
     }
@@ -193,11 +185,27 @@ let validateAndExtractUsedCols = (q, extractStr = false) => {
     }
 
     // extract used columns for the filename
-    extractUsedCols(e1.arg[0].arg[0], true)
+    // we need to extract the string (copy to a temp buffer)
+    // because we need a null-terminated string for open()
+    validateAndExtractUsedCols(e1.arg[0].arg[0], true)
   } else if (q.key == "ref") {
     let e1 = assignments[q.op]
-    extractUsedCols(e1)
-  } else if (q.arg) q.arg.map(x => extractUsedCols(x))
+    validateAndExtractUsedCols(e1)
+  } else if (q.key == "update") {
+    if (q.arg[3] == undefined) {
+      throw new Error("trivial group op not supported for now: " + pretty(q))
+    }
+    let [_e1, _e2, e3, e4] = q.arg
+
+    if (!typing.isString(e4.arg[0].arg[0].schema)) {
+      throw new Error("only string values allowed for mkset")
+    }
+
+    // value
+    validateAndExtractUsedCols(e3)
+    // mkset
+    validateAndExtractUsedCols(e4.arg[0].arg[0])
+  } else if (q.arg) q.arg.map(x => validateAndExtractUsedCols(x))
 }
 
 let emitLoadCSV = (buf, filename, id, isConstStr = true) => {
@@ -247,7 +255,13 @@ let codegenCSql = (q, buf, extractStr = false) => {
   } else if (q.key == "var") {
     throw new Error("cannot have stand-alone var")
   } else if (q.key == "ref") {
-    return tmpSym(q.op)
+    let q1 = assignments[q.op]
+    if (q1.fre.length > 0) {
+      let xs = q1.fre.map(x => `[${x}]`).join("")
+      return "*" + tmpSym(q.op) + xs
+    } else {
+      return tmpSym(q.op)
+    }
   } else if (q.key == "get") {
     let [e1, e2] = q.arg
 
@@ -321,8 +335,8 @@ let emitTmpInit = (q, sym) => {
 
 let emitStmInitCSql = (q, sym, fre) => {
   let buf = []
-  buf.push(`// init ${sym}`)
   if (q.key == "stateful") {
+    buf.push(`// init ${sym} for ${q.op}`)
     if (fre.length > 0) {
       let name = `${sym}[${fre[0]}]` // always one free var?
       buf.push(`if (${name} == NULL) {`)
@@ -354,10 +368,9 @@ let emitStmInitCSql = (q, sym, fre) => {
     }
 
   } else if (q.key == "update") {
+    buf.push(`// init ${sym} for group`)
     let valType = q.schema[0][1]
-    buf.push(`// update init ${sym}`)
     buf.push(`${convertToCType(valType)} *${sym}[1024] = { 0 };`)
-    // throw new Error("update not implemented: " + pretty(q))
   } else {
     throw new Error("unknown op: " + pretty(q))
   }
@@ -367,10 +380,10 @@ let emitStmInitCSql = (q, sym, fre) => {
 
 let emitStmUpdateCSql = (q, sym, fre) => {
   let buf = []
-  buf.push(`// update ${sym}`)
   if (q.key == "prefix") {
     throw new Error("prefix op not supported: " + pretty(q))
   } if (q.key == "stateful") {
+    buf.push(`// update ${sym} for ${q.op}`)
     let lhs
     if (fre.length > 0) {
       lhs = `*${sym}[${fre[0]}]`
@@ -400,27 +413,30 @@ let emitStmUpdateCSql = (q, sym, fre) => {
     } else if (q.op == "count") {
       buf.push(`${lhs} += 1;`)
     } else if (q.op == "single") {
-      // Since init is not required, the table entry could be NULL
+      // since init is not required for "single", the table entry could be NULL
       // call malloc if necessary
-      // TODO: change the logic here, cannot assume lhs is a pointer dereference
+      // is lhs always a pointer dereference (when q.fre.length > 0)
       let name = lhs.slice(1)
-      buf.push(`// stateful single, need to check if the key is already there`)
+      buf.push(`// stateful single, need to check if the key is already there and if the value is different`)
       buf.push(`if (${name} == NULL) {`)
       buf.push(`${name} = (${convertToCType(q.schema)} *)malloc(sizeof(${convertToCType(q.schema)}));`)
-      buf.push(`} else {`)
-      buf.push(`fprintf(stderr, "warning: single value expected but got multiple\\n");`)
+      buf.push(`} else if (*${name} != ${e1}) {`)
+      // need to deal with different data types
+      buf.push(`fprintf(stderr, "warning: single value expected but got multiple");`)
       buf.push(`}`)
       buf.push(`${lhs} = ${e1};`)
     } else {
       throw new Error("stateful op not supported: " + pretty(q))
     }
   } else if (q.key == "update") {
+    buf.push(`// update ${sym} for group`)
     let val = codegenCSql(q.arg[2], buf)
     let v = q.arg[1].op
     let lhs = `${sym}[${v}]`
-    buf.push(`// update update`)
-    buf.push(`${lhs} = ${val}[${v}];`)
-    // throw new Error("update not implemented: " + pretty(q))
+    buf.push(`if (${lhs} == NULL) {`)
+    buf.push(`${lhs} = (${convertToCType(q.schema[0][1])} *)malloc(sizeof(${convertToCType(q.schema[0][1])}));`)
+    buf.push(`}`)
+    buf.push(`*${lhs} = ${val};`)
   } else {
     throw new Error("unknown op: " + pretty(q))
   }
@@ -454,6 +470,7 @@ let emitRowScanning = (f, filename, cursor, schema) => {
     buf.push(`while (${cursor} < ${size} && ${mappedFile}[${cursor}] != '${delim}') {`)
 
     if (needToExtract && typing.isInteger(type)) {
+      buf.push(`// extract integer`)
       buf.push(`${name} *= 10;`)
       buf.push(`${name} += ${mappedFile}[${cursor}] - '0';`)
     }
@@ -464,6 +481,7 @@ let emitRowScanning = (f, filename, cursor, schema) => {
     buf.push(`${cursor}++;`)
 
     if (needToExtract && typing.isString(type)) {
+      buf.push(`// extract string`)
       buf.push(`char ${name}[${end} - ${start} + 1];`)
       buf.push(`extract_str(${mappedFile}, ${start}, ${end}, ${name});`)
     }
@@ -607,7 +625,8 @@ let emitCodeCSql = (q, ir) => {
     let q = assignments[i]
 
     if (q.key == "stateful" && q.fre.length != 0) {
-      // if q.fre is not empty, then initialization of the table is required
+      // if q.fre is not empty, the initialization of stateful op will be in a loop
+      // we need to initialize the actual tmp variable separately
       assign(emitTmpInit(q, sym), sym, [], []);
     }
 
