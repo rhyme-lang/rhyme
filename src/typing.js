@@ -563,7 +563,7 @@ let _validateIRQuery = (schema, cseMap, boundKeys, q) => {
                 }
             } else if (q.op == "fdiv") {
                 // TODO: validate types for fdiv
-                return types.u64
+                return types.f64
             } else if (q.op == "equal") {
                 // TODO: validate types for equal
                 return types.boolean

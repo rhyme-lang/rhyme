@@ -354,7 +354,7 @@ test("plainAverageTest", async () => {
   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
   let res = await func()
-  expect(res).toBe("20\n")
+  expect(res).toBe("20.000\n")
 })
 
 test("uncorrelatedAverageTest", async () => {
@@ -365,7 +365,7 @@ test("uncorrelatedAverageTest", async () => {
   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
   let res = await func()
-  expect(res).toBe("20\n")
+  expect(res).toBe("20.000\n")
 })
 
 test("groupByTest", async () => {
@@ -391,7 +391,20 @@ test("groupByAverageTest", async () => {
   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
   let res = await func()
-  expect(res).toBe(`20
-20
+  expect(res).toBe(`20.000
+20.000
+`)
+})
+
+test("groupByRelativeSum", async () => {
+  let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
+
+  let query = rh`(sum ${csv}.*.value) / (sum ${csv}.*B.value) | group ${csv}.*.key`
+
+  let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
+
+  let res = await func()
+  expect(res).toBe(`0.667
+0.333
 `)
 })

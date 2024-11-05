@@ -81,9 +81,9 @@ let getFormatSpecifier = (type) => {
   if (type === types.i64)
     return "ld";
   if (type === types.f32)
-    return "f";
+    return ".3f";
   if (type === types.f64)
-    return "lf";
+    return ".3lf";
   throw new Error("Unknown type: " + typing.prettyPrintType(type));
 }
 
@@ -299,6 +299,9 @@ let codegenCSql = (q, buf, extractStr = false) => {
     let op = operators[q.op]
     if (q.op == "plus" || q.op == "minus" || q.op == "times" || q.op == "fdiv" || q.op == "div" || q.op == "mod") {
       let e2 = codegenCSql(q.arg[1], buf)
+      if (q.op == "fdiv") {
+        return `(double)${e1} ${op} (double)${e2}`
+      }
       return `${e1} ${op} ${e2}`
     } else if (q.op == "equal" || q.op == "notEqual") {
       let e2 = codegenCSql(q.arg[1], buf)
