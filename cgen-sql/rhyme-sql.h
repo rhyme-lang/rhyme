@@ -14,14 +14,14 @@ int fsize(int fd) {
 }
 
 unsigned long hash(const char *file, int start, int end) {
-  unsigned char *str = (unsigned char *)file;
-  unsigned long hash = 5381;
-  int i = 0;
-  while (start + i < end) {
-    hash = ((hash << 5) + hash) + str[start + i]; /* hash * 33 + c */
-    i++;
-  }
-  return hash;
+    unsigned char *str = (unsigned char *)file;
+    unsigned long hash = 5381;
+    int i = 0;
+    while (start + i < end) {
+        hash = ((hash << 5) + hash) + str[start + i]; /* hash * 33 + c */
+        i++;
+    }
+    return hash;
 }
 
 int extract_int(const char *file, int start, int end) {
