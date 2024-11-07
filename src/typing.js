@@ -625,6 +625,7 @@ let _validateIRQuery = (schema, cseMap, boundKeys, q) => {
         if(q.op === "single" || q.op === "first" || q.op === "last") {
             // It could be the generator is empty. So it could result Nothing
             // TODO: Allow hint to specify it will guaranteed be non-empty.
+            // Note: modified temporarily so that it does not return maybe type
             // return typing.createMaybe(argType);
             return argType
         }

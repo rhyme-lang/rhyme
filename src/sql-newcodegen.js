@@ -205,7 +205,9 @@ let validateAndExtractUsedCols = (q, extractStr = false) => {
     validateAndExtractUsedCols(e3)
     // mkset
     validateAndExtractUsedCols(e4.arg[0].arg[0])
-  } else if (q.arg) q.arg.map(x => validateAndExtractUsedCols(x))
+  } else if (q.arg) {
+    q.arg.map(x => validateAndExtractUsedCols(x))
+  }
 }
 
 let emitLoadCSV = (buf, filename, id, isConstStr = true) => {
