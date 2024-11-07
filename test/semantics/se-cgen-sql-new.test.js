@@ -200,7 +200,7 @@ test("testLoadCSVDynamicFilename", async () => {
   let csv = rh`loadCSV ${filenames} ${schema}`
 
   let query = rh`sum ${csv}.*A.D`
-  
+
   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
   let res = await func()
@@ -218,7 +218,7 @@ test("testLoadCSVDynamicFilenameJoin", async () => {
   let csv = rh`loadCSV ${filenames} ${schema}`
 
   let query = rh`sum (${csv}.*A.D + ${csv}.*B.B)`
-  
+
   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
   let res = await func()
@@ -227,7 +227,7 @@ test("testLoadCSVDynamicFilenameJoin", async () => {
 
 test("testConstStr", async () => {
   let query = rh`print "Hello, World!"`
-  
+
   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
   let res = await func()
@@ -238,7 +238,7 @@ test("testFilter1", async () => {
   let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
 
   let query = rh`print ((${csv}.*A.C == 123) & ${csv}.*A.A)`
-  
+
   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
   let res = await func()
@@ -249,7 +249,7 @@ test("testFilter2", async () => {
   let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
 
   let query = rh`print ((${csv}.*A.C != 123) & ${csv}.*A.A)`
-  
+
   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
   let res = await func()
@@ -263,7 +263,7 @@ test("testFilter3", async () => {
   let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
 
   let query = rh`print ((${csv}.*A.A == "valB") & ${csv}.*A.C)`
-  
+
   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
   let res = await func()
@@ -273,10 +273,8 @@ test("testFilter3", async () => {
 test("testFilter4", async () => {
   let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
 
-  // a little bit tricky that column a is used twice
-  // but it should only be extracted once
   let query = rh`print ((${csv}.*A.A == "valC") & ${csv}.*A.A)`
-  
+
   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
   let res = await func()
@@ -287,12 +285,126 @@ test("testFilter5", async () => {
   let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
 
   let query = rh`print ((${csv}.*A.A != ${csv}.*A.String) & ${csv}.*A.A)`
-  
+
   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
   let res = await func()
   expect(res).toEqual(`valA
 valB
 valC
+`)
+})
+
+let simple = [
+  { A: "valA", B: 5, C: 13, D: 1, String: "string1" },
+  { A: "valB", B: 2, C: 123, D: 2, String: "string2" },
+  { A: "valC", B: 1, C: 92, D: 0, String: "string3" },
+  { A: "valD", B: 7, C: 0, D: 12, String: "valD" },
+]
+
+test("testGroupByJS", () => {
+  let inputSchema = typing.createSimpleObject({
+    data: schema
+  })
+  let query = rh`sum data.*A.C | group data.*A.A`
+
+  let func = compile(query, { newCodegen: true, schema: inputSchema })
+  // console.log(func.explain.code)
+
+  let res = func({ data: simple })
+  // console.log(res)
+})
+
+let dataSchema = typing.objBuilder()
+  .add(typing.createKey(types.u32), typing.createSimpleObject({
+    key: types.string,
+    value: types.i32
+  })).build()
+
+let countrySchema = typing.objBuilder()
+  .add(typing.createKey(types.u32), typing.createSimpleObject({
+    region: types.string,
+    country: types.string,
+    city: types.string,
+    population: types.u32
+  })).build()
+
+let regionSchema = typing.objBuilder()
+  .add(typing.createKey(types.u32), typing.createSimpleObject({
+    region: types.string,
+    country: types.string
+  })).build()
+
+test("plainSumTest", async () => {
+  let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
+
+  let query = rh`sum ${csv}.*.value`
+
+  let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
+
+  let res = await func()
+  expect(res).toBe("60\n")
+})
+
+test("plainAverageTest", async () => {
+  let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
+
+  let query = rh`(sum ${csv}.*.value) / (count ${csv}.*.value)`
+
+  let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
+
+  let res = await func()
+  expect(res).toBe("20.000\n")
+})
+
+test("uncorrelatedAverageTest", async () => {
+  let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
+
+  let query = rh`(sum ${csv}.*A.value) / (count ${csv}.*B.value)`
+
+  let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
+
+  let res = await func()
+  expect(res).toBe("20.000\n")
+})
+
+test("groupByTest", async () => {
+  let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
+
+  let query = rh`sum ${csv}.*.value | group ${csv}.*.key`
+
+  let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
+
+  let res = await func()
+  expect(res).toBe(`40
+20
+`)
+})
+
+test("groupByAverageTest", async () => {
+  let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
+
+  let avg = rh`(sum ${csv}.*.value) / (count ${csv}.*.value)`
+
+  let query = rh`${avg} | group ${csv}.*.key`
+
+  let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
+
+  let res = await func()
+  expect(res).toBe(`20.000
+20.000
+`)
+})
+
+test("groupByRelativeSum", async () => {
+  let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
+
+  let query = rh`(sum ${csv}.*.value) / (sum ${csv}.*B.value) | group ${csv}.*.key`
+
+  let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
+
+  let res = await func()
+  expect(res).toBe(`0.667
+0.333
 `)
 })

@@ -5,11 +5,23 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <stdlib.h>
 
 int fsize(int fd) {
     struct stat stat;
     int res = fstat(fd, &stat);
     return stat.st_size;
+}
+
+unsigned long hash(const char *file, int start, int end) {
+    unsigned char *str = (unsigned char *)file;
+    unsigned long hash = 5381;
+    int i = 0;
+    while (start + i < end) {
+        hash = ((hash << 5) + hash) + str[start + i]; /* hash * 33 + c */
+        i++;
+    }
+    return hash;
 }
 
 int extract_int(const char *file, int start, int end) {
@@ -30,15 +42,6 @@ void extract_str(const char *file, int start, int end, char *dest) {
         i++;
     }
     dest[i] = '\0';
-}
-
-void println(const char *file, int start, int end) {
-    int curr = start;
-    while (curr < end) {
-        putchar(file[curr]);
-        curr++;
-    }
-    putchar('\n');
 }
 
 int compare_str(const char *str1, const char *str2) {
@@ -62,4 +65,13 @@ int compare_str1(const char *file1, int start1, int end1, const char *file2,
         }
     }
     return len1 - len2;
+}
+
+void println(const char *file, int start, int end) {
+    int curr = start;
+    while (curr < end) {
+        putchar(file[curr]);
+        curr++;
+    }
+    putchar('\n');
 }
