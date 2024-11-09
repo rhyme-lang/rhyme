@@ -2,11 +2,16 @@ const { isString } = require('node:util')
 const { generate } = require('./new-codegen')
 const { typing, types } = require('./typing')
 
+const KEY_SIZE = 256
+const HASH_SIZE = 256
+
 let filters
 let assignments
 
 let csvFilesEnv
 let usedCols
+
+let mksetVarEnv
 
 let unique = xs => xs.filter((x, i) => xs.indexOf(x) == i)
 let union = (a, b) => unique([...a, ...b])
@@ -195,7 +200,7 @@ let validateAndExtractUsedCols = (q, extractStr = false) => {
     if (q.arg[3] == undefined) {
       throw new Error("trivial group op not supported for now: " + pretty(q))
     }
-    let [_e1, _e2, e3, e4] = q.arg
+    let [_e1, e2, e3, e4] = q.arg
 
     if (!typing.isString(e4.arg[0].arg[0].schema)) {
       throw new Error("only string values allowed for mkset")
@@ -204,6 +209,7 @@ let validateAndExtractUsedCols = (q, extractStr = false) => {
     // value
     validateAndExtractUsedCols(e3)
     // mkset
+    console.assert(e2.op == e4.arg[1].op)
     validateAndExtractUsedCols(e4.arg[0].arg[0])
   } else if (q.arg) {
     q.arg.map(x => validateAndExtractUsedCols(x))
@@ -330,12 +336,38 @@ let codegenCSql = (q, buf, extractStr = false) => {
   }
 }
 
-let emitTmpInit = (q, sym) => {
+let emitHashMapInit = (q, sym) => {
   let buf = []
-  buf.push(`// init ${sym}`)
+  buf.push(`// init hashmap for ${sym}`)
   buf.push(`${convertToCType(q.schema)} *${sym}[1024] = { 0 };`)
 
+  // keys (assume string for now)
+  buf.push(`// keys of ${sym}`)
+  buf.push(`char **${sym}_keys_str = (char **)malloc(${KEY_SIZE} * sizeof(char *));`)
+  buf.push(`int *${sym}_keys_len = (int *)malloc(${KEY_SIZE} * sizeof(int));`)
+
+  buf.push(`// key count for ${sym}`)
+  buf.push(`int ${sym}_key_count = 0;`)
+
+  // htable
+  buf.push(`// hash table for ${sym}`)
+  buf.push(`int *${sym}_htable = (int *)malloc(${HASH_SIZE} * sizeof(int));`)
+
+  // init htable entries to -1
+  buf.push(`// init hash table entries to -1 for ${sym}`)
+  buf.push(`for (int i = 0; i < ${HASH_SIZE}; i++) ${sym}_htable[i] = -1;`)
+
+  let cType = convertToCType(q.schema)
+  buf.push(`// values of ${sym}`)
+  buf.push(`${cType} *${sym}_values = (${cType} *)malloc(${HASH_SIZE} * sizeof(${cType}));`)
+
   return buf
+}
+
+let emitHashMapLookUp = (q, sym) => {
+  let mksetValue = mksetVarEnv[q.fre[0]]
+
+  
 }
 
 let emitStmInitCSql = (q, sym, fre) => {
@@ -536,7 +568,10 @@ let emitCodeCSql = (q, ir) => {
   nameIdMap = {}
   usedCols = {}
 
+  mksetVarEnv = {}
+
   validateAndExtractUsedCols(q)
+  console.log(mksetVarEnv)
 
   // generator ir api: mirroring necessary bits from ir.js
   let expr = (txt, ...args) => ({ txt, deps: args })
@@ -572,7 +607,7 @@ let emitCodeCSql = (q, ir) => {
     e.sym = b[0]
     let info = [`// generator: ${e2.op} <- ${pretty(e1)}`]
     let rowScanning = []
-    rowScanning.push(`unsigned long ${e.sym} = hash(${val.file}, ${val.start}, ${val.end}) % 1024;`)
+    rowScanning.push(`unsigned long ${e.sym} = hash(${val.file}, ${val.start}, ${val.end}) & hash_mask;`)
     e.getLoopTxt = () => ({
       info, loadCSV: [], initCursor: [], loopHeader: ["{", "// singleton value here"], boundsChecking: [], rowScanning
     })
@@ -584,6 +619,7 @@ let emitCodeCSql = (q, ir) => {
   let prolog = []
   prolog.push(`#include "rhyme-sql.h"`)
   prolog.push("int main() {")
+  prolog.push(`unsigned long hash_mask = ${HASH_SIZE - 1};`)
 
   for (let i in filters) {
     let q = filters[i]
@@ -632,7 +668,9 @@ let emitCodeCSql = (q, ir) => {
     if (q.key == "stateful" && q.fre.length != 0) {
       // if q.fre is not empty, the initialization of stateful op will be in a loop
       // we need to initialize the actual tmp variable separately
-      assign(emitTmpInit(q, sym), sym, [], []);
+
+      // initialize hashmap
+      assign(emitHashMapInit(q, sym), sym, [], []);
     }
 
     // emit init
