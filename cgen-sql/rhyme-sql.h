@@ -75,3 +75,11 @@ void println(const char *file, int start, int end) {
     }
     putchar('\n');
 }
+
+void print(const char *str, int len) {
+    int i = 0;
+    while (i < len) {
+        putchar(str[i]);
+        i++;
+    }
+}

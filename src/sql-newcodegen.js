@@ -265,8 +265,9 @@ let codegenCSql = (q, buf, extractStr = false) => {
   } else if (q.key == "ref") {
     let q1 = assignments[q.op]
     if (q1.fre.length > 0) {
-      let xs = q1.fre.map(x => `[${x}]`).join("")
-      return "*" + tmpSym(q.op) + xs
+      let sym = tmpSym(q.op)
+      let keyPos = hashLookUp(buf, q1.fre[0], sym)
+      return `${sym}[${keyPos}]`
     } else {
       return tmpSym(q.op)
     }
@@ -336,11 +337,63 @@ let codegenCSql = (q, buf, extractStr = false) => {
   }
 }
 
-let emitHashMapInit = (q, sym) => {
-  let buf = []
-  buf.push(`// init hashmap for ${sym}`)
-  buf.push(`${convertToCType(q.schema)} *${sym}[1024] = { 0 };`)
+let hashLookUp = (buf, v, sym) => {
+  let mksetValue = mksetVarEnv[v]
 
+  let pos = getNewName("pos")
+  buf.push(`unsigned long ${pos} = ${v} & hash_mask;`)
+
+  let keyPos = getNewName("key_pos")
+  buf.push(`int ${keyPos} = ${sym}_htable[${pos}];`)
+
+  return keyPos
+}
+
+let hashLookUpOrUpdate = (buf, v, sym, update) => {
+  console.log(v)
+  let pos = getNewName("pos")
+  buf.push(`unsigned long ${pos} = ${v} & hash_mask;`)
+
+  let keyPos = getNewName("key_pos")
+  buf.push(`int ${keyPos} = ${sym}_htable[${pos}];`)
+
+  buf.push(`if (${keyPos} == -1) {`)
+
+  buf.push(`${keyPos} = ${sym}_key_count;`)
+  buf.push(`${sym}_key_count++;`)
+
+  buf.push(`${sym}_htable[${pos}] = ${keyPos};`)
+
+  let mksetVal = mksetVarEnv[v]
+
+  let keyStr = `${sym}_keys_str[${keyPos}]`
+  let keyLen = `${sym}_keys_len[${keyPos}]`
+
+  buf.push(`${keyStr} = ${mksetVal.file} + ${mksetVal.start};`)
+  buf.push(`${keyLen} = ${mksetVal.end} - ${mksetVal.start};`)
+
+  let lhs = `${sym}_values[${keyPos}]`
+
+  buf.push(update(lhs))
+
+  buf.push(`}`)
+}
+
+let hashUpdate = (buf, v, sym, update) => {
+  console.log(v)
+  let pos = getNewName("pos")
+  buf.push(`unsigned long ${pos} = ${v} & hash_mask;`)
+
+  let keyPos = getNewName("key_pos")
+  buf.push(`int ${keyPos} = ${sym}_htable[${pos}];`)
+
+  let lhs = `${sym}_values[${keyPos}]`
+
+  buf.push(update(lhs))
+}
+
+let emitHashMapInit = (buf, sym, schema) => {
+  buf.push(`// init hashmap for ${sym}`)
   // keys (assume string for now)
   buf.push(`// keys of ${sym}`)
   buf.push(`char **${sym}_keys_str = (char **)malloc(${KEY_SIZE} * sizeof(char *));`)
@@ -357,39 +410,29 @@ let emitHashMapInit = (q, sym) => {
   buf.push(`// init hash table entries to -1 for ${sym}`)
   buf.push(`for (int i = 0; i < ${HASH_SIZE}; i++) ${sym}_htable[i] = -1;`)
 
-  let cType = convertToCType(q.schema)
+  let cType = convertToCType(schema)
   buf.push(`// values of ${sym}`)
   buf.push(`${cType} *${sym}_values = (${cType} *)malloc(${HASH_SIZE} * sizeof(${cType}));`)
-
-  return buf
 }
 
-let emitHashMapLookUp = (q, sym) => {
-  let mksetValue = mksetVarEnv[q.fre[0]]
-
-  
-}
-
-let emitStmInitCSql = (q, sym, fre) => {
+let emitStmInitCSql = (q, sym) => {
   let buf = []
   if (q.key == "stateful") {
     buf.push(`// init ${sym} for ${q.op}`)
-    if (fre.length > 0) {
-      let name = `${sym}[${fre[0]}]` // always one free var?
-      buf.push(`if (${name} == NULL) {`)
-      buf.push(`${name} = (${convertToCType(q.schema)} *)malloc(sizeof(${convertToCType(q.schema)}));`)
+    if (q.fre.length > 0) {
+      let update
       if (q.op == "sum" || q.op == "count") {
-        buf.push(`*${name} = 0;`)
+        update = `= 0`
       } else if (q.op == "product") {
-        buf.push(`*${name} = 1;`)
+        update = `= 1`
       } else if (q.op == "min") {
-        buf.push(`*${name} = INT_MAX;`)
+        update = `= INT_MAX`
       } else if (q.op == "max") {
-        buf.push(`*${name} = INT_MIN;`)
+        update = `= INT_MIN`
       } else {
         throw new Error("stateful op not supported: " + pretty(q))
       }
-      buf.push(`}`)
+      hashLookUpOrUpdate(buf, q.fre[0], sym, (lhs) => `${lhs} ${update};`)
     } else {
       if (q.op == "sum" || q.op == "count") {
         buf.push(`${convertToCType(q.schema)} ${sym} = 0;`)
@@ -403,11 +446,9 @@ let emitStmInitCSql = (q, sym, fre) => {
         throw new Error("stateful op not supported: " + pretty(q))
       }
     }
-
   } else if (q.key == "update") {
     buf.push(`// init ${sym} for group`)
-    let valType = q.schema[0][1]
-    buf.push(`${convertToCType(valType)} *${sym}[1024] = { 0 };`)
+    emitHashMapInit(buf, sym, q.schema[0][1])
   } else {
     throw new Error("unknown op: " + pretty(q))
   }
@@ -415,21 +456,15 @@ let emitStmInitCSql = (q, sym, fre) => {
   return buf
 }
 
-let emitStmUpdateCSql = (q, sym, fre) => {
+let emitStmUpdateCSql = (q, sym) => {
   let buf = []
   if (q.key == "prefix") {
     throw new Error("prefix op not supported: " + pretty(q))
   } if (q.key == "stateful") {
     buf.push(`// update ${sym} for ${q.op}`)
-    let lhs
-    if (fre.length > 0) {
-      lhs = `*${sym}[${fre[0]}]`
-    } else {
-      lhs = sym
-    }
+    let [e1] = q.arg.map(x => codegenCSql(x, buf))
     if (q.op == "print") {
       if (typing.isString(q.arg[0].schema)) {
-        let [e1] = q.arg.map(x => codegenCSql(x, buf))
         let { file, start, end } = e1
         buf.push(`println(${file}, ${start}, ${end});`)
       } else {
@@ -438,42 +473,50 @@ let emitStmUpdateCSql = (q, sym, fre) => {
       }
       return buf
     }
-    let [e1] = q.arg.map(x => codegenCSql(x, buf))
-    if (q.op == "sum") {
-      buf.push(`${lhs} += ${e1};`)
-    } else if (q.op == "product") {
-      buf.push(`${lhs} *= ${e1};`)
-    } else if (q.op == "min") {
-      buf.push(`${lhs} = ${e1} < ${lhs} ? ${e1} : ${lhs};`)
-    } else if (q.op == "max") {
-      buf.push(`${lhs} = ${e1} > ${lhs} ? ${e1} : ${lhs};`)
-    } else if (q.op == "count") {
-      buf.push(`${lhs} += 1;`)
-    } else if (q.op == "single") {
-      // since init is not required for "single", the table entry could be NULL
-      // call malloc if necessary
-      // is lhs always a pointer dereference (when q.fre.length > 0)
-      let name = lhs.slice(1)
-      buf.push(`// stateful single, need to check if the key is already there and if the value is different`)
-      buf.push(`if (${name} == NULL) {`)
-      buf.push(`${name} = (${convertToCType(q.schema)} *)malloc(sizeof(${convertToCType(q.schema)}));`)
-      buf.push(`} else if (*${name} != ${e1}) {`)
-      // need to deal with different data types
-      buf.push(`fprintf(stderr, "warning: single value expected but got multiple");`)
-      buf.push(`}`)
-      buf.push(`${lhs} = ${e1};`)
+    if (q.fre.length > 0) {
+      let update
+      if (q.op == "sum" || q.op == "count") {
+        update = (lhs) => `${lhs} += ${e1};`
+      } else if (q.op == "product") {
+        update = (lhs) => `${lhs} += ${e1};`
+      } else if (q.op == "min") {
+        update = (lhs) => `${lhs} = ${e1} < ${lhs} ? ${e1} : ${lhs};`
+      } else if (q.op == "max") {
+        update = (lhs) => `${lhs} = ${e1} > ${lhs} ? ${e1} : ${lhs};`
+      } else {
+        throw new Error("stateful op not supported: " + pretty(q))
+      }
+      hashUpdate(buf, q.fre[0], sym, update)
     } else {
-      throw new Error("stateful op not supported: " + pretty(q))
+      if (q.op == "sum") {
+        buf.push(`${sym} += ${e1};`)
+      } else if (q.op == "product") {
+        buf.push(`${sym} *= ${e1};`)
+      } else if (q.op == "min") {
+        buf.push(`${sym} = ${e1} < ${sym} ? ${e1} : ${sym};`)
+      } else if (q.op == "max") {
+        buf.push(`${sym} = ${e1} > ${sym} ? ${e1} : ${sym};`)
+      } else if (q.op == "count") {
+        buf.push(`${sym} += 1;`)
+      } else if (q.op == "single") {
+        // since init is not required for "single", the table entry could be NULL
+        // call malloc if necessary
+        // is lhs always a pointer dereference (when q.fre.length > 0)
+        let name = lhs.slice(1)
+        buf.push(`// stateful single, need to check if the key is already there and if the value is different`)
+        buf.push(`if (${name} == NULL) {`)
+        buf.push(`${name} = (${convertToCType(q.schema)} *)malloc(sizeof(${convertToCType(q.schema)}));`)
+        buf.push(`} else if (*${name} != ${e1}) {`)
+        // need to deal with different data types
+        buf.push(`fprintf(stderr, "warning: single value expected but got multiple");`)
+        buf.push(`}`)
+        buf.push(`${lhs} = ${e1};`)
+      } else {
+        throw new Error("stateful op not supported: " + pretty(q))
+      }
     }
   } else if (q.key == "update") {
     buf.push(`// update ${sym} for group`)
-    let val = codegenCSql(q.arg[2], buf)
-    let v = q.arg[1].op
-    let lhs = `${sym}[${v}]`
-    buf.push(`if (${lhs} == NULL) {`)
-    buf.push(`${lhs} = (${convertToCType(q.schema[0][1])} *)malloc(sizeof(${convertToCType(q.schema[0][1])}));`)
-    buf.push(`}`)
-    buf.push(`*${lhs} = ${val};`)
   } else {
     throw new Error("unknown op: " + pretty(q))
   }
@@ -571,7 +614,6 @@ let emitCodeCSql = (q, ir) => {
   mksetVarEnv = {}
 
   validateAndExtractUsedCols(q)
-  console.log(mksetVarEnv)
 
   // generator ir api: mirroring necessary bits from ir.js
   let expr = (txt, ...args) => ({ txt, deps: args })
@@ -607,7 +649,7 @@ let emitCodeCSql = (q, ir) => {
     e.sym = b[0]
     let info = [`// generator: ${e2.op} <- ${pretty(e1)}`]
     let rowScanning = []
-    rowScanning.push(`unsigned long ${e.sym} = hash(${val.file}, ${val.start}, ${val.end}) & hash_mask;`)
+    rowScanning.push(`unsigned long ${e.sym} = hash(${val.file}, ${val.start}, ${val.end});`)
     e.getLoopTxt = () => ({
       info, loadCSV: [], initCursor: [], loopHeader: ["{", "// singleton value here"], boundsChecking: [], rowScanning
     })
@@ -654,6 +696,7 @@ let emitCodeCSql = (q, ir) => {
       createGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
     } else if (g1.key == "mkset") {
       let val = codegenCSql(g1.arg[0], [])
+      mksetVarEnv[v1] = val
       createMkset(f.arg[0], f.arg[1], val)
     } else {
       throw new Error("invalid filter: " + pretty(f))
@@ -670,12 +713,14 @@ let emitCodeCSql = (q, ir) => {
       // we need to initialize the actual tmp variable separately
 
       // initialize hashmap
-      assign(emitHashMapInit(q, sym), sym, [], []);
+      let buf = []
+      emitHashMapInit(buf, sym, q.schema)
+      assign(buf, sym, [], []);
     }
 
     // emit init
     if (q.key == "stateful" && initRequired[q.op] || q.key == "update") {
-      assign(emitStmInitCSql(q, sym, q.fre), sym, q.fre, [])
+      assign(emitStmInitCSql(q, sym), sym, q.fre, [])
     }
 
     // emit update
@@ -693,12 +738,7 @@ let emitCodeCSql = (q, ir) => {
       epilog.push(`printf("%${getFormatSpecifier(q.schema)}\\n", ${res});`)
     } catch (e) {
       // Object
-      let valType = q.schema[0][1]
-      epilog.push(`for (int i = 0; i < 1024; i++) {`)
-      epilog.push(`if (${res}[i] != NULL) {`)
-      epilog.push(`printf("%${getFormatSpecifier(valType)}\\n", *${res}[i]);`)
-      epilog.push(`}`)
-      epilog.push(`}`)
+      epilog.push("// should print hashmap here")
     }
   }
   epilog.push("return 0;")
