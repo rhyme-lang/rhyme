@@ -266,7 +266,7 @@ let codegenCSql = (q, buf, extractStr = false) => {
     let q1 = assignments[q.op]
     if (q1.fre.length > 0) {
       let sym = tmpSym(q.op)
-      let keyPos = hashLookUp(buf, q1.fre[0], sym)
+      let keyPos = hashLookUp(buf, q1.fre[0], sym)[1]
       return `${sym}[${keyPos}]`
     } else {
       return tmpSym(q.op)
@@ -338,24 +338,31 @@ let codegenCSql = (q, buf, extractStr = false) => {
 }
 
 let hashLookUp = (buf, v, sym) => {
-  let mksetValue = mksetVarEnv[v]
+  let mksetVal = mksetVarEnv[v]
 
   let pos = getNewName("pos")
   buf.push(`unsigned long ${pos} = ${v} & hash_mask;`)
 
-  let keyPos = getNewName("key_pos")
+  let keyPos = `${sym}_htable[${pos}]`
+
+  let keyStr = `${sym}_keys_str[${keyPos}]`
+  let keyLen = `${sym}_keys_len[${keyPos}]`
+
+  let str = `${mksetVal.file} + ${mksetVal.start}`
+  let len = `${mksetVal.end} - ${mksetVal.start}`
+
+  buf.push(`while (${keyPos} != -1 && compare_str2(${keyStr}, ${keyLen}, ${str}, ${len}) != 0) {`)
+  buf.push(`${pos} = (${pos} + 1) & hash_mask;`)
+  buf.push(`}`)
+
+  keyPos = getNewName("key_pos")
   buf.push(`int ${keyPos} = ${sym}_htable[${pos}];`)
 
-  return keyPos
+  return [pos, keyPos]
 }
 
 let hashLookUpOrUpdate = (buf, v, sym, update) => {
-  console.log(v)
-  let pos = getNewName("pos")
-  buf.push(`unsigned long ${pos} = ${v} & hash_mask;`)
-
-  let keyPos = getNewName("key_pos")
-  buf.push(`int ${keyPos} = ${sym}_htable[${pos}];`)
+  let [pos, keyPos] = hashLookUp(buf, v, sym)
 
   buf.push(`if (${keyPos} == -1) {`)
 
@@ -380,12 +387,7 @@ let hashLookUpOrUpdate = (buf, v, sym, update) => {
 }
 
 let hashUpdate = (buf, v, sym, update) => {
-  console.log(v)
-  let pos = getNewName("pos")
-  buf.push(`unsigned long ${pos} = ${v} & hash_mask;`)
-
-  let keyPos = getNewName("key_pos")
-  buf.push(`int ${keyPos} = ${sym}_htable[${pos}];`)
+  let keyPos = hashLookUp(buf, v, sym)[1]
 
   let lhs = `${sym}_values[${keyPos}]`
 

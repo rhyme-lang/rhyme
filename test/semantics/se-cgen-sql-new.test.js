@@ -371,7 +371,7 @@ test("uncorrelatedAverageTest", async () => {
 test("groupByTest", async () => {
   let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
 
-  let query = rh`min ${csv}.*.value | group ${csv}.*.key`
+  let query = rh`sum ${csv}.*.value | group ${csv}.*.key`
 
   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
