@@ -376,35 +376,35 @@ test("groupByTest", async () => {
   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
   let res = await func()
-  expect(res).toBe(`40
-20
+  expect(res).toBe(`A: 40
+B: 20
 `)
 })
 
-// test("groupByAverageTest", async () => {
-//   let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
+test("groupByAverageTest", async () => {
+  let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
 
-//   let avg = rh`(sum ${csv}.*.value) / (count ${csv}.*.value)`
+  let avg = rh`(sum ${csv}.*.value) / (count ${csv}.*.value)`
 
-//   let query = rh`${avg} | group ${csv}.*.key`
+  let query = rh`${avg} | group ${csv}.*.key`
 
-//   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
+  let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
-//   let res = await func()
-//   expect(res).toBe(`20.000
-// 20.000
-// `)
-// })
+  let res = await func()
+  expect(res).toBe(`A: 20.000
+B: 20.000
+`)
+})
 
-// test("groupByRelativeSum", async () => {
-//   let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
+test("groupByRelativeSum", async () => {
+  let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
 
-//   let query = rh`(sum ${csv}.*.value) / (sum ${csv}.*B.value) | group ${csv}.*.key`
+  let query = rh`(sum ${csv}.*.value) / (sum ${csv}.*B.value) | group ${csv}.*.key`
 
-//   let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
+  let func = compile(query, { backend: "c-sql-new", schema: types.nothing })
 
-//   let res = await func()
-//   expect(res).toBe(`0.667
-// 0.333
-// `)
-// })
+  let res = await func()
+  expect(res).toBe(`A: 0.667
+B: 0.333
+`)
+})

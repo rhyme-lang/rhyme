@@ -247,7 +247,7 @@ let emitLoadCSV = (buf, filename, id, isConstStr = true) => {
 // { type, file, start, end }
 // For constant string / integer
 // { type, symbol }
-let codegenCSql = (q, buf, extractStr = false) => {
+let codegen = (q, buf, extractStr = false) => {
   if (q.key == "loadInput") {
     throw new Error("cannot have stand-alone loadInput")
   } else if (q.key == "const") {
@@ -267,7 +267,7 @@ let codegenCSql = (q, buf, extractStr = false) => {
     if (q1.fre.length > 0) {
       let sym = tmpSym(q.op)
       let keyPos = hashLookUp(buf, q1.fre[0], sym)[1]
-      return `${sym}[${keyPos}]`
+      return `${sym}_values[${keyPos}]`
     } else {
       return tmpSym(q.op)
     }
@@ -280,7 +280,7 @@ let codegenCSql = (q, buf, extractStr = false) => {
       filename = file.op
     } else {
       // extract filename, we don't want it to push more stuff into the buf
-      filename = codegenCSql(file, [], true)
+      filename = codegen(file, [], true)
     }
 
     let { mappedFile } = csvFilesEnv[filename]
@@ -304,16 +304,16 @@ let codegenCSql = (q, buf, extractStr = false) => {
       throw new Error("cannot extract value of type " + typing.prettyPrintType(q.schema))
     }
   } else if (q.key == "pure") {
-    let e1 = codegenCSql(q.arg[0], buf)
+    let e1 = codegen(q.arg[0], buf)
     let op = operators[q.op]
     if (q.op == "plus" || q.op == "minus" || q.op == "times" || q.op == "fdiv" || q.op == "div" || q.op == "mod") {
-      let e2 = codegenCSql(q.arg[1], buf)
+      let e2 = codegen(q.arg[1], buf)
       if (q.op == "fdiv") {
         return `(double)${e1} ${op} (double)${e2}`
       }
       return `${e1} ${op} ${e2}`
     } else if (q.op == "equal" || q.op == "notEqual") {
-      let e2 = codegenCSql(q.arg[1], buf)
+      let e2 = codegen(q.arg[1], buf)
       if (typing.isString(q.arg[0].schema) && typing.isString(q.arg[1].schema)) {
         let { file: file1, start: start1, end: end1 } = e1
         let { file: file2, start: start2, end: end2 } = e2
@@ -327,7 +327,7 @@ let codegenCSql = (q, buf, extractStr = false) => {
       buf.push(`if (!(${e1})) {`)
       buf.push(`continue;`)
       buf.push(`}`)
-      let e2 = codegenCSql(q.arg[1], buf)
+      let e2 = codegen(q.arg[1], buf)
       return e2
     } else {
       throw new Error("pure operation not supported: " + pretty(q))
@@ -387,14 +387,31 @@ let hashLookUpOrUpdate = (buf, v, sym, update) => {
 }
 
 let hashUpdate = (buf, v, sym, update) => {
-  let keyPos = hashLookUp(buf, v, sym)[1]
+  let [pos, keyPos] = hashLookUp(buf, v, sym)
+
+  buf.push(`if (${keyPos} == -1) {`)
+
+  buf.push(`${keyPos} = ${sym}_key_count;`)
+  buf.push(`${sym}_key_count++;`)
+
+  buf.push(`${sym}_htable[${pos}] = ${keyPos};`)
+
+  let mksetVal = mksetVarEnv[v]
+
+  let keyStr = `${sym}_keys_str[${keyPos}]`
+  let keyLen = `${sym}_keys_len[${keyPos}]`
+
+  buf.push(`${keyStr} = ${mksetVal.file} + ${mksetVal.start};`)
+  buf.push(`${keyLen} = ${mksetVal.end} - ${mksetVal.start};`)
+
+  buf.push(`}`)
 
   let lhs = `${sym}_values[${keyPos}]`
 
   buf.push(update(lhs))
 }
 
-let emitHashMapInit = (buf, sym, schema) => {
+let hashMapInit = (buf, sym, schema) => {
   buf.push(`// init hashmap for ${sym}`)
   // keys (assume string for now)
   buf.push(`// keys of ${sym}`)
@@ -417,7 +434,21 @@ let emitHashMapInit = (buf, sym, schema) => {
   buf.push(`${cType} *${sym}_values = (${cType} *)malloc(${HASH_SIZE} * sizeof(${cType}));`)
 }
 
-let emitStmInitCSql = (q, sym) => {
+let hashMapPrint = (buf, sym, schema) => {
+  buf.push(`for (int i = 0; i < ${HASH_SIZE}; i++) {`)
+  buf.push(`int keyPos = ${sym}_htable[i];`)
+  buf.push(`if (keyPos == -1) {`)
+  buf.push(`continue;`)
+  buf.push(`}`)
+  buf.push(`// print key`)
+  buf.push(`print(${sym}_keys_str[keyPos], ${sym}_keys_len[keyPos]);`)
+  buf.push(`print(": ", 2);`)
+  buf.push(`// print value`)
+  buf.push(`printf("%${getFormatSpecifier(schema)}\\n", ${sym}_values[keyPos]);`)
+  buf.push(`}`)
+}
+
+let emitStmInit = (q, sym) => {
   let buf = []
   if (q.key == "stateful") {
     buf.push(`// init ${sym} for ${q.op}`)
@@ -450,7 +481,7 @@ let emitStmInitCSql = (q, sym) => {
     }
   } else if (q.key == "update") {
     buf.push(`// init ${sym} for group`)
-    emitHashMapInit(buf, sym, q.schema[0][1])
+    hashMapInit(buf, sym, q.schema[0][1])
   } else {
     throw new Error("unknown op: " + pretty(q))
   }
@@ -458,26 +489,26 @@ let emitStmInitCSql = (q, sym) => {
   return buf
 }
 
-let emitStmUpdateCSql = (q, sym) => {
+let emitStmUpdate = (q, sym) => {
   let buf = []
   if (q.key == "prefix") {
     throw new Error("prefix op not supported: " + pretty(q))
   } if (q.key == "stateful") {
     buf.push(`// update ${sym} for ${q.op}`)
-    let [e1] = q.arg.map(x => codegenCSql(x, buf))
+    let [e1] = q.arg.map(x => codegen(x, buf))
     if (q.op == "print") {
       if (typing.isString(q.arg[0].schema)) {
         let { file, start, end } = e1
         buf.push(`println(${file}, ${start}, ${end});`)
       } else {
-        let [e1] = q.arg.map(x => codegenCSql(x, buf))
+        let [e1] = q.arg.map(x => codegen(x, buf))
         buf.push(`printf("%${getFormatSpecifier(q.arg[0].schema)}\\n", ${e1});`)
       }
       return buf
     }
     if (q.fre.length > 0) {
       let update
-      if (q.op == "sum" || q.op == "count") {
+      if (q.op == "sum") {
         update = (lhs) => `${lhs} += ${e1};`
       } else if (q.op == "product") {
         update = (lhs) => `${lhs} += ${e1};`
@@ -485,6 +516,10 @@ let emitStmUpdateCSql = (q, sym) => {
         update = (lhs) => `${lhs} = ${e1} < ${lhs} ? ${e1} : ${lhs};`
       } else if (q.op == "max") {
         update = (lhs) => `${lhs} = ${e1} > ${lhs} ? ${e1} : ${lhs};`
+      } else if (q.op == "count") {
+        update = (lhs) => `${lhs} += 1;`
+      } else if (q.op == "single") {
+        update = (lhs) => `${lhs} = ${e1};`
       } else {
         throw new Error("stateful op not supported: " + pretty(q))
       }
@@ -501,24 +536,16 @@ let emitStmUpdateCSql = (q, sym) => {
       } else if (q.op == "count") {
         buf.push(`${sym} += 1;`)
       } else if (q.op == "single") {
-        // since init is not required for "single", the table entry could be NULL
-        // call malloc if necessary
-        // is lhs always a pointer dereference (when q.fre.length > 0)
-        let name = lhs.slice(1)
-        buf.push(`// stateful single, need to check if the key is already there and if the value is different`)
-        buf.push(`if (${name} == NULL) {`)
-        buf.push(`${name} = (${convertToCType(q.schema)} *)malloc(sizeof(${convertToCType(q.schema)}));`)
-        buf.push(`} else if (*${name} != ${e1}) {`)
-        // need to deal with different data types
-        buf.push(`fprintf(stderr, "warning: single value expected but got multiple");`)
-        buf.push(`}`)
-        buf.push(`${lhs} = ${e1};`)
+        // single without free variables
+        throw new Error("stateful op not implmeneted: " + pretty(q))
       } else {
         throw new Error("stateful op not supported: " + pretty(q))
       }
     }
   } else if (q.key == "update") {
     buf.push(`// update ${sym} for group`)
+    let e3 = codegen(q.arg[2], buf)
+    hashUpdate(buf, q.arg[1].op, sym, (lhs) => `${lhs} = ${e3};`)
   } else {
     throw new Error("unknown op: " + pretty(q))
   }
@@ -598,7 +625,7 @@ let getLoopTxt = (f, filename, loadCSV) => () => {
   }
 }
 
-let emitCodeCSql = (q, ir) => {
+let emitCode = (q, ir) => {
   // Translate to newcodegen and let newcodegen do the generation
   let assignmentStms = []
   let generatorStms = []
@@ -688,7 +715,7 @@ let emitCodeCSql = (q, ir) => {
           emitLoadCSV(prolog, filename, i)
         }
       } else {
-        filename = codegenCSql(g1.arg[0], [], {}, true)
+        filename = codegen(g1.arg[0], [], {}, true)
         if (csvFilesEnv[filename] == undefined) {
           emitLoadCSV(loadCSV, filename, i, false)
         }
@@ -697,7 +724,7 @@ let emitCodeCSql = (q, ir) => {
       let getLoopTxtFunc = getLoopTxt(f, filename, loadCSV)
       createGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
     } else if (g1.key == "mkset") {
-      let val = codegenCSql(g1.arg[0], [])
+      let val = codegen(g1.arg[0], [])
       mksetVarEnv[v1] = val
       createMkset(f.arg[0], f.arg[1], val)
     } else {
@@ -716,23 +743,23 @@ let emitCodeCSql = (q, ir) => {
 
       // initialize hashmap
       let buf = []
-      emitHashMapInit(buf, sym, q.schema)
+      hashMapInit(buf, sym, q.schema)
       assign(buf, sym, [], []);
     }
 
     // emit init
     if (q.key == "stateful" && initRequired[q.op] || q.key == "update") {
-      assign(emitStmInitCSql(q, sym), sym, q.fre, [])
+      assign(emitStmInit(q, sym), sym, q.fre, [])
     }
 
     // emit update
     let fv = union(q.fre, q.bnd)
     let deps = [...fv, ...q.tmps.map(tmpSym)] // XXX rhs dims only?
 
-    assign(emitStmUpdateCSql(q, sym, q.fre), sym, q.fre, deps)
+    assign(emitStmUpdate(q, sym, q.fre), sym, q.fre, deps)
   }
 
-  let res = codegenCSql(q, [], {})
+  let res = codegen(q, [], {})
 
   let epilog = []
   if (q.schema !== types.nothing) {
@@ -740,7 +767,8 @@ let emitCodeCSql = (q, ir) => {
       epilog.push(`printf("%${getFormatSpecifier(q.schema)}\\n", ${res});`)
     } catch (e) {
       // Object
-      epilog.push("// should print hashmap here")
+      epilog.push("// print hashmap here")
+      hashMapPrint(epilog, res, q.schema[0][1])
     }
   }
   epilog.push("return 0;")
@@ -779,7 +807,7 @@ let generateCSqlNew = (q, ir) => {
   // and the op will be the name of the column
   // eg. sum(.*.value)
 
-  let code = emitCodeCSql(q, ir)
+  let code = emitCode(q, ir)
 
   let func = async () => {
     await fs.writeFile(`cgen-sql/out.c`, code);
