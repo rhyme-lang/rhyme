@@ -7,11 +7,10 @@ const HASH_SIZE = 256
 
 let filters
 let assignments
-
 let csvFilesEnv
 let usedCols
-
 let mksetVarEnv
+let hashMapEnv
 
 let unique = xs => xs.filter((x, i) => xs.indexOf(x) == i)
 let union = (a, b) => unique([...a, ...b])
@@ -159,6 +158,14 @@ let operators = {
   mod: "%",
 }
 
+// Extract all the used columns.
+// e.g. if an integer column is used, it will be extracted
+// while we scan through each row in the csv.
+//
+// This makes sure that if we want to use the variable,
+// it will be available in the scope.
+// String columns are only extracted (copied to a temporary buffer) when a null-terminated string is needed.
+// e.g. the open() system call.
 let validateAndExtractUsedCols = (q, extractStr = false) => {
   if (q.key == "get") {
     let [e1, e2] = q.arg
@@ -200,22 +207,22 @@ let validateAndExtractUsedCols = (q, extractStr = false) => {
     if (q.arg[3] == undefined) {
       throw new Error("trivial group op not supported for now: " + pretty(q))
     }
-    let [_e1, e2, e3, e4] = q.arg
+    let [_e1, _e2, e3, e4] = q.arg
 
-    if (!typing.isString(e4.arg[0].arg[0].schema)) {
-      throw new Error("only string values allowed for mkset")
+    if (!typing.isString(e4.arg[0].arg[0].schema) && !typing.isInteger(e4.arg[0].arg[0].schema)) {
+      throw new Error(`value of type ${typing.prettyPrintType(e4.arg[0].arg[0].schema)} not allowed for mkset`)
     }
 
     // value
     validateAndExtractUsedCols(e3)
     // mkset
-    console.assert(e2.op == e4.arg[1].op)
     validateAndExtractUsedCols(e4.arg[0].arg[0])
   } else if (q.arg) {
     q.arg.map(x => validateAndExtractUsedCols(x))
   }
 }
 
+// Emit code that opens the CSV file and calls mmap
 let emitLoadCSV = (buf, filename, id, isConstStr = true) => {
   buf.push(`// loadCSV ${filename}`)
   let fd = "fd" + id
@@ -241,12 +248,10 @@ let emitLoadCSV = (buf, filename, id, isConstStr = true) => {
   csvFilesEnv[filename] = { mappedFile, size }
 }
 
-// returns an object that contains info about the symbol generated
-// since sometimes we need the start and end index istead of the value
-// For column access: 
-// { type, file, start, end }
-// For constant string / integer
-// { type, symbol }
+// For numbers, the returned value is the extracted column or a literal value for constants.
+// For strings, the returned value is an object with the mapped file, the starting index and ending index.
+//   { file, start, end }
+// If the string is extracted, it will be the name of the temporary buffer storing the copied string.
 let codegen = (q, buf, extractStr = false) => {
   if (q.key == "loadInput") {
     throw new Error("cannot have stand-alone loadInput")
@@ -266,7 +271,7 @@ let codegen = (q, buf, extractStr = false) => {
     let q1 = assignments[q.op]
     if (q1.fre.length > 0) {
       let sym = tmpSym(q.op)
-      let keyPos = hashLookUp(buf, q1.fre[0], sym)[1]
+      let keyPos = hashLookUp(buf, sym, q1.fre[0])[1]
       return `${sym}_values[${keyPos}]`
     } else {
       return tmpSym(q.op)
@@ -279,7 +284,7 @@ let codegen = (q, buf, extractStr = false) => {
     if (file.key == "const" && typeof file.op == "string") {
       filename = file.op
     } else {
-      // extract filename, we don't want it to push more stuff into the buf
+      // extract filename only, we don't want it to push more stuff into the buf
       filename = codegen(file, [], true)
     }
 
@@ -294,7 +299,7 @@ let codegen = (q, buf, extractStr = false) => {
 
     if (typing.isInteger(q.schema)) {
       return name
-    } else if (q.schema == types.string) {
+    } else if (typing.isString(q.schema)) {
       if (extractStr) {
         return name
       } else {
@@ -337,21 +342,34 @@ let codegen = (q, buf, extractStr = false) => {
   }
 }
 
-let hashLookUp = (buf, v, sym) => {
-  let mksetVal = mksetVarEnv[v]
+// Emit the code that finds the key in the hashmap.
+// Linear probing is used for resolving collisions.
+// Comparison of keys is based on different key types.
+let hashLookUp = (buf, sym, key) => {
+  let { val: mksetVal } = mksetVarEnv[key]
 
   let pos = getNewName("pos")
-  buf.push(`unsigned long ${pos} = ${v} & hash_mask;`)
+  buf.push(`unsigned long ${pos} = ${key}_hash & hash_mask;`)
 
   let keyPos = `${sym}_htable[${pos}]`
 
-  let keyStr = `${sym}_keys_str[${keyPos}]`
-  let keyLen = `${sym}_keys_len[${keyPos}]`
+  let { keySchema } = hashMapEnv[sym]
+  let cmpResult = getNewName("tmp_cmp")
+  if (typing.isString(keySchema)) {
+    let keyStr = `${sym}_keys_str[${keyPos}]`
+    let keyLen = `${sym}_keys_len[${keyPos}]`
 
-  let str = `${mksetVal.file} + ${mksetVal.start}`
-  let len = `${mksetVal.end} - ${mksetVal.start}`
+    let str = `${mksetVal.file} + ${mksetVal.start}`
+    let len = `${mksetVal.end} - ${mksetVal.start}`
 
-  buf.push(`while (${keyPos} != -1 && compare_str2(${keyStr}, ${keyLen}, ${str}, ${len}) != 0) {`)
+    buf.push(`int ${cmpResult} = compare_str2(${keyStr}, ${keyLen}, ${str}, ${len}) == 0;`)
+  } else if (typing.isInteger(keySchema)) {
+    buf.push(`int ${cmpResult} = ${sym}_keys[${keyPos}] == ${mksetVal};`)
+  } else {
+    throw new Error("key type not supported: ", typing.prettyPrintType(keySchema))
+  }
+
+  buf.push(`while (${keyPos} != -1 && !${cmpResult}) {`)
   buf.push(`${pos} = (${pos} + 1) & hash_mask;`)
   buf.push(`}`)
 
@@ -361,8 +379,13 @@ let hashLookUp = (buf, v, sym) => {
   return [pos, keyPos]
 }
 
-let hashLookUpOrUpdate = (buf, v, sym, update) => {
-  let [pos, keyPos] = hashLookUp(buf, v, sym)
+// Emit the code that performs a lookup of the key in the hashmap, then
+// if the key is found:
+//   does nothing
+// if the key is not found:
+//   inserts a new key into the hashmap and initializes it
+let hashLookUpOrUpdate = (buf, sym, key, update) => {
+  let [pos, keyPos] = hashLookUp(buf, sym, key)
 
   buf.push(`if (${keyPos} == -1) {`)
 
@@ -371,13 +394,20 @@ let hashLookUpOrUpdate = (buf, v, sym, update) => {
 
   buf.push(`${sym}_htable[${pos}] = ${keyPos};`)
 
-  let mksetVal = mksetVarEnv[v]
+  let { val: mksetVal } = mksetVarEnv[key]
 
-  let keyStr = `${sym}_keys_str[${keyPos}]`
-  let keyLen = `${sym}_keys_len[${keyPos}]`
+  let { keySchema } = hashMapEnv[sym]
+  if (typing.isString(keySchema)) {
+    let keyStr = `${sym}_keys_str[${keyPos}]`
+    let keyLen = `${sym}_keys_len[${keyPos}]`
 
-  buf.push(`${keyStr} = ${mksetVal.file} + ${mksetVal.start};`)
-  buf.push(`${keyLen} = ${mksetVal.end} - ${mksetVal.start};`)
+    buf.push(`${keyStr} = ${mksetVal.file} + ${mksetVal.start};`)
+    buf.push(`${keyLen} = ${mksetVal.end} - ${mksetVal.start};`)
+  } else if (typing.isInteger(keySchema)) {
+    buf.push(`${sym}_keys[${keyPos}] = ${mksetVal};`)
+  } else {
+    throw new Error("key type not supported: ", typing.prettyPrintType(keySchema))
+  }
 
   let lhs = `${sym}_values[${keyPos}]`
 
@@ -386,8 +416,13 @@ let hashLookUpOrUpdate = (buf, v, sym, update) => {
   buf.push(`}`)
 }
 
-let hashUpdate = (buf, v, sym, update) => {
-  let [pos, keyPos] = hashLookUp(buf, v, sym)
+// Emit the code that performs a lookup of the key in the hashmap, then
+// if the key is found:
+//   updates the corresponding value.
+// if the key is not found:
+//   inserts a new key into the hashmap and initializes it.
+let hashUpdate = (buf, sym, key, update) => {
+  let [pos, keyPos] = hashLookUp(buf, sym, key)
 
   buf.push(`if (${keyPos} == -1) {`)
 
@@ -396,13 +431,20 @@ let hashUpdate = (buf, v, sym, update) => {
 
   buf.push(`${sym}_htable[${pos}] = ${keyPos};`)
 
-  let mksetVal = mksetVarEnv[v]
+  let { val: mksetVal } = mksetVarEnv[key]
 
-  let keyStr = `${sym}_keys_str[${keyPos}]`
-  let keyLen = `${sym}_keys_len[${keyPos}]`
+  let { keySchema } = hashMapEnv[sym]
+  if (typing.isString(keySchema)) {
+    let keyStr = `${sym}_keys_str[${keyPos}]`
+    let keyLen = `${sym}_keys_len[${keyPos}]`
 
-  buf.push(`${keyStr} = ${mksetVal.file} + ${mksetVal.start};`)
-  buf.push(`${keyLen} = ${mksetVal.end} - ${mksetVal.start};`)
+    buf.push(`${keyStr} = ${mksetVal.file} + ${mksetVal.start};`)
+    buf.push(`${keyLen} = ${mksetVal.end} - ${mksetVal.start};`)
+  } else if (typing.isInteger(keySchema)) {
+    buf.push(`${sym}_keys[${keyPos}] = ${mksetVal};`)
+  } else {
+    throw new Error("key type not supported: ", typing.prettyPrintType(keySchema))
+  }
 
   buf.push(`}`)
 
@@ -411,12 +453,23 @@ let hashUpdate = (buf, v, sym, update) => {
   buf.push(update(lhs))
 }
 
-let hashMapInit = (buf, sym, schema) => {
+// Emit code that initializes a hashmap.
+// For string keys / values, they are represented by
+// a pointer to the beginning of the string and the length of the string
+let hashMapInit = (buf, sym, keySchema, valSchema) => {
   buf.push(`// init hashmap for ${sym}`)
-  // keys (assume string for now)
+  // keys
   buf.push(`// keys of ${sym}`)
-  buf.push(`char **${sym}_keys_str = (char **)malloc(${KEY_SIZE} * sizeof(char *));`)
-  buf.push(`int *${sym}_keys_len = (int *)malloc(${KEY_SIZE} * sizeof(int));`)
+
+  if (typing.isString(keySchema)) {
+    buf.push(`char **${sym}_keys_str = (char **)malloc(${KEY_SIZE} * sizeof(char *));`)
+    buf.push(`int *${sym}_keys_len = (int *)malloc(${KEY_SIZE} * sizeof(int));`)
+  } else if (typing.isInteger(keySchema)) {
+    let cType = convertToCType(keySchema)
+    buf.push(`${cType} *${sym}_keys = (${cType} *)malloc(${KEY_SIZE} * sizeof(${cType}));`)
+  } else {
+    throw new Error("key type not supported: ", typing.prettyPrintType(keySchema))
+  }
 
   buf.push(`// key count for ${sym}`)
   buf.push(`int ${sym}_key_count = 0;`)
@@ -429,22 +482,34 @@ let hashMapInit = (buf, sym, schema) => {
   buf.push(`// init hash table entries to -1 for ${sym}`)
   buf.push(`for (int i = 0; i < ${HASH_SIZE}; i++) ${sym}_htable[i] = -1;`)
 
-  let cType = convertToCType(schema)
+  let cType = convertToCType(valSchema)
   buf.push(`// values of ${sym}`)
   buf.push(`${cType} *${sym}_values = (${cType} *)malloc(${HASH_SIZE} * sizeof(${cType}));`)
+
+  hashMapEnv[sym] = { keySchema, valSchema }
 }
 
-let hashMapPrint = (buf, sym, schema) => {
+// Emit code that prints the keys and values in a hashmap.
+let hashMapPrint = (buf, sym) => {
+  let { keySchema, valSchema } = hashMapEnv[sym]
   buf.push(`for (int i = 0; i < ${HASH_SIZE}; i++) {`)
   buf.push(`int keyPos = ${sym}_htable[i];`)
   buf.push(`if (keyPos == -1) {`)
   buf.push(`continue;`)
   buf.push(`}`)
   buf.push(`// print key`)
-  buf.push(`print(${sym}_keys_str[keyPos], ${sym}_keys_len[keyPos]);`)
+
+  if (typing.isString(keySchema)) {
+    buf.push(`print(${sym}_keys_str[keyPos], ${sym}_keys_len[keyPos]);`)
+  } else {
+    buf.push(`printf("%${getFormatSpecifier(keySchema)}", ${sym}_keys[keyPos]);`)
+  }
+
   buf.push(`print(": ", 2);`)
+
+
   buf.push(`// print value`)
-  buf.push(`printf("%${getFormatSpecifier(schema)}\\n", ${sym}_values[keyPos]);`)
+  buf.push(`printf("%${getFormatSpecifier(valSchema)}\\n", ${sym}_values[keyPos]);`)
   buf.push(`}`)
 }
 
@@ -465,7 +530,7 @@ let emitStmInit = (q, sym) => {
       } else {
         throw new Error("stateful op not supported: " + pretty(q))
       }
-      hashLookUpOrUpdate(buf, q.fre[0], sym, (lhs) => `${lhs} ${update};`)
+      hashLookUpOrUpdate(buf, sym, q.fre[0], (lhs) => `${lhs} ${update};`)
     } else {
       if (q.op == "sum" || q.op == "count") {
         buf.push(`${convertToCType(q.schema)} ${sym} = 0;`)
@@ -481,7 +546,8 @@ let emitStmInit = (q, sym) => {
     }
   } else if (q.key == "update") {
     buf.push(`// init ${sym} for group`)
-    hashMapInit(buf, sym, q.schema[0][1])
+    let { schema: keySchema } = mksetVarEnv[q.arg[1].op]
+    hashMapInit(buf, sym, keySchema, q.schema[0][1])
   } else {
     throw new Error("unknown op: " + pretty(q))
   }
@@ -523,7 +589,7 @@ let emitStmUpdate = (q, sym) => {
       } else {
         throw new Error("stateful op not supported: " + pretty(q))
       }
-      hashUpdate(buf, q.fre[0], sym, update)
+      hashUpdate(buf, sym, q.fre[0], update)
     } else {
       if (q.op == "sum") {
         buf.push(`${sym} += ${e1};`)
@@ -545,13 +611,15 @@ let emitStmUpdate = (q, sym) => {
   } else if (q.key == "update") {
     buf.push(`// update ${sym} for group`)
     let e3 = codegen(q.arg[2], buf)
-    hashUpdate(buf, q.arg[1].op, sym, (lhs) => `${lhs} = ${e3};`)
+    hashUpdate(buf, sym, q.arg[1].op, (lhs) => `${lhs} = ${e3};`)
   } else {
     throw new Error("unknown op: " + pretty(q))
   }
   return buf
 }
 
+// Emit code that scans through each row in the CSV file.
+// Will extract the value of a column if the column is used by the query.
 let emitRowScanning = (f, filename, cursor, schema) => {
   let buf = []
   let v = f.arg[1].op
@@ -575,6 +643,7 @@ let emitRowScanning = (f, filename, cursor, schema) => {
     }
 
     let delim = i == columns.length - 1 ? "\\n" : ","
+
     buf.push(`int ${start} = ${cursor};`)
     buf.push(`while (${cursor} < ${size} && ${mappedFile}[${cursor}] != '${delim}') {`)
 
@@ -586,6 +655,7 @@ let emitRowScanning = (f, filename, cursor, schema) => {
 
     buf.push(`${cursor}++;`)
     buf.push("}")
+
     buf.push(`int ${end} = ${cursor};`)
     buf.push(`${cursor}++;`)
 
@@ -599,6 +669,8 @@ let emitRowScanning = (f, filename, cursor, schema) => {
   return buf
 }
 
+// Returns a function that will be invoked during the actual code generation
+// It requests a new cursor name every time it is invoked
 let getLoopTxt = (f, filename, loadCSV) => () => {
   let v = f.arg[1].op
   let { mappedFile, size } = csvFilesEnv[filename]
@@ -641,6 +713,7 @@ let emitCode = (q, ir) => {
   usedCols = {}
 
   mksetVarEnv = {}
+  hashMapEnv = {}
 
   validateAndExtractUsedCols(q)
 
@@ -671,14 +744,20 @@ let emitCode = (q, ir) => {
     generatorStms.push(e)
   }
 
-  let createMkset = (e1, e2, val) => {
+  let createMkset = (e1, e2, val, schema) => {
     let a = getDeps(e1)
     let b = getDeps(e2)
     let e = expr("MKSET", ...a)
     e.sym = b[0]
     let info = [`// generator: ${e2.op} <- ${pretty(e1)}`]
     let rowScanning = []
-    rowScanning.push(`unsigned long ${e.sym} = hash(${val.file}, ${val.start}, ${val.end});`)
+    if (typing.isString(schema)) {
+      rowScanning.push(`unsigned long ${e.sym}_hash = hash(${val.file}, ${val.start}, ${val.end});`)
+    } else if (typing.isInteger(schema)) {
+      rowScanning.push(`unsigned long ${e.sym}_hash = (unsigned long)${val};`)
+    } else {
+      throw new Error("key type not supported: ", typing.prettyPrintType(schema))
+    }
     e.getLoopTxt = () => ({
       info, loadCSV: [], initCursor: [], loopHeader: ["{", "// singleton value here"], boundsChecking: [], rowScanning
     })
@@ -693,13 +772,9 @@ let emitCode = (q, ir) => {
   prolog.push(`unsigned long hash_mask = ${HASH_SIZE - 1};`)
 
   for (let i in filters) {
-    let q = filters[i]
-
     let f = filters[i]
     let v1 = f.arg[1].op
     let g1 = f.arg[0]
-
-    let schema = f.schema
 
     if (g1.key == "loadInput" && g1.op == "csv") {
       let loadCSV = []
@@ -725,8 +800,8 @@ let emitCode = (q, ir) => {
       createGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
     } else if (g1.key == "mkset") {
       let val = codegen(g1.arg[0], [])
-      mksetVarEnv[v1] = val
-      createMkset(f.arg[0], f.arg[1], val)
+      mksetVarEnv[v1] = { val, schema: g1.arg[0].schema }
+      createMkset(f.arg[0], f.arg[1], val, g1.arg[0].schema)
     } else {
       throw new Error("invalid filter: " + pretty(f))
     }
@@ -742,8 +817,9 @@ let emitCode = (q, ir) => {
       // we need to initialize the actual tmp variable separately
 
       // initialize hashmap
+      let { schema: keySchema } = mksetVarEnv[q.fre[0]]
       let buf = []
-      hashMapInit(buf, sym, q.schema)
+      hashMapInit(buf, sym, keySchema, q.schema)
       assign(buf, sym, [], []);
     }
 
@@ -763,12 +839,11 @@ let emitCode = (q, ir) => {
 
   let epilog = []
   if (q.schema !== types.nothing) {
-    try {
+    if (hashMapEnv[res]) {
+      epilog.push("// print hashmap")
+      hashMapPrint(epilog, res)
+    } else {
       epilog.push(`printf("%${getFormatSpecifier(q.schema)}\\n", ${res});`)
-    } catch (e) {
-      // Object
-      epilog.push("// print hashmap here")
-      hashMapPrint(epilog, res, q.schema[0][1])
     }
   }
   epilog.push("return 0;")
@@ -786,7 +861,7 @@ let emitCode = (q, ir) => {
   return generate(new_codegen_ir, "c-sql")
 }
 
-let generateCSqlNew = (q, ir) => {
+let generateCSqlNew = (q, ir, outDir, outFile) => {
   const fs = require('node:fs/promises')
   const os = require('node:child_process')
 
@@ -802,17 +877,16 @@ let generateCSqlNew = (q, ir) => {
   }
 
   // Assumptions:
-  // A var will always be from inp
+  // A var will always be from a loadCSV node
   // A "get" will always get from a var which is the generator on all table rows
   // and the op will be the name of the column
-  // eg. sum(.*.value)
-
+  // eg. sum(loadCSV(filename).*.value)
   let code = emitCode(q, ir)
 
   let func = async () => {
-    await fs.writeFile(`cgen-sql/out.c`, code);
-    await execPromise(`gcc cgen-sql/out.c -o cgen-sql/out`)
-    return './cgen-sql/out'
+    await fs.writeFile(`${outDir}/${outFile}`, code);
+    await execPromise(`gcc ${outDir}/${outFile} -o ${outDir}/tmp -Icgen-sql`)
+    return `${outDir}/tmp`
   }
 
   let wrap = async (input) => {
