@@ -257,11 +257,11 @@ let codegen = (q, buf, extractStr = false) => {
     throw new Error("cannot have stand-alone loadInput")
   } else if (q.key == "const") {
     if (typeof q.op == "number") {
-      return q.op
+      return String(q.op)
     } else if (typeof q.op == "string") {
       let name = getNewName("tmp_str")
       buf.push(`char ${name}[${q.op.length + 1}] = "${q.op}";`)
-      return extractStr ? name : { file: name, start: 0, end: q.op.length }
+      return extractStr ? name : { file: name, start: "0", end: q.op.length }
     } else {
       throw new Error("constant not supported: " + pretty(q))
     }
@@ -272,7 +272,12 @@ let codegen = (q, buf, extractStr = false) => {
     if (q1.fre.length > 0) {
       let sym = tmpSym(q.op)
       let keyPos = hashLookUp(buf, sym, q1.fre[0])[1]
-      return `${sym}_values[${keyPos}]`
+      let { valSchema } = hashMapEnv[sym]
+      if (typing.isString(valSchema)) {
+        return { file: `${sym}_values_str[${keyPos}]`, start: "0", end: `${sym}_values_len[${keyPos}]` }
+      } else {
+        return `${sym}_values[${keyPos}]`
+      }
     } else {
       return tmpSym(q.op)
     }
@@ -354,7 +359,6 @@ let hashLookUp = (buf, sym, key) => {
   let keyPos = `${sym}_htable[${pos}]`
 
   let { keySchema } = hashMapEnv[sym]
-  let cmpResult = getNewName("tmp_cmp")
   if (typing.isString(keySchema)) {
     let keyStr = `${sym}_keys_str[${keyPos}]`
     let keyLen = `${sym}_keys_len[${keyPos}]`
@@ -362,16 +366,14 @@ let hashLookUp = (buf, sym, key) => {
     let str = `${mksetVal.file} + ${mksetVal.start}`
     let len = `${mksetVal.end} - ${mksetVal.start}`
 
-    buf.push(`int ${cmpResult} = compare_str2(${keyStr}, ${keyLen}, ${str}, ${len}) == 0;`)
-  } else if (typing.isInteger(keySchema)) {
-    buf.push(`int ${cmpResult} = ${sym}_keys[${keyPos}] == ${mksetVal};`)
+    buf.push(`while (${keyPos} != -1 && compare_str2(${keyStr}, ${keyLen}, ${str}, ${len}) != 0) {`)
+    buf.push(`${pos} = (${pos} + 1) & hash_mask;`)
+    buf.push(`}`)
   } else {
-    throw new Error("key type not supported: ", typing.prettyPrintType(keySchema))
+    buf.push(`while (${keyPos} != -1 && ${sym}_keys[${keyPos}] != ${mksetVal}) {`)
+    buf.push(`${pos} = (${pos} + 1) & hash_mask;`)
+    buf.push(`}`)
   }
-
-  buf.push(`while (${keyPos} != -1 && !${cmpResult}) {`)
-  buf.push(`${pos} = (${pos} + 1) & hash_mask;`)
-  buf.push(`}`)
 
   keyPos = getNewName("key_pos")
   buf.push(`int ${keyPos} = ${sym}_htable[${pos}];`)
@@ -396,20 +398,23 @@ let hashLookUpOrUpdate = (buf, sym, key, update) => {
 
   let { val: mksetVal } = mksetVarEnv[key]
 
-  let { keySchema } = hashMapEnv[sym]
+  let { keySchema, valSchema } = hashMapEnv[sym]
   if (typing.isString(keySchema)) {
     let keyStr = `${sym}_keys_str[${keyPos}]`
     let keyLen = `${sym}_keys_len[${keyPos}]`
 
     buf.push(`${keyStr} = ${mksetVal.file} + ${mksetVal.start};`)
     buf.push(`${keyLen} = ${mksetVal.end} - ${mksetVal.start};`)
-  } else if (typing.isInteger(keySchema)) {
-    buf.push(`${sym}_keys[${keyPos}] = ${mksetVal};`)
   } else {
-    throw new Error("key type not supported: ", typing.prettyPrintType(keySchema))
+    buf.push(`${sym}_keys[${keyPos}] = ${mksetVal};`)
   }
 
-  let lhs = `${sym}_values[${keyPos}]`
+  let lhs
+  if (typing.isString(valSchema)) {
+    lhs = { str: `${sym}_values_str[${keyPos}]`, len: `${sym}_values_len[${keyPos}]` }
+  } else {
+    lhs = `${sym}_values[${keyPos}]`
+  }
 
   buf.push(update(lhs))
 
@@ -433,22 +438,25 @@ let hashUpdate = (buf, sym, key, update) => {
 
   let { val: mksetVal } = mksetVarEnv[key]
 
-  let { keySchema } = hashMapEnv[sym]
+  let { keySchema, valSchema } = hashMapEnv[sym]
   if (typing.isString(keySchema)) {
     let keyStr = `${sym}_keys_str[${keyPos}]`
     let keyLen = `${sym}_keys_len[${keyPos}]`
 
     buf.push(`${keyStr} = ${mksetVal.file} + ${mksetVal.start};`)
     buf.push(`${keyLen} = ${mksetVal.end} - ${mksetVal.start};`)
-  } else if (typing.isInteger(keySchema)) {
-    buf.push(`${sym}_keys[${keyPos}] = ${mksetVal};`)
   } else {
-    throw new Error("key type not supported: ", typing.prettyPrintType(keySchema))
+    buf.push(`${sym}_keys[${keyPos}] = ${mksetVal};`)
   }
 
   buf.push(`}`)
 
-  let lhs = `${sym}_values[${keyPos}]`
+  let lhs
+  if (typing.isString(valSchema)) {
+    lhs = { str: `${sym}_values_str[${keyPos}]`, len: `${sym}_values_len[${keyPos}]` }
+  } else {
+    lhs = `${sym}_values[${keyPos}]`
+  }
 
   buf.push(update(lhs))
 }
@@ -464,11 +472,9 @@ let hashMapInit = (buf, sym, keySchema, valSchema) => {
   if (typing.isString(keySchema)) {
     buf.push(`char **${sym}_keys_str = (char **)malloc(${KEY_SIZE} * sizeof(char *));`)
     buf.push(`int *${sym}_keys_len = (int *)malloc(${KEY_SIZE} * sizeof(int));`)
-  } else if (typing.isInteger(keySchema)) {
+  } else {
     let cType = convertToCType(keySchema)
     buf.push(`${cType} *${sym}_keys = (${cType} *)malloc(${KEY_SIZE} * sizeof(${cType}));`)
-  } else {
-    throw new Error("key type not supported: ", typing.prettyPrintType(keySchema))
   }
 
   buf.push(`// key count for ${sym}`)
@@ -482,9 +488,15 @@ let hashMapInit = (buf, sym, keySchema, valSchema) => {
   buf.push(`// init hash table entries to -1 for ${sym}`)
   buf.push(`for (int i = 0; i < ${HASH_SIZE}; i++) ${sym}_htable[i] = -1;`)
 
-  let cType = convertToCType(valSchema)
   buf.push(`// values of ${sym}`)
-  buf.push(`${cType} *${sym}_values = (${cType} *)malloc(${HASH_SIZE} * sizeof(${cType}));`)
+
+  if (typing.isString(valSchema)) {
+    buf.push(`char **${sym}_values_str = (char **)malloc(${KEY_SIZE} * sizeof(char *));`)
+    buf.push(`int *${sym}_values_len = (int *)malloc(${KEY_SIZE} * sizeof(int));`)
+  } else {
+    let cType = convertToCType(valSchema)
+    buf.push(`${cType} *${sym}_values = (${cType} *)malloc(${KEY_SIZE} * sizeof(${cType}));`)
+  }
 
   hashMapEnv[sym] = { keySchema, valSchema }
 }
@@ -507,9 +519,13 @@ let hashMapPrint = (buf, sym) => {
 
   buf.push(`print(": ", 2);`)
 
-
   buf.push(`// print value`)
-  buf.push(`printf("%${getFormatSpecifier(valSchema)}\\n", ${sym}_values[keyPos]);`)
+  if (typing.isString(valSchema)) {
+    buf.push(`print(${sym}_values_str[keyPos], ${sym}_values_len[keyPos]);`)
+    buf.push(`print("\\n", 1);`)
+  } else {
+    buf.push(`printf("%${getFormatSpecifier(valSchema)}\\n", ${sym}_values[keyPos]);`)
+  }
   buf.push(`}`)
 }
 
@@ -585,7 +601,12 @@ let emitStmUpdate = (q, sym) => {
       } else if (q.op == "count") {
         update = (lhs) => `${lhs} += 1;`
       } else if (q.op == "single") {
-        update = (lhs) => `${lhs} = ${e1};`
+        // It is possible that the value is a string
+        if (typing.isString(q.schema)) {
+          update = (lhs) => `${lhs.str} = ${e1.file} + ${e1.start}; ${lhs.len} = ${e1.end} - ${e1.start};`
+        } else {
+          update = (lhs) => `${lhs} = ${e1};`
+        }
       } else {
         throw new Error("stateful op not supported: " + pretty(q))
       }
@@ -611,7 +632,15 @@ let emitStmUpdate = (q, sym) => {
   } else if (q.key == "update") {
     buf.push(`// update ${sym} for group`)
     let e3 = codegen(q.arg[2], buf)
-    hashUpdate(buf, sym, q.arg[1].op, (lhs) => `${lhs} = ${e3};`)
+    let update
+
+    let { valSchema } = hashMapEnv[sym]
+    if (typing.isString(valSchema)) {
+      update = (lhs) => `${lhs.str} = ${e3.file} + ${e3.start}; ${lhs.len} = ${e3.end} - ${e3.start};`
+    } else {
+      update = (lhs) => `${lhs} = ${e3};`
+    }
+    hashUpdate(buf, sym, q.arg[1].op, update)
   } else {
     throw new Error("unknown op: " + pretty(q))
   }
