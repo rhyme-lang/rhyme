@@ -246,8 +246,12 @@ exports.generate = (ir, backend = "js") => {
     if (str.indexOf("}") == 0) indent--
     code.push("".padEnd(indent * 4, ' ') + str)
     //console.log("".padEnd(indent * 4, ' ') + str + "\n")
-    if (str.indexOf("{") >= 0) indent++
-    if (str.indexOf("}") > 0) indent--
+    if  (str.indexOf("}") != 0) {
+      let l_num = (str.match(/{/g)||[]).length
+      let r_num = (str.match(/}/g)||[]).length
+      if (l_num > r_num) indent++
+      if (l_num < r_num) indent--
+    }
   }
   if (backend == "cpp" || backend == "c-sql") {
     prolog.forEach(emit)
@@ -354,7 +358,7 @@ exports.generate = (ir, backend = "js") => {
     if (backend == "cpp") {
       emit(e.loopTxt)
       // TODO: support multiple filters
-    } else if (backend == "c-sql") { 
+    } else if (backend == "c-sql") {
       let loops = gensBySym[s]
       let loopTxts = loops.map(x => x.getLoopTxt())
       for (let loopTxt of loopTxts) {
@@ -365,7 +369,7 @@ exports.generate = (ir, backend = "js") => {
       for (let loopTxt of loopTxts) {
         loopTxt.initCursor.map(emit)
       }
-      
+
       // emit comment line for each generated filter
       for (let loopTxt of loopTxts) {
         loopTxt.info.map(emit)

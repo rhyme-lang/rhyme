@@ -9,4 +9,6 @@ cgen/test.out
 
 cgen-sql/out*
 
+.vscode
+
 out

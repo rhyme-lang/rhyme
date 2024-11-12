@@ -65,7 +65,7 @@ test("array1_largeInitialSize", () => {
   ])
 
   expect(res).toStrictEqual([
-  	11,12,13,14,15, , , 
+  	11,12,13,14,15, , ,
   ])
 })
 
@@ -89,7 +89,7 @@ test("array2_filterGaps", () => {
 
 
 // next: typed arrays
-// 
+//
 // this works, but there are no undefined values and
 // empty slots map to zeros. this seems consistent
 // if the init value is provided explicitly.
@@ -178,7 +178,7 @@ let TensorViewProxy = {
   },
   getOwnPropertyDescriptor(target, prop) {
     return { configurable: true, enumerable: true }
-  } 
+  }
 
 }
 
@@ -658,14 +658,14 @@ test("csr2_sparseMatrixVectorProduct", () => {
   let udf = {
     array: (n) => new Array(n)
   }
-  
+
   let query = rh`update (udf.array 5) *i sum(csr.*i.*j * vec.*j)`
 
   let func = compile(query)
   let res = func({csr, vec, udf})
 
-  expect(res).toEqual([ 
-    0, -60, 330, 720, 0 
+  expect(res).toEqual([
+    0, -60, 330, 720, 0
   ])
 
 
@@ -690,7 +690,7 @@ test("sortMergeJoin1", () => {
   let key = 0
 
   let seek = (array, pos, min) => {
-    // suboptimal, should use binary search 
+    // suboptimal, should use binary search
     while (pos < array.length && array[pos] < min) pos++
     let key = pos < array.length ? array[pos] : EOF
     return {pos, key}
@@ -725,7 +725,7 @@ test("sortMergeJoin2", () => {
     pos: 0,
     size: array.length,
     seek: function(min) {
-      // suboptimal, should use binary search 
+      // suboptimal, should use binary search
       while (this.pos < array.length && array[this.pos] < min) this.pos++
       let key = this.pos < array.length ? array[this.pos] : EOF
       return key
@@ -779,7 +779,7 @@ test("sortMergeJoin3", () => {
     foreach: function(k, min=0) {
       let pos = 0
       for (;;) {
-        // suboptimal, should use binary search 
+        // suboptimal, should use binary search
         while (pos < array.length && array[pos] < min) pos ++
         if (pos == array.length) return EOF
         min = k(array[pos++])
@@ -787,7 +787,7 @@ test("sortMergeJoin3", () => {
     },
     seek: function(min) {
       let pos = 0
-      // suboptimal, should use binary search 
+      // suboptimal, should use binary search
       while (pos < array.length && array[pos] < min) pos ++
       if (pos == array.length) return EOF
       return array[pos]
@@ -819,7 +819,7 @@ test("sortMergeJoin3", () => {
   itA.foreach(a => {
     let b = itB.seek(a)
     let c = itC.seek(b)
-    if (c == a) 
+    if (c == a)
       res.push(a)
     return c
   })

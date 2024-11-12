@@ -179,6 +179,14 @@ typing.createVec = (vecType, keyType, dim, dataType) => {
     );
 }
 
+typing.createVecs = (vecType, keyType, dim, dataTypes) => {
+  let keyTy = typing.createKey(keyType)
+  if(dim == 1)
+      return dataTypes.map(dataType => typing.createTaggedType(vecType, {dim: dim},
+          typing.objBuilder().add(keyTy, dataType).build()));
+  return typing.objBuilder().add(keyTy, typing.createVec(vecType, keyType, dim - 1, dataTypes)).build().map(ty => typing.createTaggedType(vecType, {dim: dim}, ty));
+}
+
 let performObjectGet = (objectType, keyType) => {
     if(objectType === types.any)
         return types.any;
@@ -244,7 +252,7 @@ let typeConforms_NonUnion = (type, expectedType) => {
     }
     if(type.__rh_type === typeSyms.function) {
         if(expectedType.__rh_type !== typeSyms.function)
-            return false    
+            return false
         // For function subtyping rules:
         //  S_1 <: T_1 yields T_1 -> any <: S_1 -> any
         //  S_2 <: T_2 yields any -> S_2 <: any -> T_2
@@ -271,7 +279,7 @@ let typeConforms_NonUnion = (type, expectedType) => {
                 break;
             }
         }
-        if(!invalid) 
+        if(!invalid)
             return true;
     }
     for(let subtype_order_arr of SUBTYPE_ORDERS) {
@@ -347,18 +355,40 @@ let isInteger = (type) => {
     if(type.__rh_type === typeSyms.dynkey)
         // Dynkeys are subtypes of the supertype. Hence, if supertype is integer, dynkey is integer.
         return isInteger(type.__rh_type_supertype);
-    if( type === types.u8 || 
-        type === types.u16 || 
-        type === types.u32 || 
-        type === types.u64 || 
-        type === types.i8 || 
-        type === types.i16 || 
-        type === types.i32 || 
+    if( type === types.u8 ||
+        type === types.u16 ||
+        type === types.u32 ||
+        type === types.u64 ||
+        type === types.i8 ||
+        type === types.i16 ||
+        type === types.i32 ||
         type === types.i64)
         return true;
     return false;
 }
 typing.isInteger = isInteger;
+
+let isSparse = (type) => {
+  return type.__rh_type === typeSyms.tagged_type && type.__rh_type_tag === "sparse"
+}
+
+typing.isSparse = isSparse;
+
+let isSparseVec = (type) => {
+  return isSparse(type) && type.__rh_type_data.dim == 1
+}
+
+typing.isSparseVec = isSparseVec;
+
+let isSparseMat = (type) => {
+  return isSparse(type) && type.__rh_type_data.dim == 2
+}
+
+typing.isSparseMat = isSparseMat;
+
+Set.prototype.difference = function(otherSet) {
+  return new Set([...this].filter(element => !otherSet.has(element)));
+};
 
 let withoutNothing = (type) => {
     if(type.__rh_type !== typeSyms.union)
@@ -518,7 +548,7 @@ let _validateIRQuery = (schema, cseMap, boundKeys, q) => {
         if(!typing.isSubtype(t1, typing.createMaybe(types.emptyObject))) {
             throw new Error("Unable to perform get operation on non-object: " + prettyPrintType(t1));
         }
-        
+
         if(e2.key == "var") {
             if(!boundKeys[e2.op]) {
                 let keys = [];
@@ -534,14 +564,14 @@ let _validateIRQuery = (schema, cseMap, boundKeys, q) => {
         }
 
         let t2 = validateIRQuery(schema, cseMap, boundKeys, e2);
-        
+
         return performObjectGet(t1, t2);
     } else if(q.key === "pure") {
         let [e1, e2] = q.arg;
 
         let t1 = validateIRQuery(schema, cseMap, boundKeys, e1);
         // If q is a binary operation:
-        if(q.op === "plus" || q.op === "equal" || q.op === "and" || q.op === "notEqual" ||
+        if(q.op === "plus" || q.op === "times"  || q.op === "equal" || q.op === "and" || q.op === "notEqual" ||
            q.op === "minus" || q.op === "times" || q.op === "fdiv" || q.op === "div" || q.op === "mod") {
             let t2 = validateIRQuery(schema, cseMap, boundKeys, e2);
             if(q.op == "plus") {
@@ -560,6 +590,24 @@ let _validateIRQuery = (schema, cseMap, boundKeys, q) => {
                     return createUnionWithSet(possibleResults);
                 } else {
                     throw new Error("Unimplemented ability to type-check addition of non-integer values.")
+                }
+            } else if (q.op == "times") {
+                if(isNothingOr(isInteger, t1) && isNothingOr(isInteger, t2)) {
+                    let possibleResults = new Set([]);
+                    if(!isInteger(t1) || !isInteger(t2)) {
+                        possibleResults.add(types.nothing);
+                    }
+                    // TODO: consider widening
+                    for(let numberType of numberTypes) {
+                        if(typing.isSubtype(t1, numberType) && typing.isSubtype(t2, numberType)) {
+                            possibleResults.add(numberType);
+                            break;
+                        }
+                    }
+                    res = createUnionWithSet(possibleResults);
+                    return res;
+                } else {
+                    throw new Error("Unimplemented ability to type-check multiplication of non-integer values.")
                 }
             } else if (q.op == "fdiv") {
                 // TODO: validate types for fdiv
