@@ -19,7 +19,7 @@ let execPromise = function (cmd) {
 let outDir = "cgen-sql/out"
 
 beforeAll(async () => {
-  await execPromise(`rm -r ${outDir}`)
+  await execPromise(`rm -rf ${outDir}`)
   await execPromise(`mkdir ${outDir}`)
   await execPromise(`cp cgen-sql/rhyme-sql.h ${outDir}`)
 });
