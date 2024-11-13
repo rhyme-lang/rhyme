@@ -8,22 +8,25 @@
 #include <type_traits>
 #include <cassert>
 #include <sstream>
+#include <initializer_list>
 
 using json = nlohmann::json;
 
+using indexTy = int;
+
 template <class T, class K>
 class CSVector {
-  std::shared_ptr<std::vector<T>> data;
-  std::shared_ptr<std::vector<K>> cols;
+  std::vector<T>* data;
+  std::vector<K>* cols;
   K start_idx;
   K end_idx;
   public:
   class iterator {
     private:
       const CSVector<T, K>* container;
-      K index;
+      indexTy index;
     public:
-    explicit iterator(const CSVector<T, K>* container, K index) : container(container), index(index) {}
+    explicit iterator(const CSVector<T, K>* container, indexTy index) : container(container), index(index) {}
     std::pair<K, T> operator*() const {
       return std::make_pair((*container->cols)[index], (*container->data)[index]);
     }
@@ -38,13 +41,88 @@ class CSVector {
       return container == other.container && index == other.index;
     }
   };
+  class multi_iterator {
+    private:
+      std::vector<const CSVector<T, K>*> containers;
+      std::vector<indexTy> indexes;
+      indexTy length;
+      bool finished;
+    public:
+    inline T getdata(indexTy idx) const {
+      return (*containers[idx]->data)[indexes[idx]];
+    }
+    inline K getcol(indexTy idx) const {
+      return (*containers[idx]->cols)[indexes[idx]];
+    }
+    inline indexTy getlength(indexTy idx) const {
+      return (*containers[idx]->cols).size();
+    }
+    inline void skip(indexTy idx, K max_col) {
+      indexTy n = getlength(idx);
+      while (indexes[idx] < n && getcol(idx) < max_col) {
+        indexes[idx]++;
+      }
+      if (indexes[idx] >= n) finished = true;
+    }
+    inline bool ready() const {
+      K key = getcol(0);
+      for (indexTy i = 1; i < length; i++) {
+        if (getcol(i) != key) return false;
+      }
+      return true;
+    }
+    inline void next(bool start = false) {
+      if (!start && ready()) {
+        for (indexTy i = 0; i < length; i++) {
+          indexes[i]++;
+          if (indexes[i] >= getlength(i)) {
+            finished = true;
+            return;
+          }
+        }
+      }
+      while(!ready() && !finished) {
+        K max_key = getcol(0);
+        for (indexTy i = 1; i < length; i++) {
+          K curr_key = getcol(i);
+          max_key = curr_key > max_key ? curr_key : max_key;
+        }
+        for (indexTy i = 0; i < length; i++) {
+          skip(i, max_key);
+        }
+      }
+      return;
+    }
+    explicit multi_iterator(std::initializer_list<const CSVector<T, K>*> containers) {
+      this->containers = std::vector<const CSVector<T, K>*>{containers};
+      length = containers.size();
+      assert(length > 1 && "too few arguments!");
+      indexes = std::vector<indexTy>(length, 0);
+      finished = false;
+      next(true);
+    }
+    std::pair<K, std::vector<T>> operator*() const {
+      std::vector<T> vals;
+      for (indexTy i = 0; i < length; i++) {
+        vals.emplace_back(getdata(i));
+      }
+      return std::make_pair(getcol(0), std::move(vals));
+    }
+    multi_iterator& operator++() {
+      next();
+      return *this;
+    }
+    bool finish() {
+      return finished;
+    }
+  };
   iterator begin() const {
     return iterator(this, start_idx);
   }
   iterator end() const {
     return iterator(this, end_idx);
   }
-  explicit CSVector(std::shared_ptr<std::vector<T>> data, std::shared_ptr<std::vector<K>> cols, K start_idx, K end_idx) : data(data), cols(cols), start_idx(start_idx), end_idx(end_idx) {}
+  explicit CSVector(std::vector<T>* data, std::vector<K>* cols, K start_idx, K end_idx) : data(data), cols(cols), start_idx(start_idx), end_idx(end_idx) {}
 
   CSVector(const CSVector& other) : data(other.data), cols(other.cols), start_idx(other.start_idx), end_idx(other.end_idx) {}
   CSVector(CSVector&& other) : data(std::move(other.data)), cols(std::move(other.cols)), start_idx(std::move(other.start_idx)), end_idx(std::move(other.end_idx)) {}
@@ -52,16 +130,16 @@ class CSVector {
 
 template <class T, class K>
 class CSRMatrix {
-  std::shared_ptr<std::vector<T>> data;
-  std::shared_ptr<std::vector<K>> cols;
-  std::shared_ptr<std::vector<K>> rows;
+  std::vector<T>* data;
+  std::vector<K>* cols;
+  std::vector<K>* rows;
   public:
   class iterator {
     private:
       const CSRMatrix<T, K>* container;
-      K index;
+      indexTy index;
     public:
-    explicit iterator(const CSRMatrix<T, K>* container, K index) : container(container), index(index) {}
+    explicit iterator(const CSRMatrix<T, K>* container, indexTy index) : container(container), index(index) {}
     std::pair<K, CSVector<T, K>> operator*() const {
       K start_idx = (*container->rows)[index];
       K end_idx = index == container->rows->size() - 1 ? container->data->size() : (*container->rows)[index+1];
@@ -84,7 +162,7 @@ class CSRMatrix {
   iterator end() const {
     return iterator(this, rows->size());
   }
-  explicit CSRMatrix(std::shared_ptr<std::vector<T>> data, std::shared_ptr<std::vector<K>> cols, std::shared_ptr<std::vector<K>> rows) : data(data), cols(cols), rows(rows) {}
+  explicit CSRMatrix(std::vector<T>* data, std::vector<K>* cols, std::vector<K>* rows) : data(data), cols(cols), rows(rows) {}
   CSRMatrix(const CSRMatrix& other) : data(other.data), cols(other.cols), rows(other.rows) {}
   CSRMatrix(CSRMatrix&& other) : data(std::move(other.data)), cols(std::move(other.cols)), rows(std::move(other.rows)) {}
 };
@@ -155,8 +233,8 @@ inline std::vector<std::vector<T>> parse_2D_dense_tensor(std::string data) {
 
 template <typename T, typename K>
 inline CSVector<T, K> parse_1D_sparse_tensor(std::string data) {
-  std::shared_ptr<std::vector<T>> data_p = std::make_shared<std::vector<T>>();
-  std::shared_ptr<std::vector<K>> cols_p = std::make_shared<std::vector<K>>();
+  std::vector<T>* data_p = new std::vector<T>();
+  std::vector<K>* cols_p = new std::vector<K>();
   int start_idx;
   int end_idx;
   int len = data.size();
@@ -197,9 +275,9 @@ inline CSVector<T, K> parse_1D_sparse_tensor(std::string data) {
 
 template <typename T, typename K>
 inline CSRMatrix<T, K> parse_2D_sparse_tensor(std::string data) {
-  std::shared_ptr<std::vector<T>> data_p = std::make_shared<std::vector<T>>();
-  std::shared_ptr<std::vector<K>> cols_p = std::make_shared<std::vector<K>>();
-  std::shared_ptr<std::vector<K>> rows_p = std::make_shared<std::vector<K>>();
+  std::vector<T>* data_p = new std::vector<T>();
+  std::vector<K>* cols_p = new std::vector<K>();
+  std::vector<K>* rows_p = new std::vector<K>();
   int len = data.size();
   assert(data[0] == '{');
   assert(data[len-1] == '}');

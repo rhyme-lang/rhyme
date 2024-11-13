@@ -115,7 +115,7 @@ test("testScalar1", async () => {
 })
 
 test("testHint1", async () => {
-  let query = rh`sum data.*.value` // (hint dense data) & 
+  let query = rh`sum data.*.value` // (hint dense data) &
 
   let func = compile(query, { backend : "c", schema: typing.createSimpleObject({
     data: typing.createVec("dense", types.string, 1, dataInnerObj),
@@ -236,4 +236,22 @@ test("testHint3MatrixCPP", async () => {
   expect(resRh).toEqual("360")
   expect(resDense).toEqual("360")
   expect(resSparse).toEqual("360")
+}, 10000)
+
+test("testHint4DotProductCPP", async () => {
+  let query = rh`sum(vec1.*i * vec2.*i)`
+
+  let data1 = [0, 0, 10, 20, 30, 0, 0, 0, 40, 50, 0, 0, 0, 0, 0, 60, 0, 0, 70, 0, 0, 80]
+  let data2 = [0, 10, 0, 20, 0, 0, 30, 0, 40, 0, 50, 0, 0, 0, 0, 60, 0, 0, 70, 0, 80, 0]
+
+  let vec1 = buildCSV(data1)
+  let vec2 = buildCSV(data2)
+
+  tys = typing.createVecs("sparse", types.i32, 1, [types.i32, types.i32])
+  let func = compile(query, { backend : "cpp", schema: typing.createSimpleObject({
+    vec1: tys[0],
+    vec2: tys[1]
+  })});
+  let res = await func({vec1, vec2})
+  expect(res).toEqual("10500")
 }, 10000)

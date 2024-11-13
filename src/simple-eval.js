@@ -1611,7 +1611,7 @@ let quoteIndexVarsXS_CPP = (s, vs) => {
     res = res+"["+quoteVarXS(v)+"]"
   }
   return res
-}
+}*/
 
 let quoteCppOp = op => {
   if (op == "plus") {
@@ -1625,7 +1625,7 @@ let quoteCppOp = op => {
   } else {
     console.error("Unsupported Op")
   }
-}*/
+}
 
 let quoteGet = (a, b) => a+"["+b+"]"
 let quoteGets = (s, vs) => {
@@ -1690,6 +1690,7 @@ let quoteExpr = q => {
 
 // TODO: add explicit type cast when type does not check
 let codegenCPP = q => {
+  let ty = q.schema
   let expr = quoteExpr(q)
   if (expr in nameEnv) return nameEnv[expr]
   if (q.key == "input") {
@@ -1718,8 +1719,8 @@ let codegenCPP = q => {
     if (es.length == 0) return "hint"
     else if (es.length == 1) return es[0]
     else {
-
-        return "rt_pure_"+q.op+"("+es.join(",")+")"
+      if (typing.isInteger(ty)) return "("+es.join(" "+quoteCppOp(q.op)+" ")+")"
+      else return "rt_pure_"+q.op+"("+es.join(",")+")"
     }
   } else if (q.key == "hint") {
     // no-op!
@@ -1904,16 +1905,37 @@ let emitCodeCPP = (q, order) => {
     }
     throw new Error("Unknown loop type: " + typing.prettyPrintType(ty));
   }
-  function selectGenFilter(e1, e2) {
-    let a = transExpr(e1)
-    let b = transExpr(e2)
+
+  function selectGenFilter(gen, loops) {
+    let b = transExpr(gen)
     let b1 = b.deps[0]
-    let e = expr("FOR", ...a.deps) // "for " + b1 + " <- " + a.txt
-    e.sym = b1
-    e.rhs = a.txt
-    e.loopTxt = quoteLoop(e1, e2)
-    // if (generatorStms.every(e1 => e1.txt != e.txt)) // generator CSE
-    generatorStms.push(e)
+    if (loops.length == 1) {
+      let l = loops[0]
+      let a = transExpr(l)
+      let e = expr("FOR", ...a.deps)
+      e.sym = b1
+      e.rhs = a.txt
+      e.loopTxt = quoteLoop(l, gen)
+      generatorStms.push(e)
+    } else {
+      let sources = loops.map(transExpr)
+      let tys = loops.map(x => x.schema)
+      if (!tys.every(typing.isSparseVec)) {
+        throw new Error("Unsupported container types")
+      }
+      let sourceTxts = sources.map(x => "&"+x.txt)
+      let iter = b.txt+"_mit"
+      let prolog = "for (auto "+iter+" = "+quoteTypeCPP(tys[0])+"::multi_iterator({"+sourceTxts.join(",")+"});!"+iter+".finish(); ++"+iter+") {"
+      for (l of loops) {
+        let l = loops[0]
+        let a = transExpr(l)
+        let e = expr("FOR", ...a.deps)
+        e.sym = b1
+        e.rhs = a.txt
+        e.loopTxt = prolog
+        generatorStms.push(e)
+      }
+    }
   }
 
 
@@ -1939,20 +1961,59 @@ let emitCodeCPP = (q, order) => {
   }
 
   let getScopedName = (ty, gen) => {
-    if(ty.__rh_type === typeSyms.tagged_type && (ty.__rh_type_tag === "sparse") || Array.isArray(ty)) {
+    if(typing.isSparse(ty) || Array.isArray(ty)) {
         return gen+"_val"
     }
   }
 
+  let getMitScopedName = (tys, gen, i) => {
+    if (!tys.every(typing.isSparseVec)) {
+      throw new Error("Unsupported container types")
+    }
+    return "(*"+gen+"_mit).second["+i+"]"
+  }
+
+  let loopsByGen = {}
+
   for (let i in filters) {
     let q = filters[i]
-    let [e1,e2] = q.arg.map(quoteExpr)
-    q.arg.forEach(collectObj)
-    let ty1 = q.arg[0].schema
-    let expr = quoteGet(e1, e2)
-    let scopedName = getScopedName(ty1, e2)
-    if (scopedName) {
-      nameEnv[expr] = scopedName
+    let genexpr = q.arg[1]
+    let gensym = genexpr.op
+    let source = q.arg[0]
+    loopsByGen[gensym] ??= {}
+    loopsByGen[gensym].expr = genexpr
+    loopsByGen[gensym].loops ??= []
+    loopsByGen[gensym].loops.push(source)
+  }
+
+  for (let gen in loopsByGen) {
+    let loops = loopsByGen[gen].loops
+    loops.forEach(collectObj)
+    let gensym = quoteVar(gen)
+
+    if (loops.length == 1) {
+      let q1 = loops[0]
+      let e1 = quoteExpr(q1)
+      let ty1 = q1.schema
+      let expr = quoteGet(e1, gensym)
+      let scopedName = getScopedName(ty1, gensym)
+      if (scopedName) {
+        nameEnv[expr] = scopedName
+      }
+    } else {
+      let tys = loops.map(x => x.schema)
+      if (!tys.every(typing.isSparseVec)) {
+        throw new Error("Unsupported container types")
+      }
+      for (let i in loops) {
+        let l = loops[i]
+        let e1 = quoteExpr(l)
+        let expr = quoteGet(e1, gensym)
+        let scopedName = getMitScopedName(tys, gensym, i)
+        if (scopedName) {
+          nameEnv[expr] = scopedName
+        }
+      }
     }
   }
 
@@ -1996,10 +2057,10 @@ let emitCodeCPP = (q, order) => {
   }
 
   // map filters/generators
-  for (let i in filters) {
-    let q = filters[i]
-    let [a,b] = q.arg
-    selectGenFilter(a, b)
+  for (let gen in loopsByGen) {
+    let genexpr = loopsByGen[gen].expr
+    let loops = loopsByGen[gen].loops
+    selectGenFilter(genexpr, loops)
   }
 
   // map final result
