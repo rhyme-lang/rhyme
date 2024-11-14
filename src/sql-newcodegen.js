@@ -5,6 +5,8 @@ const { typing, types } = require('./typing')
 const KEY_SIZE = 256
 const HASH_SIZE = 256
 
+const HASH_MASK = HASH_SIZE - 1
+
 let filters
 let assignments
 let csvFilesEnv
@@ -354,7 +356,7 @@ let hashLookUp = (buf, sym, key) => {
   let { val: mksetVal } = mksetVarEnv[key]
 
   let pos = getNewName("pos")
-  buf.push(`unsigned long ${pos} = ${key}_hash & hash_mask;`)
+  buf.push(`unsigned long ${pos} = ${key}_hash & ${HASH_MASK};`)
 
   let keyPos = `${sym}_htable[${pos}]`
 
@@ -367,11 +369,11 @@ let hashLookUp = (buf, sym, key) => {
     let len = `${mksetVal.end} - ${mksetVal.start}`
 
     buf.push(`while (${keyPos} != -1 && compare_str2(${keyStr}, ${keyLen}, ${str}, ${len}) != 0) {`)
-    buf.push(`${pos} = (${pos} + 1) & hash_mask;`)
+    buf.push(`${pos} = (${pos} + 1) & ${HASH_MASK};`)
     buf.push(`}`)
   } else {
     buf.push(`while (${keyPos} != -1 && ${sym}_keys[${keyPos}] != ${mksetVal}) {`)
-    buf.push(`${pos} = (${pos} + 1) & hash_mask;`)
+    buf.push(`${pos} = (${pos} + 1) & ${HASH_MASK};`)
     buf.push(`}`)
   }
 
@@ -715,7 +717,10 @@ let getLoopTxt = (f, filename, loadCSV) => () => {
   initCursor.push("}")
   initCursor.push(`${cursor}++;`)
 
-  let loopHeader = ["while (1) {"]
+  let loopHeader = []
+  loopHeader.push(`${quoteVar(v)} = -1;`)
+  loopHeader.push("while (1) {")
+  loopHeader.push(`${quoteVar(v)}++;`)
   let boundsChecking = [`if (${cursor} >= ${size}) break;`]
 
   let schema = f.schema
@@ -798,8 +803,8 @@ let emitCode = (q, ir) => {
   let prolog = []
   prolog.push(`#include "rhyme-sql.h"`)
   prolog.push("int main() {")
-  prolog.push(`unsigned long hash_mask = ${HASH_SIZE - 1};`)
 
+  let emittedCounter = {}
   for (let i in filters) {
     let f = filters[i]
     let v1 = f.arg[1].op
@@ -823,6 +828,14 @@ let emitCode = (q, ir) => {
         if (csvFilesEnv[filename] == undefined) {
           emitLoadCSV(loadCSV, filename, i, false)
         }
+      }
+
+      // declare the loop row counter e.g. xA, xB, D0 etc.
+      // should just be an integer
+      if (!emittedCounter[v1]) {
+        let counter = `${quoteVar(v1)}`
+        prolog.push(`int ${counter};`)
+        emittedCounter[v1] = true
       }
 
       let getLoopTxtFunc = getLoopTxt(f, filename, loadCSV)
