@@ -127,6 +127,9 @@ let defaultSettings = {
   backend: "js",
 
   schema: typing.any,
+
+  outDir: "cgen-sql",
+  outFile: "tmp.c"
 }
 
 
@@ -2389,7 +2392,7 @@ let execPromise = function(cmd) {
 
   if (settings.backend == "c-sql-new") {
     let ir = {filters, assignments, vars, order}
-    return generateCSqlNew(q, ir)
+    return generateCSqlNew(q, ir, settings.outDir, settings.outFile)
   }
 
   let code = emitCode(q,order)

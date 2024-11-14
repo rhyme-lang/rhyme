@@ -67,6 +67,18 @@ int compare_str1(const char *file1, int start1, int end1, const char *file2,
     return len1 - len2;
 }
 
+int compare_str2(const char *str1, int len1, const char *str2, int len2) {
+    int min_len = (len1 < len2) ? len1 : len2;
+    for (int i = 0; i < min_len; i++) {
+        char c1 = str1[i];
+        char c2 = str2[i];
+        if (c1 != c2) {
+            return c1 - c2;
+        }
+    }
+    return len1 - len2;
+}
+
 void println(const char *file, int start, int end) {
     int curr = start;
     while (curr < end) {
@@ -74,4 +86,12 @@ void println(const char *file, int start, int end) {
         curr++;
     }
     putchar('\n');
+}
+
+void print(const char *str, int len) {
+    int i = 0;
+    while (i < len) {
+        putchar(str[i]);
+        i++;
+    }
 }

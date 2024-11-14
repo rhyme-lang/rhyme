@@ -1,5 +1,5 @@
-region,country,city,population
-Asia,Japan,Tokyo,30
-Asia,China,Beijing,20
-Europe,France,Paris,10
-Europe,UK,London,10
+country,city,population
+Japan,Tokyo,30
+China,Beijing,20
+France,Paris,10
+UK,London,10
