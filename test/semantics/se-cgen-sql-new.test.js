@@ -478,3 +478,19 @@ test("joinWithAggrTest", async () => {
 Europe: 20
 `)
 })
+
+let countryData = [
+  { country: "Japan", city: "Tokyo", population: 30 },
+  { country: "Japan", city: "Osaka", population: 25 },
+  { country: "China", city: "Beijing", population: 20 },
+  { country: "China", city: "Shanghai", population: 25 },
+  { country: "France", city: "Paris", population: 10 },
+  { country: "UK", city: "London", population: 10 },
+]
+
+let regionData = [
+  { region: "Asia", country: "Japan" },
+  { region: "Asia", country: "China" },
+  { region: "Europe", country: "France" },
+  { region: "Europe", country: "UK" },
+]

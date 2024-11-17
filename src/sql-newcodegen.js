@@ -927,7 +927,7 @@ let generateCSqlNew = (q, ir, outDir, outFile) => {
 
   let func = async () => {
     await fs.writeFile(`${outDir}/${outFile}`, code);
-    await execPromise(`gcc ${outDir}/${outFile} -o ${outDir}/tmp -Icgen-sql`)
+    await execPromise(`gcc ${outDir}/${outFile} -o ${outDir}/tmp -Icgen-sql -O3`)
     return `${outDir}/tmp`
   }
 
