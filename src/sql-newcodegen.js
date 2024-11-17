@@ -2,8 +2,8 @@ const { isString } = require('node:util')
 const { generate } = require('./new-codegen')
 const { typing, types } = require('./typing')
 
-const KEY_SIZE = 256
-const HASH_SIZE = 256
+const KEY_SIZE = 512
+const HASH_SIZE = 512
 
 const HASH_MASK = HASH_SIZE - 1
 

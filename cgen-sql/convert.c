@@ -1,16 +1,23 @@
 #include <stdio.h>
 
-int main() {
-    FILE *fin = fopen("./t1gram.csv", "r");
-    if (fin == NULL) {
-        fputs("Unable to open ./t1gram.csv", stderr);
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        fputs("Usage: convert <file>\n", stderr);
+        return 1;
     }
 
-    FILE *fout = fopen("./t1gram_converted.csv", "w");
-    if (fout == NULL) {
-        fputs("Unable to open ./t1gram_converted.csv", stderr);
+    FILE *fin = fopen(argv[1], "r");
+    if (fin == NULL) {
+        fprintf(stderr, "Unable to open %s\n", argv[1]);
+        return 1;
     }
-    fputs("n_gram,year,match_count,volumn_count\n", fout);
+
+    FILE *fout = fopen("./out.csv", "w");
+    if (fout == NULL) {
+        fputs("Unable to open ./out.csv\n", stderr);
+        return 1;
+    }
+    fputs("n_gram,year,match_count,volume_count\n", fout);
 
     while (1) {
         char c = fgetc(fin);

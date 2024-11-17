@@ -442,8 +442,8 @@ test("groupRegionByCountry", async () => {
 
   let res = await func()
   expect(res).toBe(`France: Europe
-UK: Europe
 China: Asia
+UK: Europe
 Japan: Asia
 `)
 })
@@ -459,8 +459,8 @@ test("joinSimpleTest", async () => {
   let res = await func()
   expect(res).toBe(`Paris: Europe
 London: Europe
-Tokyo: Asia
 Beijing: Asia
+Tokyo: Asia
 `)
 })
 
