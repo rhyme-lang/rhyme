@@ -542,6 +542,9 @@ typing.isDense = isDense;
 Set.prototype.difference = function(otherSet) {
   return new Set([...this].filter(element => !otherSet.has(element)));
 };
+Set.prototype.union = function(otherSet) {
+  return new Set([...this, ...otherSet]);
+};
 
 let generalizeInteger = (type) => {
     if(!isInteger(type))
