@@ -38,9 +38,9 @@ let initRequired = {
 }
 
 let convertToCType = (type) => {
-  if (type.__rh_type === "dynkey")
-    return convertToCType(type.__rh_type_superkey);
-  if (type.__rh_type === "union")
+  if (type.typeSym === "dynkey")
+    return convertToCType(type.keySuperkey);
+  if (type.typeSym === "union")
     throw new Error("Unable to convert union type to C type currently: " + typing.prettyPrintType(type));
   if (type === types.u8)
     return "uint8_t";
@@ -66,9 +66,9 @@ let convertToCType = (type) => {
 }
 
 let getFormatSpecifier = (type) => {
-  if (type.__rh_type === "dynkey")
-    return getFormatSpecifier(type.__rh_type_superkey);
-  if (type.__rh_type === "union")
+  if (type.typeSym === "dynkey")
+    return getFormatSpecifier(type.keySuperkey);
+  if (type.typeSym === "union")
     throw new Error("Unable to get type specifier for union tpyes currently: " + typing.prettyPrintType(type));
   if (type === types.u8)
     return "hhu";
@@ -186,16 +186,16 @@ let validateAndExtractUsedCols = (q, extractStr = false) => {
     let prefix = pretty(e1) // does this always work?
     usedCols[prefix] ??= {}
 
-    if (typing.isInteger(q.schema)) {
+    if (typing.isInteger(q.schema.type)) {
       usedCols[prefix][e2.op] = true
-    } else if (typing.isString(q.schema)) {
+    } else if (typing.isString(q.schema.type)) {
       // only extract the string if we need a null-terminated string
       // e.g. filename used for open()
       if (extractStr) {
         usedCols[prefix][e2.op] = true
       }
     } else {
-      throw new Error("column data type not supported: " + pretty(q) + " has type " + typing.prettyPrintType(q.schema))
+      throw new Error("column data type not supported: " + pretty(q) + " has type " + typing.prettyPrintTuple(q.schema))
     }
 
     // extract used columns for the filename
@@ -211,8 +211,8 @@ let validateAndExtractUsedCols = (q, extractStr = false) => {
     }
     let [_e1, _e2, e3, e4] = q.arg
 
-    if (!typing.isString(e4.arg[0].arg[0].schema) && !typing.isInteger(e4.arg[0].arg[0].schema)) {
-      throw new Error(`value of type ${typing.prettyPrintType(e4.arg[0].arg[0].schema)} not allowed for mkset`)
+    if (!typing.isString(e4.arg[0].arg[0].schema.type) && !typing.isInteger(e4.arg[0].arg[0].schema.type)) {
+      throw new Error(`value of type ${typing.prettyPrintTuple(e4.arg[0].arg[0].schema)} not allowed for mkset`)
     }
 
     // value
@@ -304,16 +304,16 @@ let codegen = (q, buf, extractStr = false) => {
 
     let name = [mappedFile, quoteVar(v), e2.op].join("_")
 
-    if (typing.isInteger(q.schema)) {
+    if (typing.isInteger(q.schema.type)) {
       return name
-    } else if (typing.isString(q.schema)) {
+    } else if (typing.isString(q.schema.type)) {
       if (extractStr) {
         return name
       } else {
         return { file: mappedFile, start, end }
       }
     } else {
-      throw new Error("cannot extract value of type " + typing.prettyPrintType(q.schema))
+      throw new Error("cannot extract value of type " + typing.prettyPrintTuple(q.schema))
     }
   } else if (q.key == "pure") {
     let e1 = codegen(q.arg[0], buf)
@@ -326,13 +326,13 @@ let codegen = (q, buf, extractStr = false) => {
       return `${e1} ${op} ${e2}`
     } else if (q.op == "equal" || q.op == "notEqual") {
       let e2 = codegen(q.arg[1], buf)
-      if (typing.isString(q.arg[0].schema) && typing.isString(q.arg[1].schema)) {
+      if (typing.isString(q.arg[0].schema.type) && typing.isString(q.arg[1].schema.type)) {
         let { file: file1, start: start1, end: end1 } = e1
         let { file: file2, start: start2, end: end2 } = e2
         let name = getNewName("tmp_cmpstr")
         buf.push(`int ${name} = compare_str1(${file1}, ${start1}, ${end1}, ${file2}, ${start2}, ${end2}) ${op} 0;`)
         return name
-      } else if (typing.isInteger(q.arg[0].schema) && typing.isInteger(q.arg[1].schema)) {
+      } else if (typing.isInteger(q.arg[0].schema.type) && typing.isInteger(q.arg[1].schema.type)) {
         return `${e1} ${op} ${e2}`
       }
     } else if (q.op == "and") {
@@ -551,13 +551,13 @@ let emitStmInit = (q, sym) => {
       hashLookUpOrUpdate(buf, sym, q.fre[0], (lhs) => `${lhs} ${update};`)
     } else {
       if (q.op == "sum" || q.op == "count") {
-        buf.push(`${convertToCType(q.schema)} ${sym} = 0;`)
+        buf.push(`${convertToCType(q.schema.type)} ${sym} = 0;`)
       } else if (q.op == "product") {
-        buf.push(`${convertToCType(q.schema)} ${sym} = 1;`)
+        buf.push(`${convertToCType(q.schema.type)} ${sym} = 1;`)
       } else if (q.op == "min") {
-        buf.push(`${convertToCType(q.schema)} ${sym} = INT_MAX;`)
+        buf.push(`${convertToCType(q.schema.type)} ${sym} = INT_MAX;`)
       } else if (q.op == "max") {
-        buf.push(`${convertToCType(q.schema)} ${sym} = INT_MIN;`)
+        buf.push(`${convertToCType(q.schema.type)} ${sym} = INT_MIN;`)
       } else {
         throw new Error("stateful op not supported: " + pretty(q))
       }
@@ -565,7 +565,7 @@ let emitStmInit = (q, sym) => {
   } else if (q.key == "update") {
     buf.push(`// init ${sym} for group`)
     let { schema: keySchema } = mksetVarEnv[q.arg[1].op]
-    hashMapInit(buf, sym, keySchema, q.schema[0][1])
+    hashMapInit(buf, sym, keySchema.type, q.schema.type.objValue)
   } else {
     throw new Error("unknown op: " + pretty(q))
   }
@@ -581,12 +581,12 @@ let emitStmUpdate = (q, sym) => {
     buf.push(`// update ${sym} for ${q.op}`)
     let [e1] = q.arg.map(x => codegen(x, buf))
     if (q.op == "print") {
-      if (typing.isString(q.arg[0].schema)) {
+      if (typing.isString(q.arg[0].schema.type)) {
         let { file, start, end } = e1
         buf.push(`println(${file}, ${start}, ${end});`)
       } else {
         let [e1] = q.arg.map(x => codegen(x, buf))
-        buf.push(`printf("%${getFormatSpecifier(q.arg[0].schema)}\\n", ${e1});`)
+        buf.push(`printf("%${getFormatSpecifier(q.arg[0].schema.type)}\\n", ${e1});`)
       }
       return buf
     }
@@ -604,7 +604,7 @@ let emitStmUpdate = (q, sym) => {
         update = (lhs) => `${lhs} += 1;`
       } else if (q.op == "single") {
         // It is possible that the value is a string
-        if (typing.isString(q.schema)) {
+        if (typing.isString(q.schema.type)) {
           update = (lhs) => `${lhs.str} = ${e1.file} + ${e1.start}; ${lhs.len} = ${e1.end} - ${e1.start};`
         } else {
           update = (lhs) => `${lhs} = ${e1};`
@@ -651,53 +651,52 @@ let emitStmUpdate = (q, sym) => {
 
 // Emit code that scans through each row in the CSV file.
 // Will extract the value of a column if the column is used by the query.
-let emitRowScanning = (f, filename, cursor, schema) => {
+let emitRowScanning = (f, filename, cursor, schema, first=true) => {
+  if(schema.objKey === null)
+    return [];
   let buf = []
   let v = f.arg[1].op
   let { mappedFile, size } = csvFilesEnv[filename]
 
-  let columns = schema
-  for (let i in columns) {
-    let colName = columns[i][0]
-    let type = columns[i][1]
-    let prefix = pretty(f)
-    let needToExtract = usedCols[prefix][colName]
+  let colName = schema.objKey 
+  let type = schema.objValue
+  let prefix = pretty(f)
+  let needToExtract = usedCols[prefix][colName]
 
-    buf.push(`// reading column ${colName}`)
+  buf.push(`// reading column ${colName}`)
 
-    let start = [mappedFile, quoteVar(v), colName, "start"].join("_")
-    let end = [mappedFile, quoteVar(v), colName, "end"].join("_")
-    let name = [mappedFile, quoteVar(v), colName].join("_")
+  let start = [mappedFile, quoteVar(v), colName, "start"].join("_")
+  let end = [mappedFile, quoteVar(v), colName, "end"].join("_")
+  let name = [mappedFile, quoteVar(v), colName].join("_")
 
-    if (needToExtract && typing.isInteger(type)) {
-      buf.push(`${convertToCType(type)} ${name} = 0;`)
-    }
-
-    let delim = i == columns.length - 1 ? "\\n" : ","
-
-    buf.push(`int ${start} = ${cursor};`)
-    buf.push(`while (${cursor} < ${size} && ${mappedFile}[${cursor}] != '${delim}') {`)
-
-    if (needToExtract && typing.isInteger(type)) {
-      buf.push(`// extract integer`)
-      buf.push(`${name} *= 10;`)
-      buf.push(`${name} += ${mappedFile}[${cursor}] - '0';`)
-    }
-
-    buf.push(`${cursor}++;`)
-    buf.push("}")
-
-    buf.push(`int ${end} = ${cursor};`)
-    buf.push(`${cursor}++;`)
-
-    if (needToExtract && typing.isString(type)) {
-      buf.push(`// extract string`)
-      buf.push(`char ${name}[${end} - ${start} + 1];`)
-      buf.push(`extract_str(${mappedFile}, ${start}, ${end}, ${name});`)
-    }
+  if (needToExtract && typing.isInteger(type)) {
+    buf.push(`${convertToCType(type)} ${name} = 0;`)
   }
 
-  return buf
+  let delim = first ? "\\n" : ","
+
+  buf.push(`int ${start} = ${cursor};`)
+  buf.push(`while (${cursor} < ${size} && ${mappedFile}[${cursor}] != '${delim}') {`)
+
+  if (needToExtract && typing.isInteger(type)) {
+    buf.push(`// extract integer`)
+    buf.push(`${name} *= 10;`)
+    buf.push(`${name} += ${mappedFile}[${cursor}] - '0';`)
+  }
+
+  buf.push(`${cursor}++;`)
+  buf.push("}")
+
+  buf.push(`int ${end} = ${cursor};`)
+  buf.push(`${cursor}++;`)
+
+  if (needToExtract && typing.isString(type)) {
+    buf.push(`// extract string`)
+    buf.push(`char ${name}[${end} - ${start} + 1];`)
+    buf.push(`extract_str(${mappedFile}, ${start}, ${end}, ${name});`)
+  }
+
+  return [...emitRowScanning(f, filename, cursor, schema.objParent, false), ...buf]
 }
 
 // Returns a function that will be invoked during the actual code generation
@@ -723,7 +722,7 @@ let getLoopTxt = (f, filename, loadCSV) => () => {
   loopHeader.push(`${quoteVar(v)}++;`)
   let boundsChecking = [`if (${cursor} >= ${size}) break;`]
 
-  let schema = f.schema
+  let schema = f.schema.type
   let rowScanning = emitRowScanning(f, filename, cursor, schema)
 
   return {
@@ -785,12 +784,12 @@ let emitCode = (q, ir) => {
     e.sym = b[0]
     let info = [`// generator: ${e2.op} <- ${pretty(e1)}`]
     let rowScanning = []
-    if (typing.isString(schema)) {
+    if (typing.isString(schema.type)) {
       rowScanning.push(`unsigned long ${e.sym}_hash = hash(${val.file}, ${val.start}, ${val.end});`)
-    } else if (typing.isInteger(schema)) {
+    } else if (typing.isInteger(schema.type)) {
       rowScanning.push(`unsigned long ${e.sym}_hash = (unsigned long)${val};`)
     } else {
-      throw new Error("key type not supported: ", typing.prettyPrintType(schema))
+      throw new Error("key type not supported: ", typing.prettyPrintTuple(schema))
     }
     e.getLoopTxt = () => ({
       info, loadCSV: [], initCursor: [], loopHeader: ["{", "// singleton value here"], boundsChecking: [], rowScanning
@@ -861,7 +860,7 @@ let emitCode = (q, ir) => {
       // initialize hashmap
       let { schema: keySchema } = mksetVarEnv[q.fre[0]]
       let buf = []
-      hashMapInit(buf, sym, keySchema, q.schema)
+      hashMapInit(buf, sym, keySchema.type, q.schema.type)
       assign(buf, sym, [], []);
     }
 
@@ -880,12 +879,12 @@ let emitCode = (q, ir) => {
   let res = codegen(q, [], {})
 
   let epilog = []
-  if (q.schema !== types.nothing) {
+  if (q.schema.type !== types.never) {
     if (hashMapEnv[res]) {
       epilog.push("// print hashmap")
       hashMapPrint(epilog, res)
     } else {
-      epilog.push(`printf("%${getFormatSpecifier(q.schema)}\\n", ${res});`)
+      epilog.push(`printf("%${getFormatSpecifier(q.schema.type)}\\n", ${res});`)
     }
   }
   epilog.push("return 0;")

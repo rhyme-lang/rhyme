@@ -342,6 +342,10 @@ inline rh rt_pure_plus(rh a, rh b) {
   return (int)a + (int)b;
 }
 
+inline rh rt_pure_times(rh a, rh b) {
+  return (int)a * (int)b;
+}
+
 inline rh rt_pure_and(rh a, rh b) {
   return decode_int(a) == 0 ? a : b;
 }

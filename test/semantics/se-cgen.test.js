@@ -142,6 +142,7 @@ test("testTrivial1CPP", async () => {
 
   expect(res).toEqual("40")
 }, 10000)
+
 test("testScalar1CPP", async () => {
   let query = rh`sum data.*.value`
 

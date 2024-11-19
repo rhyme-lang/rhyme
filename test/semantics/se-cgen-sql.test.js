@@ -38,7 +38,7 @@ int main() {
 test("testTrivial", async () => {
   let query = rh`1 + 200`
 
-  let func = compile(query, { backend: "c-sql", schema: types.nothing })
+  let func = compile(query, { backend: "c-sql", schema: types.never })
 
   let res = await func()
   expect(res).toEqual("201\n")
@@ -58,7 +58,7 @@ test("testSimpleSum1", async () => {
 
   let query = rh`${csv}.*.C | sum`
 
-  let func = compile(query, { backend: "c-sql", schema: types.nothing })
+  let func = compile(query, { backend: "c-sql", schema: types.never })
 
   let res = await func()
   expect(res).toEqual("228\n")
@@ -69,7 +69,7 @@ test("testSimpleSum2", async () => {
 
   let query = rh`${csv}.*.C + 10 | sum`
 
-  let func = compile(query, { backend: "c-sql", schema: types.nothing })
+  let func = compile(query, { backend: "c-sql", schema: types.never })
 
   let res = await func()
   expect(res).toEqual("268\n")
@@ -80,7 +80,7 @@ test("testSimpleSum3", async () => {
 
   let query = rh`(${csv}.*.C | sum) + 10`
 
-  let func = compile(query, { backend: "c-sql", schema: types.nothing })
+  let func = compile(query, { backend: "c-sql", schema: types.never })
 
   let res = await func()
   expect(res).toEqual("238\n")
@@ -91,7 +91,7 @@ test("testSimpleSum4", async () => {
 
   let query = rh`sum(${csv}.*A.C) + sum(${csv}.*B.D)`
 
-  let func = compile(query, { backend: "c-sql", schema: types.nothing })
+  let func = compile(query, { backend: "c-sql", schema: types.never })
 
   let res = await func()
   expect(res).toEqual("243\n")
@@ -102,7 +102,7 @@ test("testSimpleSum5", async () => {
 
   let query = rh`sum(${csv}.*A.C + ${csv}.*A.D)`
 
-  let func = compile(query, { backend: "c-sql", schema: types.nothing })
+  let func = compile(query, { backend: "c-sql", schema: types.never })
 
   let res = await func()
   expect(res).toEqual("243\n")
@@ -114,7 +114,7 @@ test("testLoadCSVMultipleFilesZip", async () => {
 
   let query = rh`sum(${csv1}.*A.C + ${csv2}.*A.D)`
 
-  let func = compile(query, { backend: "c-sql", schema: types.nothing })
+  let func = compile(query, { backend: "c-sql", schema: types.never })
 
   let res = await func()
   expect(res).toEqual("231\n")
@@ -126,7 +126,7 @@ test("testLoadCSVMultipleFilesJoin", async () => {
 
   let query = rh`sum(${csv1}.*A.C + ${csv2}.*B.D)`
 
-  let func = compile(query, { backend: "c-sql", schema: types.nothing })
+  let func = compile(query, { backend: "c-sql", schema: types.never })
 
   let res = await func()
   expect(res).toEqual("924\n")
@@ -137,7 +137,7 @@ test("testMin", async () => {
 
   let query = rh`min ${csv}.*.B`
 
-  let func = compile(query, { backend: "c-sql", schema: types.nothing })
+  let func = compile(query, { backend: "c-sql", schema: types.never })
 
   let res = await func()
   expect(res).toEqual("1\n")
@@ -148,7 +148,7 @@ test("testMax", async () => {
 
   let query = rh`max ${csv}.*.C`
 
-  let func = compile(query, { backend: "c-sql", schema: types.nothing })
+  let func = compile(query, { backend: "c-sql", schema: types.never })
 
   let res = await func()
   expect(res).toEqual("123\n")
@@ -159,7 +159,7 @@ test("testCount", async () => {
 
   let query = rh`count ${csv}.*.C`
 
-  let func = compile(query, { backend: "c-sql", schema: types.nothing })
+  let func = compile(query, { backend: "c-sql", schema: types.never })
 
   let res = await func()
   expect(res).toEqual("4\n")
@@ -170,7 +170,7 @@ test("testStatefulPrint", async () => {
 
   let query = rh`print ${csv}.*.B`
 
-  let func = compile(query, { backend: "c-sql", schema: types.nothing })
+  let func = compile(query, { backend: "c-sql", schema: types.never })
 
   let res = await func()
   expect(res).toEqual(`5

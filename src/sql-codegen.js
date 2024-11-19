@@ -53,9 +53,9 @@ let quoteVar = s => s.replaceAll("*", "x")
 let csvFiles
 
 let convertTypeToCType = (type) => {
-    if(type.__rh_type === "dynkey")
-        return convertTypeToCType(type.__rh_type_superkey);
-    if(type.__rh_type === "union")
+    if(type.typeSym === "dynkey")
+        return convertTypeToCType(type.keySuperkey);
+    if(type.typeSym === "union")
         throw new Error("Unable to convert union type to C type currently.");
     if(type === types.u8)
         return "uint8_t";
@@ -81,9 +81,9 @@ let convertTypeToCType = (type) => {
 }
 
 let getFormatSpecifier = (type) => {
-  if (type.__rh_type === "dynkey")
-    return getFormatSpecifier(type.__rh_type_superkey);
-  if (type.__rh_type === "union")
+  if (type.typeSym === "dynkey")
+    return getFormatSpecifier(type.keySuperkey);
+  if (type.typeSym === "union")
     throw new Error("Unable to convert union type to C type currently.");
   if (type === types.u8)
     return "hhu";
@@ -127,11 +127,11 @@ let codegenCSql = (q, scope) => {
       let { start, end } = fileColumnPos[file][q.op]
       let { mappedFile } = csvFiles[file]
 
-      if (typing.isInteger(q.schema)) {
+      if (typing.isInteger(q.schema.type)) {
         buf.push(`// extracting number from column ${q.op} in file ${file}`)
 
         // Assume the string holds a integer value
-        buf.push(`${convertTypeToCType(q.schema)} ${col} = 0;`)
+        buf.push(`${convertTypeToCType(q.schema.type)} ${col} = 0;`)
         let curr = getNewName("curr")
         buf.push(`int ${curr} = ${start};`)
         buf.push(`while (${curr} < ${end}) {`)
@@ -187,13 +187,13 @@ let codegenCSql = (q, scope) => {
 let emitStmInitCSql = (q, sym) => {
   if (q.key == "stateful") {
     if (q.op == "sum" || q.op == "count") {
-      return `${convertTypeToCType(q.schema)} ${sym} = 0;`
+      return `${convertTypeToCType(q.schema.type)} ${sym} = 0;`
     } else if (q.op == "product") {
-      return `${convertTypeToCType(q.schema)} ${sym} = 1;`
+      return `${convertTypeToCType(q.schema.type)} ${sym} = 1;`
     } else if (q.op == "min") {
-      return `${convertTypeToCType(q.schema)} ${sym} = INT_MAX;`
+      return `${convertTypeToCType(q.schema.type)} ${sym} = INT_MAX;`
     } else if (q.op == "max") {
-      return `${convertTypeToCType(q.schema)} ${sym} = INT_MIN;`
+      return `${convertTypeToCType(q.schema.type)} ${sym} = INT_MIN;`
     } else {
       "not supported"
     }
@@ -220,7 +220,7 @@ let emitStmUpdateCSql = (q, scope, sym) => {
     } else if (q.op == "count") {
       return `${sym} += 1;`
     } else if (q.op == "print") {
-      return `printf("%${getFormatSpecifier(q.arg[0].schema)}\\n", ${e1});`
+      return `printf("%${getFormatSpecifier(q.arg[0].schema.type)}\\n", ${e1});`
     } else {
       "not supported"
     }
@@ -262,27 +262,26 @@ let emitLoopHeader = (csvFile, cursor, scope) => {
   buf.push(`if (${cursor} >= ${size}) break;`)
 }
 
-let emitRowScanning = (csvFile, cursor, schema, scope) => {
-  let columnPos = {}
+let emitRowScanning = (csvFile, cursor, schema, scope, first=true) => {
+  if(schema.objKey == null)
+    return {}
+  let columnPos = emitRowScanning(csvFile, cursor, schema.objParent, scope, false);
   let { buf, getNewName } = scope
   let { mappedFile } = csvFile
 
-  let columns = schema
-  for (let i in columns) {
-    buf.push(`// reading column ${columns[i][0]}`)
-    let delim = i == columns.length - 1 ? "\\n" : ","
-    let start = getNewName("start")
-    let end = getNewName("end")
-    buf.push(`int ${start} = ${cursor};`)
-    buf.push("while (1) {")
-    buf.push(`char c = ${mappedFile}[${cursor}];`)
-    buf.push(`if (c == '${delim}') break;`)
-    buf.push(`${cursor}++;`)
-    buf.push("}")
-    buf.push(`int ${end} = ${cursor};`)
-    buf.push(`${cursor}++;`)
-    columnPos[columns[i][0]] = { start, end }
-  }
+  buf.push(`// reading column ${schema.objKey}`)
+  let delim = first ? "\\n" : ","
+  let start = getNewName("start")
+  let end = getNewName("end")
+  buf.push(`int ${start} = ${cursor};`)
+  buf.push("while (1) {")
+  buf.push(`char c = ${mappedFile}[${cursor}];`)
+  buf.push(`if (c == '${delim}') break;`)
+  buf.push(`${cursor}++;`)
+  buf.push("}")
+  buf.push(`int ${end} = ${cursor};`)
+  buf.push(`${cursor}++;`)
+  columnPos[schema.objKey] = { start, end }
 
   return columnPos
 }
@@ -425,7 +424,7 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
 
       if (!seen[v1]) {
         emitLoopHeader(csvFile, cursor, scope)
-        let columnPos = emitRowScanning(csvFile, cursor, schema, scope)
+        let columnPos = emitRowScanning(csvFile, cursor, schema.type, scope)
         fileColumnPos[filename] = columnPos
         closing = "}\n"+closing
       } else {
@@ -434,7 +433,7 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
         loadCSVBuf.push(`${cursor}++;`)
         loadCSVBuf.push("}");
         buf.push(`if (${cursor} >= ${csvFile.size}) break;`)
-        let columnPos = emitRowScanning(csvFile, cursor, schema, scope)
+        let columnPos = emitRowScanning(csvFile, cursor, schema.type, scope)
         fileColumnPos[filename] = columnPos
       }
       seen[v1] = true
@@ -525,9 +524,9 @@ let emitCodeCSql = (q, ir) => {
     })
   }
 
-  if (q.schema != types.nothing) {
-    buf.push(`${convertTypeToCType(q.schema)} res = ${codegenCSql(q, {buf, ir, getNewName})};`)
-    buf.push(`printf(\"%${getFormatSpecifier(q.schema)}\\n\", res);`)
+  if (q.schema.type != types.never) {
+    buf.push(`${convertTypeToCType(q.schema.type)} res = ${codegenCSql(q, {buf, ir, getNewName})};`)
+    buf.push(`printf(\"%${getFormatSpecifier(q.schema.type)}\\n\", res);`)
   }
   loadCSVBuf.push("")
 
