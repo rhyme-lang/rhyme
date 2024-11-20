@@ -1497,7 +1497,7 @@ test("day15-part1", () => {
       sum: rh`state.sum + ${partSum}`
   });
 
-  while(state.strings.length > 0) {
+  while (state.strings.length > 0) {
       state = run({state, udf});
   }
 
@@ -1561,7 +1561,7 @@ test("day15-part2", () => {
       index: rh`.state.index + 1`
   });
 
-  while(hashState.index < hashState.maxIndex) {
+  while (hashState.index < hashState.maxIndex) {
       hashState = runHash({state: hashState, udf});
   }
 
@@ -1607,7 +1607,7 @@ test("day15-part2", () => {
   let hashMap = new Array(256).fill([]);
 
   // Run each instruction to either insert or delete in hash map.
-  for(let instr of hashState.instrs) {
+  for (let instr of hashState.instrs) {
       hashMap = run({hashMap, instr, udf});
   }
 
@@ -2472,7 +2472,7 @@ hdj{m>838:A,pv}
       acceptedSum: api.plus(".input.acceptedSum", api.sum(rh`${acceptedStates}.*part4.attrs.*attr`)),
   });
 
-  while(state.parts.length > 0) {
+  while (state.parts.length > 0) {
       state = run({input: state, udf});
   }
 
@@ -2655,7 +2655,7 @@ hdj{m>838:A,pv}
       ),
   });
 
-  while(state.parts.length > 0) {
+  while (state.parts.length > 0) {
       state = run({input: state, udf});
   }
 
@@ -2985,10 +2985,10 @@ test("day23-part1", () => {
         ),
         sort: (arr) => {
             arr.sort((elem1, elem2) => {
-                for(var k of Object.keys(elem1)) {
-                    if(elem1[k] > elem2[k])
+                for (var k of Object.keys(elem1)) {
+                    if (elem1[k] > elem2[k])
                         return 1;
-                    if(elem1[k] < elem2[k])
+                    if (elem1[k] < elem2[k])
                         return -1;
                 }
                 return 0;
@@ -2996,13 +2996,13 @@ test("day23-part1", () => {
             return arr;
         },
         combine: (a, b) => {
-            if(Number.isNaN(a) || !Number.isFinite(a) || a === undefined) {
-                if(Number.isNaN(b) || !Number.isFinite(b) || b === undefined) {
+            if (Number.isNaN(a) || !Number.isFinite(a) || a === undefined) {
+                if (Number.isNaN(b) || !Number.isFinite(b) || b === undefined) {
                     return undefined;
                 }
                 return [b];
             } else {
-                if(Number.isNaN(b) || !Number.isFinite(b) || b === undefined) {
+                if (Number.isNaN(b) || !Number.isFinite(b) || b === undefined) {
                     return [a];
                 }
                 return [a,b];
@@ -3082,7 +3082,7 @@ test("day23-part1", () => {
     let distsObj = {"1,0": [0]};
     let lastRes = {};
     // Continue until the result converges.
-    while(Object.keys(lastRes).length != Object.keys(distsObj).length || JSON.stringify(lastRes) !== JSON.stringify(distsObj)) {
+    while (Object.keys(lastRes).length != Object.keys(distsObj).length || JSON.stringify(lastRes) !== JSON.stringify(distsObj)) {
         lastRes = distsObj;
         distsObj = func({
             steps: parsedRes.steps,

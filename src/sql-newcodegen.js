@@ -652,7 +652,7 @@ let emitStmUpdate = (q, sym) => {
 // Emit code that scans through each row in the CSV file.
 // Will extract the value of a column if the column is used by the query.
 let emitRowScanning = (f, filename, cursor, schema, first=true) => {
-  if(schema.objKey === null)
+  if (schema.objKey === null)
     return [];
   let buf = []
   let v = f.arg[1].op

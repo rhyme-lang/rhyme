@@ -53,29 +53,29 @@ let quoteVar = s => s.replaceAll("*", "x")
 let csvFiles
 
 let convertTypeToCType = (type) => {
-    if(type.typeSym === "dynkey")
+    if (type.typeSym === "dynkey")
         return convertTypeToCType(type.keySuperkey);
-    if(type.typeSym === "union")
+    if (type.typeSym === "union")
         throw new Error("Unable to convert union type to C type currently.");
-    if(type === types.u8)
+    if (type === types.u8)
         return "uint8_t";
-    if(type === types.u16)
+    if (type === types.u16)
         return "uint16_t";
-    if(type === types.u32)
+    if (type === types.u32)
         return "uint32_t";
-    if(type === types.u64)
+    if (type === types.u64)
         return "uint64_t";
-    if(type === types.i8)
+    if (type === types.i8)
         return "int8_t";
-    if(type === types.i16)
+    if (type === types.i16)
         return "int16_t";
-    if(type === types.i32)
+    if (type === types.i32)
         return "int32_t";
-    if(type === types.i64)
+    if (type === types.i64)
         return "int64_t";
-    if(type === types.f32)
+    if (type === types.f32)
         return "float";
-    if(type === types.f64)
+    if (type === types.f64)
         return "double";
     throw new Error("Unknown type: " + typing.prettyPrintType(type));
 }
@@ -263,7 +263,7 @@ let emitLoopHeader = (csvFile, cursor, scope) => {
 }
 
 let emitRowScanning = (csvFile, cursor, schema, scope, first=true) => {
-  if(schema.objKey == null)
+  if (schema.objKey == null)
     return {}
   let columnPos = emitRowScanning(csvFile, cursor, schema.objParent, scope, false);
   let { buf, getNewName } = scope

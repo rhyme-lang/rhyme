@@ -477,7 +477,7 @@ exports.generate = (ir, backend = "js") => {
   }
   function emitCode(stmts) {
     // We re-iterate as long as we have some stmts that have all their prerequisite statements (stmtdeps) available
-    while(filterDepsAvailable(stmts).length > 0) {
+    while (filterDepsAvailable(stmts).length > 0) {
       let emittableStmts = filterEmittable(stmts)
       stmts = filterNotEmittable(stmts)
       while (emittableStmts.length > 0) {

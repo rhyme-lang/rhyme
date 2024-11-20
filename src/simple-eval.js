@@ -353,7 +353,7 @@ let extract1f = q => {
 
 let withoutSchema = (q) => {
     let {arg: arg, schema: schema, ...restQ} = q;
-    if(arg === undefined)
+    if (arg === undefined)
         return {...restQ};
     return {
         arg: arg.map(withoutSchema),
@@ -362,14 +362,14 @@ let withoutSchema = (q) => {
 }
 
 let deepCopy = (q) => {
-    if(Array.isArray(q)) {
+    if (Array.isArray(q)) {
         return q.map(elem => deepCopy(elem));
     }
-    if(typeof q !== "object")
+    if (typeof q !== "object")
         return q;
     let {schema: schema, ...restQ} = q;
     let res = {schema: schema};
-    for(let key of Object.keys(restQ)) {
+    for (let key of Object.keys(restQ)) {
         res[key] = deepCopy(restQ[key])
     }
     return res;
@@ -1752,76 +1752,76 @@ let statefulOpCPP = (q, typed = false) => {
 }
 
 let quoteTypeCPP = ty => {
-    if(ty === undefined)
+    if (ty === undefined)
         throw new Error("Unknown undefined type.");
-    if(ty === null)
+    if (ty === null)
         throw new Error("Unknown null type.");
-    if(ty.typeSym === typeSyms.union)
+    if (ty.typeSym === typeSyms.union)
         return "rh";
-    if(ty.typeSym === typeSyms.tagged_type) {
-        if(ty.tag === "dense") {
+    if (ty.typeSym === typeSyms.tagged_type) {
+        if (ty.tag === "dense") {
             return "std::vector<" + quoteTypeCPP(typing.removeTag(ty).objValue) + ">";
         }
-        if(ty.tag === "sparse") {
-            if(ty.tagData.dim == 1) {
+        if (ty.tag === "sparse") {
+            if (ty.tagData.dim == 1) {
                 return "CSVector<" + quoteTypeCPP(typing.removeTag(ty).objValue) + ", " + quoteTypeCPP(typing.removeTag(ty).objKey) + ">";
-            } else if(ty.tagData.dim == 2) {
+            } else if (ty.tagData.dim == 2) {
                 return "CSRMatrix<" + quoteTypeCPP(typing.removeTag(typing.removeTag(ty).objValue).objValue) + ", " + quoteTypeCPP(typing.removeTag(ty).objKey) + ">";
             }
             throw new Error("Unknown sparse item with data: " + ty.tagData);
         }
         throw new Error("Unknown tag: " + ty.tag);
     }
-    if(ty.typeSym === typeSyms.dynkey) {
+    if (ty.typeSym === typeSyms.dynkey) {
         return quoteTypeCPP(ty.keySupertype);
     }
-    if(Object.values(types).includes(ty)) {
-        if(ty === types.u8)
+    if (Object.values(types).includes(ty)) {
+        if (ty === types.u8)
             return "uint8_t";
-        if(ty === types.u16)
+        if (ty === types.u16)
             return "uint16_t";
-        if(ty === types.u32)
+        if (ty === types.u32)
             return "uint32_t";
-        if(ty === types.u64)
+        if (ty === types.u64)
             return "uint64_t";
-        if(ty === types.i8)
+        if (ty === types.i8)
             return "int8_t";
-        if(ty === types.i16)
+        if (ty === types.i16)
             return "int16_t";
-        if(ty === types.i32)
+        if (ty === types.i32)
             return "int";
-        if(ty === types.i64)
+        if (ty === types.i64)
             return "int64_t";
-        if(ty === types.never)
+        if (ty === types.never)
             return "rh";
         throw new Error("Unknown CPP type of: " + typing.prettyPrintType(ty));
     }
-    if(typing.isObject(ty))
+    if (typing.isObject(ty))
         return "rh";
     throw new Error("Unknown type: " + JSON.stringify(ty));
 }
 
 let quoteFileReadCPP = ty => {
-  if(ty.typeSym === typeSyms.tagged_type) {
-    if(ty.tag === "dense") {
-        if(ty.tagData.dim == 1) {
+  if (ty.typeSym === typeSyms.tagged_type) {
+    if (ty.tag === "dense") {
+        if (ty.tagData.dim == 1) {
             return "read_1D_dense_tensor<" + quoteTypeCPP(typing.removeTag(ty).objValue) + ">";
-        } else if(ty.tagData.dim == 2) {
+        } else if (ty.tagData.dim == 2) {
             return "read_2D_dense_tensor<" + quoteTypeCPP(typing.removeTag(typing.removeTag(ty).objValue).objValue) + ">";
         }
         throw new Error("Unknown dense item with data: " + ty.tagData);
     }
-    if(ty.tag === "sparse") {
-        if(ty.tagData.dim == 1) {
+    if (ty.tag === "sparse") {
+        if (ty.tagData.dim == 1) {
             return "read_1D_sparse_tensor<" + quoteTypeCPP(typing.removeTag(ty).objValue) + ", " + quoteTypeCPP(typing.removeTag(ty).objKey) + ">";
-        } else if(ty.tagData.dim == 2) {
+        } else if (ty.tagData.dim == 2) {
             return "read_2D_sparse_tensor<" + quoteTypeCPP(typing.removeTag(typing.removeTag(ty).objValue).objValue) + ", " + quoteTypeCPP(typing.removeTag(ty).objKey) + ">";
         }
         throw new Error("Unknown sparse item with data: " + ty.tagData);
     }
     throw new Error("Unknown tag: " + ty.tag);
   } else {
-    if(typing.isObject(ty)) {
+    if (typing.isObject(ty)) {
         return "read_json";
     } else {
         throw new Error("Unknown how to read: " + typing.prettyPrintType(ty));
@@ -1895,15 +1895,15 @@ let emitCodeCPP = (q, order) => {
     let ty = e1.schema.type
     let source = codegenCPP(e1)
     let sym = codegenCPP(e2)
-    if(ty.typeSym === typeSyms.tagged_type) {
-        if(ty.tag == "dense") {
+    if (ty.typeSym === typeSyms.tagged_type) {
+        if (ty.tag == "dense") {
             let sym = quoteExpr(e2)
             return `for (int ${sym}=0; ${sym}<${source}.size(); ${sym}++) {`
         } else if (ty.tag == "sparse") {
             return `for (const auto& [${sym}, ${sym}_val] : ${source}) {`
         }
     }
-    if(typing.isObject(ty)) {
+    if (typing.isObject(ty)) {
         return `for (const auto& [${sym}, ${sym}_val] : ${source}.items()) {`
     }
     throw new Error("Unknown loop type: " + typing.prettyPrintType(ty));
@@ -1964,7 +1964,7 @@ let emitCodeCPP = (q, order) => {
   }
 
   let getScopedName = (ty, gen) => {
-    if(typing.isSparse(ty) || (typing.isObject(ty) && !typing.isDense(ty))) {
+    if (typing.isSparse(ty) || (typing.isObject(ty) && !typing.isDense(ty))) {
         return gen+"_val"
     }
   }
