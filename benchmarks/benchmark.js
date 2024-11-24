@@ -69,7 +69,56 @@ let generateData = () => {
   file.close()
 }
 
-let benchRhymeQuery = async (query, printRes) => {
+let generateDataJS = (data) => {
+  let stringMap = {}
+  let intMap = {}
+
+  let getRandomString = (length) => {
+    if (Object.keys(stringMap).length >= MAX_DISTINCT_STR) {
+      let strs = Object.keys(stringMap)
+      return strs[Math.floor(Math.random() * strs.length)]
+    }
+
+    const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+    let res = "";
+    for (let i = 0; i < length; i++) {
+      res += characters.charAt(Math.floor(Math.random() * characters.length))
+    }
+
+    stringMap[res] = true
+    return res
+  }
+
+  let getRandomInt1 = () => {
+    if (Object.keys(intMap).length >= MAX_DISTINCT_INT) {
+      let ints = Object.keys(intMap)
+      return ints[Math.floor(Math.random() * ints.length)]
+    }
+
+    let res = Math.floor(Math.random() * MAX_INT1)
+    intMap[res] = true
+    return res
+  }
+
+  let getRandomInt2 = () => {
+    let res = Math.floor(Math.random() * MAX_INT2)
+    return res
+  }
+
+  for (let i = 0; i < DATA_SIZE; i++) {
+    if ((i + 1) % 100000 == 0) {
+      console.log("Generating row: " + (i + 1))
+    }
+    let str = getRandomString(16)
+    let int1 = getRandomInt1()
+    let int2 = getRandomInt2()
+    let line = { str_col: str, int_col1: int1, int_col2: int2 }
+
+    data.push(line)
+  }
+}
+
+let benchRhymeQueryC = async (query, printRes) => {
   let start = performance.now()
   let func = compile(query, { backend: "c-sql-new", outDir: "./cgen-sql/out", outFile: "bench.c", schema: types.nothing })
   let res = await func()
@@ -82,7 +131,7 @@ let benchRhymeQuery = async (query, printRes) => {
   return end - start
 }
 
-let benchAll = async () => {
+let benchAllC = async () => {
   let schema = typing.objBuilder()
     .add(typing.createKey(types.u32), typing.createSimpleObject({
       str_col: types.string,
@@ -92,19 +141,58 @@ let benchAll = async () => {
   let csv = rh`loadCSV "./cgen-sql/bench.csv" ${schema}`
 
   let q1 = rh`sum ${csv}.*.int_col2`
-  let time1 = await benchRhymeQuery(q1, false)
+  let time1 = await benchRhymeQueryC(q1, false)
   console.log("Time elapsed:", time1, "ms")
 
   let q2 = rh`count ${csv}.*.int_col1 | group ${csv}.*.str_col`
-  let time2 = await benchRhymeQuery(q2, false)
+  let time2 = await benchRhymeQueryC(q2, false)
   console.log("Time elapsed:", time2, "ms")
 
   let q3 = rh`count ${csv}.*.str_col | group ${csv}.*.int_col1`
-  let time3 = await benchRhymeQuery(q3, false)
+  let time3 = await benchRhymeQueryC(q3, false)
   console.log("Time elapsed:", time3, "ms")
 }
 
-// generateData()
-benchAll().then(() => {
-  console.log("done!")
-})
+let benchRhymeQuery = (query, data, printRes) => {
+  let start = performance.now()
+  let func = compile(query)
+  let res = func({ data })
+  let end = performance.now()
+
+  if (printRes) {
+    console.log(res)
+  }
+
+  return end - start
+}
+
+let benchAll = (data) => {
+  let n = 5
+  console.log("Q1:")
+  for (let i = 0; i < n; i++) {
+    let q1 = rh`sum data.*.int_col2`
+    let time1 = benchRhymeQuery(q1, data, false)
+    console.log("Time elapsed:", time1, "ms")
+  }
+  console.log("Q2:")
+  for (let i = 0; i < n; i++) {
+    let q2 = rh`count data.*.int_col1 | group data.*.str_col`
+    let time2 = benchRhymeQuery(q2, data, false)
+    console.log("Time elapsed:", time2, "ms")
+  }
+  console.log("Q3:")
+  for (let i = 0; i < n; i++) {
+    let q3 = rh`count data.*.str_col | group data.*.int_col1`
+    let time3 = benchRhymeQuery(q3, data, false)
+    console.log("Time elapsed:", time3, "ms")
+  }
+}
+
+let data = []
+generateDataJS(data)
+
+benchAll(data)
+
+// benchAllC().then(() => {
+//   console.log("done!")
+// })
