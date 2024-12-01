@@ -172,6 +172,18 @@ let validateAndExtractUsedCols = (q, extractStr = false) => {
     let [e1, e2] = q.arg
 
     // check if the get is valid
+
+    // get from a tmp var
+    if (e1.key == "ref") {
+      e1 = assignments[e1.op]
+      if (e1.key != "update" && e1.fre.length != 1) {
+        throw new Error("cannot get from a tmp that is not a hashmap: " + pretty(q))
+      }
+      validateAndExtractUsedCols(e1)
+      validateAndExtractUsedCols(e2)
+      return
+    }
+
     if (!(e1.key == "get" && e2.key == "const")) {
       throw new Error("malformed get: " + pretty(q))
     }
@@ -202,8 +214,8 @@ let validateAndExtractUsedCols = (q, extractStr = false) => {
     // because we need a null-terminated string for open()
     validateAndExtractUsedCols(e1.arg[0].arg[0], true)
   } else if (q.key == "ref") {
-    let e1 = assignments[q.op]
-    validateAndExtractUsedCols(e1)
+    let q1 = assignments[q.op]
+    validateAndExtractUsedCols(q1)
   } else if (q.key == "update") {
     if (q.arg[3] == undefined) {
       throw new Error("trivial group op not supported for now: " + pretty(q))
@@ -272,7 +284,8 @@ let codegen = (q, buf, extractStr = false) => {
     let q1 = assignments[q.op]
     if (q1.fre.length > 0) {
       let sym = tmpSym(q.op)
-      let keyPos = hashLookUp(buf, sym, q1.fre[0])[1]
+      let { val: key } = mksetVarEnv[q1.fre[0]]
+      let keyPos = hashLookUp(buf, sym, key)[1]
       let { valSchema } = hashMapEnv[sym]
       if (typing.isString(valSchema)) {
         return { file: `${sym}_values_str[${keyPos}]`, start: "0", end: `${sym}_values_len[${keyPos}]` }
@@ -284,6 +297,20 @@ let codegen = (q, buf, extractStr = false) => {
     }
   } else if (q.key == "get") {
     let [e1, e2] = q.arg
+
+    if (e1.key == "ref") {
+      let sym = tmpSym(e1.op)
+
+      let key = codegen(e2, buf)
+
+      let keyPos = hashLookUp(buf, sym, key)[1]
+      let { valSchema } = hashMapEnv[sym]
+      if (typing.isString(valSchema)) {
+        return { file: `${sym}_values_str[${keyPos}]`, start: "0", end: `${sym}_values_len[${keyPos}]` }
+      } else {
+        return `${sym}_values[${keyPos}]`
+      }
+    }
 
     let file = e1.arg[0].arg[0]
     let filename
@@ -348,30 +375,43 @@ let codegen = (q, buf, extractStr = false) => {
   }
 }
 
+let hash = (buf, key, schema) => {
+  let hashed = getNewName("hash")
+  if (typing.isString(schema)) {
+    buf.push(`unsigned long ${hashed} = hash(${key.file}, ${key.start}, ${key.end});`)
+  } else if (typing.isInteger(schema)) {
+    buf.push(`unsigned long ${hashed} = (unsigned long)${key};`)
+  } else {
+    throw new Error("cannot hash key with type " + typing.prettyPrintType(schema))
+  }
+
+  return hashed
+}
+
 // Emit the code that finds the key in the hashmap.
 // Linear probing is used for resolving collisions.
 // Comparison of keys is based on different key types.
 let hashLookUp = (buf, sym, key) => {
-  let { val: mksetVal } = mksetVarEnv[key]
+  let { keySchema } = hashMapEnv[sym]
+  let hashed = hash(buf, key, keySchema)
 
   let pos = getNewName("pos")
-  buf.push(`unsigned long ${pos} = ${key}_hash & ${HASH_MASK};`)
+  buf.push(`unsigned long ${pos} = ${hashed} & ${HASH_MASK};`)
 
   let keyPos = `${sym}_htable[${pos}]`
 
-  let { keySchema } = hashMapEnv[sym]
   if (typing.isString(keySchema)) {
     let keyStr = `${sym}_keys_str[${keyPos}]`
     let keyLen = `${sym}_keys_len[${keyPos}]`
 
-    let str = `${mksetVal.file} + ${mksetVal.start}`
-    let len = `${mksetVal.end} - ${mksetVal.start}`
+    let str = `${key.file} + ${key.start}`
+    let len = `${key.end} - ${key.start}`
 
     buf.push(`while (${keyPos} != -1 && compare_str2(${keyStr}, ${keyLen}, ${str}, ${len}) != 0) {`)
     buf.push(`${pos} = (${pos} + 1) & ${HASH_MASK};`)
     buf.push(`}`)
   } else {
-    buf.push(`while (${keyPos} != -1 && ${sym}_keys[${keyPos}] != ${mksetVal}) {`)
+    buf.push(`while (${keyPos} != -1 && ${sym}_keys[${keyPos}] != ${key}) {`)
     buf.push(`${pos} = (${pos} + 1) & ${HASH_MASK};`)
     buf.push(`}`)
   }
@@ -397,17 +437,15 @@ let hashLookUpOrUpdate = (buf, sym, key, update) => {
 
   buf.push(`${sym}_htable[${pos}] = ${keyPos};`)
 
-  let { val: mksetVal } = mksetVarEnv[key]
-
   let { keySchema, valSchema } = hashMapEnv[sym]
   if (typing.isString(keySchema)) {
     let keyStr = `${sym}_keys_str[${keyPos}]`
     let keyLen = `${sym}_keys_len[${keyPos}]`
 
-    buf.push(`${keyStr} = ${mksetVal.file} + ${mksetVal.start};`)
-    buf.push(`${keyLen} = ${mksetVal.end} - ${mksetVal.start};`)
+    buf.push(`${keyStr} = ${key.file} + ${key.start};`)
+    buf.push(`${keyLen} = ${key.end} - ${key.start};`)
   } else {
-    buf.push(`${sym}_keys[${keyPos}] = ${mksetVal};`)
+    buf.push(`${sym}_keys[${keyPos}] = ${key};`)
   }
 
   let lhs
@@ -437,17 +475,15 @@ let hashUpdate = (buf, sym, key, update) => {
 
   buf.push(`${sym}_htable[${pos}] = ${keyPos};`)
 
-  let { val: mksetVal } = mksetVarEnv[key]
-
   let { keySchema, valSchema } = hashMapEnv[sym]
   if (typing.isString(keySchema)) {
     let keyStr = `${sym}_keys_str[${keyPos}]`
     let keyLen = `${sym}_keys_len[${keyPos}]`
 
-    buf.push(`${keyStr} = ${mksetVal.file} + ${mksetVal.start};`)
-    buf.push(`${keyLen} = ${mksetVal.end} - ${mksetVal.start};`)
+    buf.push(`${keyStr} = ${key.file} + ${key.start};`)
+    buf.push(`${keyLen} = ${key.end} - ${key.start};`)
   } else {
-    buf.push(`${sym}_keys[${keyPos}] = ${mksetVal};`)
+    buf.push(`${sym}_keys[${keyPos}] = ${key};`)
   }
 
   buf.push(`}`)
@@ -547,7 +583,8 @@ let emitStmInit = (q, sym) => {
       } else {
         throw new Error("stateful op not supported: " + pretty(q))
       }
-      hashLookUpOrUpdate(buf, sym, q.fre[0], (lhs) => `${lhs} ${update};`)
+      let { val: key } = mksetVarEnv[q.fre[0]]
+      hashLookUpOrUpdate(buf, sym, key, (lhs) => `${lhs} ${update};`)
     } else {
       if (q.op == "sum" || q.op == "count") {
         buf.push(`${convertToCType(q.schema.type)} ${sym} = 0;`)
@@ -611,7 +648,8 @@ let emitStmUpdate = (q, sym) => {
       } else {
         throw new Error("stateful op not supported: " + pretty(q))
       }
-      hashUpdate(buf, sym, q.fre[0], update)
+      let { val: key } = mksetVarEnv[q.fre[0]]
+      hashUpdate(buf, sym, key, update)
     } else {
       if (q.op == "sum") {
         buf.push(`${sym} += ${e1};`)
@@ -641,7 +679,8 @@ let emitStmUpdate = (q, sym) => {
     } else {
       update = (lhs) => `${lhs} = ${e3};`
     }
-    hashUpdate(buf, sym, q.arg[1].op, update)
+    let { val: key } = mksetVarEnv[q.arg[1].op]
+    hashUpdate(buf, sym, key, update)
   } else {
     throw new Error("unknown op: " + pretty(q))
   }
@@ -776,22 +815,14 @@ let emitCode = (q, ir) => {
     generatorStms.push(e)
   }
 
-  let createMkset = (e1, e2, val, schema) => {
+  let createMkset = (e1, e2) => {
     let a = getDeps(e1)
     let b = getDeps(e2)
     let e = expr("MKSET", ...a)
     e.sym = b[0]
     let info = [`// generator: ${e2.op} <- ${pretty(e1)}`]
-    let rowScanning = []
-    if (typing.isString(schema.type)) {
-      rowScanning.push(`unsigned long ${e.sym}_hash = hash(${val.file}, ${val.start}, ${val.end});`)
-    } else if (typing.isInteger(schema.type)) {
-      rowScanning.push(`unsigned long ${e.sym}_hash = (unsigned long)${val};`)
-    } else {
-      throw new Error("key type not supported: ", typing.prettyPrintTuple(schema))
-    }
     e.getLoopTxt = () => ({
-      info, loadCSV: [], initCursor: [], loopHeader: ["{", "// singleton value here"], boundsChecking: [], rowScanning
+      info, loadCSV: [], initCursor: [], loopHeader: ["{", "// singleton value here"], boundsChecking: [], rowScanning: []
     })
     generatorStms.push(e)
   }
@@ -841,7 +872,7 @@ let emitCode = (q, ir) => {
     } else if (g1.key == "mkset") {
       let val = codegen(g1.arg[0], [])
       mksetVarEnv[v1] = { val, schema: g1.arg[0].schema }
-      createMkset(f.arg[0], f.arg[1], val, g1.arg[0].schema)
+      createMkset(f.arg[0], f.arg[1])
     } else {
       throw new Error("invalid filter: " + pretty(f))
     }
