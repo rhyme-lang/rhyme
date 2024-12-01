@@ -1,7 +1,6 @@
 const { api, pipe } = require('../../src/rhyme')
 const { rh, parse } = require('../../src/parser')
 const { compile } = require('../../src/simple-eval')
-const { preproc } = require('../../src/preprocess')
 const { typing, types } = require('../../src/typing')
 
 const fs = require('node:fs/promises')
@@ -448,7 +447,7 @@ Japan: Asia
 `)
 })
 
-test("joinSimpleTest", async () => {
+test("nestedLoopJoinSimpleTest", async () => {
   let country = rh`loadCSV "./cgen-sql/country.csv" ${countrySchema}`
   let region = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
 
@@ -464,7 +463,7 @@ Beijing: Asia
 `)
 })
 
-test("joinWithAggrTest", async () => {
+test("nestedLoopJoinWithAggrTest", async () => {
   let country = rh`loadCSV "./cgen-sql/country.csv" ${countrySchema}`
   let region = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
 
@@ -476,6 +475,22 @@ test("joinWithAggrTest", async () => {
   let res = await func()
   expect(res).toBe(`Asia: 50
 Europe: 20
+`)
+})
+
+test("hashJoinSimpleTest", async () => {
+  let country = rh`loadCSV "./cgen-sql/country.csv" ${countrySchema}`
+  let region = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
+
+  let q1 = rh`${region}.*O.region | group ${region}.*O.country`
+  let query = rh`${q1}.(${country}.*.country) | group ${country}.*.city`
+
+  let func = compile(query, { backend: "c-sql-new", outDir, outFile: "hashJoinSimpleTest.c", schema: types.never })
+  let res = await func()
+  expect(res).toBe(`Paris: Europe
+London: Europe
+Tokyo: Asia
+Beijing: Asia
 `)
 })
 
