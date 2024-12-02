@@ -362,7 +362,7 @@ exports.generate = (ir, backend = "js") => {
       let loops = gensBySym[s]
       let loopTxts = loops.map(x => x.getLoopTxt())
       for (let loopTxt of loopTxts) {
-        loopTxt.loadCSV.map(emit)
+        loopTxt.data.map(emit)
       }
 
       // initialize cursors for all loops
