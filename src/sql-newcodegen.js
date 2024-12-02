@@ -167,7 +167,7 @@ let operators = {
 // it will be available in the scope.
 // String columns are only extracted (copied to a temporary buffer) when a null-terminated string is needed.
 // e.g. the open() system call.
-let validateAndExtractUsedCols = (q, extractStr = false) => {
+let validateAndExtractUsedCols = (q) => {
   if (q.key == "get") {
     let [e1, e2] = q.arg
 
@@ -194,25 +194,23 @@ let validateAndExtractUsedCols = (q, extractStr = false) => {
       throw new Error("column name is not a constant string: " + pretty(e2))
     }
 
-    let prefix = pretty(e1) // does this always work?
-    usedCols[prefix] ??= {}
-
-    if (typing.isInteger(q.schema.type)) {
-      usedCols[prefix][e2.op] = true
-    } else if (typing.isString(q.schema.type)) {
-      // only extract the string if we need a null-terminated string
-      // e.g. filename used for open()
-      if (extractStr) {
-        usedCols[prefix][e2.op] = true
-      }
-    } else {
-      throw new Error("column data type not supported: " + pretty(q) + " has type " + typing.prettyPrintTuple(q.schema))
-    }
-
     // extract used columns for the filename
     // we need to extract the string (copy to a temp buffer)
     // because we need a null-terminated string for open()
-    validateAndExtractUsedCols(e1.arg[0].arg[0], true)
+    validateAndExtractUsedCols(e1.arg[0].arg[0])
+
+    let prefix = pretty(e1) // does this always work?
+    usedCols[prefix] ??= {}
+
+    if (typing.isString(q.schema.type)) {
+      // strings do not need to be extracted
+      return
+    }
+    if (typing.isInteger(q.schema.type)) {
+      usedCols[prefix][e2.op] = true
+    } else {
+      throw new Error("column data type not supported: " + pretty(q) + " has type " + typing.prettyPrintTuple(q.schema))
+    }
   } else if (q.key == "ref") {
     let q1 = assignments[q.op]
     validateAndExtractUsedCols(q1)
@@ -231,13 +229,12 @@ let validateAndExtractUsedCols = (q, extractStr = false) => {
     // mkset
     validateAndExtractUsedCols(e4.arg[0].arg[0])
   } else if (q.arg) {
-    q.arg.map(x => validateAndExtractUsedCols(x))
+    q.arg.map(validateAndExtractUsedCols)
   }
 }
 
 // Emit code that opens the CSV file and calls mmap
 let emitLoadCSV = (buf, filename, id, isConstStr = true) => {
-  buf.push(`// loadCSV ${filename}`)
   let fd = "fd" + id
   let mappedFile = "csv" + id
   let size = "n" + id
@@ -258,14 +255,14 @@ let emitLoadCSV = (buf, filename, id, isConstStr = true) => {
   buf.push(`char *${mappedFile} = mmap(0, ${size}, PROT_READ, MAP_FILE | MAP_SHARED, ${fd}, 0);`)
   buf.push(`close(${fd});`)
 
-  csvFilesEnv[filename] = { mappedFile, size }
+  return { mappedFile, size }
 }
 
 // For numbers, the returned value is the extracted column or a literal value for constants.
 // For strings, the returned value is an object with the mapped file, the starting index and ending index.
 //   { file, start, end }
 // If the string is extracted, it will be the name of the temporary buffer storing the copied string.
-let codegen = (q, buf, extractStr = false) => {
+let codegen = (q, buf) => {
   if (q.key == "loadInput") {
     throw new Error("cannot have stand-alone loadInput")
   } else if (q.key == "const") {
@@ -274,7 +271,7 @@ let codegen = (q, buf, extractStr = false) => {
     } else if (typeof q.op == "string") {
       let name = getNewName("tmp_str")
       buf.push(`char ${name}[${q.op.length + 1}] = "${q.op}";`)
-      return extractStr ? name : { file: name, start: "0", end: q.op.length }
+      return { file: name, start: "0", end: q.op.length }
     } else {
       throw new Error("constant not supported: " + pretty(q))
     }
@@ -284,7 +281,7 @@ let codegen = (q, buf, extractStr = false) => {
     let q1 = assignments[q.op]
     if (q1.fre.length > 0) {
       let sym = tmpSym(q.op)
-      let { val: key } = mksetVarEnv[q1.fre[0]]
+      let key = mksetVarEnv[q1.fre[0]].val
       let keyPos = hashLookUp(buf, sym, key)[1]
       let { valSchema } = hashMapEnv[sym]
       if (typing.isString(valSchema)) {
@@ -300,9 +297,7 @@ let codegen = (q, buf, extractStr = false) => {
 
     if (e1.key == "ref") {
       let sym = tmpSym(e1.op)
-
       let key = codegen(e2, buf)
-
       let keyPos = hashLookUp(buf, sym, key)[1]
       let { valSchema } = hashMapEnv[sym]
       if (typing.isString(valSchema)) {
@@ -317,8 +312,7 @@ let codegen = (q, buf, extractStr = false) => {
     if (file.key == "const" && typeof file.op == "string") {
       filename = file.op
     } else {
-      // extract filename only, we don't want it to push more stuff into the buf
-      filename = codegen(file, [], true)
+      filename = pretty(file)
     }
 
     let { mappedFile } = csvFilesEnv[filename]
@@ -333,11 +327,7 @@ let codegen = (q, buf, extractStr = false) => {
     if (typing.isInteger(q.schema.type)) {
       return name
     } else if (typing.isString(q.schema.type)) {
-      if (extractStr) {
-        return name
-      } else {
-        return { file: mappedFile, start, end }
-      }
+      return { file: mappedFile, start, end }
     } else {
       throw new Error("cannot extract value of type " + typing.prettyPrintTuple(q.schema))
     }
@@ -583,7 +573,7 @@ let emitStmInit = (q, sym) => {
       } else {
         throw new Error("stateful op not supported: " + pretty(q))
       }
-      let { val: key } = mksetVarEnv[q.fre[0]]
+      let key = mksetVarEnv[q.fre[0]].val
       hashLookUpOrUpdate(buf, sym, key, (lhs) => `${lhs} ${update};`)
     } else {
       if (q.op == "sum" || q.op == "count") {
@@ -600,7 +590,7 @@ let emitStmInit = (q, sym) => {
     }
   } else if (q.key == "update") {
     buf.push(`// init ${sym} for group`)
-    let { schema: keySchema } = mksetVarEnv[q.arg[1].op]
+    let keySchema = mksetVarEnv[q.arg[1].op].schema
     hashMapInit(buf, sym, keySchema.type, q.schema.type.objValue)
   } else {
     throw new Error("unknown op: " + pretty(q))
@@ -648,7 +638,7 @@ let emitStmUpdate = (q, sym) => {
       } else {
         throw new Error("stateful op not supported: " + pretty(q))
       }
-      let { val: key } = mksetVarEnv[q.fre[0]]
+      let key = mksetVarEnv[q.fre[0]].val
       hashUpdate(buf, sym, key, update)
     } else {
       if (q.op == "sum") {
@@ -679,7 +669,7 @@ let emitStmUpdate = (q, sym) => {
     } else {
       update = (lhs) => `${lhs} = ${e3};`
     }
-    let { val: key } = mksetVarEnv[q.arg[1].op]
+    let key = mksetVarEnv[q.arg[1].op].val
     hashUpdate(buf, sym, key, update)
   } else {
     throw new Error("unknown op: " + pretty(q))
@@ -689,14 +679,14 @@ let emitStmUpdate = (q, sym) => {
 
 // Emit code that scans through each row in the CSV file.
 // Will extract the value of a column if the column is used by the query.
-let emitRowScanning = (f, filename, cursor, schema, first=true) => {
+let emitRowScanning = (f, filename, cursor, schema, first = true) => {
   if (schema.objKey === null)
     return [];
   let buf = []
   let v = f.arg[1].op
   let { mappedFile, size } = csvFilesEnv[filename]
 
-  let colName = schema.objKey 
+  let colName = schema.objKey
   let type = schema.objValue
   let prefix = pretty(f)
   let needToExtract = usedCols[prefix][colName]
@@ -728,12 +718,6 @@ let emitRowScanning = (f, filename, cursor, schema, first=true) => {
   buf.push(`int ${end} = ${cursor};`)
   buf.push(`${cursor}++;`)
 
-  if (needToExtract && typing.isString(type)) {
-    buf.push(`// extract string`)
-    buf.push(`char ${name}[${end} - ${start} + 1];`)
-    buf.push(`extract_str(${mappedFile}, ${start}, ${end}, ${name});`)
-  }
-
   return [...emitRowScanning(f, filename, cursor, schema.objParent, false), ...buf]
 }
 
@@ -764,7 +748,7 @@ let getLoopTxt = (f, filename, loadCSV) => () => {
   let rowScanning = emitRowScanning(f, filename, cursor, schema)
 
   return {
-    info, loadCSV, initCursor, loopHeader, boundsChecking, rowScanning
+    info, data: loadCSV, initCursor, loopHeader, boundsChecking, rowScanning
   }
 }
 
@@ -806,7 +790,7 @@ let emitCode = (q, ir) => {
     assignmentStms.push(e)
   }
 
-  let createGenerator = (e1, e2, getLoopTxtFunc) => {
+  let addGenerator = (e1, e2, getLoopTxtFunc) => {
     let a = getDeps(e1)
     let b = getDeps(e2)
     let e = expr("FOR", ...a)
@@ -815,14 +799,14 @@ let emitCode = (q, ir) => {
     generatorStms.push(e)
   }
 
-  let createMkset = (e1, e2) => {
+  let addMkset = (e1, e2, data) => {
     let a = getDeps(e1)
     let b = getDeps(e2)
     let e = expr("MKSET", ...a)
     e.sym = b[0]
     let info = [`// generator: ${e2.op} <- ${pretty(e1)}`]
     e.getLoopTxt = () => ({
-      info, loadCSV: [], initCursor: [], loopHeader: ["{", "// singleton value here"], boundsChecking: [], rowScanning: []
+      info, data, initCursor: [], loopHeader: ["{", "// singleton value here"], boundsChecking: [], rowScanning: []
     })
     generatorStms.push(e)
   }
@@ -832,6 +816,18 @@ let emitCode = (q, ir) => {
   let prolog = []
   prolog.push(`#include "rhyme-sql.h"`)
   prolog.push("int main() {")
+
+  // Collect hashmaps for groupby
+  for (let i in assignments) {
+    let sym = tmpSym(i)
+
+    let q = assignments[i]
+
+    if (q.key == "update") {
+      let keySchema = q.arg[3].arg[0].arg[0].schema
+      hashMapEnv[sym] = { keySchema: keySchema.type, valSchema: q.schema.type.objValue }
+    }
+  }
 
   let emittedCounter = {}
   for (let i in filters) {
@@ -850,12 +846,20 @@ let emitCode = (q, ir) => {
       if (g1.arg[0].key == "const" && typeof g1.arg[0].op == "string") {
         filename = g1.arg[0].op
         if (csvFilesEnv[filename] == undefined) {
-          emitLoadCSV(prolog, filename, i)
+          prolog.push(`// loading CSV file: ${filename}`)
+          let { mappedFile, size } = emitLoadCSV(prolog, filename, i)
+          csvFilesEnv[filename] = { mappedFile, size }
         }
       } else {
-        filename = codegen(g1.arg[0], [], {}, true)
+        filename = pretty(g1.arg[0])
         if (csvFilesEnv[filename] == undefined) {
-          emitLoadCSV(loadCSV, filename, i, false)
+          loadCSV.push(`// loading CSV file: ${filename}`)
+          let file = codegen(g1.arg[0], [])
+          let tmpStr = getNewName("tmp_filename")
+          loadCSV.push(`char ${tmpStr}[${file.end} - ${file.start} + 1];`)
+          loadCSV.push(`extract_str(${file.file}, ${file.start}, ${file.end}, ${tmpStr});`)
+          let { mappedFile, size } = emitLoadCSV(loadCSV, tmpStr, i, false)
+          csvFilesEnv[filename] = { mappedFile, size }
         }
       }
 
@@ -868,11 +872,12 @@ let emitCode = (q, ir) => {
       }
 
       let getLoopTxtFunc = getLoopTxt(f, filename, loadCSV)
-      createGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
+      addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
     } else if (g1.key == "mkset") {
-      let val = codegen(g1.arg[0], [])
+      let data = []
+      let val = codegen(g1.arg[0], data)
       mksetVarEnv[v1] = { val, schema: g1.arg[0].schema }
-      createMkset(f.arg[0], f.arg[1])
+      addMkset(f.arg[0], f.arg[1], data)
     } else {
       throw new Error("invalid filter: " + pretty(f))
     }
@@ -888,7 +893,7 @@ let emitCode = (q, ir) => {
       // we need to initialize the actual tmp variable separately
 
       // initialize hashmap
-      let { schema: keySchema } = mksetVarEnv[q.fre[0]]
+      let keySchema = mksetVarEnv[q.fre[0]].schema
       let buf = []
       hashMapInit(buf, sym, keySchema.type, q.schema.type)
       assign(buf, sym, [], []);
@@ -914,7 +919,11 @@ let emitCode = (q, ir) => {
       epilog.push("// print hashmap")
       hashMapPrint(epilog, res)
     } else {
-      epilog.push(`printf("%${getFormatSpecifier(q.schema.type)}\\n", ${res});`)
+      if (typing.isString(q.schema.type)) {
+        epilog.push(`println(${res.file}, ${res.start}, ${res.end});`)
+      } else {
+        epilog.push(`printf("%${getFormatSpecifier(q.schema.type)}\\n", ${res});`)
+      }
     }
   }
   epilog.push("return 0;")
@@ -947,11 +956,6 @@ let generateCSqlNew = (q, ir, outDir, outFile) => {
     })
   }
 
-  // Assumptions:
-  // A var will always be from a loadCSV node
-  // A "get" will always get from a var which is the generator on all table rows
-  // and the op will be the name of the column
-  // eg. sum(loadCSV(filename).*.value)
   let code = emitCode(q, ir)
 
   let func = async () => {
