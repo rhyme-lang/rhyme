@@ -942,40 +942,42 @@ let emitCode = (q, ir) => {
 }
 
 let generateCSqlNew = (q, ir, outDir, outFile) => {
-  const fs = require('fs/promises')
-  const os = require('child_process')
+  const fs = require('node:fs').promises
+  const os = require('node:child_process')
+  const path = require('node:path');
 
-  let execPromise = function (cmd) {
+  let sh = (cmd) => {
     return new Promise(function (resolve, reject) {
-      os.exec(cmd, function (err, stdout) {
+      os.exec(cmd, (err, stdout) => {
         if (err) {
           reject(err);
+        } else {
+          resolve(stdout)
         }
-        resolve(stdout);
       })
     })
   }
 
+  let cFile = path.join(outDir, outFile)
+  let out = path.join(outDir, "tmp")
   let code = emitCode(q, ir)
 
+  let cFlags = "-Icgen-sql"
+
   let func = async () => {
-    await fs.writeFile(`${outDir}/${outFile}`, code);
-    await execPromise(`gcc ${outDir}/${outFile} -o ${outDir}/tmp -Icgen-sql`)
-    return `${outDir}/tmp`
+    let stdout = await sh(`./${out} `)
+    return stdout
   }
 
-  let wrap = async (input) => {
-    let file = await func()
-    let res = await execPromise(file)
-    return res
+  func.explain = func.explain
+
+  let writeAndCompile = async () => {
+    await fs.writeFile(cFile, code)
+    await sh(`gcc ${cFlags} ${cFile} -o ${out} -Icgen-sql`)
+    return func
   }
 
-  wrap.explain = {
-    ir,
-    code
-  }
-
-  return wrap
+  return writeAndCompile()
 }
 
 exports.generateCSqlNew = generateCSqlNew
