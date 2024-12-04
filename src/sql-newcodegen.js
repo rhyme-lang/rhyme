@@ -92,6 +92,14 @@ let getFormatSpecifier = (type) => {
   throw new Error("Unknown type: " + typing.prettyPrintType(type));
 }
 
+// TODO: helper functions for generate C code strings
+//
+// expressions
+//
+//
+// statements
+//
+
 let prettyPath = es => {
   if (es === undefined) return "[?]"
   let sub = x => typeof (x) === "string" ? x : pretty(x)
@@ -271,7 +279,7 @@ let codegen = (q, buf) => {
     } else if (typeof q.op == "string") {
       let name = getNewName("tmp_str")
       buf.push(`char ${name}[${q.op.length + 1}] = "${q.op}";`)
-      return { file: name, start: "0", end: q.op.length }
+      return { str: name, len: q.op.length }
     } else {
       throw new Error("constant not supported: " + pretty(q))
     }
@@ -285,7 +293,7 @@ let codegen = (q, buf) => {
       let keyPos = hashLookUp(buf, sym, key)[1]
       let { valSchema } = hashMapEnv[sym]
       if (typing.isString(valSchema)) {
-        return { file: `${sym}_values_str[${keyPos}]`, start: "0", end: `${sym}_values_len[${keyPos}]` }
+        return { str: `${sym}_values_str[${keyPos}]`, len: `${sym}_values_len[${keyPos}]` }
       } else {
         return `${sym}_values[${keyPos}]`
       }
@@ -301,7 +309,7 @@ let codegen = (q, buf) => {
       let keyPos = hashLookUp(buf, sym, key)[1]
       let { valSchema } = hashMapEnv[sym]
       if (typing.isString(valSchema)) {
-        return { file: `${sym}_values_str[${keyPos}]`, start: "0", end: `${sym}_values_len[${keyPos}]` }
+        return { str: `${sym}_values_str[${keyPos}]`, len: `${sym}_values_len[${keyPos}]` }
       } else {
         return `${sym}_values[${keyPos}]`
       }
@@ -327,7 +335,7 @@ let codegen = (q, buf) => {
     if (typing.isInteger(q.schema.type)) {
       return name
     } else if (typing.isString(q.schema.type)) {
-      return { file: mappedFile, start, end }
+      return { str: `${mappedFile} + ${start}`, len: `${end} - ${start}` }
     } else {
       throw new Error("cannot extract value of type " + typing.prettyPrintTuple(q.schema))
     }
@@ -343,10 +351,10 @@ let codegen = (q, buf) => {
     } else if (q.op == "equal" || q.op == "notEqual") {
       let e2 = codegen(q.arg[1], buf)
       if (typing.isString(q.arg[0].schema.type) && typing.isString(q.arg[1].schema.type)) {
-        let { file: file1, start: start1, end: end1 } = e1
-        let { file: file2, start: start2, end: end2 } = e2
+        let { str: str1, len: len1 } = e1
+        let { str: str2, len: len2 } = e2
         let name = getNewName("tmp_cmpstr")
-        buf.push(`int ${name} = compare_str1(${file1}, ${start1}, ${end1}, ${file2}, ${start2}, ${end2}) ${op} 0;`)
+        buf.push(`int ${name} = compare_str2(${str1}, ${len1}, ${str2}, ${len2}) ${op} 0;`)
         return name
       } else if (typing.isInteger(q.arg[0].schema.type) && typing.isInteger(q.arg[1].schema.type)) {
         return `${e1} ${op} ${e2}`
@@ -368,7 +376,7 @@ let codegen = (q, buf) => {
 let hash = (buf, key, schema) => {
   let hashed = getNewName("hash")
   if (typing.isString(schema)) {
-    buf.push(`unsigned long ${hashed} = hash(${key.file}, ${key.start}, ${key.end});`)
+    buf.push(`unsigned long ${hashed} = hash(${key.str}, ${key.len});`)
   } else if (typing.isInteger(schema)) {
     buf.push(`unsigned long ${hashed} = (unsigned long)${key};`)
   } else {
@@ -394,8 +402,7 @@ let hashLookUp = (buf, sym, key) => {
     let keyStr = `${sym}_keys_str[${keyPos}]`
     let keyLen = `${sym}_keys_len[${keyPos}]`
 
-    let str = `${key.file} + ${key.start}`
-    let len = `${key.end} - ${key.start}`
+    let { str, len } = key
 
     buf.push(`while (${keyPos} != -1 && compare_str2(${keyStr}, ${keyLen}, ${str}, ${len}) != 0) {`)
     buf.push(`${pos} = (${pos} + 1) & ${HASH_MASK};`)
@@ -432,8 +439,8 @@ let hashLookUpOrUpdate = (buf, sym, key, update) => {
     let keyStr = `${sym}_keys_str[${keyPos}]`
     let keyLen = `${sym}_keys_len[${keyPos}]`
 
-    buf.push(`${keyStr} = ${key.file} + ${key.start};`)
-    buf.push(`${keyLen} = ${key.end} - ${key.start};`)
+    buf.push(`${keyStr} = ${key.str};`)
+    buf.push(`${keyLen} = ${key.len};`)
   } else {
     buf.push(`${sym}_keys[${keyPos}] = ${key};`)
   }
@@ -470,8 +477,8 @@ let hashUpdate = (buf, sym, key, update) => {
     let keyStr = `${sym}_keys_str[${keyPos}]`
     let keyLen = `${sym}_keys_len[${keyPos}]`
 
-    buf.push(`${keyStr} = ${key.file} + ${key.start};`)
-    buf.push(`${keyLen} = ${key.end} - ${key.start};`)
+    buf.push(`${keyStr} = ${key.str};`)
+    buf.push(`${keyLen} = ${key.len};`)
   } else {
     buf.push(`${sym}_keys[${keyPos}] = ${key};`)
   }
@@ -520,6 +527,11 @@ let hashMapInit = (buf, sym, keySchema, valSchema) => {
   if (typing.isString(valSchema)) {
     buf.push(`char **${sym}_values_str = (char **)malloc(${KEY_SIZE} * sizeof(char *));`)
     buf.push(`int *${sym}_values_len = (int *)malloc(${KEY_SIZE} * sizeof(int));`)
+  } else if (typing.isObject(valSchema)) {
+    if (!typing.isInteger(valSchema.objKey)) {
+      throw new Error("hashMap value object does not support non-integer keys")
+    }
+    throw new Error("hashMap value object not implemented")
   } else {
     let cType = convertToCType(valSchema)
     buf.push(`${cType} *${sym}_values = (${cType} *)malloc(${KEY_SIZE} * sizeof(${cType}));`)
@@ -608,8 +620,8 @@ let emitStmUpdate = (q, sym) => {
     let [e1] = q.arg.map(x => codegen(x, buf))
     if (q.op == "print") {
       if (typing.isString(q.arg[0].schema.type)) {
-        let { file, start, end } = e1
-        buf.push(`println(${file}, ${start}, ${end});`)
+        let { str, len } = e1
+        buf.push(`println1(${str}, ${len});`)
       } else {
         let [e1] = q.arg.map(x => codegen(x, buf))
         buf.push(`printf("%${getFormatSpecifier(q.arg[0].schema.type)}\\n", ${e1});`)
@@ -631,10 +643,12 @@ let emitStmUpdate = (q, sym) => {
       } else if (q.op == "single") {
         // It is possible that the value is a string
         if (typing.isString(q.schema.type)) {
-          update = (lhs) => `${lhs.str} = ${e1.file} + ${e1.start}; ${lhs.len} = ${e1.end} - ${e1.start};`
+          update = (lhs) => `${lhs.str} = ${e1.str}; ${lhs.len} = ${e1.len};`
         } else {
           update = (lhs) => `${lhs} = ${e1};`
         }
+      } else if (q.op == "array") {
+        throw new Error("stateful op not implmeneted: " + pretty(q))
       } else {
         throw new Error("stateful op not supported: " + pretty(q))
       }
@@ -665,7 +679,7 @@ let emitStmUpdate = (q, sym) => {
 
     let { valSchema } = hashMapEnv[sym]
     if (typing.isString(valSchema)) {
-      update = (lhs) => `${lhs.str} = ${e3.file} + ${e3.start}; ${lhs.len} = ${e3.end} - ${e3.start};`
+      update = (lhs) => `${lhs.str} = ${e3.str}; ${lhs.len} = ${e3.len};`
     } else {
       update = (lhs) => `${lhs} = ${e3};`
     }
@@ -856,8 +870,8 @@ let emitCode = (q, ir) => {
           loadCSV.push(`// loading CSV file: ${filename}`)
           let file = codegen(g1.arg[0], [])
           let tmpStr = getNewName("tmp_filename")
-          loadCSV.push(`char ${tmpStr}[${file.end} - ${file.start} + 1];`)
-          loadCSV.push(`extract_str(${file.file}, ${file.start}, ${file.end}, ${tmpStr});`)
+          loadCSV.push(`char ${tmpStr}[${file.len} + 1];`)
+          loadCSV.push(`extract_str1(${file.str}, ${file.len}, ${tmpStr});`)
           let { mappedFile, size } = emitLoadCSV(loadCSV, tmpStr, i, false)
           csvFilesEnv[filename] = { mappedFile, size }
         }
@@ -920,7 +934,7 @@ let emitCode = (q, ir) => {
       hashMapPrint(epilog, res)
     } else {
       if (typing.isString(q.schema.type)) {
-        epilog.push(`println(${res.file}, ${res.start}, ${res.end});`)
+        epilog.push(`println1(${res.str}, ${res.len});`)
       } else {
         epilog.push(`printf("%${getFormatSpecifier(q.schema.type)}\\n", ${res});`)
       }
@@ -947,7 +961,7 @@ let generateCSqlNew = (q, ir, outDir, outFile) => {
   const path = require('node:path');
 
   let sh = (cmd) => {
-    return new Promise(function (resolve, reject) {
+    return new Promise((resolve, reject) => {
       os.exec(cmd, (err, stdout) => {
         if (err) {
           reject(err);
