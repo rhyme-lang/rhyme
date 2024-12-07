@@ -41,3 +41,29 @@ let udf_stdlib = {
   values: o => Object.values(o),
   ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
 }
+
+
+test("day1-part1", () => {
+  let input =
+`3   4
+4   3
+2   5
+1   3
+3   9
+3   3`
+
+  let udf = {
+    ...udf_stdlib,
+    sort: array => array.toSorted(),
+  }
+
+  let pairs = rh`.input | udf.split "\\n" | .* | udf.split "   "`
+  let left  = rh`${pairs}.0 | udf.toNum | array | udf.sort`
+  let right = rh`${pairs}.1 | udf.toNum | array | udf.sort`
+  let query   = rh`${left}.*i - ${right}.*i | udf.abs | sum`
+
+  let func = api.compileC2(query)
+  let res = func({input, udf})
+  expect(res).toBe(11)
+})
+
