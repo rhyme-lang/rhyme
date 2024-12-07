@@ -67,3 +67,31 @@ test("day1-part1", () => {
   expect(res).toBe(11)
 })
 
+test("day1-part2", () => {
+  let input =
+`3   4
+4   3
+2   5
+1   3
+3   9
+3   3`
+
+  let udf = {
+    ...udf_stdlib,
+  }
+
+  let pairs = rh`.input | udf.split "\\n" | .* | udf.split "   "`
+  let left  = rh`${pairs}.0 | udf.toNum | array`
+  let right = rh`${pairs}.1 | udf.toNum | array`
+
+  let histogram = rh`count ${right}.* | group ${right}.*`
+
+  let query   = rh`${left}.* * ${histogram}.(${left}.*) | sum`
+
+  // query = histogram
+
+  let func = api.compileC2(query)
+  let res = func({input, udf})
+  expect(res).toBe(31)
+})
+
