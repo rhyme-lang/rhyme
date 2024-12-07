@@ -207,6 +207,7 @@ api["compileFastPathOnly"] = (query) => {
     wrapper.explain_opt = c1_opt.explain
     return wrapper
 }
+
 api["compileNew"] = (query) => {
   let rep = ir.createIR(query)
   let c1 = new_codegen.generate(rep)
@@ -233,6 +234,33 @@ api["compileNew"] = (query) => {
   wrapper.c2 = c2
   wrapper.c2_new = c2_new
   wrapper.explain = c1.explain
+  wrapper.explain2 = c2.explain
+  wrapper.explain2_new = c2_new.explain
+  return wrapper
+}
+
+api["compileC2"] = (query) => {
+  let rep = ir.createIR(query)
+  let c2 = simpleEval.compile(query)
+  let c2_new = simpleEval.compile(query, { newCodegen: true })
+  let wrapper = (x) => {
+      let res2 = c2(x)
+      let res2_new = c2_new(x)
+
+      let cmp = src => ({
+        toEqual: dst => {
+          let ssrc = JSON.stringify(src)
+          let sdst = JSON.stringify(dst)
+          console.assert(ssrc == sdst, "result mismatch")
+        }})
+      try { cmp = expect } catch (e) {} // use test runner if available
+
+      cmp(res2_new).toEqual(res2)
+      return res2
+  }
+  wrapper.c2 = c2
+  wrapper.c2_new = c2_new
+  wrapper.explain = c2.explain
   wrapper.explain2 = c2.explain
   wrapper.explain2_new = c2_new.explain
   return wrapper
