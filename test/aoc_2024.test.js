@@ -106,7 +106,8 @@ test("day2-part1", () => {
   let udf = {
     ...udf_stdlib,
     slice: a => array => array.slice(a),
-    range: (a,b) => { let res = {}; for (let i = a; i < b; i++) res[i] = true; return res }
+    range: (a,b) => { let res = {}; for (let i = a; i < b; i++) res[i] = true; return res },
+    orElse: (a,b) => (a || b) || undefined
   }
 
   let line = rh`.input | udf.split "\\n" | .*line`
@@ -115,10 +116,10 @@ test("day2-part1", () => {
 
   let delta = rh`${tail}.*i - ${report}.*i`
 
-  let isMonotonic = sign => rh`all (udf.range 1 4).(${sign} * ${delta})`
-  let countMonotonic = sign => rh`count (*line & ${isMonotonic(sign)})`
+  let monotonic = sign => rh`all (udf.range 1 4).(${sign} * ${delta})`
+  let safe = rh`udf.orElse ${monotonic(1)} ${monotonic(-1)}`
 
-  let query   = rh`${countMonotonic(1)} + ${countMonotonic(-1)}`
+  let query   = rh`count (*line & ${safe})`
 
   let func = api.compileC2(query)
   let res = func({input, udf})
