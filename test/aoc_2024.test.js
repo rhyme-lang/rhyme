@@ -81,14 +81,12 @@ test("day1-part2", () => {
   }
 
   let pairs = rh`.input | udf.split "\\n" | .* | udf.split "   "`
-  let left  = rh`${pairs}.0 | udf.toNum | array`
-  let right = rh`${pairs}.1 | udf.toNum | array`
+  let left  = rh`${pairs}.0 | udf.toNum | array | .*`
+  let right = rh`${pairs}.1 | udf.toNum`
 
-  let histogram = rh`count ${right}.* | group ${right}.*`
+  let histogram = rh`count ${right} | group ${right}`
 
-  let query   = rh`${left}.* * ${histogram}.(${left}.*) | sum`
-
-  // query = histogram
+  let query   = rh`${left} * ${histogram}.${left} | sum`
 
   let func = api.compileC2(query)
   let res = func({input, udf})
