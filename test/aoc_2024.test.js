@@ -93,3 +93,34 @@ test("day1-part2", () => {
   expect(res).toBe(31)
 })
 
+test("day2-part1", () => {
+
+  let input =
+`7 6 4 2 1
+1 2 7 8 9
+9 7 6 2 1
+1 3 2 4 5
+8 6 4 4 1
+1 3 6 7 9`
+
+  let udf = {
+    ...udf_stdlib,
+    slice: a => array => array.slice(a),
+    range: (a,b) => { let res = {}; for (let i = a; i < b; i++) res[i] = true; return res }
+  }
+
+  let line = rh`.input | udf.split "\\n" | .*line`
+  let report = rh`${line} | udf.split " " | .*col | udf.toNum | array`
+  let tail = rh`${report} | udf.slice 1`
+
+  let delta = rh`${tail}.*i - ${report}.*i`
+
+  let isMonotonic = sign => rh`all (udf.range 1 4).(${sign} * ${delta})`
+  let countMonotonic = sign => rh`count (*line & ${isMonotonic(sign)})`
+
+  let query   = rh`${countMonotonic(1)} + ${countMonotonic(-1)}`
+
+  let func = api.compileC2(query)
+  let res = func({input, udf})
+  expect(res).toBe(2)
+})
