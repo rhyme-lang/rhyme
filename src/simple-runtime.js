@@ -181,6 +181,27 @@ rt.stateful.max = x => ({
   }
 })
 
+
+rt.stateful.all_init = () => true
+
+rt.stateful.all = x => ({
+  init: () => true, 
+  next: s => {
+    if (x === undefined) return undefined
+    if (s === undefined) return undefined
+    return s // return first encountered
+  }
+})
+
+rt.stateful.any = x => ({
+  init: () => undefined, 
+  next: s => {
+    if (x === undefined) return s
+    if (s === undefined) return x
+    return s // return first encountered
+  }
+})
+
 rt.stateful.first = x => ({
   init: () => undefined,
   next: s => {
