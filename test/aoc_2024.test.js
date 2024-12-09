@@ -54,7 +54,7 @@ test("day1-part1", () => {
 
   let udf = {
     ...udf_stdlib,
-    sort: array => array.toSorted(),
+    sort: array => [...array].sort(),
   }
 
   let pairs = rh`.input | udf.split "\\n" | .* | udf.split "   "`
