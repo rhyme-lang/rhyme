@@ -1693,7 +1693,7 @@ let quoteExpr = q => {
 
 // TODO: add explicit type cast when type does not check
 let codegenCPP = q => {
-  let ty = q.schema
+  let ty = q.schema.type
   let expr = quoteExpr(q)
   if (expr in nameEnv) return nameEnv[expr]
   if (q.key == "input") {
