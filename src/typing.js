@@ -58,6 +58,7 @@ typeSyms["union"] = "union"; // arg1 U arg2 U arg3 ...
 typeSyms["dynkey"] = "dynkey"; // wrapped arg is subtype of arg
 typeSyms["function"] = "function"; // (p1, p2, ...) -> r1
 typeSyms["tagged_type"] = "tagged_type"; // object with a specialized interface to it used by codegen.
+typeSyms["keyval"] = "keyval"; // Not a proper type. Used for constructing types easier.
 
 // Type hierarchy order: (Top to bottom level)
 // - Unions
@@ -97,6 +98,9 @@ let typeEquals = (t1, t2) => {
             // If two keys have the same symbol, they are same by definition.
             if (t1.keySymbol == t2.keySymbol)
                 return true;
+            // Otherwise, they are not equal. 
+            // TODO: Determine other ways of communicating equality of domain.
+            return false;
         }
         case typeSyms.tagged_type: {
             throw new Error("unimplemented");
@@ -203,6 +207,15 @@ let createKey = (supertype, symbolName="Key") => {
     }
 }
 typing.createKey = createKey;
+
+let keyval = (key, value) => {
+    return {
+        typeSym: typeSyms.keyval,
+        keyvalKey: key,
+        keyvalValue: value
+    }
+}
+typing.keyval = keyval;
 
 let removeTag = (type) => {
     if (type.typeSym != typeSyms.tagged_type)
@@ -330,6 +343,10 @@ const SUBTYPE_ORDERS = [
     [types.u8, types.i16, types.i32, types.i64],
     [types.u16, types.i32, types.i64],
     [types.u32, types.i64],
+    [types.i8, types.i16, types.f32, types.f64],
+    [types.u8, types.u16, types.f32, types.f64],
+    [types.u8, types.u16, types.i32, types.f64],
+    [types.u32, types.f64],
 ];
 
 let typeConforms_NonUnion = (type, expectedType) => {
@@ -385,7 +402,8 @@ let typeConforms_NonUnion = (type, expectedType) => {
         return true;
     }
     if (isObject(type) && isObject(expectedType)) {
-        throw new Error("Unable to check type conformity of objects.");
+        // TODO
+        throw new Error("Unable to check type conformity of unsimilar objects.");
         if (expectedType.objKey === null) {
             // Empty object is supertype of all objects.
             return true;
@@ -480,9 +498,9 @@ let typeDoesntIntersect = (t1, t2) => {
     if (isSubtype(t1, t2) || isSubtype(t2, t1)) {
         return false;
     }
-    if (isInteger(t1) && isString(t2))
+    if (isNumber(t1) && isString(t2))
         return true;
-    if (isString(t1) && isInteger(t2))
+    if (isString(t1) && isNumber(t2))
         return true;
     if (isString(t1) && isString(t2)) {
         if (t1.typeSym == typeSyms.dynkey || t2.typeSym == typeSyms.dynkey)
@@ -516,6 +534,22 @@ let isInteger = (type) => {
 }
 typing.isInteger = isInteger;
 
+let isNumber = (type) => {
+    if(isInteger(type))
+        return true;
+    type = removeTag(type);
+    if (type.typeSym === typeSyms.union)
+        return isNumber(type.unionSet[0]) && isNumber(type.unionSet[1]);
+    if (type.typeSym === typeSyms.intersect)
+        return isNumber(type.intersectSet[0]);
+    if (type.typeSym === typeSyms.dynkey)
+        return isNumber(type.keySupertype);
+    if (type === types.f32 || type === types.f64)
+        return true;
+    return false;
+}
+typing.isNumber = isNumber;
+
 let isSparse = (type) => {
   return type.typeSym === typeSyms.tagged_type && type.tag === "sparse"
 }
@@ -546,25 +580,25 @@ Set.prototype.union = function(otherSet) {
   return new Set([...this, ...otherSet]);
 };
 
-let generalizeInteger = (type) => {
-    if (!isInteger(type))
-        throw new Error("Unable to generalize non-integer value.");
+let generalizeNumber = (type) => {
+    if (!isNumber(type))
+        throw new Error("Unable to generalize non-number value.");
     switch (type.typeSym) {
         case typeSyms.union:
             return createUnion(
-                generalizeInteger(type.unionSet[0]),
-                generalizeInteger(type.unionSet[1])
+                generalizeNumber(type.unionSet[0]),
+                generalizeNumber(type.unionSet[1])
             );
         case typeSyms.intersect:
             // TODO: Intersection of integers.
             return createUnion(
-                generalizeInteger(type.intersectSet[0]),
-                generalizeInteger(type.intersectSet[1]),
+                generalizeNumber(type.intersectSet[0]),
+                generalizeNumber(type.intersectSet[1]),
             );
         case typeSyms.dynkey:
-            return generalizeInteger(type.keySupertype);
+            return generalizeNumber(type.keySupertype);
         case typeSyms.tagged_type:
-            return generalizeInteger(type.tagInnertype);
+            return generalizeNumber(type.tagInnertype);
         default:
             return type;
     }
@@ -760,14 +794,33 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
     } else if (q.key === "pure") {
         let argTups = q.arg.map($validateIRQuery);
         let {type: t1, props: p1} = argTups[0];
+
+        if(q.op == "apply") {
+            if(t1.typeSym != typeSyms.function)
+                throw new Error(`Unable to apply a value to a non-function value (type ${prettyPrintType(t1)})`)
+            if(t1.funcParams.length + 1 != argTups.length)
+                throw new Error(`Unable to apply function. Number of args do not align.`);
+            let props = new Set([]);
+            for(let i = 0; i < argTups.length - 1; i++) {
+                let {type, props: argProps} = argTups[i + 1];
+                let expType = t1.funcParams[i];
+                if(!isSubtype(type, expType)) {
+                    throw new Error(`Unable to apply function. Argument ${i + 1} does not align.\nExpected: ${prettyPrintType(expType)}\nReceived: ${prettyPrintType(type)}.`);
+                }
+                props = props.union(argProps);
+            }
+            // All inputs conform.
+            return {type: t1.funcResult, props};
+        }
         // If q is a binary operation:
-        if (q.op === "plus" || q.op === "times"  || q.op === "equal" || q.op === "and" || q.op === "notEqual" ||
-           q.op === "minus" || q.op === "times" || q.op === "fdiv" || q.op === "div" || q.op === "mod") {
+        // TODO: Figure out difference between fdiv and div.
+        else if (q.op === "equal" || q.op === "and" || q.op === "notEqual" || q.op === "fdiv" || 
+            q.op === "plus" || q.op === "minus" || q.op === "times" || q.op === "div" || q.op === "mod") {
             let {type: t2, props: p2} = argTups[1];
             if (q.op == "plus" || q.op == "minus" || q.op == "times" || q.op == "div" || q.op == "mod") {
-                if (!isInteger(t1) || !isInteger(t2))
+                if (!isNumber(t1) || !isNumber(t2))
                     throw new Error(`Unable to perform ${q.op} on values of type ${prettyPrintType(t1)} and ${prettyPrintType(t2)}`);
-                let resType = generalizeInteger(createUnion(t1, t2));
+                let resType = generalizeNumber(createUnion(t1, t2));
                 return {
                     type: resType,
                     props: p1.union(p2)
@@ -822,14 +875,14 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
 
         if (q.op === "sum" || q.op === "product") {
             // Check if each arg is a number.
-            if (!isInteger(argType))
-                throw new Error(`Unable to ${q.op} non-integer values currently. Got: ${prettyPrintType(argType)}`);
+            if (!isNumber(argType))
+                throw new Error(`Unable to ${q.op} non-number values currently. Got: ${prettyPrintType(argType)}`);
             
             return {type: argType, props: argTup.props.difference(nothingSet)};
         } else if (q.op === "min" || q.op === "max") {
 
-            if (!isInteger(argType))
-                throw new Error("Unable to union non-integer values currently.");
+            if (!isNumber(argType))
+                throw new Error("Unable to union non-number values currently.");
 
             return  {type: argType, props: argTup.props};
 
@@ -868,10 +921,10 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
         //return "{ "+ e1 + ": " + e2 + " }"
         //return {"*": t2};
     } else if (q.key === "update") {
-        let _ = $validateIRQuery(q.arg[3]);
+        if(q.arg[3])  $validateIRQuery(q.arg[3]);
         let argTup1 = $validateIRQuery(q.arg[0]);
-        let argTup2 = $validateIRQuery(q.arg[1]);
         let argTup3 = $validateIRQuery(q.arg[2]);
+        let argTup2 = $validateIRQuery(q.arg[1]);
 
         let {type: parentType, props: p1} = argTup1;
         if (!isObject(parentType))
@@ -918,9 +971,73 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
     throw new Error("Unable to determine type of query: " + prettyPrint(q));
 }
 
+// Used for converting human-readable types into their proper format.
+typing.parseType = (schema) => {
+    if(schema === undefined)
+        return undefined;
+    if(typeof schema === "string")
+        return schema;
+    if(typeof schema !== "object")
+        throw new Error("Unknown type: " + schema);
+    switch(schema.typeSym) {
+        case undefined:
+            if(Object.keys(schema).length == 0) {
+                return typing.createSimpleObject({});
+            }
+            let key = Object.keys(schema)[Object.keys(schema).length - 1];
+            let value = typing.parseType(schema[key]);
+            // Create new schema without key, without mutating the existing object.
+            let {[key]: _, ...newSchema} = schema;
+            // If keyval is used, extract the pair.
+            if(value.typeSym == typeSyms.keyval) {
+                key = typing.parseType(value.keyvalKey);
+                value = typing.parseType(value.keyvalValue);
+            }
+            // Recurse until the base object is reached, then construct object.
+            let parent = typing.parseType(newSchema);
+            return {
+                typeSym: typeSyms.object,
+                objKey: key,
+                objValue: value,
+                objParent: parent
+            };
+        case typeSyms.union:
+            schema.unionSet[0] = typing.parseType(schema.unionSet[0]);
+            schema.unionSet[1] = typing.parseType(schema.unionSet[1]);
+            return schema;
+        case typeSyms.intersect:
+            schema.intersectSet[0] = typing.parseType(schema.intersectSet[0]);
+            schema.intersectSet[1] = typing.parseType(schema.intersectSet[1]);
+            return schema;
+        case typeSyms.dynkey:
+            schema.keySupertype = typing.parseType(schema.keySupertype)
+            return schema;
+        case typeSyms.function:
+            schema.funcParams = schema.funcParams.map(typing.parseType);
+            schema.funcResult = typing.parseType(schema.funcResult);
+            return schema;
+        case typeSyms.object:
+            if(schema.objKey === null)
+                return schema;
+            schema.objKey = typing.parseType(schema.objKey);
+            schema.objValue = typing.parseType(schema.objValue);
+            schema.objParent = typing.parseType(schema.objParent);
+            return schema;
+        case typeSyms.tagged_type:
+            schema.tagInnertype = typing.parseType(schema.tagInnertype);
+            return schema;
+        case typeSyms.tagged_type:
+            schema.tagInnertype = typing.parseType(schema.tagInnertype);
+            return schema;
+        default:
+            return schema;
+    }
+}
+
 typing.validateIR = (schema, q) => {
     if (schema === undefined)
         return undefined;
+    schema = typing.parseType(schema);
     let boundKeys = {};
     let cseMap = {};
     let nonEmptyGuarantees = [];
