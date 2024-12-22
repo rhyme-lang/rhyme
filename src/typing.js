@@ -68,59 +68,18 @@ typeSyms["keyval"] = "keyval"; // Not a proper type. Used for constructing types
 // -- Then inside any base types (e.g. K_n(T) ), the hierarchy restarts for said inner types.
 
 let typeEquals = (t1, t2) => {
-    // All types that can be condensed should be condensed (according to type hierarchy)
-    if (t1.typeSym != t2.typeSym)
-        return false;
-    switch (t1.typeSym) {
-        case typeSyms.union: {
-            let t1t1 = t1.unionSet[0];
-            let t1t2 = t1.unionSet[1];
-            let t2t1 = t2.unionSet[0];
-            let t2t2 = t2.unionSet[1];
-            if (typeEquals(t1t1, t2t1) && typeEquals(t1t2, t2t2))
-                return true;
-            if (typeEquals(t1t1, t2t2) && typeEquals(t1t2, t2t1))
-                return true;
-            return false;
-        }
-        case typeSyms.intersect: {
-            let t1t1 = t1.intersectSet[0];
-            let t1t2 = t1.intersectSet[1];
-            let t2t1 = t2.intersectSet[0];
-            let t2t2 = t2.intersectSet[1];
-            if (typeEquals(t1t1, t2t1) && typeEquals(t1t2, t2t2))
-                return true;
-            if (typeEquals(t1t1, t2t2) && typeEquals(t1t2, t2t1))
-                return true;
-            return false;
-        }
-        case typeSyms.dynkey: {
-            // If two keys have the same symbol, they are same by definition.
-            if (t1.keySymbol == t2.keySymbol)
-                return true;
-            // Otherwise, they are not equal. 
-            // TODO: Determine other ways of communicating equality of domain.
-            return false;
-        }
-        case typeSyms.tagged_type: {
-            throw new Error("unimplemented");
-        }
-        case typeSyms.object: {
-            if (t1.objKey === null)
-                return t2.objKey === null;
-            if (!typeEquals(t1.objKey, t2.objKey))
-                return false;
-            if (!typeEquals(t1.objValue, t2.objValue))
-                return false;
-            if (!typeEquals(t1.objParent, t2.objParent))
-                return false;
-            return true;
-        }
-        default: {
-            return t1 == t2;
-        }
-    }
+    if(isSubtype(t1, t2) && isSubtype(t2, t1))
+        return true;
+    return false;
 }
+typing.typeEquals = typeEquals;
+
+let intoTup = (type) => {
+    return {
+        type: type,
+        props: new Set([])
+    }
+};
 
 let isObject = (type) => {
     type = removeTag(type);
@@ -165,7 +124,7 @@ let createIntersection = (t1, t2) => {
     if (isSubtype(t2, t1))
         return t2;
     if (typeDoesntIntersect(t1, t2)) {
-        console.warn(`Intersection of non-intersecting types results in Never: ${prettyPritType(t1)} and ${prettyPrintType(t2)}`);
+        // console.warn(`Intersection of non-intersecting types results in Never: ${prettyPrintType(t1)} and ${prettyPrintType(t2)}`);
         return types.never;
     }
     // According to type hierarchy, unions should be above intersections.
@@ -186,7 +145,7 @@ let createIntersection = (t1, t2) => {
         intersectSet: [t1, t2]
     };
 }
-typing.createUnion = createUnion;
+typing.createIntersection = createIntersection;
 
 let createFunction = (result, ...params) => {
     return {
@@ -292,8 +251,8 @@ let performObjectGet = (objectTup, keyTup) => {
                 {type: removeTag(objectTup.type), props: objectTup.props},
                 keyTup);
         case typeSyms.union:
-            let res1 = performObjectGet(objectTup.type.unionSet[0], keyType);
-            let res2 = performObjectGet(objectTup.type.unionSet[1], keyType);
+            let res1 = performObjectGet({type: objectTup.type.unionSet[0], props: objectTup.props}, keyTup);
+            let res2 = performObjectGet({type: objectTup.type.unionSet[1], props: objectTup.props}, keyTup);
             return {
                 type: createUnion(res1.type, res2.type),
                 props: res1.props.union(res2.props)
@@ -314,7 +273,7 @@ let performObjectGet = (objectTup, keyTup) => {
                     type: valueType, props: props
                 };
             }
-            let {type: t3, props: p3} = performObjectGet({type: parent, props: new Set([])}, keyTup);
+            let {type: t3, props: p3} = performObjectGet(intoTup(parent), keyTup);
             props = props.union(p3);
             if (typeDoesntIntersect(keyType, keyTup.type)) {
                 return {
@@ -350,7 +309,7 @@ const SUBTYPE_ORDERS = [
 ];
 
 let typeConforms_NonUnion = (type, expectedType) => {
-    if (typeEquals(type, expectedType))
+    if (type === expectedType)
         return true;
     // Never is a subtype of all types.
     if (type == types.never)
@@ -394,32 +353,41 @@ let typeConforms_NonUnion = (type, expectedType) => {
         let resConforms = typeConforms(type.funcResult, expectedType.funcResult);
         if (!resConforms)
             return false;
-        let argsConform = type.funcParams.reduce((acc, _, i) => acc &&
-            typeConforms(expectedType.funcParams[i], type.funcParams[i])
+        let argsConform = type.funcParams.reduce(((acc, _, i) => acc &&
+            typeConforms(expectedType.funcParams[i], type.funcParams[i])),
+            true
         );
         if (!argsConform)
             return false;
         return true;
     }
     if (isObject(type) && isObject(expectedType)) {
-        // TODO
-        throw new Error("Unable to check type conformity of unsimilar objects.");
+        // Because this is the non-union function, this guarantees they are true objects.
         if (expectedType.objKey === null) {
             // Empty object is supertype of all objects.
             return true;
         }
-        let invalid = false;
-        for (let keyValue of expectedType) {
-            // If each potential access doesn't guarantee to have a subtype of the supertype's value for that field
-            // then it could return a value that isn't in the supertype's type. So it doesn't conform.
-            if (!isSubtype(performObjectGet(type, keyValue[0]), keyValue[1])) {
-                invalid = true;
-                break;
-            }
+        if(type.objKey === null) {
+            // Empty object is not a subtype of any non-empty object.
+            return false;
         }
-        if (!invalid)
-            return true;
-        return false;
+        let keyvals = [];
+        let tup = intoTup(type);
+        for(let nestedObj = expectedType; nestedObj.objKey != null; nestedObj = nestedObj.objParent) {
+            let key = nestedObj.objKey;
+            let {type: lookupType, props: lookupProps} = performObjectGet(tup, intoTup(key));
+            let expectedRes = nestedObj.objValue;
+            for(let keyval of keyvals) {
+                if(typeDoesntIntersect(key, keyval[0]))
+                    continue;
+                expectedRes = createUnion(expectedRes, keyval[1])
+            }
+            if(!isSubtype(lookupType, expectedRes) || lookupProps.size != 0) {
+                return false;
+            }
+            keyvals.push([nestedObj.objKey, nestedObj.objValue]);
+        }
+        return true;
     }
     for (let subtype_order_arr of SUBTYPE_ORDERS) {
         let i1 = subtype_order_arr.indexOf(type);
@@ -436,7 +404,7 @@ let typeConforms_NonUnion = (type, expectedType) => {
 
 // typeConforms is same as isSubtype.
 let typeConforms = (type, expectedType) => {
-    if (typeEquals(type, expectedType))
+    if (type === expectedType)
         return true;
     switch (type.typeSym) {
         case typeSyms.union: {
@@ -490,10 +458,18 @@ let typeDoesntIntersect = (t1, t2) => {
         default:
             break;
     }
-    if (t2.typSym == typeSyms.union) {
-        let res1 = typeDoesntIntersect(t1, t2.unionSet[0]);
-        let res2 = typeDoesntIntersect(t1, t2.unionSet[1]);
-        return res1 && res2;
+    switch(t2.typeSym) {
+        case typeSyms.never:
+            return true;
+        case typeSyms.any:
+            return false;
+        case typeSyms.union: {
+            let res1 = typeDoesntIntersect(t2.unionSet[0], t1);
+            let res2 = typeDoesntIntersect(t2.unionSet[1], t1);
+            return res1 && res2;
+        }
+        default:
+            break;
     }
     if (isSubtype(t1, t2) || isSubtype(t2, t1)) {
         return false;
@@ -510,6 +486,7 @@ let typeDoesntIntersect = (t1, t2) => {
     // TODO Other checks?
     return false;
 }
+typing.typeDoesntIntersect = typeDoesntIntersect;
 
 let isInteger = (type) => {
     type = removeTag(type);
@@ -728,7 +705,7 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
     if (q === undefined)
         throw new Error("Undefined query.");
     if (q.key === "input") {
-        return {type: schema, props: new Set([])};
+        return intoTup(schema);
     } else if (q.key === "loadInput") {
         let argTups = q.arg.map($validateIRQuery);
         let t1 = argTups[0].type;
@@ -738,27 +715,27 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
         return {type: q.schema, props: argTups[0].props};
     } else if (q.key === "const") {
         if (typeof q.op === "object" && Object.keys(q.op).length === 0)
-            return {type: createSimpleObject({}), props: new Set([])};
+            return intoTup(createSimpleObject({}));
         if (typeof q.op === "number") {
             if (q.op < 0) {
                 if (q.op >= -127)
-                    return {type: types.i8, props: new Set([])};
+                    return intoTup(types.i8);
                 if (q.op >= -32767)
-                    return {type: types.i16, props: new Set([])};
+                    return intoTup(types.i16);
                 if (q.op >= -2147483647)
-                    return {type: types.i32, props: new Set([])};
-                return {type: types.i64, props: new Set([])};
+                    return intoTup(types.i32);
+                return intoTup(types.i64);
             }
             if (q.op < 256)
-                return {type: types.u8, props: new Set([])};
+                return intoTup(types.u8);
             if (q.op <= 65535)
-                return {type: types.u16, props: new Set([])};
+                return intoTup(types.u16);
             if (q.op <= 4294967295)
-                return {type: types.u32, props: new Set([])};
-            return {type: types.u64, props: new Set([])};
+                return intoTup(types.u32);
+            return intoTup(types.u64);
         }
         if (typeof q.op === "string")
-            return {type: q.op, props: new Set([])};
+            return intoTup(q.op);
         throw new Error("Unknown const: " + q.op)
     } else if (q.key === "var") {
         

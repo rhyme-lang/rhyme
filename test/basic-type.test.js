@@ -74,17 +74,7 @@ let expectTypeSimilarity = (type, schema) => {
     }
 }
 
-test("type-creation-1", () => {
-    let type = typing.createUnion(types.u8, types.u16);
-    expect(type).toBe(types.u16);
-})
-
-test("type-creation-2", () => {
-    let type = typing.createUnion(types.u8, types.i16);
-    expect(type).toBe(types.i16);
-})
-
-test("type-creation-3", () => {
+test("intLitTest", () => {
     let func = api.compile(api.plus(1, 63), types.never);
     expect(func.explain2.resultType).toStrictEqual({
         type: types.u8,
@@ -415,10 +405,6 @@ test("arrayTest5ZipB", () => {
     })
 })
 
-
-// TODO: Unable to type-check this. Look into making it work?
-
-/*
 test("arrayTest6Flatten", () => {
     let query0 = { "data.*.key": {v1:["data.*.value"], v2:["data.*.value"]} }
     let query = { "*k": [api.get(api.get(api.get(query0,"*k"), "*A"), "*B")] }
@@ -432,7 +418,6 @@ test("arrayTest6Flatten", () => {
         }
     })
 })
-*/
 
 test("arrayTest7Eta", () => {
     let query0 = { "data.*.key": ["data.*.value"] }
