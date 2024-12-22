@@ -34,35 +34,35 @@ let regionSchema = {
 // Typing check helper function.
 // Take in human-writeable schema and check its similarity to type.
 let expectTypeSimilarity = (type, schema) => {
-    if(schema === undefined)
+    if (schema === undefined)
         return undefined;
-    if(typeof schema !== "object")
+    if (typeof schema !== "object")
         throw new Error("Unknown type: " + schema);
-    switch(schema.typeSym) {
+    switch (schema.typeSym) {
         case undefined:
-            if(Object.keys(schema).length == 0) {
+            if (Object.keys(schema).length == 0) {
                 expect(type).toStrictEqual(typing.createSimpleObject({}));
                 return;
             }
             let keys = [];
-            for(let obj = type; obj.objParent != null; obj = obj.objParent) {
-                if(typeof obj.objKey === "string")
+            for (let obj = type; obj.objParent != null; obj = obj.objParent) {
+                if (typeof obj.objKey === "string")
                     keys.push(obj.objKey);
             }
-            for(let key of Object.keys(schema)) {
+            for (let key of Object.keys(schema)) {
                 // TODO: Add support for checking type of key.
-                if(key == "*") {
-                    for(let obj = type; obj.objParent != null; obj = obj.objParent) {
-                        if(typeof obj.objKey !== "string")
+                if (key == "*") {
+                    for (let obj = type; obj.objParent != null; obj = obj.objParent) {
+                        if (typeof obj.objKey !== "string")
                             expectTypeSimilarity(obj.objValue, schema[key]);
                     }
                     continue;
                 }
-                if(keys.indexOf(key) == -1)
+                if (keys.indexOf(key) == -1)
                     expect("Unable to find key " + key).toBe(false);
                 keys = keys.filter(elem => elem != key);
-                for(let obj = type; obj.objParent != null; obj = obj.objParent) {
-                    if(obj.objKey === key)
+                for (let obj = type; obj.objParent != null; obj = obj.objParent) {
+                    if (obj.objKey === key)
                         expectTypeSimilarity(obj.objValue, schema[key]);
                 }
             }

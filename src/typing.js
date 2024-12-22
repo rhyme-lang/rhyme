@@ -68,7 +68,7 @@ typeSyms["keyval"] = "keyval"; // Not a proper type. Used for constructing types
 // -- Then inside any base types (e.g. K_n(T) ), the hierarchy restarts for said inner types.
 
 let typeEquals = (t1, t2) => {
-    if(isSubtype(t1, t2) && isSubtype(t2, t1))
+    if (isSubtype(t1, t2) && isSubtype(t2, t1))
         return true;
     return false;
 }
@@ -367,22 +367,22 @@ let typeConforms_NonUnion = (type, expectedType) => {
             // Empty object is supertype of all objects.
             return true;
         }
-        if(type.objKey === null) {
+        if (type.objKey === null) {
             // Empty object is not a subtype of any non-empty object.
             return false;
         }
         let keyvals = [];
         let tup = intoTup(type);
-        for(let nestedObj = expectedType; nestedObj.objKey != null; nestedObj = nestedObj.objParent) {
+        for (let nestedObj = expectedType; nestedObj.objKey != null; nestedObj = nestedObj.objParent) {
             let key = nestedObj.objKey;
             let {type: lookupType, props: lookupProps} = performObjectGet(tup, intoTup(key));
             let expectedRes = nestedObj.objValue;
-            for(let keyval of keyvals) {
-                if(typeDoesntIntersect(key, keyval[0]))
+            for (let keyval of keyvals) {
+                if (typeDoesntIntersect(key, keyval[0]))
                     continue;
                 expectedRes = createUnion(expectedRes, keyval[1])
             }
-            if(!isSubtype(lookupType, expectedRes) || lookupProps.size != 0) {
+            if (!isSubtype(lookupType, expectedRes) || lookupProps.size != 0) {
                 return false;
             }
             keyvals.push([nestedObj.objKey, nestedObj.objValue]);
@@ -416,9 +416,6 @@ let typeConforms = (type, expectedType) => {
             let res1 = typeConforms(type.intersectSet[0], expectedType);
             let res2 = typeConforms(type.intersectSet[1], expectedType);
             return res1 || res2;
-        }
-        case typeSyms.dynkey: {
-            return typeConforms(type.keySupertype, expectedType);
         }
         default:
             // TODO: Dynamic Keys supertype Union.
@@ -474,10 +471,23 @@ let typeDoesntIntersect = (t1, t2) => {
     if (isSubtype(t1, t2) || isSubtype(t2, t1)) {
         return false;
     }
-    if (isNumber(t1) && isString(t2))
-        return true;
-    if (isString(t1) && isNumber(t2))
-        return true;
+    let strT1 = "";
+    let strT2 = "";
+    if(isNumber(t1))
+        strT1 = "num";
+    if(isNumber(t2))
+        strT2 = "num";
+    if(isString(t1))
+        strT1 = "str";
+    if(isString(t2))
+        strT2 = "str";
+    if(isBoolean(t1))
+        strT1 = "bool";
+    if(isBoolean(t2))
+        strT2 = "bool";
+    if(strT1 != "" && strT2 != "")
+        if(strT1 != strT2)
+            return true;
     if (isString(t1) && isString(t2)) {
         if (t1.typeSym == typeSyms.dynkey || t2.typeSym == typeSyms.dynkey)
             return false;
@@ -512,7 +522,7 @@ let isInteger = (type) => {
 typing.isInteger = isInteger;
 
 let isNumber = (type) => {
-    if(isInteger(type))
+    if (isInteger(type))
         return true;
     type = removeTag(type);
     if (type.typeSym === typeSyms.union)
@@ -522,6 +532,20 @@ let isNumber = (type) => {
     if (type.typeSym === typeSyms.dynkey)
         return isNumber(type.keySupertype);
     if (type === types.f32 || type === types.f64)
+        return true;
+    return false;
+}
+typing.isNumber = isNumber;
+
+let isBoolean = (type) => {
+    type = removeTag(type);
+    if (type.typeSym === typeSyms.union)
+        return isBoolean(type.unionSet[0]) && isBoolean(type.unionSet[1]);
+    if (type.typeSym === typeSyms.intersect)
+        return isBoolean(type.intersectSet[0]);
+    if (type.typeSym === typeSyms.dynkey)
+        return isBoolean(type.keySupertype);
+    if (type === types.boolean)
         return true;
     return false;
 }
@@ -772,16 +796,16 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
         let argTups = q.arg.map($validateIRQuery);
         let {type: t1, props: p1} = argTups[0];
 
-        if(q.op == "apply") {
-            if(t1.typeSym != typeSyms.function)
+        if (q.op == "apply") {
+            if (t1.typeSym != typeSyms.function)
                 throw new Error(`Unable to apply a value to a non-function value (type ${prettyPrintType(t1)})`)
-            if(t1.funcParams.length + 1 != argTups.length)
+            if (t1.funcParams.length + 1 != argTups.length)
                 throw new Error(`Unable to apply function. Number of args do not align.`);
             let props = new Set([]);
-            for(let i = 0; i < argTups.length - 1; i++) {
+            for (let i = 0; i < argTups.length - 1; i++) {
                 let {type, props: argProps} = argTups[i + 1];
                 let expType = t1.funcParams[i];
-                if(!isSubtype(type, expType)) {
+                if (!isSubtype(type, expType)) {
                     throw new Error(`Unable to apply function. Argument ${i + 1} does not align.\nExpected: ${prettyPrintType(expType)}\nReceived: ${prettyPrintType(type)}.`);
                 }
                 props = props.union(argProps);
@@ -898,7 +922,7 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
         //return "{ "+ e1 + ": " + e2 + " }"
         //return {"*": t2};
     } else if (q.key === "update") {
-        if(q.arg[3])  $validateIRQuery(q.arg[3]);
+        if (q.arg[3])  $validateIRQuery(q.arg[3]);
         let argTup1 = $validateIRQuery(q.arg[0]);
         let argTup3 = $validateIRQuery(q.arg[2]);
         let argTup2 = $validateIRQuery(q.arg[1]);
@@ -950,15 +974,15 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
 
 // Used for converting human-readable types into their proper format.
 typing.parseType = (schema) => {
-    if(schema === undefined)
+    if (schema === undefined)
         return undefined;
-    if(typeof schema === "string")
+    if (typeof schema === "string")
         return schema;
-    if(typeof schema !== "object")
+    if (typeof schema !== "object")
         throw new Error("Unknown type: " + schema);
-    switch(schema.typeSym) {
+    switch (schema.typeSym) {
         case undefined:
-            if(Object.keys(schema).length == 0) {
+            if (Object.keys(schema).length == 0) {
                 return typing.createSimpleObject({});
             }
             let key = Object.keys(schema)[Object.keys(schema).length - 1];
@@ -966,7 +990,7 @@ typing.parseType = (schema) => {
             // Create new schema without key, without mutating the existing object.
             let {[key]: _, ...newSchema} = schema;
             // If keyval is used, extract the pair.
-            if(value.typeSym == typeSyms.keyval) {
+            if (value.typeSym == typeSyms.keyval) {
                 key = typing.parseType(value.keyvalKey);
                 value = typing.parseType(value.keyvalValue);
             }
@@ -994,7 +1018,7 @@ typing.parseType = (schema) => {
             schema.funcResult = typing.parseType(schema.funcResult);
             return schema;
         case typeSyms.object:
-            if(schema.objKey === null)
+            if (schema.objKey === null)
                 return schema;
             schema.objKey = typing.parseType(schema.objKey);
             schema.objValue = typing.parseType(schema.objValue);
