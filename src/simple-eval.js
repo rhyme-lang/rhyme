@@ -862,6 +862,8 @@ let computeDependenciesf = () => {
 let computeOrder = q => {
   // after inferBwd, schedule based on union(q.fre, q.bnd)
 
+  if (assignments.length == 0) return [] // do nothing of disabled
+
   let deps = {
     var2var: {},
     var2tmp: {},
