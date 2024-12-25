@@ -361,7 +361,7 @@ let withoutSchema = (q) => {
     };
 }
 
-let deepCopy = (q) => {
+/*let deepCopy = (q) => {
     if (Array.isArray(q)) {
         return q.map(elem => deepCopy(elem));
     }
@@ -373,7 +373,7 @@ let deepCopy = (q) => {
         res[key] = deepCopy(restQ[key])
     }
     return res;
-}
+}*/
 
 // TODO: cse for array-valued udfs?
 
@@ -411,10 +411,7 @@ let extract3 = q => {
       let ix = filters.map(x => JSON.stringify(withoutSchema(x))).indexOf(str)
       if (ix < 0) {
         ix = filters.length
-        // JSON.stringify removes keys of type Symbol
-        // Only add the schema at the top level for now
-        // In codegen we extract row schema from filters
-        let q1 = deepCopy(q);//{ ...JSON.parse(str), schema: q.schema }
+        let q1 = JSON.parse(str)
         filters.push(q1) // deep copy...
       }
       // NOTE: we leave the expression in place, and just add
@@ -1109,8 +1106,12 @@ let codegen = (q, scope) => {
       return "'"+q.op+"'"
     else if (typeof q.op === "object" && Object.keys(q.op).length == 0)
       return "{}"
-    else
-      return String(q.op)
+    else {
+      let s = String(q.op)
+      if (s == "[object Object]")
+        console.error("emit unknown constant: ",q.op)
+      return s
+    }
   } else if (q.key == "var") {
     // TODO: check that variables are always defined
     // console.assert(scope.vars.indexOf(q.op) >= 0)
