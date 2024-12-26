@@ -1,6 +1,6 @@
 const { isString } = require('node:util')
 const { generate } = require('./new-codegen')
-const { typing, types } = require('./typing')
+const { typing, typeSyms } = require('./typing')
 
 const KEY_SIZE = 256
 const HASH_SIZE = 256
