@@ -1,4 +1,4 @@
-const { typing, types } = require("../src/typing");
+const { typing, types } = require("../../src/typing");
 
 /*
 Test internal typing functions

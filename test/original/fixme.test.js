@@ -1,6 +1,5 @@
-const { api } = require('../src/rhyme')
-const { rh } = require('../src/parser')
-const { runtime } = require('../src/simple-runtime')
+const { api } = require('../../src/rhyme')
+const { rh } = require('../../src/parser')
 
 test("siblingFields", () => {
     let data = [{ key: "A", value: 10 }, { key: "B", value: 20}, { key: "C", value: 30 }]

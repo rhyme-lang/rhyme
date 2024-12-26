@@ -1,9 +1,5 @@
-const { api } = require('../src/rhyme')
-const { rh } = require('../src/parser')
-
-const { runtime } = require('../src/simple-runtime')
-let rt = runtime
-
+const { api } = require('../../src/rhyme')
+const { rh } = require('../../src/parser')
 
 // some sample data for testing
 let data = [

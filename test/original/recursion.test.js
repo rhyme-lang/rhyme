@@ -1,5 +1,5 @@
-const { api } = require('../src/rhyme')
-const { rh } = require('../src/parser')
+const { api } = require('../../src/rhyme')
+const { rh } = require('../../src/parser')
 
 // some sample data for testing
 let data = [

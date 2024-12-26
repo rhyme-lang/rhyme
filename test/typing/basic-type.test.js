@@ -1,6 +1,6 @@
-const { api } = require('../src/rhyme')
-const { rh } = require('../src/parser')
-const { typing, types, props } = require("../src/typing");
+const { api } = require('../../src/rhyme')
+const { rh } = require('../../src/parser')
+const { typing, types, props } = require("../../src/typing");
 
 let key = typing.createKey(types.f64);
 

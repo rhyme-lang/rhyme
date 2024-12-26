@@ -1,4 +1,4 @@
-const { api } = require('../src/rhyme')
+const { api } = require('../../src/rhyme')
 
 
 test("statelessGrouping", () => {

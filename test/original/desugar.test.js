@@ -1,6 +1,6 @@
-const { parse, rh } = require('../src/parser')
-const { desugar } = require('../src/desugar')
-const { api } = require('../src/rhyme')
+const { parse, rh } = require('../../src/parser')
+const { desugar } = require('../../src/desugar')
+const { api } = require('../../src/rhyme')
 
 function ast_ident(a) {
     return { xxpath: "ident", xxparam: a }
