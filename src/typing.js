@@ -1,4 +1,3 @@
-
 let typing = {}
 let types = {}
 let typeSyms = {}
@@ -8,6 +7,51 @@ exports.types = types;
 exports.typeSyms = typeSyms;
 exports.props = props;
 
+
+// ----- utils -----
+
+// sets, implemented as arrays
+
+let unique = xs => xs.filter((x,i) => xs.indexOf(x) == i)
+
+let union = (a,b) => unique([...a,...b])
+
+let intersect = (a,b) => {
+  let keys = {}
+  let res = []
+  for (let k of b)
+    keys[k] = true
+  for (let k of a)
+    if (keys[k])
+      res.push(k)
+  return res
+}
+
+let diff = (a,b) => {
+  let keys = {}
+  let res = []
+  for (let k of b)
+    keys[k] = true
+  for (let k of a)
+    if (!keys[k])
+      res.push(k)
+  return res
+}
+
+let subset = (a,b) => {
+  let keys = {}
+  for (let k of b)
+    keys[k] = true
+  for (let k of a)
+    if (!keys[k])
+      return false
+  return true
+}
+
+let same = (a,b) => subset(a,b) && subset(b,a)
+
+
+// ----- type definitions -----
 
 let createType = (str) => {
     typeSyms[str] = str;
@@ -45,8 +89,8 @@ let numberTypes = [
 
 props["nothing"] = "nothing";
 props["error"] = "error";
-let nothingSet = new Set([props.nothing]);
-let errorSet = new Set([props.error]);
+let nothingSet = [props.nothing];
+let errorSet = [props.error];
 
 // u8 <: i16, u16 <: i32, u32 <: i64
 // Implicitly or explicitly convert signed to unsigned, and unsigned to same-size signed when needed?
@@ -77,7 +121,7 @@ typing.typeEquals = typeEquals;
 let intoTup = (type) => {
     return {
         type: type,
-        props: new Set([])
+        props: []
     }
 };
 
@@ -255,7 +299,7 @@ let performObjectGet = (objectTup, keyTup) => {
             let res2 = performObjectGet({type: objectTup.type.unionSet[1], props: objectTup.props}, keyTup);
             return {
                 type: createUnion(res1.type, res2.type),
-                props: res1.props.union(res2.props)
+                props: union(res1.props, res2.props)
             };
         case typeSyms.object:
             if (objectTup.type.objValue === null) {
@@ -267,14 +311,14 @@ let performObjectGet = (objectTup, keyTup) => {
             let keyType = objectTup.type.objKey;
             let valueType = objectTup.type.objValue;
             let parent = objectTup.type.objParent;
-            let props = objectTup.props.union(keyTup.props);
+            let props = union(objectTup.props, keyTup.props);
             if (isSubtype(keyTup.type, keyType)) {
                 return {
                     type: valueType, props: props
                 };
             }
             let {type: t3, props: p3} = performObjectGet(intoTup(parent), keyTup);
-            props = props.union(p3);
+            props = union(props, p3);
             if (typeDoesntIntersect(keyType, keyTup.type)) {
                 return {
                     type: t3,
@@ -309,22 +353,22 @@ const SUBTYPE_ORDERS = [
 ];
 
 let typeConforms_NonUnion = (type, expectedType) => {
-    if (type === expectedType)
+    if (type === expectedType) // early exit
         return true;
     // Never is a subtype of all types.
-    if (type == types.never)
+    if (type.typeSym == typeSyms.never)
         return true;
     // Any is a supertype of all types.
-    if (expectedType == types.any)
+    if (expectedType.typeSym == typeSyms.any)
         return true;
     // There is no type (other than any) that is a supertype of any.
-    if (type == types.any)
+    if (type.typeSym == typeSyms.any)
         return false;
     // There is no type (other than never) that is a subtype of never.
-    if (expectedType == types.never)
+    if (expectedType.typeSym == typeSyms.never)
         return false;
     
-    if (typeof type === "string" && expectedType === types.string)
+    if (typeof type === "string" && expectedType.typeSym === typeSyms.string)
         return true;
     if (type.typeSym === typeSyms.tagged_type)
         type = type.tagInnertype;
@@ -382,7 +426,7 @@ let typeConforms_NonUnion = (type, expectedType) => {
                     continue;
                 expectedRes = createUnion(expectedRes, keyval[1])
             }
-            if (!isSubtype(lookupType, expectedRes) || lookupProps.size != 0) {
+            if (!isSubtype(lookupType, expectedRes) || lookupProps.length != 0) {
                 return false;
             }
             keyvals.push([nestedObj.objKey, nestedObj.objValue]);
@@ -404,7 +448,7 @@ let typeConforms_NonUnion = (type, expectedType) => {
 
 // typeConforms is same as isSubtype.
 let typeConforms = (type, expectedType) => {
-    if (type === expectedType)
+    if (type === expectedType) // early exit
         return true;
     switch (type.typeSym) {
         case typeSyms.union: {
@@ -508,14 +552,14 @@ let isInteger = (type) => {
     if (type.typeSym === typeSyms.dynkey)
         // Dynkeys are subtypes of the supertype. Hence, if supertype is integer, dynkey is integer.
         return isInteger(type.keySupertype);
-    if ( type === types.u8 || 
-        type === types.u16 || 
-        type === types.u32 || 
-        type === types.u64 || 
-        type === types.i8 || 
-        type === types.i16 || 
-        type === types.i32 || 
-        type === types.i64)
+    if (type.typeSym === typeSyms.u8 || 
+        type.typeSym === typeSyms.u16 || 
+        type.typeSym === typeSyms.u32 || 
+        type.typeSym === typeSyms.u64 || 
+        type.typeSym === typeSyms.i8 || 
+        type.typeSym === typeSyms.i16 || 
+        type.typeSym === typeSyms.i32 || 
+        type.typeSym === typeSyms.i64)
         return true;
     return false;
 }
@@ -531,7 +575,7 @@ let isNumber = (type) => {
         return isNumber(type.intersectSet[0]);
     if (type.typeSym === typeSyms.dynkey)
         return isNumber(type.keySupertype);
-    if (type === types.f32 || type === types.f64)
+    if (type.typeSym === typeSyms.f32 || type.typeSym === typeSyms.f64)
         return true;
     return false;
 }
@@ -545,7 +589,7 @@ let isBoolean = (type) => {
         return isBoolean(type.intersectSet[0]);
     if (type.typeSym === typeSyms.dynkey)
         return isBoolean(type.keySupertype);
-    if (type === types.boolean)
+    if (type.typeSym === typeSyms.boolean)
         return true;
     return false;
 }
@@ -573,13 +617,6 @@ let isDense = (type) => {
     return type.typeSym === typeSyms.tagged_type && type.tag === "dense"
 }
 typing.isDense = isDense;
-
-Set.prototype.difference = function(otherSet) {
-  return new Set([...this].filter(element => !otherSet.has(element)));
-};
-Set.prototype.union = function(otherSet) {
-  return new Set([...this, ...otherSet]);
-};
 
 let generalizeNumber = (type) => {
     if (!isNumber(type))
@@ -612,7 +649,7 @@ let isString = (type) => {
     type = removeTag(type);
     if (type.typeSym === typeSyms.dynkey)
         return isString(type.keySupertype);
-    if (type === types.string)
+    if (type.typeSym === typeSyms.string)
         return true;
     if (typeof type === "string")
         return true;
@@ -626,8 +663,8 @@ let prettyPrintType = (schema) => {
         return "~Undefined~";
     if (schema === null)
         return "~Null~";
-    if (Object.values(types).includes(schema))
-        return Object.keys(types).filter((key) => types[key] === schema)[0];
+    if (schema.typeSym in types)
+        return schema.typeSym
     if (typeof schema === "string")
         return "\"" + schema + "\"";
     if (schema.typeSym === typeSyms.union)
@@ -654,12 +691,12 @@ let prettyPrintTuple = (tuple) => {
     if (tuple === undefined)
         return "~Undefined~";
     let propStr = "";
-    if (tuple.props.has(props.nothing)) {
-        if (tuple.props.has(props.error))
+    if (tuple.props.includes(props.nothing)) {
+        if (tuple.props.includes(props.error))
             propStr = "N,E";
         else
             propStr = "N";
-    } else if (tuple.props.has(props.error))
+    } else if (tuple.props.includes(props.error))
         propStr = "E";
     else
         propStr = "/";
@@ -785,7 +822,7 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
                 let keys = getObjectKeys(t1);
                 boundKeys[e2.op] = {
                     type: keys,
-                    props: new Set([])//nonEmpty(keys)
+                    props: []//nonEmpty(keys)
                 };
             }
         }
@@ -808,7 +845,7 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
                 if (!isSubtype(type, expType)) {
                     throw new Error(`Unable to apply function. Argument ${i + 1} does not align.\nExpected: ${prettyPrintType(expType)}\nReceived: ${prettyPrintType(type)}.`);
                 }
-                props = props.union(argProps);
+                props = union(props,argProps);
             }
             // All inputs conform.
             return {type: t1.funcResult, props};
@@ -824,17 +861,17 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
                 let resType = generalizeNumber(createUnion(t1, t2));
                 return {
                     type: resType,
-                    props: p1.union(p2)
+                    props: union(p1,p2)
                 };
             } else if (q.op == "fdiv") {
                 // TODO: validate types for fdiv
-                return {type: types.f64, props: p1.union(p2)};
+                return {type: types.f64, props: union(p1,p2)};
             } else if (q.op == "equal") {
                 // TODO: validate types for equal
-                return {type: types.boolean, props: p1.union(p2)};
+                return {type: types.boolean, props: union(p1,p2)};
             } else if (q.op == "notEqual") {
                 // TODO: validate types for notEqual
-                return {type: types.boolean, props: p1.union(p2)};
+                return {type: types.boolean, props: union(p1,p2)};
             } else if (q.op == "and") {
                 // TODO: validate types for and
                 return {type: t2, props: p2};
@@ -844,7 +881,7 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
         throw new Error("Pure operation not implemented: " + q.op);
     } else if (q.key === "hint") {
 
-        return {type: types.never, props: new Set()};
+        return {type: types.never, props: []};
 
     } else if (q.key === "mkset") {
         let argTups = q.arg.map($validateIRQuery);
@@ -852,13 +889,13 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
         let keyType = argTups[0].type;
         let key = createKey(keyType, "Mkset");
         // If argument always returns atleast one value, add a non-empty guarantee.
-        if (!argTups[0].props.has(props.nothing))
+        if (!argTups[0].props.includes(props.nothing))
             nonEmptyGuarantees.push(key);
         return {
             type: objBuilder()
                 .add(key, types.boolean)
                 .build(),
-            props: new Set(argTups[0].props.difference(nothingSet))
+            props: diff(argTups[0].props,nothingSet)
         }
 
     } else if (q.key === "prefix") {
@@ -879,7 +916,7 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
             if (!isNumber(argType))
                 throw new Error(`Unable to ${q.op} non-number values currently. Got: ${prettyPrintType(argType)}`);
             
-            return {type: argType, props: argTup.props.difference(nothingSet)};
+            return {type: argType, props: diff(argTup.props,nothingSet)};
         } else if (q.op === "min" || q.op === "max") {
 
             if (!isNumber(argType))
@@ -889,7 +926,7 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
 
         } else if (q.op === "count") {
             // As long as the argument is valid, it doesn't matter what type it is.
-            return {type: types.u32, props: argTup.props.difference(nothingSet)};
+            return {type: types.u32, props: diff(argTup.props,nothingSet)};
         } else if (q.op === "single" || q.op === "first" || q.op === "last") {
             // Propagate both type and properties.
             return argTup;
@@ -899,15 +936,15 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
             // TODO: See if we should default to size of array as u32 here.
             let key = createKey(types.u32, "Array");
             // If argument always returns atleast one value, add a non-empty guarantee.
-            if (!argTup.props.has(props.nothing))
+            if (!argTup.props.includes(props.nothing))
                 nonEmptyGuarantees.push(key);
             return {
                 type: objBuilder()
                     .add(key, argType).build(), 
-                props: argTup.props.difference(nothingSet)
+                props: diff(argTup.props,nothingSet)
             };
         } else if (q.op === "print") {
-            return {type: types.never, props: new Set()};
+            return {type: types.never, props: []};
         }
 
         throw new Error("Unimplemented stateful expression " + q.op);
@@ -953,11 +990,11 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
         if (!isInteger(keyType) && !isString(keyType))
             throw new Error("Unable to use type: " + prettyPrintType(keyType) + " as object key");
 
-        let props = p2.union(p3);
+        let props = union(p2, p3);
         let key = createKey(keyType, "update");
         // If the key and value are not nothing, then the key must not be empty.
         // TODO: Determine if this is true given free variable constraints.
-        if (!props.has(props.nothing))
+        if (!props.includes(props.nothing))
             nonEmptyGuarantees.push(key);
         return {
             type: {
@@ -966,7 +1003,7 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
                 objValue: valueType,
                 objParent: parentType
             },
-            props: props.difference(nothingSet).union(p1)
+            props: union(diff(props, nothingSet), p1)
         };
     }
     throw new Error("Unable to determine type of query: " + prettyPrint(q));

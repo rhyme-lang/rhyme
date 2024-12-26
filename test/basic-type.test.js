@@ -78,7 +78,7 @@ test("intLitTest", () => {
     let func = api.compile(api.plus(1, 63), types.never);
     expect(func.explain2.resultType).toStrictEqual({
         type: types.u8,
-        props: new Set([])
+        props: []
     });
 })
 
@@ -93,7 +93,7 @@ test("plainSumTest", () => {
     let func = api.compile(query, {data: dataSchema, other: otherSchema});
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
-    expect(func.explain2.resultType.props).toStrictEqual(new Set());
+    expect(func.explain2.resultType.props).toStrictEqual([]);
     expectTypeSimilarity(type, {
         "*": types.f64
     });
@@ -104,7 +104,7 @@ test("type-double-generator", () => {
     let func = api.compile(query, {data: dataSchema, other: otherSchema});
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
-    expect(func.explain2.resultType.props).toStrictEqual(new Set([props.nothing]));
+    expect(func.explain2.resultType.props).toStrictEqual([props.nothing]);
     // Must be object keyed by A u B, with values of u8.
     expect(type).toStrictEqual(typing.createUnion(types.f64, typing.createUnion("A", "B")));
 })
@@ -113,7 +113,7 @@ test("plainAverageTest", () => {
     let query = api.div(api.sum("data.*.value"), api.count("data.*.value"))
     let func = api.compile(query, schema)
     let type = func.explain2.resultType.type;
-    expect(func.explain2.resultType.props).toStrictEqual(new Set());
+    expect(func.explain2.resultType.props).toStrictEqual([]);
     expect(type).toBe(types.f64);
 })
 
@@ -122,7 +122,7 @@ test("uncorrelatedAverageTest", () => {
     let query = api.div(api.sum("data.*A.value"), api.count("data.*B.value"))
     let func = api.compile(query, schema)
     let type = func.explain2.resultType.type;
-    expect(func.explain2.resultType.props).toStrictEqual(new Set());
+    expect(func.explain2.resultType.props).toStrictEqual([]);
     expect(type).toBe(types.f64);
 })
 
@@ -134,7 +134,7 @@ test("groupByTest", () => {
     let func = api.compile(query, schema)
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
-    expect(func.explain2.resultType.props).toStrictEqual(new Set());
+    expect(func.explain2.resultType.props).toStrictEqual([]);
     expectTypeSimilarity(type, {
         "total": types.f64,
         "*": types.f64
@@ -150,7 +150,7 @@ test("groupByAverageTest", () => {
     let func = api.compile(query, schema)
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
-    expect(func.explain2.resultType.props).toStrictEqual(new Set());
+    expect(func.explain2.resultType.props).toStrictEqual([]);
     expectTypeSimilarity(type, {
         "total": types.f64,
         "*": types.f64
@@ -166,7 +166,7 @@ test("groupByRelativeSum", () => {
     let func = api.compile(query, schema);
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
-    expect(func.explain2.resultType.props).toStrictEqual(new Set());
+    expect(func.explain2.resultType.props).toStrictEqual([]);
     expectTypeSimilarity(type, {
         "total": types.f64,
         "*": types.f64
@@ -184,7 +184,7 @@ test("nestedGroupAggregateTest", () => {
     let func = api.compile(query, {data: countrySchema})
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
-    expect(func.explain2.resultType.props).toStrictEqual(new Set());
+    expect(func.explain2.resultType.props).toStrictEqual([]);
     expectTypeSimilarity(type, {
         total: types.u8,
         "*": {
@@ -207,7 +207,7 @@ test("joinSimpleTest1", () => {
     let func = api.compile(query, {data: countrySchema, other: regionSchema})
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
-    expect(func.explain2.resultType.props).toStrictEqual(new Set());
+    expect(func.explain2.resultType.props).toStrictEqual([]);
     expectTypeSimilarity(type, {
         "*": {
             country: types.string,
@@ -229,7 +229,7 @@ test("joinSimpleTest1B", () => { // use explicit 'single' aggregation
     let func = api.compile(query, {data: countrySchema, other: regionSchema})
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
-    expect(func.explain2.resultType.props).toStrictEqual(new Set());
+    expect(func.explain2.resultType.props).toStrictEqual([]);
     expectTypeSimilarity(type, {
         "*": {
             country: types.string,
@@ -250,7 +250,7 @@ test("joinSimpleTest2", () => {
     let func = api.compile(query, {data: countrySchema, other: regionSchema})
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
-    expect(func.explain2.resultType.props).toStrictEqual(new Set());
+    expect(func.explain2.resultType.props).toStrictEqual([]);
     expectTypeSimilarity(type, {
         "*": {
             "*": types.u8
@@ -272,7 +272,7 @@ test("joinWithAggrTest", () => {
     let func = api.compile(query, {data: countrySchema, other: regionSchema})
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
-    expect(func.explain2.resultType.props).toStrictEqual(new Set());
+    expect(func.explain2.resultType.props).toStrictEqual([]);
     expectTypeSimilarity(type, {
         total: types.u8,
         "*": {
@@ -307,7 +307,7 @@ test("udfTest", () => {
     })
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
-    expect(func.explain2.resultType.props).toStrictEqual(new Set());
+    expect(func.explain2.resultType.props).toStrictEqual([]);
     expectTypeSimilarity(type, {
         "*": {
             item: types.string,
@@ -322,7 +322,7 @@ test("arrayTest1", () => {
     
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
-    expect(func.explain2.resultType.props).toStrictEqual(new Set());
+    expect(func.explain2.resultType.props).toStrictEqual([]);
     expect(type).toBe(types.f64);
 })
 
@@ -337,7 +337,7 @@ test("arrayTest2", () => {
     let func = api.compile({ query1, query2, query2A, /* query3, */ query4 }, {data: dataSchema});
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
-    expect(func.explain2.resultType.props).toStrictEqual(new Set());
+    expect(func.explain2.resultType.props).toStrictEqual([]);
     expectTypeSimilarity(type, {
         query1: {
             "*": {
@@ -397,7 +397,7 @@ test("arrayTest5ZipB", () => {
     let func = api.compile(query, {data: dataSchema})
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
-    expect(func.explain2.resultType.props).toStrictEqual(new Set());
+    expect(func.explain2.resultType.props).toStrictEqual([]);
     expectTypeSimilarity(type, {
         "*": {
             "*": types.f64
@@ -411,7 +411,7 @@ test("arrayTest6Flatten", () => {
     let func = api.compile(query, {data: dataSchema})
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
-    expect(func.explain2.resultType.props).toStrictEqual(new Set());
+    expect(func.explain2.resultType.props).toStrictEqual([]);
     expectTypeSimilarity(type, {
         "*": {
             "*": types.f64
@@ -426,7 +426,7 @@ test("arrayTest7Eta", () => {
     let func = api.compile(query, {data: dataSchema})
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
-    expect(func.explain2.resultType.props).toStrictEqual(new Set());
+    expect(func.explain2.resultType.props).toStrictEqual([]);
     expectTypeSimilarity(type, {
         "*": {
             "*": types.f64

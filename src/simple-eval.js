@@ -351,30 +351,6 @@ let extract1f = q => {
 
 
 
-let withoutSchema = (q) => {
-    let {arg: arg, schema: schema, ...restQ} = q;
-    if (arg === undefined)
-        return {...restQ};
-    return {
-        arg: arg.map(withoutSchema),
-        ...restQ
-    };
-}
-
-/*let deepCopy = (q) => {
-    if (Array.isArray(q)) {
-        return q.map(elem => deepCopy(elem));
-    }
-    if (typeof q !== "object")
-        return q;
-    let {schema: schema, ...restQ} = q;
-    let res = {schema: schema};
-    for (let key of Object.keys(restQ)) {
-        res[key] = deepCopy(restQ[key])
-    }
-    return res;
-}*/
-
 // TODO: cse for array-valued udfs?
 
 // 7: extract assignments
@@ -385,8 +361,8 @@ let extract2 = q => {
   let tmps = unique(es.flatMap(x => x.tmps))
   if (q.key == "prefix" || q.key == "stateful" || q.key == "update") {
     let q1 = { ...q, arg: es, tmps }
-    let str = JSON.stringify(withoutSchema(q1)) // extract & cse
-    let ix = assignments.map(x => JSON.stringify(withoutSchema(x))).indexOf(str)
+    let str = JSON.stringify(q1) // extract & cse
+    let ix = assignments.map(x => JSON.stringify(x)).indexOf(str)
     if (ix < 0) {
       ix = assignments.length
       assignments.push(q1)
@@ -407,8 +383,8 @@ let extract3 = q => {
   if (q.key == "get") {
     let [e1,e2] = q.arg
     if (e2.key == "var") {
-      let str = JSON.stringify(withoutSchema(q)) // extract & cse
-      let ix = filters.map(x => JSON.stringify(withoutSchema(x))).indexOf(str)
+      let str = JSON.stringify(q) // extract & cse
+      let ix = filters.map(x => JSON.stringify(x)).indexOf(str)
       if (ix < 0) {
         ix = filters.length
         let q1 = JSON.parse(str)
