@@ -2385,7 +2385,7 @@ let execPromise = function(cmd) {
       code = emitCodeCPP(q,order)
       cc = "g++"
       filename = "test.cpp"
-      flags = "-std=c++17"
+      flags = "-std=c++17 -Ithirdparty/json/include"
     }
 
     let func = (async () => {

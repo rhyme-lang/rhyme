@@ -1,7 +1,6 @@
 #include <stdint.h>
 
 #include <fstream>
-#include <nlohmann/json.hpp>
 #include <iostream>
 #include <memory>
 #include <vector>
@@ -9,6 +8,8 @@
 #include <cassert>
 #include <sstream>
 #include <initializer_list>
+
+#include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
 
