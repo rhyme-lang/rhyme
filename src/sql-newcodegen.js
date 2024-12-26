@@ -879,7 +879,7 @@ let emitCode = (q, ir) => {
   let res = codegen(q, [], {})
 
   let epilog = []
-  if (q.schema.type !== types.never) {
+  if (q.schema.type.typeSym !== typeSyms.never) {
     if (hashMapEnv[res]) {
       epilog.push("// print hashmap")
       hashMapPrint(epilog, res)

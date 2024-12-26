@@ -52,59 +52,58 @@ let quoteVar = s => s.replaceAll("*", "x")
 
 let csvFiles
 
+let ctypeMap = {
+  // any:  "rh",
+  // never:"rh",
+  // boolean:  "rh",
+  // string:"rh",
+  u8:   "uint8_t",
+  u16:  "uint16_t",
+  u32:  "uint32_t",
+  u64:  "uint64_t",
+  i8:   "int8_t",
+  i16:  "int16_t",
+  i32:  "int32_t",
+  i64:  "int64_t",
+  f32:  "float",
+  f64:  "double",
+}
+
+let formatSpecifierMap = {
+  // any:  "rh",
+  // never:"rh",
+  // boolean:  "rh",
+  // string:"rh",
+  u8:   "hhu",
+  u16:  "hu",
+  u32:  "u",
+  u64:  "lu",
+  i8:   "hhd",
+  i16:  "hd",
+  i32:  "d",
+  i64:  "ld",
+  f32:  ".3f",
+  f64:  ".3lf",
+}
+
+
 let convertTypeToCType = (type) => {
-    if (type.typeSym === "dynkey")
-        return convertTypeToCType(type.keySuperkey);
-    if (type.typeSym === "union")
-        throw new Error("Unable to convert union type to C type currently.");
-    if (type === types.u8)
-        return "uint8_t";
-    if (type === types.u16)
-        return "uint16_t";
-    if (type === types.u32)
-        return "uint32_t";
-    if (type === types.u64)
-        return "uint64_t";
-    if (type === types.i8)
-        return "int8_t";
-    if (type === types.i16)
-        return "int16_t";
-    if (type === types.i32)
-        return "int32_t";
-    if (type === types.i64)
-        return "int64_t";
-    if (type === types.f32)
-        return "float";
-    if (type === types.f64)
-        return "double";
-    throw new Error("Unknown type: " + typing.prettyPrintType(type));
+  if (type.typeSym === "dynkey")
+    return convertTypeToCType(type.keySuperkey);
+  if (type.typeSym === "union")
+    throw new Error("Unable to convert union type to C type currently: " + typing.prettyPrintType(type));
+  if (type.typeSym in ctypeMap)
+    return ctypeMap[type.typeSym]
+  throw new Error("Unknown type: " + typing.prettyPrintType(type));
 }
 
 let getFormatSpecifier = (type) => {
   if (type.typeSym === "dynkey")
     return getFormatSpecifier(type.keySuperkey);
   if (type.typeSym === "union")
-    throw new Error("Unable to convert union type to C type currently.");
-  if (type === types.u8)
-    return "hhu";
-  if (type === types.u16)
-    return "hu";
-  if (type === types.u32)
-    return "u";
-  if (type === types.u64)
-    return "lu";
-  if (type === types.i8)
-    return "hhd";
-  if (type === types.i16)
-    return "hd";
-  if (type === types.i32)
-    return "d";
-  if (type === types.i64)
-    return "ld";
-  if (type === types.f32)
-    return "f";
-  if (type === types.f64)
-    return "lf";
+    throw new Error("Unable to get type specifier for union tpyes currently: " + typing.prettyPrintType(type));
+  if (type.typeSym in formatSpecifierMap)
+    return formatSpecifierMap[type.typeSym]
   throw new Error("Unknown type: " + typing.prettyPrintType(type));
 }
 

@@ -349,8 +349,6 @@ let extract1f = q => {
   }
 }
 
-
-
 // TODO: cse for array-valued udfs?
 
 // 7: extract assignments
@@ -362,7 +360,7 @@ let extract2 = q => {
   if (q.key == "prefix" || q.key == "stateful" || q.key == "update") {
     let q1 = { ...q, arg: es, tmps }
     let str = JSON.stringify(q1) // extract & cse
-    let ix = assignments.map(x => JSON.stringify(x)).indexOf(str)
+    let ix = assignments.map(JSON.stringify).indexOf(str)
     if (ix < 0) {
       ix = assignments.length
       assignments.push(q1)
@@ -384,7 +382,7 @@ let extract3 = q => {
     let [e1,e2] = q.arg
     if (e2.key == "var") {
       let str = JSON.stringify(q) // extract & cse
-      let ix = filters.map(x => JSON.stringify(x)).indexOf(str)
+      let ix = filters.map(JSON.stringify).indexOf(str)
       if (ix < 0) {
         ix = filters.length
         let q1 = JSON.parse(str)
@@ -401,7 +399,7 @@ let extract3 = q => {
   }
   if (q.key == "hint") {
     let str = JSON.stringify(q) // extract & cse
-    let ix = hints.map(x => JSON.stringify(x)).indexOf(str)
+    let ix = hints.map(JSON.stringify).indexOf(str)
     if (ix < 0) {
       ix = hints.length
       let q1 = JSON.parse(str)

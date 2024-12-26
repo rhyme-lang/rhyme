@@ -362,7 +362,7 @@ test("arrayTest2", () => {
     let func = api.compile(query, {data: dataSchema})
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
-    expect(func.explain2.resultType.props).toStrictEqual(new Set());
+    expect(func.explain2.resultType.props).toStrictEqual([]);
     expectTypeSimilarity(type, {
         "*": {
             "*": types.string

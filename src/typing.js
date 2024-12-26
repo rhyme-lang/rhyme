@@ -118,6 +118,46 @@ let typeEquals = (t1, t2) => {
 }
 typing.typeEquals = typeEquals;
 
+let sameType = (t1, t2) => {
+    if(!t1.typeSym || !t2.typeSym) {
+        if(t1 == t2)
+            return true;
+        return false;
+    }
+    if(t1.typeSym != t2.typeSym)
+        return false;
+    switch(t1.typeSym) {
+        case "union":
+            return sameType(t1.unionSet[0], t2.unionSet[0]) &&
+                sameType(t1.unionSet[1], t2.unionSet[1]);
+        case "intersect":
+            return sameType(t1.intersectSet[0], t2.intersectSet[0]) &&
+                sameType(t1.intersectSet[1], t2.intersectSet[1]);
+        case "dynkey":
+            return t1.keySymbol == t2.keySymbol;
+        case "tagged_type":
+            return sameType(t1.tagInnertype, t2.tagInnertype) && JSON.stringify(t1.tagData) == JSON.stringify(t2.tagData);
+        case "object":
+            if(t1.objKey === null)
+                return t2.objKey === null;
+            return sameType(t1.objKey, t2.objKey) && 
+                sameType(t1.objValue, t2.objValue) && 
+                sameType(t1.objParent, t2.objParent);
+        case "function":
+            if(t1.funcParams.length != t2.funcParams.length)
+                return false;
+            // Verify all arguments and result are same.
+            return t1.funcParams.reduce(
+                (acc, curr, ind) => acc && sameType(curr, t2.funcParams[ind]),
+                sameType(t1.funcResult, t2.funcResult)
+            );
+        default:
+            // Primitives are equal if symbols are equal.
+            return true;
+    }
+}
+typing.sameType = sameType;
+
 let intoTup = (type) => {
     return {
         type: type,
@@ -353,7 +393,7 @@ const SUBTYPE_ORDERS = [
 ];
 
 let typeConforms_NonUnion = (type, expectedType) => {
-    if (type === expectedType) // early exit
+    if (sameType(type, expectedType))
         return true;
     // Never is a subtype of all types.
     if (type.typeSym == typeSyms.never)
@@ -448,7 +488,7 @@ let typeConforms_NonUnion = (type, expectedType) => {
 
 // typeConforms is same as isSubtype.
 let typeConforms = (type, expectedType) => {
-    if (type === expectedType) // early exit
+    if (sameType(type, expectedType))
         return true;
     switch (type.typeSym) {
         case typeSyms.union: {
@@ -488,7 +528,7 @@ let typeDoesntIntersect = (t1, t2) => {
         case typeSyms.never:
             return true;
         case typeSyms.any:
-            if (t2 == types.never)
+            if (t2.typeSyms == typeSyms.never)
                 return true;
             return false;
         case typeSyms.union: {
@@ -838,7 +878,7 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
                 throw new Error(`Unable to apply a value to a non-function value (type ${prettyPrintType(t1)})`)
             if (t1.funcParams.length + 1 != argTups.length)
                 throw new Error(`Unable to apply function. Number of args do not align.`);
-            let props = new Set([]);
+            let props = [];
             for (let i = 0; i < argTups.length - 1; i++) {
                 let {type, props: argProps} = argTups[i + 1];
                 let expType = t1.funcParams[i];
@@ -908,7 +948,7 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
 
         let argTup = argTups[0];
         let argType = argTup.type;
-        if (argType == types.never)
+        if (sameType(argType, types.never))
             throw new Error("Unable to evaluate stateful expression on never type.");
 
         if (q.op === "sum" || q.op === "product") {
@@ -954,7 +994,7 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
         let [e1, e2] = q.arg;
         let t1 = validateIRQuery(schema, cseMap, boundKeys, e1);
         let t2 = validateIRQuery(schema, cseMap, boundKeys, e2);
-        if (t1 !== types.string && !typing.isKeySym(t2))
+        if (!sameType(t1, types.string) && !typing.isKeySym(t2))
             throw new Error("Unable to use non-string field as key. Found: " + prettyPrintType(t1));
         //return "{ "+ e1 + ": " + e2 + " }"
         //return {"*": t2};
