@@ -1363,6 +1363,8 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
 
   let closing = ""
 
+  let vs = [...scope.vars]
+
   // process filters
   while (next()) {
     // sort available by estimated selectivity
@@ -1384,6 +1386,27 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
       // buf.push("// FILTER "+i+" := "+pretty(f))
       let scopeg1 = {...scope, vars:g1.fre, filters:filtersInScope}
       let scopef = {...scope, vars:f.fre,filters:filtersInScope}
+
+      // NOTE: we're restricting the scope to g1.fre when evaluating g1.
+      //
+      //       Why? The filter expression may have bound variables that
+      //       are already in scope here. We need to iterate over them
+      //       again to match the semantic behavior of the alternative
+      //       case where we're hoisting out assignments and the var
+      //       isn't already in scope.
+      //
+      //       An alternative would be to try and make reusing the
+      //       outer var the default case in the semantics. Then we
+      //       would have to detect this case and mark the variable
+      //       free instead of bound. This seems like it might
+      //
+      //  See: testGroup0-a3, aggregateAsKey_encoded1
+      //
+      //  Q:   do we need to prune scope.filters accordingly as well?
+
+      // scopeg1.vars = [...vs]
+      console.assert(subset(g1.fre,vs))
+      vs.push(v1)
 
       // Contract: input is already transitively closed, so we don't
       // depend on any variables that we don't want to iterate over.
