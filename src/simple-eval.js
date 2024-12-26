@@ -1801,26 +1801,26 @@ let quoteTypeCPP = ty => {
     if (ty.typeSym === typeSyms.dynkey) {
         return quoteTypeCPP(ty.keySupertype);
     }
-    if (Object.values(types).includes(ty)) {
-        if (ty === types.u8)
-            return "uint8_t";
-        if (ty === types.u16)
-            return "uint16_t";
-        if (ty === types.u32)
-            return "uint32_t";
-        if (ty === types.u64)
-            return "uint64_t";
-        if (ty === types.i8)
-            return "int8_t";
-        if (ty === types.i16)
-            return "int16_t";
-        if (ty === types.i32)
-            return "int";
-        if (ty === types.i64)
-            return "int64_t";
-        if (ty === types.never)
-            return "rh";
-        throw new Error("Unknown CPP type of: " + typing.prettyPrintType(ty));
+    let ctypeMap = {
+      any:  "rh",
+      never:"rh",
+      boolean:  "rh",
+      string:"rh",
+      u8:   "uint8_t",
+      u16:  "uint16_t",
+      u32:  "uint32_t",
+      u64:  "uint64_t",
+      i8:   "int8_t",
+      i16:  "int16_t",
+      i32:  "int", // should be int32_t?
+      i64:  "int64_t",
+      f32:  "float",
+      f64:  "double",
+    }
+
+    if (ty.typeSym in ctypeMap) {
+      return ctypeMap[ty.typeSym]
+      // throw new Error("Unknown CPP type of: " + typing.prettyPrintType(ty));
     }
     if (typing.isObject(ty))
         return "rh";
