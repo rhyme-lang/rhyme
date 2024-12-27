@@ -79,6 +79,23 @@ Shown below is a simple complete example HTML file:
 </html>
 ```
 
+## Using as command-line tool
+
+You can also use Rhyme as a command-line tool to process JSON files. For this, install rhyme globally:
+
+```bash
+npm install -g rhyme-lang
+```
+
+Then you can use it as follows:
+
+```bash
+echo '[1,2,3,4]' | rhyme 'sum stdin.*'
+10
+```
+
+When given an argument ending in `.rh`, as in `rhyme query.rh`, Rhyme will treat it as a file name to load the query from.
+
 
 ## Development
 ### Setup

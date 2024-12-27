@@ -22,5 +22,11 @@
   "files": [
     "src",
     "umd"
+  ],
+  "bin": {
+    "rhyme": "./src/cli.js"
+  },
+  "man": [
+    "man/rhyme.1"
   ]
 }
