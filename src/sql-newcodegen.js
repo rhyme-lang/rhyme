@@ -1,4 +1,3 @@
-const { isString } = require('node:util')
 const { generate } = require('./new-codegen')
 const { typing, typeSyms } = require('./typing')
 
@@ -903,8 +902,8 @@ let emitCode = (q, ir) => {
 }
 
 let generateCSqlNew = (q, ir, outDir, outFile) => {
-  const fs = require('node:fs/promises')
-  const os = require('node:child_process')
+  const fs = require('fs/promises')
+  const os = require('child_process')
 
   let execPromise = function (cmd) {
     return new Promise(function (resolve, reject) {

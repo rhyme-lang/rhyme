@@ -6,7 +6,8 @@
   "scripts": {
     "test": "jest",
     "shell": "node ./src/shell.js",
-    "prepublishOnly": "./node_modules/.bin/webpack"
+    "prepublishOnly": "./node_modules/.bin/webpack",
+    "build": "webpack"
   },
   "keywords": [],
   "author": "",

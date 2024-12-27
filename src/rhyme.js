@@ -7,7 +7,7 @@ const new_codegen = require('./new-codegen')
 const ir = require('./c1-ir')
 const graphics = require('./graphics')
 
-const simpleEval = require('../src/simple-eval')
+const simpleEval = require('./simple-eval')
 const { typing } = require('./typing')
 // const primitiveEval = require('../src/primitive-eval')
 
@@ -182,7 +182,7 @@ api["query"] = api["compile"] = (query, schema=typing.any) => {
     wrapper.explain2_new = c2_new.explain
     return wrapper
 }
-api["compileFastPathOnly"] = (query) => {
+api["compileC1"] = api["compileFastPathOnly"] = (query) => {
     let rep = ir.createIR(query)
     let c1 = codegen.generate(rep)
     let c1_opt = new_codegen.generate(rep)

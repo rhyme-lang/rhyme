@@ -548,8 +548,8 @@ let fixIndent = s => {
 }
 
 let generateCSql = (q, ir) => {
-  const fs = require('node:fs/promises')
-  const os = require('node:child_process')
+  const fs = require('fs/promises')
+  const os = require('child_process')
 
   let execPromise = function(cmd) {
     return new Promise(function(resolve, reject) {

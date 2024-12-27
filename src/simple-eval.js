@@ -2337,8 +2337,8 @@ let compile = (q,userSettings={}) => {
 
 
   if (settings.backend == "c" || settings.backend == "cpp") {
-    const fs = require('node:fs/promises')
-    const os = require('node:child_process')
+    const fs = require('fs/promises')
+    const os = require('child_process')
 
 let execPromise = function(cmd) {
     return new Promise(function(resolve, reject) {
