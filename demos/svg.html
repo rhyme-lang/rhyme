@@ -91,7 +91,7 @@ npm install webpack webpack-cli --save-dev
             },
           }
         }
-        let func = api.query(query)  // FIXME: simple eval works, but some asserts fail
+        let func = api.compileFastPathOnly(query)  // FIXME: some asserts fail (e.g. order of polyline fields)
         console.log("SVG Plots:", func.explain)
         let res = func({data})
         api.display(res, domParent)
@@ -100,7 +100,7 @@ npm install webpack webpack-cli --save-dev
 
     <script type="module">
         H2("Other SVG Graphics")
-
+        
         let data = []
         for (let j = 0; j < 360; j += 20) 
           data.push(j)
@@ -116,7 +116,7 @@ npm install webpack webpack-cli --save-dev
               transform: api.plus('"rotate(-"',api.plus("data.*",'" 150 100)"')) },
           }]
         }
-        let func = api.query(query)  // FIXME: simple eval works, but some asserts fail
+        let func = api.compileFastPathOnly(query)  // FIXME: some asserts fail (e.g. order of polyline fields)
         console.log("Other SVG Graphics:", func.explain)
         let res = func({data})
         api.display(res, domParent)
