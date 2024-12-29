@@ -240,7 +240,7 @@ api["compileNew"] = (query) => {
 }
 
 api["compileC2"] = (query) => {
-  let rep = ir.createIR(query)
+  // let rep = ir.createIR(query)
   let c2 = simpleEval.compile(query)
   let c2_new = simpleEval.compile(query, { newCodegen: true })
   let wrapper = (x) => {
