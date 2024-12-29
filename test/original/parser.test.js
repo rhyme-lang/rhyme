@@ -16,6 +16,9 @@ function ast_get(a,b) {
 function ast_apply(a,b) {
     return { xxpath: "apply", xxparam: [a,b] }
 }
+function ast_array(as) {
+    return { xxkey: "array", xxparam: as }
+}
 
 
 test("pathTest1", () => {
@@ -94,6 +97,16 @@ test("templateTest4", () => {
 test("stringTest1", () => {
     let res = parse('"a"')
     let expected = ast_ident("a") // test stripping of quotes
+    expect(res).toEqual(expected)
+})
+
+
+test("arrayTest1", () => {
+    let res = parse("[a,b,c]")
+    let expected = ast_array([
+        ast_ident("a"),
+        ast_ident("b"),
+        ast_ident("c")])
     expect(res).toEqual(expected)
 })
 

@@ -19,6 +19,9 @@ function ast_get(a,b) {
 function ast_call(a,b) {
   return { xxpath: "apply", xxparam: [a,b] }
 }
+function ast_array(as) {
+  return { xxkey: "array", xxparam: as }
+}
 function ast_root() {
   return ast_raw("inp")
 }
@@ -222,6 +225,17 @@ exports.parserImpl = (strings, holes) => {
     return res
   }
 
+  function commaList(f) {
+    let res = []
+    res.push(f())
+    while (peek == ',') {
+      next()
+      res.push(f())
+    }
+    return res
+  }
+
+
   // precedence: higher binds tighter
   let prec = {
     '|' :  40,
@@ -308,7 +322,9 @@ exports.parserImpl = (strings, holes) => {
     } else if (peek == '{') {
       error("object constructor syntax not supported yet")
     } else if (peek == '[') {
-      error("array constructor syntax not supported yet")
+      // error("array constructor syntax not supported yet")
+      let elems = brackets(() => commaList(expr))
+      return ast_array(elems)
     } else {
       error("atom expected but got '"+sanitize(peek)+"'")
     }
