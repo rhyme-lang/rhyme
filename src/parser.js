@@ -300,11 +300,20 @@ exports.parserImpl = (strings, holes) => {
 
   function expr() {
     if (peek == 'ident' && str == "let") {
+      // 'let' ident+ '=' tight (';'|'\n') expr
       next()
       if (peek != "ident")
         error("ident expected but got '"+sanitize(peek)+"'")
       let lhs = str
       next()
+
+      let args = []
+      while (peek == "ident") {
+        args.push(str)
+        next()
+      }
+      // check unique?
+
       if (peek != "=")
         error("'=' expected but got '"+sanitize(peek)+"'")
       next()
@@ -315,12 +324,17 @@ exports.parserImpl = (strings, holes) => {
       if (peek == ";")
         next()
       let body = expr()
+
+      for (let x of args.reverse()) // mutates!
+        rhs = ast_call(ast_call(ast_ident("fn"), ast_ident(x)), rhs)
+
       let res = ast_call(ast_ident("let"), ast_ident(lhs))
       res = ast_call(res, rhs)
       res = ast_call(res, body)
       return res
+    } else {
+      return binop(0)
     }
-    return binop(0)
   }
   function exprTight() {
     return binopTight(50)

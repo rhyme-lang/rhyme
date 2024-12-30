@@ -316,3 +316,22 @@ test("letTest3", () => {
   expect(res).toEqual({all: [1,2,3]})
 })
 
+
+test("letTest4", () => {
+
+  let input = { foo:  7 }
+  let q0 = rh`{all: [1,2,3]}`
+  let q1 = rh`let f x y z = [x,y,z]
+              {all: f 1 2 3}`
+  
+  expect(q1).toEqual(q0)
+
+  let q1d = desugar(q1)
+
+  expect(q1d).toEqual(q1)
+
+  let func = api.compile(q0)
+  let res = func({input})
+  expect(res).toEqual({all: [1,2,3]})
+})
+
