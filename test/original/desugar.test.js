@@ -151,7 +151,7 @@ test("callTest1", () => {
 test("letTest1", () => {
 
   let q0 = rh`7`
-  let q1 = rh`let x 7 x`
+  let q1 = rh`let x = 7; x`
 
   expect(q1).toEqual(q0)
 
@@ -169,7 +169,7 @@ test("letTest2", () => {
 
   let input = { foo:  7 }
   let q0 = rh`input.foo`
-  let q1 = rh`let x input x.foo`
+  let q1 = rh`let x = input; x.foo`
   
   expect(q1).toEqual(q0)
 
@@ -297,4 +297,22 @@ test("objectTest1", () => {
   expect(res2).toEqual(res1)
 })
 
+
+test("letTest3", () => {
+
+  let input = { foo:  7 }
+  let q0 = rh`{all: [1,2,3]}`
+  let q1 = rh`let x = [1,2,3]
+              {all: x}`
+  
+  expect(q1).toEqual(q0)
+
+  let q1d = desugar(q1)
+
+  expect(q1d).toEqual(q1)
+
+  let func = api.compile(q0)
+  let res = func({input})
+  expect(res).toEqual({all: [1,2,3]})
+})
 

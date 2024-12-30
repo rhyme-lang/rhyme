@@ -88,7 +88,8 @@ exports.parserImpl = (strings, holes) => {
   for (let c of opchars) optable[c] = 1
 
   // init lexer with first token to get going
-  indent = gap = whitespace();
+  indent = whitespace();
+  gap = input.substring(0, indent)
   if (input[pos] == '-' && input[pos+1] == ' ') {
     pos += 2; bullet = true
   } else {
@@ -102,8 +103,11 @@ exports.parserImpl = (strings, holes) => {
     //   seq.push(dom(peek, {start:strt,end:pos}, "", str))
     // else
     //   seq.push(str)
+    let start = pos
     let c = peek;
-    gap = whitespace();
+    let d = whitespace();
+    gap = input.substring(start, pos)
+    // console.log(d,"'"+gap+"'")
     read()
     return c
   }
@@ -137,7 +141,7 @@ exports.parserImpl = (strings, holes) => {
       // note: unclosed string literals need to be detected later
       if (input[pos] == '"') pos++ // consume closing
         peek = "str"
-    } else if (input[pos] == '\n') {
+    } else if (input[pos] == '\n') { // NOT HIT ANYMORE!
       // while (input[pos] == '\n') {
       peek = input[pos++]
       // let save = indent
@@ -162,8 +166,8 @@ exports.parserImpl = (strings, holes) => {
 
   function whitespace(excludeComment) {
     let start = pos
-    while (input[pos] == ' ') ++pos
-      let commentStart = pos
+    while (input[pos] == ' ' || input[pos] == '\n') ++pos
+    let commentStart = pos
     if (input[pos] == '/' && input[pos+1] == '/') {
       pos += 2
       while (input[pos] && input[pos] != '\n') ++pos
@@ -295,6 +299,27 @@ exports.parserImpl = (strings, holes) => {
 
 
   function expr() {
+    if (peek == 'ident' && str == "let") {
+      next()
+      if (peek != "ident")
+        error("ident expected but got '"+sanitize(peek)+"'")
+      let lhs = str
+      next()
+      if (peek != "=")
+        error("'=' expected but got '"+sanitize(peek)+"'")
+      next()
+      let rhs = exprTight()
+      // console.log(gap, "'"+gap+"'")
+      if (peek != ";" && !gap.includes("\n"))
+        error("';' or newline expected but got '"+sanitize(peek)+"'")
+      if (peek == ";")
+        next()
+      let body = expr()
+      let res = ast_call(ast_ident("let"), ast_ident(lhs))
+      res = ast_call(res, rhs)
+      res = ast_call(res, body)
+      return res
+    }
     return binop(0)
   }
   function exprTight() {
