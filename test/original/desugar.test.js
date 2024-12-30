@@ -241,12 +241,40 @@ test("lambdaTest2", () => {
 // We test semantic equivalence
 // instead.
 
+test("arrayTest0", () => {
+
+  let input = {}
+
+  let q1 = []
+  let q2 = rh`[]`
+  
+  let func1 = api.compile(q1)
+  let func2 = api.compile(q2)
+  let res1 = func1({input})
+  let res2 = func1({input})
+  expect(res2).toEqual(res1)
+})
+
 test("arrayTest1", () => {
 
   let input = {}
 
-  let q1 = [rh`1`, rh`2`, rh`3`]
+  let q1 = [1,2,3]
   let q2 = rh`[1, 2, 3]`
+  
+  let func1 = api.compile(q1)
+  let func2 = api.compile(q2)
+  let res1 = func1({input})
+  let res2 = func1({input})
+  expect(res2).toEqual(res1)
+})
+
+test("objectTest0", () => {
+
+  let input = {}
+
+  let q1 = {}
+  let q2 = rh`{}`
   
   let func1 = api.compile(q1)
   let func2 = api.compile(q2)

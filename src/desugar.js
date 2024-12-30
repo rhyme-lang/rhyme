@@ -161,6 +161,8 @@ exports.desugar = (p) => {
     } else if (p.xxpath == "apply") {
       let [e1,...e2s] = p.xxparam
       return transApply(e1, e2s)
+    } else if (p.xxkey == "array" || p.xxkey == "object") {
+      return transStateful(p.xxkey, p.xxparam.map(trans))
     } else if (p.xxpath) {
       return transPath(p.xxpath, p.xxparam.map(trans))
     } else if (p.xxkey) {

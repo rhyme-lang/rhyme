@@ -104,12 +104,24 @@ test("stringTest1", () => {
 })
 
 
+test("arrayTest0", () => {
+    let res = parse("[]")
+    let expected = ast_array([])
+    expect(res).toEqual(expected)
+})
+
 test("arrayTest1", () => {
     let res = parse("[a,b,c]")
     let expected = ast_array([
         ast_ident("a"),
         ast_ident("b"),
         ast_ident("c")])
+    expect(res).toEqual(expected)
+})
+
+test("objectTest0", () => {
+    let res = parse("{}")
+    let expected = ast_object([])
     expect(res).toEqual(expected)
 })
 

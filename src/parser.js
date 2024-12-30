@@ -242,6 +242,8 @@ exports.parserImpl = (strings, holes) => {
 
   function commaList(f) {
     let res = []
+    if (peek == ")" || peek == "]" || peek == "}")
+      return res
     res.push(f())
     while (peek == ',') {
       next()

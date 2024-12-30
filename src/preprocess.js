@@ -30,6 +30,8 @@ let isVar = s => s.startsWith("*")
 let preproc = q => {
   if (q === true || q === false)
     return { key: "const", op: Boolean(q) }
+  if (q instanceof Array && q.length == 0)
+    return { key: "const", op: [] }
   if (typeof (q) === "number" || !Number.isNaN(Number(q)))  // number?
     return { key: "const", op: Number(q) }
   if (typeof q === "string") {

@@ -1078,6 +1078,8 @@ let codegen = (q, scope) => {
   } else if (q.key == "const") {
     if (typeof q.op === "string")
       return "'"+q.op+"'"
+    else if (typeof q.op === "object" && q.op instanceof Array && q.op.length == 0)
+      return "[]"
     else if (typeof q.op === "object" && Object.keys(q.op).length == 0)
       return "{}"
     else {
