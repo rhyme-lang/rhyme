@@ -90,6 +90,24 @@ let preproc = q => {
       return { key: "stateful", op: "array", arg: q.map(preproc) }
     else
       return { key: "pure", op: "flatten", arg: q.map(x => preproc([x])) }
+  } else if (q.xxkey == "object") {
+    let res
+    for (let i = 0; i < q.xxparam.length; i += 2) {
+      let k = q.xxparam[i]
+      let v = q.xxparam[i+1]
+      let e1 = preproc(k)
+      let e2 = preproc(v)
+      if (e2.key == "merge" || e2.key == "keyval") { // TODO: support 'flatten'
+        e1 = e2.arg[0]
+        e2 = e2.arg[1]
+      }
+      if (!res) res = { key: "group", arg: [e1,e2] }
+      else res = { key: "update", arg: [res,e1,e2] }
+    }
+    // return { key: "group", arg: [e1,{key:"stateful", op: "last", mode: "reluctant", arg:[e2]}] }
+    if (!res) // empty?
+      res = { key: "const", op: {} }
+    return res
   } else if (typeof(q) === "object" && !q.xxpath && !q.xxkey) {
     let res
     for (let k of Object.keys(q)) {

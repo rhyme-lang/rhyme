@@ -38,6 +38,10 @@ api["array"] = (...es) => ({
   xxkey: "array",
   xxparam: es
 })
+api["object"] = (...es) => ({
+  xxkey: "object",
+  xxparam: es
+})
 api["last"] = (e) => ({
   xxkey: "last",
   xxparam: e

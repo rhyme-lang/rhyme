@@ -22,6 +22,9 @@ function ast_call(a,b) {
 function ast_array(as) {
   return { xxkey: "array", xxparam: as }
 }
+function ast_object(as) {
+  return { xxkey: "object", xxparam: as }
+}
 function ast_root() {
   return ast_raw("inp")
 }
@@ -225,6 +228,18 @@ exports.parserImpl = (strings, holes) => {
     return res
   }
 
+  function braces(f) {
+    if (peek != '{')
+      error("'{' expected") // not really used!
+    next()
+    let res = f()
+    //try { f(); } catch (ex) {};
+    if (peek != '}')
+      error("'}' expected but got '"+sanitize(peek)+"'")
+    next()
+    return res
+  }
+
   function commaList(f) {
     let res = []
     res.push(f())
@@ -320,7 +335,20 @@ exports.parserImpl = (strings, holes) => {
       next()
       return res
     } else if (peek == '{') {
-      error("object constructor syntax not supported yet")
+      // error("object constructor syntax not supported yet")
+      let entry = () => {
+        let key = expr()
+        let val
+        if (peek == ":") {
+          next(); val = expr()
+        } else {
+          val = key
+        }
+        return [key, val]
+      }
+      let elems = braces(() => commaList(entry))
+      // console.log(elems)
+      return ast_object(elems.flat())
     } else if (peek == '[') {
       // error("array constructor syntax not supported yet")
       let elems = brackets(() => commaList(expr))
@@ -362,7 +390,7 @@ exports.parserImpl = (strings, holes) => {
     let res = exprTight()
     while (peek == "num" || peek == "str" || peek == "hole" ||
            peek == "ident" || peek == "*" ||
-           peek == "." || peek == "(" || peek == "[") {
+           peek == "." || peek == "(" || peek == "[" || peek == "{") {
       res = ast_call(res, exprTight())
     }
     return res

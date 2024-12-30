@@ -19,6 +19,9 @@ function ast_apply(a,b) {
 function ast_array(as) {
     return { xxkey: "array", xxparam: as }
 }
+function ast_object(as) {
+    return { xxkey: "object", xxparam: as }
+}
 
 
 test("pathTest1", () => {
@@ -110,3 +113,20 @@ test("arrayTest1", () => {
     expect(res).toEqual(expected)
 })
 
+test("objectTest1", () => {
+    let res = parse("{a,b,c}")
+    let expected = ast_object([
+        ast_ident("a"), ast_ident("a"),
+        ast_ident("b"), ast_ident("b"),
+        ast_ident("c"), ast_ident("c")])
+    expect(res).toEqual(expected)
+})
+
+test("objectTest2", () => {
+    let res = parse("{a:a1,b:b1,c:c1}")
+    let expected = ast_object([
+        ast_ident("a"), ast_ident("a1"),
+        ast_ident("b"), ast_ident("b1"),
+        ast_ident("c"), ast_ident("c1")])
+    expect(res).toEqual(expected)
+})

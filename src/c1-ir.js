@@ -499,6 +499,35 @@ exports.createIR = (query) => {
             for (let e of rhs)
                 assign(lhs1, ".push", expr("(" + e.txt + ")", ...e.deps))
             return closeTempVar(lhs, lhs1)
+        } else if (p.xxkey == "object") { // object
+            //
+            // TODO: we don't have the entire rhs, so how to get rhs.deps?
+            //
+            //   Right now we have no way to decorrelate ...
+            //
+            let lhs1 = openTempVar(lhs, null)
+            assign(lhs1, "??=", expr("{}"))
+            for (let i = 0; i < p.xxparam.length; i += 2) {
+                let k = p.xxparam[i]
+                let o = p.xxparam[i+1]
+                // NOTE: more expressive merge/flatten could traverse
+                //       child object (to support multiple keys)
+                if (o.xxkey == "keyval" || o.xxkey == "merge") { // nesting
+                    k = o.xxparam[0]
+                    o = o.xxparam[1]
+                } else if (o.xxkey == "flatten") { // same, but include parent key
+                    k = api.plus(api.plus(k, "-"), o.xxparam[0])
+                    o = o.xxparam[1]
+                }
+                let k1 = path(k)
+                let save = currentGroupPath
+                currentGroupPath = [...currentGroupPath, k1]
+                let ll1 = select(lhs1, k1)
+                ll1.root = lhs1.root
+                stateful(ll1, o)
+                currentGroupPath = save
+            }
+            return closeTempVar(lhs, lhs1)
         } else if (p.xxkey) {
             error("ERROR: unknown reducer key '" + p.xxkey + "'")
             return expr("undefined")
