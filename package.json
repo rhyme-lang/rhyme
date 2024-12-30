@@ -1,7 +1,7 @@
 {
   "name": "rhyme-lang",
   "type": "commonjs",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Rhyme: An Expressive Data-Centric Query Language",
   "scripts": {
     "test": "jest",
