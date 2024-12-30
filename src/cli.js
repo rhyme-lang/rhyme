@@ -51,7 +51,7 @@ const readline = require('node:readline');
             argv0: file,
             stdin: stdin
         }
-        console.log(func(input))
+        console.log(JSON.stringify(func(input), null, 2))
     } catch(e) {
         console.error(e)
     }
