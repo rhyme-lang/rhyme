@@ -85,14 +85,14 @@ let preproc = q => {
       return { key: "hint", op: e1.op, arg: [...qs2.map(preproc)] }
     else
       return { key: "hint", op: "generic", arg: [e1,...qs2.map(preproc)] }
-  } else if (q.xxkey == "array") {
+  } else if (q.xxpath == "array") {
     return preproc(q.xxparam)
   } else if (q instanceof Array) {
     if (q.length == 1)
       return { key: "stateful", op: "array", arg: q.map(preproc) }
     else
       return { key: "pure", op: "flatten", arg: q.map(x => preproc([x])) }
-  } else if (q.xxkey == "object") {
+  } else if (q.xxpath == "object") {
     let res
     for (let i = 0; i < q.xxparam.length; i += 2) {
       let k = q.xxparam[i]

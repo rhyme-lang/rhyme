@@ -35,11 +35,11 @@ api["join"] = (e) => ({
   xxparam: [e]
 })
 api["array"] = (...es) => ({
-  xxkey: "array",
+  xxpath: "array",
   xxparam: es
 })
 api["object"] = (...es) => ({
-  xxkey: "object",
+  xxpath: "object",
   xxparam: es
 })
 api["last"] = (e) => ({

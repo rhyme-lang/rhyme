@@ -1,3 +1,16 @@
+let primStateful = {
+  "sum":   true,
+  "product": true,
+  "count": true,
+  "max":   true,
+  "min":   true,
+  "first": true,
+  "last":  true,
+  "print": true,
+  "array": true,
+  "object": true,
+}
+
 exports.desugar = (p) => {
 
   let argProvided = { xxpath: "raw", xxparam: [], xxop: "inp" }
@@ -27,18 +40,6 @@ exports.desugar = (p) => {
   // contract: args are already desugared
   function transStateful(p, args) {
     return { xxkey: p, xxparam: args }
-  }
-
-
-  let primStateful = {
-    "sum":   true,
-    "product": true,
-    "count": true,
-    "max":   true,
-    "min":   true,
-    "first": true,
-    "last":  true,
-    "print": true
   }
 
   // contract: args are already desugared, p is an ident
@@ -81,6 +82,7 @@ exports.desugar = (p) => {
       return { xxpath: "get", xxparam: [args[0],p.xxparam[0]] }
     } else if (p.xxpath == "group") { // partially applied, i.e. 'group(*line)'
       // return { [p.xxparam]: args[0] }
+      // return { xxkey: "object", xxparam: [p.xxparam[0], args[0]]}
       return { "_IGNORE_": { xxkey: "keyval" , xxparam: [p.xxparam[0], args[0]]}}
     } else if (p.xxpath == "closure") {
       console.assert(args.length >= 1)
@@ -135,7 +137,7 @@ exports.desugar = (p) => {
 
   function transPipe(p, args) {
     // special non-cbv pipe forms can be added here
-    // (args[0] is the arg the left of the pipe, rest currently empty)
+    // (args[0] is the arg on the left of the pipe, rest currently empty)
     console.assert(args.length == 1)
     return transFuncApply(p, args.map(trans))
   }
@@ -161,8 +163,6 @@ exports.desugar = (p) => {
     } else if (p.xxpath == "apply") {
       let [e1,...e2s] = p.xxparam
       return transApply(e1, e2s)
-    } else if (p.xxkey == "array" || p.xxkey == "object") {
-      return transStateful(p.xxkey, p.xxparam.map(trans))
     } else if (p.xxpath) {
       return transPath(p.xxpath, p.xxparam.map(trans))
     } else if (p.xxkey) {

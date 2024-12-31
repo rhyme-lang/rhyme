@@ -20,10 +20,10 @@ function ast_call(a,b) {
   return { xxpath: "apply", xxparam: [a,b] }
 }
 function ast_array(as) {
-  return { xxkey: "array", xxparam: as }
+  return { xxpath: "array", xxparam: as }
 }
 function ast_object(as) {
-  return { xxkey: "object", xxparam: as }
+  return { xxpath: "object", xxparam: as }
 }
 function ast_root() {
   return ast_raw("inp")

@@ -1,6 +1,19 @@
 const { quoteVar, debug, trace, print, inspect, error, warn } = require("./utils")
 const { parse } = require("./parser")
 
+let primStateful = {
+  "sum":   true,
+  "product": true,
+  "count": true,
+  "max":   true,
+  "min":   true,
+  "first": true,
+  "last":  true,
+  "print": true,
+  "array": true,
+  "object": true,
+}
+
 exports.createIR = (query) => {
     //
     // ---------- Internals ----------
@@ -160,6 +173,8 @@ exports.createIR = (query) => {
                 } else if (p.xxpath == "and") {
                     let [e1, e2] = p.xxparam
                     return binop("&&", path1(e1), path1(e2))
+                } else if (primStateful[p.xxpath]) {
+                    return transStatefulInPath(p)
                 } else {
                     error("ERROR - unknown path key '" + p.xxpath + "'")
                     return expr("undefined")
@@ -168,7 +183,7 @@ exports.createIR = (query) => {
                 return transStatefulInPath(p)
             } else if (p instanceof Array) {
                 print("WARN - Array in path expr not thoroughly tested yet!")
-                return transStatefulInPath({ xxkey: "array", xxparam: p })
+                return transStatefulInPath({ xxpath: "array", xxparam: p })
             } else { // subquery
                 //
                 // A stateless object literal: we treat individual
@@ -467,7 +482,7 @@ exports.createIR = (query) => {
             assign(lhs1, "??=", expr("''"))
             assign(lhs1, "+=", rhs)
             return closeTempVar(lhs, lhs1)
-        } else if (p.xxkey == "array" && p.xxparam.length > 1) { // multi-array
+        } else if (p.xxpath == "array" && p.xxparam.length > 1) { // multi-array
             let rhs = p.xxparam.map(path)
             let lhs2 = openTempVar(lhs,rhs.flatMap(x => x.deps))
             let res1 = []
@@ -492,14 +507,14 @@ exports.createIR = (query) => {
             //
             assign(lhs2, "=", expr("[" + res1.map(x => x.txt).join(",") + "].flat()", ...res1.flatMap(x => x.deps)))
             return closeTempVar(lhs, lhs2)
-        } else if (p.xxkey == "array") { // array
+        } else if (p.xxpath == "array") { // array
             let rhs = p.xxparam.map(path)
             let lhs1 = openTempVar(lhs, rhs.flatMap(x => x.deps))
             assign(lhs1, "??=", expr("[]"))
             for (let e of rhs)
                 assign(lhs1, ".push", expr("(" + e.txt + ")", ...e.deps))
             return closeTempVar(lhs, lhs1)
-        } else if (p.xxkey == "object") { // object
+        } else if (p.xxpath == "object") { // object
             //
             // TODO: we don't have the entire rhs, so how to get rhs.deps?
             //
@@ -532,7 +547,7 @@ exports.createIR = (query) => {
             error("ERROR: unknown reducer key '" + p.xxkey + "'")
             return expr("undefined")
         } else if (p instanceof Array) {
-            return stateful(lhs, { xxkey: "array", xxparam: p })
+            return stateful(lhs, { xxpath: "array", xxparam: p })
         } else if (p instanceof Array) {
             // XXX not using this anymore
             if (p.length > 1) {
