@@ -2,10 +2,10 @@ const { parse, rh } = require('../../src/parser')
 const { api } = require('../../src/rhyme')
 
 function ast_ident(a) {
-    return { xxpath: "ident", xxparam: a }
+    return { xxpath: "ident", xxparam: [], xxop: a }
 }
 function ast_raw(a) {
-    return { xxpath: "raw", xxparam: a }
+    return { xxpath: "raw", xxparam: [], xxop: a }
 }
 function ast_plus(a,b) {
     return { xxpath: "plus", xxparam: [a,b] }

@@ -98,7 +98,7 @@ exports.createIR = (query) => {
         if (typeof (p) == "number" || !Number.isNaN(Number(p)))  // number?
             return expr(p)
         if (p == "$display")
-            return path1({ xxpath: "ident", xxparam: "$display" }) // FixMe: handle this properly
+            return path1({ xxpath: "ident", xxparam: [], xxop: "$display" }) // FixMe: handle this properly
         return path1(parse(p))
     }
     //
@@ -109,14 +109,14 @@ exports.createIR = (query) => {
         if (typeof (p) == "object" || typeof (p) == "function") { // treat fct as obj
             if (p.xxpath) { // path
                 if (p.xxpath == "ident") {
-                    return ident(p.xxparam)
+                    return ident(p.xxop)
                 } else if (p.xxpath == "raw") {
-                    return expr(p.xxparam)
+                    return expr(p.xxop)
                 } else if (p.xxpath == "get") {
                     let [e1, e2] = p.xxparam
                     if (e2 === undefined) { // XXX redundant with desugar?
                         e2 = e1
-                        e1 = { xxpath: "raw", xxparam: "inp" }
+                        e1 = { xxpath: "raw", xxparam: [], xxop: "inp" }
                     }
                     // TODO: e1 should never be treated as id!
                     // TODO: vararg?
@@ -422,47 +422,47 @@ exports.createIR = (query) => {
         // XXX TODO: check nullish values are dealt with correctly
         //
         if (p.xxkey == "sum") { // sum
-            let rhs = path(p.xxparam)
+            let rhs = path(p.xxparam[0])
             let lhs1 = openTempVar(lhs, rhs.deps)
             assign(lhs1, "??=", expr("0"))
             assign(lhs1, "+=", rhs)
             return closeTempVar(lhs, lhs1)
         } else if (p.xxkey == "product") { // sum
-            let rhs = path(p.xxparam)
+            let rhs = path(p.xxparam[0])
             let lhs1 = openTempVar(lhs, rhs.deps)
             assign(lhs1, "??=", expr("1"))
             assign(lhs1, "*=", rhs)
             return closeTempVar(lhs, lhs1)
         } else if (p.xxkey == "count") { // count
-            let rhs = path(p.xxparam)
+            let rhs = path(p.xxparam[0])
             let lhs1 = openTempVar(lhs, rhs.deps)
             assign(lhs1, "??=", expr("0"))
             assign(lhs1, "+=", expr("1", ...rhs.deps))
             return closeTempVar(lhs, lhs1)
         } else if (p.xxkey == "min") { // min
-            let rhs = path(p.xxparam)
+            let rhs = path(p.xxparam[0])
             let lhs1 = openTempVar(lhs, rhs.deps)
             assign(lhs1, "??=", expr("Infinity"))
             assign(lhs1, "=", expr("Math.min(" + lhs1.txt + "," + rhs.txt + ")", ...rhs.deps))
             return closeTempVar(lhs, lhs1)
         } else if (p.xxkey == "max") { // max
-            let rhs = path(p.xxparam)
+            let rhs = path(p.xxparam[0])
             let lhs1 = openTempVar(lhs, rhs.deps)
             assign(lhs1, "??=", expr("-Infinity"))
             assign(lhs1, "=", expr("Math.max(" + lhs1.txt + "," + rhs.txt + ")", ...rhs.deps))
             return closeTempVar(lhs, lhs1)
         } else if (p.xxkey == "first") { // first
-            let rhs = path(p.xxparam)
+            let rhs = path(p.xxparam[0])
             let lhs1 = openTempVar(lhs, rhs.deps)
             assign(lhs1, "??=", expr(rhs.txt, ...rhs.deps))
             return closeTempVar(lhs, lhs1)
         } else if (p.xxkey == "last") { // last
-            let rhs = path(p.xxparam)
+            let rhs = path(p.xxparam[0])
             let lhs1 = openTempVar(lhs, rhs.deps)
             assign(lhs1, "=", expr(rhs.txt + " ?? " + lhs1.txt, ...rhs.deps))
             return closeTempVar(lhs, lhs1)
         } else if (p.xxkey == "join") { // string join
-            let rhs = path(p.xxparam)
+            let rhs = path(p.xxparam[0])
             let lhs1 = openTempVar(lhs, rhs.deps)
             assign(lhs1, "??=", expr("''"))
             assign(lhs1, "+=", rhs)

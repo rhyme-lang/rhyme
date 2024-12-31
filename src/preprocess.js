@@ -47,20 +47,20 @@ let preproc = q => {
   }
 
   if (q.xxpath == "raw") {
-    if (q.xxparam == "inp") return { key: "input" }
-    else if (!Number.isNaN(Number(q.xxparam))) return { key: "const", op: Number(q.xxparam) }
-    else return { key: "const", op: q.xxparam }
+    if (q.xxop == "inp") return { key: "input" }
+    else if (!Number.isNaN(Number(q.xxop))) return { key: "const", op: Number(q.xxop) }
+    else return { key: "const", op: q.xxop }
   } else if (q.xxpath == "loadCSV") {
     // Only process the first argument which is the filename
     // We want to get the type info from xxextra instead of evaluating it as a Rhyme query
-    let e1 = preproc(q.xxparam)
-    if (q.xxextra === undefined) {
+    let e1 = preproc(q.xxparam[0])
+    if (q.xxparam[1] === undefined) {
       console.error("csv schema expected")
     }
-    return { key: "loadInput", op: "csv", arg: [e1], schema: q.xxextra }
+    return { key: "loadInput", op: "csv", arg: [e1], schema: q.xxparam[1] }
   } else if (q.xxpath == "ident") {
-    if (isVar(q.xxparam)) return { key: "var", op: q.xxparam }
-    else return { key: "const", op: q.xxparam }
+    if (isVar(q.xxop)) return { key: "var", op: q.xxop }
+    else return { key: "const", op: q.xxop }
   } else if (q.xxpath == "get") {
     let e1 = preproc(q.xxparam[0])
     // special case for literal "*": moved from here to extract

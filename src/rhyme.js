@@ -16,23 +16,23 @@ const { typing } = require('./typing')
 //
 api["sum"] = (e) => ({
   xxkey: "sum",
-  xxparam: e
+  xxparam: [e]
 })
 api["count"] = (e) => ({
   xxkey: "count",
-  xxparam: e
+  xxparam: [e]
 })
 api["max"] = (e) => ({
   xxkey: "max",
-  xxparam: e
+  xxparam: [e]
 })
 api["min"] = (e) => ({
   xxkey: "min",
-  xxparam: e
+  xxparam: [e]
 })
 api["join"] = (e) => ({
   xxkey: "join",
-  xxparam: e
+  xxparam: [e]
 })
 api["array"] = (...es) => ({
   xxkey: "array",
@@ -44,15 +44,15 @@ api["object"] = (...es) => ({
 })
 api["last"] = (e) => ({
   xxkey: "last",
-  xxparam: e
+  xxparam: [e]
 })
 api["first"] = (e) => ({
   xxkey: "first",
-  xxparam: e
+  xxparam: [e]
 })
 api["single"] = (e) => ({
   xxkey: "last", // TODO: check that values are equal, like c2
-  xxparam: e
+  xxparam: [e]
 })
 api["keyval"] = (k, v) => ({
   xxkey: "keyval",
@@ -72,6 +72,11 @@ api["group"] = (e, k) => ({
 //
 // path expressions
 //
+api["input"] = () => ({
+  xxpath: "raw",
+  xxparam: [],
+  xxop: "inp"
+})
 api["get"] = (e1, e2) => ({
   xxpath: "get",
   xxparam: [e1, e2]

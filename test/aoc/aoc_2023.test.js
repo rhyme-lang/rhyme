@@ -195,7 +195,7 @@ let udf = {
       return n
   }
 }
-let root = {xxpath:"raw", xxparam: "inp"} // XXX
+let root = api.input()
 
 // Temporay matrix of characters, joined in later queries.
 let matrix = pipe(root).get("input").map("udf.splitN").get("*i").map("udf.splitB").get("*j").group("*j").group("*i")
