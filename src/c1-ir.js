@@ -116,7 +116,7 @@ exports.createIR = (query) => {
         if (typeof (p) == "number" || !Number.isNaN(Number(p)))  // number?
             return expr(p)
         if (p == "$display")
-            return path1({ xxkey: "ident", xxparam: [], xxop: "$display" }) // FixMe: handle this properly
+            return path1({ xxkey: "ident", xxop: "$display" }) // FixMe: handle this properly
         return path1(parse(p))
     }
     //
@@ -134,7 +134,7 @@ exports.createIR = (query) => {
                     let [e1, e2] = p.xxparam
                     if (e2 === undefined) { // XXX redundant with desugar?
                         e2 = e1
-                        e1 = { xxkey: "raw", xxparam: [], xxop: "inp" }
+                        e1 = { xxkey: "raw", xxop: "inp" }
                     }
                     // TODO: e1 should never be treated as id!
                     // TODO: vararg?

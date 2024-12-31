@@ -18,7 +18,7 @@ let primStateful = {
 
 exports.desugar = (p) => {
 
-  let argProvided = { xxkey: "raw", xxparam: [], xxop: "inp" }
+  let argProvided = { xxkey: "raw", xxop: "inp" }
   let argUsed = false
   let env = {}
 
@@ -35,7 +35,7 @@ exports.desugar = (p) => {
       }
       // selecting on an ident like input.foo? implicit root field access
       if (e1.xxkey == "ident")
-        e1 = { xxkey: "get", xxparam: [{ xxkey: "raw", xxparam: [], xxop: "inp"}, e1] }
+        e1 = { xxkey: "get", xxparam: [{ xxkey: "raw", xxop: "inp"}, e1] }
       return { xxkey: "get", xxparam: [e1,...e2s] }
     } else {
       return { xxkey: p, xxparam: args }
@@ -59,7 +59,7 @@ exports.desugar = (p) => {
     } else if (p == "loadCSV") {
       return { xxkey: "loadCSV", xxparam: args }
     } else {
-      return { xxkey: "apply", xxparam: [{ xxkey: "ident", xxparam: [], xxop: p }, ...args] }
+      return { xxkey: "apply", xxparam: [{ xxkey: "ident", xxop: p }, ...args] }
     }
   }
 
@@ -169,9 +169,9 @@ exports.desugar = (p) => {
       let [e1,...e2s] = p.xxparam
       return transApply(e1, e2s)
     } else if (p.xxkey) {
-      return transPath(p.xxkey, p.xxparam.map(trans))
+      return transPath(p.xxkey, p.xxparam?.map(trans))
     } else if (p.xxkey) {
-      return transStateful(p.xxkey, p.xxparam.map(trans))
+      return transStateful(p.xxkey, p.xxparam?.map(trans))
     }
     return p
   }

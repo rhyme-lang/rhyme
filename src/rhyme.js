@@ -78,7 +78,6 @@ api["group"] = (e, k) => ({
 //
 api["input"] = () => ({
   xxkey: "raw",
-  xxparam: [],
   xxop: "inp"
 })
 api["get"] = (e1, e2) => ({

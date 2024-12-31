@@ -3,10 +3,10 @@ const { desugar } = require('../../src/desugar')
 const { api } = require('../../src/rhyme')
 
 function ast_ident(a) {
-    return { xxkey: "ident", xxparam: [], xxop: a }
+    return { xxkey: "ident", xxop: a }
 }
 function ast_raw(a) {
-    return { xxkey: "raw", xxparam: [], xxop: a }
+    return { xxkey: "raw", xxop: a }
 }
 function ast_plus(a,b) {
     return { xxkey: "plus", xxparam: [a,b] }
@@ -129,10 +129,10 @@ test("callTest1", () => {
   let e = {
     xxkey: 'apply',
     xxparam: [
-      { xxkey: 'ident', xxparam: [], xxop: 'a' },
-      { xxkey: 'ident', xxparam: [], xxop: 'b' },
-      { xxkey: 'ident', xxparam: [], xxop: 'c' },
-      { xxkey: 'ident', xxparam: [], xxop: 'd' }
+      { xxkey: 'ident', xxop: 'a' },
+      { xxkey: 'ident', xxop: 'b' },
+      { xxkey: 'ident', xxop: 'c' },
+      { xxkey: 'ident', xxop: 'd' }
     ]
   }
 

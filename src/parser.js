@@ -2,16 +2,16 @@ const { desugar } = require("./desugar")
 
 // XXX could use main api from rhyme.js
 function ast_ident(a) {
-  return { xxkey: "ident", xxparam: [], xxop: a }
+  return { xxkey: "ident", xxop: a }
 }
 function ast_raw(a) {
-  return { xxkey: "raw", xxparam: [], xxop: a }
+  return { xxkey: "raw", xxop: a }
 }
 function ast_hole(a) {
-  return { xxkey: "hole", xxparam: [], xxop: a }
+  return { xxkey: "hole", xxop: a }
 }
 function ast_num(a) {
-  return { xxkey: "raw", xxparam: [], xxop: a } // treat as raw for now
+  return { xxkey: "raw", xxop: a } // treat as raw for now
 }
 function ast_get(a,b) {
   return { xxkey: "get", xxparam: [a,b] }
