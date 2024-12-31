@@ -179,6 +179,8 @@ exports.createIR = (query) => {
                     let [e1, e2] = p.xxparam
                     return binop("&&", path1(e1), path1(e2))
                 } else if (primStateful[p.xxkey]) { // reducer (stateful)
+                    if (p.xxkey == "object")
+                        warn("WARNING - non-uniform subquery in path")
                     return transStatefulInPath(p)
                 } else {
                     error("ERROR - unknown path key '" + p.xxkey + "'")
@@ -188,6 +190,8 @@ exports.createIR = (query) => {
                 print("WARN - Array in path expr not thoroughly tested yet!")
                 return transStatefulInPath({ xxkey: "array", xxparam: p })
             } else { // subquery
+                //
+                // NOTE: this won't be hit by xxkey == "object"!
                 //
                 // A stateless object literal: we treat individual
                 // entries as paths, and build a new object for each
