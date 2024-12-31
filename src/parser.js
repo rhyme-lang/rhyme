@@ -2,28 +2,28 @@ const { desugar } = require("./desugar")
 
 // XXX could use main api from rhyme.js
 function ast_ident(a) {
-  return { xxpath: "ident", xxparam: [], xxop: a }
+  return { xxkey: "ident", xxparam: [], xxop: a }
 }
 function ast_raw(a) {
-  return { xxpath: "raw", xxparam: [], xxop: a }
+  return { xxkey: "raw", xxparam: [], xxop: a }
 }
 function ast_hole(a) {
-  return { xxpath: "hole", xxparam: [], xxop: a }
+  return { xxkey: "hole", xxparam: [], xxop: a }
 }
 function ast_num(a) {
-  return { xxpath: "raw", xxparam: [], xxop: a } // treat as raw for now
+  return { xxkey: "raw", xxparam: [], xxop: a } // treat as raw for now
 }
 function ast_get(a,b) {
-  return { xxpath: "get", xxparam: [a,b] }
+  return { xxkey: "get", xxparam: [a,b] }
 }
 function ast_call(a,b) {
-  return { xxpath: "apply", xxparam: [a,b] }
+  return { xxkey: "apply", xxparam: [a,b] }
 }
 function ast_array(as) {
-  return { xxpath: "array", xxparam: as }
+  return { xxkey: "array", xxparam: as }
 }
 function ast_object(as) {
-  return { xxpath: "object", xxparam: as }
+  return { xxkey: "object", xxparam: as }
 }
 function ast_root() {
   return ast_raw("inp")
@@ -54,7 +54,7 @@ let binop_table = {
 }
 function ast_binop(op, a,b) {
   let op1 = binop_table[op] ?? op
-  return { xxpath: op1, xxparam: [a,b] }
+  return { xxkey: op1, xxparam: [a,b] }
 }
 
 //

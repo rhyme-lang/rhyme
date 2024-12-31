@@ -18,6 +18,10 @@ api["sum"] = (e) => ({
   xxkey: "sum",
   xxparam: [e]
 })
+api["product"] = (e) => ({
+  xxkey: "sum",
+  xxparam: [e]
+})
 api["count"] = (e) => ({
   xxkey: "count",
   xxparam: [e]
@@ -35,19 +39,19 @@ api["join"] = (e) => ({
   xxparam: [e]
 })
 api["array"] = (...es) => ({
-  xxpath: "array",
+  xxkey: "array",
   xxparam: es
 })
 api["object"] = (...es) => ({
-  xxpath: "object",
+  xxkey: "object",
   xxparam: es
-})
-api["last"] = (e) => ({
-  xxkey: "last",
-  xxparam: [e]
 })
 api["first"] = (e) => ({
   xxkey: "first",
+  xxparam: [e]
+})
+api["last"] = (e) => ({
+  xxkey: "last",
   xxparam: [e]
 })
 api["single"] = (e) => ({
@@ -73,48 +77,48 @@ api["group"] = (e, k) => ({
 // path expressions
 //
 api["input"] = () => ({
-  xxpath: "raw",
+  xxkey: "raw",
   xxparam: [],
   xxop: "inp"
 })
 api["get"] = (e1, e2) => ({
-  xxpath: "get",
+  xxkey: "get",
   xxparam: [e1, e2]
 })
 api["apply"] = (e1, e2) => ({
-  xxpath: "apply",
+  xxkey: "apply",
   xxparam: [e1, e2]
 })
 api["pipe"] = (e1, e2) => ({ // reverse apply
-  xxpath: "apply",
+  xxkey: "apply",
   xxparam: [e2, e1]
 })
 api["plus"] = (e1, e2) => ({
-  xxpath: "plus",
+  xxkey: "plus",
   xxparam: [e1, e2]
 })
 api["minus"] = (e1, e2) => ({
-  xxpath: "minus",
+  xxkey: "minus",
   xxparam: [e1, e2]
 })
 api["times"] = (e1, e2) => ({
-  xxpath: "times",
+  xxkey: "times",
   xxparam: [e1, e2]
 })
 api["fdiv"] = (e1, e2) => ({
-  xxpath: "fdiv",
+  xxkey: "fdiv",
   xxparam: [e1, e2]
 })
 api["div"] = (e1, e2) => ({
-  xxpath: "div",
+  xxkey: "div",
   xxparam: [e1, e2]
 })
 api["mod"] = (e1, e2) => ({
-  xxpath: "mod",
+  xxkey: "mod",
   xxparam: [e1, e2]
 })
 api["and"] = (e1, e2) => ({
-  xxpath: "and",
+  xxkey: "and",
   xxparam: [e1, e2]
 })
 // ---------- Fluent API ----------

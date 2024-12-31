@@ -46,11 +46,11 @@ let preproc = q => {
     return q
   }
 
-  if (q.xxpath == "raw") {
+  if (q.xxkey == "raw") {
     if (q.xxop == "inp") return { key: "input" }
     else if (!Number.isNaN(Number(q.xxop))) return { key: "const", op: Number(q.xxop) }
     else return { key: "const", op: q.xxop }
-  } else if (q.xxpath == "loadCSV") {
+  } else if (q.xxkey == "loadCSV") {
     // Only process the first argument which is the filename
     // We want to get the type info from xxextra instead of evaluating it as a Rhyme query
     let e1 = preproc(q.xxparam[0])
@@ -58,10 +58,10 @@ let preproc = q => {
       console.error("csv schema expected")
     }
     return { key: "loadInput", op: "csv", arg: [e1], schema: q.xxparam[1] }
-  } else if (q.xxpath == "ident") {
+  } else if (q.xxkey == "ident") {
     if (isVar(q.xxop)) return { key: "var", op: q.xxop }
     else return { key: "const", op: q.xxop }
-  } else if (q.xxpath == "get") {
+  } else if (q.xxkey == "get") {
     let e1 = preproc(q.xxparam[0])
     // special case for literal "*": moved from here to extract
     let e2
@@ -71,28 +71,28 @@ let preproc = q => {
     } else
       e2 = preproc(q.xxparam[1])
     return { key: "get", arg: [e1,e2] }
-  } else if (q.xxpath == "apply") {
+  } else if (q.xxkey == "apply") {
     let [q1,...qs2] = q.xxparam
     let e1 = preproc(q1)
     if (e1.key == "const") // built-in op
-      return preproc({...q, xxpath:e1.op, xxparam:qs2})
+      return preproc({...q, xxkey:e1.op, xxparam:qs2})
     else // udf apply
       return { key: "pure", op: "apply", arg: [e1,...qs2.map(preproc)] }
-  } else if (q.xxpath == "hint") {
+  } else if (q.xxkey == "hint") {
     let [q1,...qs2] = q.xxparam
     let e1 = preproc(q1)
     if (e1.key == "const")
       return { key: "hint", op: e1.op, arg: [...qs2.map(preproc)] }
     else
       return { key: "hint", op: "generic", arg: [e1,...qs2.map(preproc)] }
-  } else if (q.xxpath == "array") {
+  } else if (q.xxkey == "array") {
     return preproc(q.xxparam)
   } else if (q instanceof Array) {
     if (q.length == 1)
       return { key: "stateful", op: "array", arg: q.map(preproc) }
     else
       return { key: "pure", op: "flatten", arg: q.map(x => preproc([x])) }
-  } else if (q.xxpath == "object") {
+  } else if (q.xxkey == "object") {
     let res
     for (let i = 0; i < q.xxparam.length; i += 2) {
       let k = q.xxparam[i]
@@ -110,7 +110,7 @@ let preproc = q => {
     if (!res) // empty?
       res = { key: "const", op: {} }
     return res
-  } else if (typeof(q) === "object" && !q.xxpath && !q.xxkey) {
+  } else if (typeof(q) === "object" && !q.xxkey) {
     let res
     for (let k of Object.keys(q)) {
       let v = q[k]
@@ -127,10 +127,10 @@ let preproc = q => {
     if (!res) // empty?
       res = { key: "const", op: {} }
     return res
-  } else if (q.xxpath || q.xxkey) {
+  } else if (q.xxkey || q.xxkey) {
     // if 'update .. ident ..', convert ident to input ref?
-    let op = q.xxpath || q.xxkey
-    let array = q.xxpath || op == "merge" || op == "keyval" || op == "flatten" || op == "array"
+    let op = q.xxkey || q.xxkey
+    let array = q.xxkey || op == "merge" || op == "keyval" || op == "flatten" || op == "array"
     let es2 = q.xxparam instanceof Array ? q.xxparam.map(preproc) : [preproc(q.xxparam)]
     if (op in runtime.special)
       return { key: op, arg: es2 }

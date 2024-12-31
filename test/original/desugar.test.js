@@ -3,19 +3,19 @@ const { desugar } = require('../../src/desugar')
 const { api } = require('../../src/rhyme')
 
 function ast_ident(a) {
-    return { xxpath: "ident", xxparam: [], xxop: a }
+    return { xxkey: "ident", xxparam: [], xxop: a }
 }
 function ast_raw(a) {
-    return { xxpath: "raw", xxparam: [], xxop: a }
+    return { xxkey: "raw", xxparam: [], xxop: a }
 }
 function ast_plus(a,b) {
-    return { xxpath: "plus", xxparam: [a,b] }
+    return { xxkey: "plus", xxparam: [a,b] }
 }
 function ast_get(a,b) {
-    return { xxpath: "get", xxparam: [a,b] }
+    return { xxkey: "get", xxparam: [a,b] }
 }
 function ast_apply(a,b) {
-    return { xxpath: "apply", xxparam: [a,b] }
+    return { xxkey: "apply", xxparam: [a,b] }
 }
 
 
@@ -127,12 +127,12 @@ test("callTest1", () => {
   let q1 = rh`a b c d`
   
   let e = {
-    xxpath: 'apply',
+    xxkey: 'apply',
     xxparam: [
-      { xxpath: 'ident', xxparam: [], xxop: 'a' },
-      { xxpath: 'ident', xxparam: [], xxop: 'b' },
-      { xxpath: 'ident', xxparam: [], xxop: 'c' },
-      { xxpath: 'ident', xxparam: [], xxop: 'd' }
+      { xxkey: 'ident', xxparam: [], xxop: 'a' },
+      { xxkey: 'ident', xxparam: [], xxop: 'b' },
+      { xxkey: 'ident', xxparam: [], xxop: 'c' },
+      { xxkey: 'ident', xxparam: [], xxop: 'd' }
     ]
   }
 

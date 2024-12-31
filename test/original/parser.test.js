@@ -2,25 +2,25 @@ const { parse, rh } = require('../../src/parser')
 const { api } = require('../../src/rhyme')
 
 function ast_ident(a) {
-    return { xxpath: "ident", xxparam: [], xxop: a }
+    return { xxkey: "ident", xxparam: [], xxop: a }
 }
 function ast_raw(a) {
-    return { xxpath: "raw", xxparam: [], xxop: a }
+    return { xxkey: "raw", xxparam: [], xxop: a }
 }
 function ast_plus(a,b) {
-    return { xxpath: "plus", xxparam: [a,b] }
+    return { xxkey: "plus", xxparam: [a,b] }
 }
 function ast_get(a,b) {
-    return { xxpath: "get", xxparam: [a,b] }
+    return { xxkey: "get", xxparam: [a,b] }
 }
 function ast_apply(a,b) {
-    return { xxpath: "apply", xxparam: [a,b] }
+    return { xxkey: "apply", xxparam: [a,b] }
 }
 function ast_array(as) {
-    return { xxpath: "array", xxparam: as }
+    return { xxkey: "array", xxparam: as }
 }
 function ast_object(as) {
-    return { xxpath: "object", xxparam: as }
+    return { xxkey: "object", xxparam: as }
 }
 
 
