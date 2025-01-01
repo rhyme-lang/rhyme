@@ -71,8 +71,12 @@ api["merge"] = (k, v) => ({
   xxparam: [k, v]
 })
 api["group"] = (e, k) => ({
-  "_IGNORE_": api.keyval(k,e)
+  xxkey: "object",
+  xxparam: [k,e]
 })
+// api["group"] = (e, k) => ({
+//   "_IGNORE_": api.keyval(k,e) // alternative
+// })
 //
 // path expressions
 //

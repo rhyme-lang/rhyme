@@ -88,8 +88,8 @@ exports.desugar = (p) => {
       return { xxkey: "get", xxparam: [args[0],p.xxparam[0]] }
     } else if (p.xxkey == "group") { // partially applied, i.e. 'group(*line)'
       // return { [p.xxparam]: args[0] }
-      // return { xxkey: "object", xxparam: [p.xxparam[0], args[0]]}
-      return { "_IGNORE_": { xxkey: "keyval" , xxparam: [p.xxparam[0], args[0]]}}
+      // return { "_IGNORE_": { xxkey: "keyval" , xxparam: [p.xxparam[0], args[0]]}}
+      return { xxkey: "object", xxparam: [p.xxparam[0], args[0]]}
     } else if (p.xxkey == "closure") {
       console.assert(args.length >= 1)
       let [e1, ...args1] = args
