@@ -15,6 +15,7 @@ let primStateful = {
   "flatten": true,
   "merge":   true,
 }
+exports.primStateful = primStateful
 
 exports.desugar = (p) => {
 

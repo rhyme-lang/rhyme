@@ -1,23 +1,6 @@
 const { quoteVar, debug, trace, print, inspect, error, warn } = require("./utils")
 const { parse } = require("./parser")
-
-let primStateful = {
-  "sum":     true,
-  "product": true,
-  "count":   true,
-  "max":     true,
-  "min":     true,
-  "first":   true,
-  "last":    true,
-  "single":  true,
-  "print":   true,
-  "join":    true,
-  "array":   true,
-  "object":  true,
-  "keyval":  true,
-  "flatten": true,
-  "merge":   true,
-}
+const { primStateful } = require("./desugar")
 
 exports.createIR = (query) => {
     //
