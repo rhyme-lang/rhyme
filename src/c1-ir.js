@@ -593,34 +593,7 @@ exports.createIR = (query) => {
             }
             return closeTempVar(lhs, lhs1)
         } else if (typeof (p) == "object" && !p.xxkey) {
-            //
-            // TODO: we don't have the entire rhs, so how to get rhs.deps?
-            //
-            //   Right now we have no way to decorrelate ...
-            //
-            let lhs1 = openTempVar(lhs, null)
-            assign(lhs1, "??=", expr("{}"))
-            let keys = Object.keys(p)
-            for (let k of keys) {
-                let o = p[k]
-                // NOTE: more expressive merge/flatten could traverse
-                //       child object (to support multiple keys)
-                if (p[k].xxkey == "keyval" || p[k].xxkey == "merge") { // nesting
-                    o = p[k].xxparam[1]
-                    k = p[k].xxparam[0]
-                } else if (p[k].xxkey == "flatten") { // same, but include parent key
-                    o = p[k].xxparam[1]
-                    k = api.plus(api.plus(k, "-"), p[k].xxparam[0])
-                }
-                let k1 = path(k)
-                let save = currentGroupPath
-                currentGroupPath = [...currentGroupPath, k1]
-                let ll1 = select(lhs1, k1)
-                ll1.root = lhs1.root
-                stateful(ll1, o)
-                currentGroupPath = save
-            }
-            return closeTempVar(lhs, lhs1)
+            return stateful(lhs, { xxkey: "object", xxparam: Object.entries(p).flat() })
         } else {
             // regular path
             let rhs = path(p)
