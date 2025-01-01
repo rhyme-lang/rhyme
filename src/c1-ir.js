@@ -179,8 +179,6 @@ exports.createIR = (query) => {
                     let [e1, e2] = p.xxparam
                     return binop("&&", path1(e1), path1(e2))
                 } else if (primStateful[p.xxkey]) { // reducer (stateful)
-                    if (p.xxkey == "object")
-                        warn("WARNING - non-uniform subquery in path")
                     return transStatefulInPath(p)
                 } else {
                     error("ERROR - unknown path key '" + p.xxkey + "'")
@@ -190,97 +188,7 @@ exports.createIR = (query) => {
                 print("WARN - Array in path expr not thoroughly tested yet!")
                 return transStatefulInPath({ xxkey: "array", xxparam: p })
             } else { // subquery
-                //
-                // NOTE: this won't be hit by xxkey == "object"!
-                //
-                // A stateless object literal: we treat individual
-                // entries as paths, and build a new object for each
-                // series of produced results.
-                //
-                // We take the combined dependencies of the right-hand
-                // side, subtract dependencies of the left-hand side,
-                // and use the remaining deps as a key for the resulting
-                // object.
-                //
-                // This means that we'll iterate over all deps(rhs)
-                // that aren't also in deps(lhs).
-                //
-                // NOTE (bugfix): We have to be careful that we consider
-                // only deps(lhs) - deps(current), i.e., we want to
-                // preserve any deps that are already in the current path.
-                //
-                // Step 1: traverse RHS and gather dependencies
-                //
-                let entries = {}
-                let keydeps = {}
-                let rhsdeps = {}
-                for (let k of Object.keys(p)) {
-                    let o = p[k]
-                    // NOTE: more expressive merge/flatten could traverse
-                    //       child object (to support multiple keys)
-                    if (p[k].xxkey == "keyval" || p[k].xxkey == "merge") { // nesting
-                        o = p[k].xxparam[1]
-                        k = p[k].xxparam[0]
-                    } else if (p[k].xxkey == "flatten") { // same, but include parent key
-                        o = p[k].xxparam[1]
-                        k = api.plus(api.plus(k, "-"), p[k].xxparam[0])
-                    }
-                    let k1 = path(k)
-                    let save = currentGroupPath
-                    currentGroupPath = [...currentGroupPath, k1]
-                    let rhs1 = path(o)
-                    currentGroupPath = save
-                    entries[k] = { key: k1, rhs: rhs1 }
-                    for (let d of k1.deps) keydeps[d] = true
-                    for (let d of rhs1.deps) rhsdeps[d] = true
-                }
-                //
-                // Step 2: build new object, aggregating individual
-                //         paths and indexed by deps(rhs) - (deps(lhs)-deps(current))
-                //
-                let save = currentGroupPath
-
-                let curdeps = {}
-                for (let d of currentGroupPath) for (let e of d.deps) curdeps[e] = true
-                let newkeydeps = {}
-                for (let d in keydeps) if (!(d in curdeps)) newkeydeps[d] = true
-                let newrhsdeps = []
-                for (let d in rhsdeps) if (isVar(d) && !(d in newkeydeps)) newrhsdeps.push(d)
-                // remove overlap with currentGroupPath
-                let plus = filterKeysFromGroupPath(newrhsdeps.map(ident))
-
-                let deps = [] // result deps is union of key and val deps
-                for (let d in rhsdeps) if (isVar(d)) deps.push(d)
-                for (let d in keydeps) if (isVar(d)) deps.push(d)
-
-                currentGroupPath = [...currentGroupPath, ...plus]
-                let lhs1 = createFreshTempVar(deps)
-                assign(lhs1, "??=", expr("{} //"))
-                for (let k of Object.keys(p)) {
-                    // NOTE: more expressive merge/flatten could traverse
-                    //       child object (to support multiple keys)
-                    if (p[k].xxkey == "keyval" || p[k].xxkey == "merge") { // nesting
-                        k = p[k].xxparam[0]
-                    } else if (p[k].xxkey == "flatten") { // same, but include parent key
-                        k = api.plus(api.plus(k, "-"), p[k].xxparam[0])
-                    }
-                    let { key, rhs } = entries[k]
-                    let ll1 = select(lhs1, key)
-                    ll1.root = lhs1.root
-                    // Note: if the subquery rhs is a groupby where both the key and value depends
-                    //       on a generator x, deps will not contain x.
-                    //       As a result, the TempVar to store the subquery (rhs) will not
-                    //       depend on generator x.
-                    //       This may generate incorrect code, as rhs will be mutated inside loop x.
-                    //       but the assignment only copies the reference of rhs.
-                    //       As an example, look at test subQueryGrouping in fixme.test.js
-                    // (seems fixed, but leaving note intact for the moment as reminder)
-                    assign(ll1, "=", rhs)
-                }
-                currentGroupPath = save
-                //print("XXX fresh temp var ")
-                //inspect({lhs1,entries,deps,plus})
-                return lhs1
+                return transStatefulInPath({ xxkey: "object", xxparam: Object.entries(p).flat() })
             }
         } else if (typeof (p) == "number") {
             return path0(p)
@@ -292,10 +200,109 @@ exports.createIR = (query) => {
     function path(p) { return path1(p) }
     //
     //
+    // -- Special case for objects in paths --
+    function transObjectInPath(p) {
+        console.assert(p.xxkey == "object")
+        //
+        // A stateless object literal: we treat individual
+        // entries as paths, and build a new object for each
+        // series of produced results.
+        //
+        // We take the combined dependencies of the right-hand
+        // side, subtract dependencies of the left-hand side,
+        // and use the remaining deps as a key for the resulting
+        // object.
+        //
+        // This means that we'll iterate over all deps(rhs)
+        // that aren't also in deps(lhs).
+        //
+        // NOTE (bugfix): We have to be careful that we consider
+        // only deps(lhs) - deps(current), i.e., we want to
+        // preserve any deps that are already in the current path.
+        //
+        // Step 1: traverse RHS and gather dependencies
+        //
+        let entries = {}
+        let keydeps = {}
+        let rhsdeps = {}
+        for (let i = 0; i < p.xxparam.length; i += 2) {
+            let k = p.xxparam[i]
+            let o = p.xxparam[i+1]
+            // NOTE: more expressive merge/flatten could traverse
+            //       child object (to support multiple keys)
+            if (o.xxkey == "keyval" || o.xxkey == "merge") { // nesting
+                k = o.xxparam[0]
+                o = o.xxparam[1]
+            } else if (o.xxkey == "flatten") { // same, but include parent key
+                k = api.plus(api.plus(k, "-"), o.xxparam[0])
+                o = o.xxparam[1]
+            }
+            let k1 = path(k)
+            let save = currentGroupPath
+            currentGroupPath = [...currentGroupPath, k1]
+            let rhs1 = path(o)
+            currentGroupPath = save
+            entries[i] = { key: k1, rhs: rhs1 }
+            for (let d of k1.deps) keydeps[d] = true
+            for (let d of rhs1.deps) rhsdeps[d] = true
+        }
+        //
+        // Step 2: build new object, aggregating individual
+        //         paths and indexed by deps(rhs) - (deps(lhs)-deps(current))
+        //
+        let save = currentGroupPath
+
+        let curdeps = {}
+        for (let d of currentGroupPath) for (let e of d.deps) curdeps[e] = true
+        let newkeydeps = {}
+        for (let d in keydeps) if (!(d in curdeps)) newkeydeps[d] = true
+        let newrhsdeps = []
+        for (let d in rhsdeps) if (isVar(d) && !(d in newkeydeps)) newrhsdeps.push(d)
+        // remove overlap with currentGroupPath
+        let plus = filterKeysFromGroupPath(newrhsdeps.map(ident))
+
+        let deps = [] // result deps is union of key and val deps
+        for (let d in rhsdeps) if (isVar(d)) deps.push(d)
+        for (let d in keydeps) if (isVar(d)) deps.push(d)
+
+        currentGroupPath = [...currentGroupPath, ...plus]
+        let lhs1 = createFreshTempVar(deps)
+        assign(lhs1, "??=", expr("{} //"))
+        for (let i = 0; i < p.xxparam.length; i += 2) {
+            let k = p.xxparam[i]
+            let o = p.xxparam[i+1]
+            // NOTE: more expressive merge/flatten could traverse
+            //       child object (to support multiple keys)
+            if (o.xxkey == "keyval" || o.xxkey == "merge") { // nesting
+                k = o.xxparam[0]
+            } else if (o.xxkey == "flatten") { // same, but include parent key
+                k = api.plus(api.plus(k, "-"), o.xxparam[0])
+            }
+            let { key, rhs } = entries[i]
+            let ll1 = select(lhs1, key)
+            ll1.root = lhs1.root
+            // Note: if the subquery rhs is a groupby where both the key and value depends
+            //       on a generator x, deps will not contain x.
+            //       As a result, the TempVar to store the subquery (rhs) will not
+            //       depend on generator x.
+            //       This may generate incorrect code, as rhs will be mutated inside loop x.
+            //       but the assignment only copies the reference of rhs.
+            //       As an example, look at test subQueryGrouping in fixme.test.js
+            // (seems fixed, but leaving note intact for the moment as reminder)
+            assign(ll1, "=", rhs)
+        }
+        currentGroupPath = save
+        //print("XXX fresh temp var ")
+        //inspect({lhs1,entries,deps,plus})
+        return lhs1
+    }
+    //
     // -- Reducers (side effects) --
     //
     //
     function transStatefulInPath(p) {
+        if (p.xxkey == "object")
+            return transObjectInPath(p)
         return stateful(null, p)
     }
     function transStatefulTopLevel(p) {
