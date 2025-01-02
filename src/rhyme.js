@@ -163,6 +163,30 @@ api["exec"] = (query, data) => {
 //     generators: generatorStms
 //   }
 // }
+
+
+let configLogDebugOutput = false
+
+function logDebugOutput(info) {
+  if (!configLogDebugOutput) return
+  try { expect } catch (e) { return } // skip if not using test runner
+  let st = expect.getState()
+  let prefix = st.snapshotState._rootDir + "/test/"
+  let suffix = ".test.js"
+  let base = st.testPath
+  let name = st.currentTestName
+  let file = "out/"+base.slice(prefix.length, -suffix.length)+"."+name//+".js"
+  let dir = file.split("/").slice(0,-1).join("/")
+  const fs = require('fs')
+  const os = require('child_process')
+  os.exec("mkdir -p '"+dir+"'", function(err, stdout) {
+    for (let k in info) {
+      fs.writeFileSync(file+"."+k+".js", "// "+name+"\n" + info[k])
+    }
+  })
+}
+
+
 api["query"] = api["compile"] = (query, schema=typing.any) => {
     let rep = ir.createIR(query)
     let c1 = codegen.generate(rep)
@@ -188,6 +212,12 @@ api["query"] = api["compile"] = (query, schema=typing.any) => {
         cmp(res2_new).toEqual(res2)
         return res2
     }
+    logDebugOutput({
+      c1: c1.explain.codeString,
+      c1_opt: c1_opt.explain.codeString,
+      c2: c2.explain.code,
+      c2_new: c2_new.explain.codeString,
+    })
     wrapper.c1 = c1
     wrapper.c1_opt = c1_opt
     wrapper.c2 = c2
@@ -217,6 +247,10 @@ api["compileC1"] = api["compileFastPathOnly"] = (query) => {
         cmp(res1_opt).toEqual(res1)
         return res1
     }
+    logDebugOutput({
+      c1: c1.explain.codeString,
+      c1_opt: c1_opt.explain.codeString,
+    })
     wrapper.c1 = c1
     wrapper.c1_opt = c1_opt
     wrapper.explain = c1.explain
@@ -246,6 +280,11 @@ api["compileNew"] = (query) => {
       cmp(res2_new).toEqual(res2)
       return res2
   }
+  logDebugOutput({
+    c1: c1.explain.codeString,
+    c2: c2.explain.codeString,
+    c2_new: c2_new.explain.codeString,
+  })
   wrapper.c1 = c1
   wrapper.c2 = c2
   wrapper.c2_new = c2_new
@@ -274,6 +313,10 @@ api["compileC2"] = (query) => {
       cmp(res2_new).toEqual(res2)
       return res2
   }
+  logDebugOutput({
+    c2: c2.explain.codeString,
+    c2_new: c2_new.explain.codeString,
+  })
   wrapper.c2 = c2
   wrapper.c2_new = c2_new
   wrapper.explain = c2.explain
