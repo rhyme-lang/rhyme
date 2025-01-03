@@ -3,11 +3,10 @@ const { rh, parse } = require('../../src/parser')
 const { compile } = require('../../src/simple-eval')
 const { typing, types } = require('../../src/typing')
 
-const fs = require('node:fs/promises')
-const os = require('node:child_process')
+const os = require('child_process')
 
 let execPromise = function (cmd) {
-  return new Promise(function (resolve, reject) {
+  return new Promise((resolve, reject) => {
     os.exec(cmd, function (err, stdout) {
       if (err) return reject(err);
       resolve(stdout);

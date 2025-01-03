@@ -42,16 +42,16 @@ let ctypeMap = {
   // never:"rh",
   // boolean:  "rh",
   // string:"rh",
-  u8:   "uint8_t",
-  u16:  "uint16_t",
-  u32:  "uint32_t",
-  u64:  "uint64_t",
-  i8:   "int8_t",
-  i16:  "int16_t",
-  i32:  "int32_t",
-  i64:  "int64_t",
-  f32:  "float",
-  f64:  "double",
+  u8: "uint8_t",
+  u16: "uint16_t",
+  u32: "uint32_t",
+  u64: "uint64_t",
+  i8: "int8_t",
+  i16: "int16_t",
+  i32: "int32_t",
+  i64: "int64_t",
+  f32: "float",
+  f64: "double",
 }
 
 let formatSpecifierMap = {
@@ -59,16 +59,16 @@ let formatSpecifierMap = {
   // never:"rh",
   // boolean:  "rh",
   // string:"rh",
-  u8:   "hhu",
-  u16:  "hu",
-  u32:  "u",
-  u64:  "lu",
-  i8:   "hhd",
-  i16:  "hd",
-  i32:  "d",
-  i64:  "ld",
-  f32:  ".3f",
-  f64:  ".3lf",
+  u8: "hhu",
+  u16: "hu",
+  u32: "u",
+  u64: "lu",
+  i8: "hhd",
+  i16: "hd",
+  i32: "d",
+  i64: "ld",
+  f32: ".3f",
+  f64: ".3lf",
 }
 
 
@@ -1045,9 +1045,18 @@ let emitCode = (q, ir) => {
 }
 
 let generateCSqlNew = (q, ir, outDir, outFile) => {
-  const fs = require('node:fs').promises
-  const os = require('node:child_process')
-  const path = require('node:path');
+  const fs = require('fs').promises
+  const os = require('child_process')
+  // const path = require('path');
+  let joinPaths = (...args) => {
+    return args.map((part, i) => {
+      if (i === 0) {
+        return part.trim().replace(/[\/]*$/g, '')
+      } else {
+        return part.trim().replace(/(^[\/]*|[\/]*$)/g, '')
+      }
+    }).filter(x => x.length).join('/')
+  }
 
   let sh = (cmd) => {
     return new Promise((resolve, reject) => {
@@ -1061,8 +1070,8 @@ let generateCSqlNew = (q, ir, outDir, outFile) => {
     })
   }
 
-  let cFile = path.join(outDir, outFile)
-  let out = path.join(outDir, "tmp")
+  let cFile = joinPaths(outDir, outFile)
+  let out = joinPaths(outDir, "tmp")
   let code = emitCode(q, ir)
 
   let cFlags = "-Icgen-sql"
