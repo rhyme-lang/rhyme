@@ -13,12 +13,12 @@ int fsize(int fd) {
     return stat.st_size;
 }
 
-unsigned long hash(const char *file, int start, int end) {
-    unsigned char *str = (unsigned char *)file;
+unsigned long hash(const char *str, int len) {
+    unsigned char *str1 = (unsigned char *)str;
     unsigned long hash = 5381;
     int i = 0;
-    while (start + i < end) {
-        hash = ((hash << 5) + hash) + str[start + i]; /* hash * 33 + c */
+    while (i < len) {
+        hash = ((hash << 5) + hash) + str[i]; /* hash * 33 + c */
         i++;
     }
     return hash;
@@ -39,6 +39,15 @@ void extract_str(const char *file, int start, int end, char *dest) {
     int i = 0;
     while (start + i < end) {
         dest[i] = file[start + i];
+        i++;
+    }
+    dest[i] = '\0';
+}
+
+void extract_str1(const char *str, int len, char *dest) {
+    int i = 0;
+    while (i < len) {
+        dest[i] = str[i];
         i++;
     }
     dest[i] = '\0';
@@ -84,6 +93,15 @@ void println(const char *file, int start, int end) {
     while (curr < end) {
         putchar(file[curr]);
         curr++;
+    }
+    putchar('\n');
+}
+
+void println1(const char *str, int len) {
+    int i = 0;
+    while (i < len) {
+        putchar(str[i]);
+        i++;
     }
     putchar('\n');
 }
