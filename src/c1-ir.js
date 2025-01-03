@@ -87,108 +87,73 @@ exports.createIR = (query) => {
     //
     // base path: number (5), string (foo), selection (foo.bar)
     //
-    // TODO: add mode flag -- is string allowed? E.g. not lhs of selection,
-    //                           i.e. "foo" in api.get("foo","bar")
+    // special path operators: get, apply, ...
     //
-    // contract: argument p is a Number or String
-    //
-    // refactored to allow parsing other relevant expressions, such
-    // as data.foo + data.bar or 5 + sum(data.*.val) or ...
-    //
-    function path0(p) {
-        if (typeof (p) == "number" || !Number.isNaN(Number(p)))  // number?
-            return expr(p)
-        if (p == "$display")
-            return path1({ xxkey: "ident", xxop: "$display" }) // FixMe: handle this properly
-        return path1(parse(p).rhyme_ast)
-    }
-    //
-    // special path operators: get, apply (TODO!)
-    //
-    function path1(p) {
-        // TODO: assert non null?
-        if (typeof (p) == "object" || typeof (p) == "function") { // treat fct as obj
-            if (p.xxkey) { // path (or reducer)
-                if (p.xxkey == "ident") {
-                    return ident(p.xxop)
-                } else if (p.xxkey == "raw") {
-                    return expr(p.xxop)
-                } else if (p.xxkey == "const") {
-                    return expr(JSON.stringify(p.xxop))
-                } else if (p.xxkey == "get") {
-                    let [e1, e2] = p.xxparam
-                    if (e2 === undefined) { // XXX redundant with desugar?
-                        e2 = e1
-                        e1 = { xxkey: "raw", xxop: "inp" }
-                    }
-                    // TODO: e1 should never be treated as id!
-                    // TODO: vararg?
-                    let key = JSON.stringify(e1)
-                    let subQueryPath = subQueryCache[key] // cache lookup and update
-                    if (!subQueryPath) {
-                        subQueryPath = path1(e1)
-                        // anytime we have f(x).a we know that f returns a collection,
-                        // hence likely won't be cheap (e.g. string split, array flatten, ...)
-                        // --> CSE it into a temp variable
-                        if (e1.xxkey == "apply") {
-                            let lhs1 = createFreshDirectTempVar(subQueryPath.deps)
-                            assign(lhs1, "=", subQueryPath)
-                            subQueryPath = lhs1
-                        }
-                        subQueryCache[key] = subQueryPath
-                    }
-                    return selectUser(subQueryPath, path1(e2))
-                } else if (p.xxkey == "apply") {
-                    let [e1, ...es2] = p.xxparam
-                    // XXX: multiple args vs currying?
-                    return call(path1(e1), ...es2.map(path1))
-                } else if (p.xxkey == "plus") {
-                    let [e1, e2] = p.xxparam
-                    return binop("+", path1(e1), path1(e2))
-                } else if (p.xxkey == "minus") {
-                    let [e1, e2] = p.xxparam
-                    return binop("-", path1(e1), path1(e2))
-                } else if (p.xxkey == "times") {
-                    let [e1, e2] = p.xxparam
-                    return binop("*", path1(e1), path1(e2))
-                } else if (p.xxkey == "fdiv") {
-                    let [e1, e2] = p.xxparam
-                    return binop("/", path1(e1), path1(e2))
-                } else if (p.xxkey == "div") {
-                    let [e1, e2] = p.xxparam
-                    return unop("Math.trunc", binop("/", path1(e1), path1(e2)))
-                } else if (p.xxkey == "mod") {
-                    let [e1, e2] = p.xxparam
-                    return unop("Math.trunc", binop("%", path1(e1), path1(e2)))
-                } else if (p.xxkey == "and") {
-                    let [e1, e2] = p.xxparam
-                    return binop("&&", path1(e1), path1(e2))
-                } else if (primStateful[p.xxkey]) { // reducer (stateful)
-                    return transStatefulInPath(p)
-                } else if (p.xxkey == "hole") {
-                    return path1(resolveHole(p.xxop))
-                } else {
-                    error("ERROR - unknown path key '" + p.xxkey + "'")
-                    return expr("undefined")
-                }
-            } else if (p instanceof Array) {
-                error("ERROR: shouldn't reach here: "+JSON.stringify(p))
-                print("WARN - Array in path expr not thoroughly tested yet!")
-                return transStatefulInPath({ xxkey: "array", xxparam: p })
-            } else { // subquery
-                error("ERROR: shouldn't reach here: "+JSON.stringify(p))
-                return transStatefulInPath({ xxkey: "object", xxparam: Object.entries(p).flat() })
+    function path(p) {
+        if (p.xxkey == "ident") {
+            return ident(p.xxop)
+        } else if (p.xxkey == "raw") {
+            return expr(p.xxop)
+        } else if (p.xxkey == "const") {
+            return expr(JSON.stringify(p.xxop))
+        } else if (p.xxkey == "get") {
+            let [e1, e2] = p.xxparam
+            if (e2 === undefined) { // XXX redundant with desugar?
+                e2 = e1
+                e1 = { xxkey: "raw", xxop: "inp" }
             }
-        } else if (typeof (p) == "number") {
-            return path0(p)
+            // TODO: e1 should never be treated as id!
+            // TODO: vararg?
+            let key = JSON.stringify(e1)
+            let subQueryPath = subQueryCache[key] // cache lookup and update
+            if (!subQueryPath) {
+                subQueryPath = path(e1)
+                // anytime we have f(x).a we know that f returns a collection,
+                // hence likely won't be cheap (e.g. string split, array flatten, ...)
+                // --> CSE it into a temp variable
+                if (e1.xxkey == "apply") {
+                    let lhs1 = createFreshDirectTempVar(subQueryPath.deps)
+                    assign(lhs1, "=", subQueryPath)
+                    subQueryPath = lhs1
+                }
+                subQueryCache[key] = subQueryPath
+            }
+            return selectUser(subQueryPath, path(e2))
+        } else if (p.xxkey == "apply") {
+            let [e1, ...es2] = p.xxparam
+            // XXX: multiple args vs currying?
+            return call(path(e1), ...es2.map(path))
+        } else if (p.xxkey == "plus") {
+            let [e1, e2] = p.xxparam
+            return binop("+", path(e1), path(e2))
+        } else if (p.xxkey == "minus") {
+            let [e1, e2] = p.xxparam
+            return binop("-", path(e1), path(e2))
+        } else if (p.xxkey == "times") {
+            let [e1, e2] = p.xxparam
+            return binop("*", path(e1), path(e2))
+        } else if (p.xxkey == "fdiv") {
+            let [e1, e2] = p.xxparam
+            return binop("/", path(e1), path(e2))
+        } else if (p.xxkey == "div") {
+            let [e1, e2] = p.xxparam
+            return unop("Math.trunc", binop("/", path(e1), path(e2)))
+        } else if (p.xxkey == "mod") {
+            let [e1, e2] = p.xxparam
+            return unop("Math.trunc", binop("%", path(e1), path(e2)))
+        } else if (p.xxkey == "and") {
+            let [e1, e2] = p.xxparam
+            return binop("&&", path(e1), path(e2))
+        } else if (primStateful[p.xxkey]) { // reducer (stateful)
+            return transStatefulInPath(p)
+        } else if (p.xxkey == "hole") {
+            return path(resolveHole(p.xxop))
         } else {
-            error("ERROR: shouldn't reach here: "+JSON.stringify(p))
-            // TODO: assert it's a string?
-            return path0(String(p))
+            error("ERROR - unknown path key '" + p.xxkey + "'")
+            return expr("undefined")
         }
     }
-    function path(p) { return path1(p) }
-    //
+
     //
     // -- Special case for objects in paths --
     function transObjectInPath(p) {
@@ -286,6 +251,7 @@ exports.createIR = (query) => {
         //inspect({lhs1,entries,deps,plus})
         return lhs1
     }
+
     // -- Wrap/unwrap, dealing with holes
     //
     function ast_unwrap(e) {
@@ -465,8 +431,6 @@ exports.createIR = (query) => {
         // total: api.sum(data.*.value)
         // k:     api.xxkey(xxparam)
         //
-        // XXX TODO: check nullish values are dealt with correctly
-        //
         if (p.xxkey == "sum") { // sum
             let rhs = path(p.xxparam[0])
             let lhs1 = openTempVar(lhs, rhs.deps)
@@ -538,6 +502,32 @@ exports.createIR = (query) => {
             //
             assign(lhs2, "=", expr("[" + res1.map(x => x.txt).join(",") + "].flat()", ...res1.flatMap(x => x.deps)))
             return closeTempVar(lhs, lhs2)
+        } else if (p.xxkey == "array" && p.xxparam.length > 1) { // alternative, no longer used ...
+            warn("WARNING: currently not dealing correctly with multi-element arrays")
+            let lhs1 = openTempVar(lhs, null)
+            assign(lhs1, "??=", expr("[]"))
+            let kCount = 0
+            for (let k in p.xxparam) {
+                let o = p.xxparam[k]
+                //kCount = api.plus(kCount,api.count(o))
+            }
+            //
+            // XXX: index for multiple sums isn't the right one yet!!
+            //
+            for (let k in p.xxparam) {
+                let o = p.xxparam[k]
+                kCount = api.plus(kCount, api.count(o))
+                //let k0 = path(api.count(o))
+                let k1 = path(api.minus(kCount, 1))
+                // TODO: support merge/flatten, too?
+                let save = currentGroupPath
+                currentGroupPath = [...currentGroupPath, k1]
+                let ll1 = select(lhs1, k1)
+                ll1.root = lhs1.root
+                stateful(ll1, o)
+                currentGroupPath = save
+            }
+            return closeTempVar(lhs, lhs1)
         } else if (p.xxkey == "array") { // array
             let rhs = p.xxparam.map(path)
             let lhs1 = openTempVar(lhs, rhs.flatMap(x => x.deps))
@@ -579,41 +569,6 @@ exports.createIR = (query) => {
             return expr("undefined")
         } else if (p.xxkey == "hole") {
             return stateful(lhs, resolveHole(p.xxop))
-        } else if (p instanceof Array) {
-            return stateful(lhs, { xxkey: "array", xxparam: p })
-        } else if (p instanceof Array) {
-            // XXX not using this anymore
-            if (p.length > 1) {
-                error("ERROR: currently not dealing correctly with multi-element arrays")
-                //return expr("undefined")
-            }
-            let lhs1 = openTempVar(lhs, null)
-            assign(lhs1, "??=", expr("[]"))
-            let kCount = 0
-            for (let k in p) {
-                let o = p[k]
-                //kCount = api.plus(kCount,api.count(o))
-            }
-            //
-            // XXX: index for multiple sums isn't the right one yet!!
-            //
-            for (let k in p) {
-                let o = p[k]
-                kCount = api.plus(kCount, api.count(o))
-                //let k0 = path(api.count(o))
-                let k1 = path(api.minus(kCount, 1))
-                // TODO: support merge/flatten, too?
-                let save = currentGroupPath
-                currentGroupPath = [...currentGroupPath, k1]
-                let ll1 = select(lhs1, k1)
-                ll1.root = lhs1.root
-                stateful(ll1, o)
-                currentGroupPath = save
-            }
-            return closeTempVar(lhs, lhs1)
-        } else if (typeof (p) == "object" && !p.xxkey) {
-            error("ERROR: shouldn't reach here: "+JSON.stringify(p))
-            return stateful(lhs, { xxkey: "object", xxparam: Object.entries(p).flat() })
         } else {
             // regular path
             let rhs = path(p)
