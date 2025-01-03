@@ -14,6 +14,8 @@ function ast_num(a) {
   return { xxkey: "raw", xxop: a } // treat as raw for now
 }
 function ast_get(a,b) {
+  if (!b)
+    return { xxkey: "get", xxparam: [a] }
   return { xxkey: "get", xxparam: [a,b] }
 }
 function ast_call(a,b) {
@@ -63,11 +65,11 @@ function ast_binop(op, a,b) {
 
 
 exports.rh = (strings, ...holes) => {
-  return desugar(exports.parserImpl(strings, holes))
+  return { rhyme_ast: desugar(exports.parserImpl(strings, holes)) }
 }
 
 exports.parse = (p) => {
-  return desugar(exports.parserImpl([p],[]))
+  return { rhyme_ast: desugar(exports.parserImpl([p],[])) }
 }
 
 

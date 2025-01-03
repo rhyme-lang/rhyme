@@ -1,26 +1,37 @@
 const { parse, rh } = require('../../src/parser')
 const { api } = require('../../src/rhyme')
 
+function ast_wrap(e) {
+  console.assert(e.xxkey)
+  return { rhyme_ast: e }
+}
+
+function ast_unwrap(e) {
+  if (typeof e === "object" && "rhyme_ast" in e) return e.rhyme_ast
+  return { xxkey: "hole", xxop: e }
+}
+
 function ast_ident(a) {
-    return { xxkey: "ident", xxop: a }
+    return ast_wrap({ xxkey: "ident", xxop: a })
 }
 function ast_raw(a) {
-    return { xxkey: "raw", xxop: a }
+    return ast_wrap({ xxkey: "raw", xxop: a })
 }
 function ast_plus(a,b) {
-    return { xxkey: "plus", xxparam: [a,b] }
+    return ast_wrap({ xxkey: "plus", xxparam: [ast_unwrap(a), ast_unwrap(b)] })
 }
 function ast_get(a,b) {
-    return { xxkey: "get", xxparam: [a,b] }
+    if (!b) return ast_wrap({ xxkey: "get", xxparam: [ast_unwrap(a)] })
+    return ast_wrap({ xxkey: "get", xxparam: [ast_unwrap(a),ast_unwrap(b)] })
 }
 function ast_apply(a,b) {
-    return { xxkey: "apply", xxparam: [a,b] }
+    return ast_wrap({ xxkey: "apply", xxparam: [ast_unwrap(a),ast_unwrap(b)] })
 }
 function ast_array(as) {
-    return { xxkey: "array", xxparam: as }
+    return ast_wrap({ xxkey: "array", xxparam: as.map(ast_unwrap) })
 }
 function ast_object(as) {
-    return { xxkey: "object", xxparam: as }
+    return ast_wrap({ xxkey: "object", xxparam: as.map(ast_unwrap) })
 }
 
 

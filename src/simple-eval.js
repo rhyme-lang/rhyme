@@ -2222,6 +2222,9 @@ let translateToNewCodegen = q => {
 
 let compile = (q,userSettings={}) => {
 
+  if (q.rhyme_ast) q = q.rhyme_ast
+  if (!q.xxkey) q = { xxkey: "hole", xxop: q}
+
   reset(userSettings)
 
   let trace = {

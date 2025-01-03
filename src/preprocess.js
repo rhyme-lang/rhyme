@@ -27,6 +27,40 @@ const { runtime } = require('./simple-runtime')
 
 let isVar = s => s.startsWith("*")
 
+function ast_unwrap(e) {
+  if (typeof e === "object" && "rhyme_ast" in e) return e.rhyme_ast
+  if (e.xxkey) console.error("ERROR: double wrapping of ast node " + JSON.stringify(e))
+  return { xxkey: "hole", xxop: e }
+}
+function resolveHole(p) {
+    if (p === true || p === false) {
+      return { xxkey: "const", xxop: Boolean(p) }
+    } else if (p instanceof Array && p.length == 0) {
+      return { xxkey: "const", xxop: [] }
+    } else if (typeof p == "number" || !Number.isNaN(Number(p))) { // number?
+        return { xxkey: "const", xxop: p }
+    } else if (typeof p == "string") {
+        if (p == "-" || p == "$display")
+          return { xxkey: "const", xxop: p }
+        return parse(p).rhyme_ast // includes desugaring, i.e., no internal holes left
+    } else if (typeof p == "object" || typeof (p) == "function") { // treat fct as obj
+        if ("rhyme_ast" in p) {
+            return p.rhyme_ast
+        } else if (p instanceof Array) {
+            return { xxkey: "array", xxparam: p.map(ast_unwrap) }
+        } else {
+            if (p.xxkey)
+              console.error("ERROR: double wrapping of ast node " + JSON.stringify(e))
+
+            return { xxkey: "object", xxparam: Object.entries(p).flat().map(ast_unwrap) }
+        }
+    } else {
+        console.error("ERROR: unknown obect in query hole: " + JSON.stringify(p))  // user-facing error
+    }
+}
+
+
+
 let preproc = q => {
   if (q === true || q === false)
     return { key: "const", op: Boolean(q) }
@@ -38,7 +72,7 @@ let preproc = q => {
     if (q == "-" || q == "$display")
       return { key: "const", op: q }
     else
-      return preproc(parse(q))
+      return preproc(parse(q).rhyme_ast)
   }
 
   if (q === undefined) {
@@ -50,14 +84,16 @@ let preproc = q => {
     if (q.xxop == "inp") return { key: "input" }
     else if (!Number.isNaN(Number(q.xxop))) return { key: "const", op: Number(q.xxop) }
     else return { key: "const", op: q.xxop }
+  } if (q.xxkey == "const") {
+    return { key: "const", op: q.xxop }
   } else if (q.xxkey == "loadCSV") {
     // Only process the first argument which is the filename
     // We want to get the type info from xxextra instead of evaluating it as a Rhyme query
     let e1 = preproc(q.xxparam[0])
-    if (q.xxparam[1] === undefined) {
+    if (q.xxparam[1] === undefined || q.xxparam[1].xxkey != "hole") {
       console.error("csv schema expected")
     }
-    return { key: "loadInput", op: "csv", arg: [e1], schema: q.xxparam[1] }
+    return { key: "loadInput", op: "csv", arg: [e1], schema: q.xxparam[1].xxop }
   } else if (q.xxkey == "ident") {
     if (isVar(q.xxop)) return { key: "var", op: q.xxop }
     else return { key: "const", op: q.xxop }
@@ -86,12 +122,20 @@ let preproc = q => {
     else
       return { key: "hint", op: "generic", arg: [e1,...qs2.map(preproc)] }
   } else if (q.xxkey == "array") {
-    return preproc(q.xxparam)
-  } else if (q instanceof Array) {
+    let p = q.xxparam
+    if (p.length == 1)
+      return { key: "stateful", op: "array", arg: p.map(preproc) }
+    else
+      return { key: "pure", op: "flatten", 
+        arg: p.map(x => preproc({ xxkey: "array", xxparam: [x]})) }
+  /*} else if (q instanceof Array) {
+    console.log("ERROR: NO GOOD preproc array", q)
     if (q.length == 1)
       return { key: "stateful", op: "array", arg: q.map(preproc) }
     else
-      return { key: "pure", op: "flatten", arg: q.map(x => preproc([x])) }
+      return { key: "pure", op: "flatten", arg: q.map(x => preproc([x])) } */
+  } else if (q.xxkey == "hole") {
+    return preproc(resolveHole(q.xxop))
   } else if (q.xxkey == "object") {
     let res
     for (let i = 0; i < q.xxparam.length; i += 2) {
@@ -111,6 +155,7 @@ let preproc = q => {
       res = { key: "const", op: {} }
     return res
   } else if (typeof(q) === "object" && !q.xxkey) {
+    console.log("ERROR: NO GOOD preproc array", q)
     let res
     for (let k of Object.keys(q)) {
       let v = q[k]
@@ -127,18 +172,18 @@ let preproc = q => {
     if (!res) // empty?
       res = { key: "const", op: {} }
     return res
-  } else if (q.xxkey || q.xxkey) {
+  } else if (q.xxkey) {
     // if 'update .. ident ..', convert ident to input ref?
-    let op = q.xxkey || q.xxkey
-    let array = q.xxkey || op == "merge" || op == "keyval" || op == "flatten" || op == "array"
-    let es2 = q.xxparam instanceof Array ? q.xxparam.map(preproc) : [preproc(q.xxparam)]
+    let op = q.xxkey
+    console.assert(typeof op === "string", op)
+    let es2 = q.xxparam?.map(preproc)
     if (op in runtime.special)
       return { key: op, arg: es2 }
     else if (op in runtime.pure)
       return { key: "pure", op: op, arg: es2 }
     else if (op in runtime.stateful || op == "print")
       return { key: "stateful", op: op, arg: es2 }
-    else if (op.startsWith("prefix_") && op.substring(7) in runtime.stateful)
+    else if (op.startsWith && op.startsWith("prefix_") && op.substring(7) in runtime.stateful)
       return { key: "prefix", op: op.substring(7), arg: es2 }
     console.error("unknown op", q)
   } else {

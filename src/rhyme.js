@@ -11,68 +11,80 @@ const simpleEval = require('./simple-eval')
 const { typing } = require('./typing')
 // const primitiveEval = require('../src/primitive-eval')
 
+
+function ast_wrap(e) {
+  console.assert(e.xxkey)
+  return { rhyme_ast: e }
+}
+
+function ast_unwrap(e) {
+  if (typeof e === "object" && "rhyme_ast" in e) return e.rhyme_ast
+  return { xxkey: "hole", xxop: e }
+}
+
+
 //
 // reducer (e.g., sum) expressions
 //
-api["sum"] = (e) => ({
+api["sum"] = (e) => ast_wrap({
   xxkey: "sum",
-  xxparam: [e]
+  xxparam: [ast_unwrap(e)]
 })
-api["product"] = (e) => ({
+api["product"] = (e) => ast_wrap({
   xxkey: "sum",
-  xxparam: [e]
+  xxparam: [ast_unwrap(e)]
 })
-api["count"] = (e) => ({
+api["count"] = (e) => ast_wrap({
   xxkey: "count",
-  xxparam: [e]
+  xxparam: [ast_unwrap(e)]
 })
-api["max"] = (e) => ({
+api["max"] = (e) => ast_wrap({
   xxkey: "max",
-  xxparam: [e]
+  xxparam: [ast_unwrap(e)]
 })
-api["min"] = (e) => ({
+api["min"] = (e) => ast_wrap({
   xxkey: "min",
-  xxparam: [e]
+  xxparam: [ast_unwrap(e)]
 })
-api["join"] = (e) => ({
+api["join"] = (e) => ast_wrap({
   xxkey: "join",
-  xxparam: [e]
+  xxparam: [ast_unwrap(e)]
 })
-api["array"] = (...es) => ({
+api["array"] = (...es) => ast_wrap({
   xxkey: "array",
-  xxparam: es
+  xxparam: es.map(ast_unwrap)
 })
-api["object"] = (...es) => ({
+api["object"] = (...es) => ast_wrap({
   xxkey: "object",
-  xxparam: es
+  xxparam: es.map(ast_unwrap)
 })
-api["first"] = (e) => ({
+api["first"] = (e) => ast_wrap({
   xxkey: "first",
-  xxparam: [e]
+  xxparam: [ast_unwrap(e)]
 })
-api["last"] = (e) => ({
+api["last"] = (e) => ast_wrap({
   xxkey: "last",
-  xxparam: [e]
+  xxparam: [ast_unwrap(e)]
 })
-api["single"] = (e) => ({
+api["single"] = (e) => ast_wrap({
   xxkey: "last", // TODO: check that values are equal, like c2
-  xxparam: [e]
+  xxparam: [ast_unwrap(e)]
 })
-api["keyval"] = (k, v) => ({
+api["keyval"] = (k, v) => ast_wrap({
   xxkey: "keyval",
-  xxparam: [k, v]
+  xxparam: [ast_unwrap(k), ast_unwrap(v)]
 })
-api["flatten"] = (k, v) => ({
+api["flatten"] = (k, v) => ast_wrap({
   xxkey: "flatten",
-  xxparam: [k, v]
+  xxparam: [ast_unwrap(k), ast_unwrap(v)]
 })
-api["merge"] = (k, v) => ({
+api["merge"] = (k, v) => ast_wrap({
   xxkey: "merge",
-  xxparam: [k, v]
+  xxparam: [ast_unwrap(k), ast_unwrap(v)]
 })
-api["group"] = (e, k) => ({
+api["group"] = (e, k) => ast_wrap({
   xxkey: "object",
-  xxparam: [k,e]
+  xxparam: [ast_unwrap(k),ast_unwrap(e)]
 })
 // api["group"] = (e, k) => ({
 //   "_IGNORE_": api.keyval(k,e) // alternative
@@ -80,49 +92,49 @@ api["group"] = (e, k) => ({
 //
 // path expressions
 //
-api["input"] = () => ({
+api["input"] = () => ast_wrap({
   xxkey: "raw",
   xxop: "inp"
 })
-api["get"] = (e1, e2) => ({
+api["get"] = (e1, e2) => ast_wrap({ // NOTE: single-arg case!
   xxkey: "get",
-  xxparam: [e1, e2]
+  xxparam: e2 ? [ast_unwrap(e1), ast_unwrap(e2)] : [ast_unwrap(e1)]
 })
-api["apply"] = (e1, e2) => ({
+api["apply"] = (e1, e2) => ast_wrap({
   xxkey: "apply",
-  xxparam: [e1, e2]
+  xxparam: [ast_unwrap(e1), ast_unwrap(e2)]
 })
-api["pipe"] = (e1, e2) => ({ // reverse apply
+api["pipe"] = (e1, e2) => ast_wrap({ // reverse apply
   xxkey: "apply",
-  xxparam: [e2, e1]
+  xxparam: [ast_unwrap(e2), ast_unwrap(e1)]
 })
-api["plus"] = (e1, e2) => ({
+api["plus"] = (e1, e2) => ast_wrap({
   xxkey: "plus",
-  xxparam: [e1, e2]
+  xxparam: [ast_unwrap(e1), ast_unwrap(e2)]
 })
-api["minus"] = (e1, e2) => ({
+api["minus"] = (e1, e2) => ast_wrap({
   xxkey: "minus",
-  xxparam: [e1, e2]
+  xxparam: [ast_unwrap(e1), ast_unwrap(e2)]
 })
-api["times"] = (e1, e2) => ({
+api["times"] = (e1, e2) => ast_wrap({
   xxkey: "times",
-  xxparam: [e1, e2]
+  xxparam: [ast_unwrap(e1), ast_unwrap(e2)]
 })
-api["fdiv"] = (e1, e2) => ({
+api["fdiv"] = (e1, e2) => ast_wrap({
   xxkey: "fdiv",
-  xxparam: [e1, e2]
+  xxparam: [ast_unwrap(e1), ast_unwrap(e2)]
 })
-api["div"] = (e1, e2) => ({
+api["div"] = (e1, e2) => ast_wrap({
   xxkey: "div",
-  xxparam: [e1, e2]
+  xxparam: [ast_unwrap(e1), ast_unwrap(e2)]
 })
-api["mod"] = (e1, e2) => ({
+api["mod"] = (e1, e2) => ast_wrap({
   xxkey: "mod",
-  xxparam: [e1, e2]
+  xxparam: [ast_unwrap(e1), ast_unwrap(e2)]
 })
-api["and"] = (e1, e2) => ({
+api["and"] = (e1, e2) => ast_wrap({
   xxkey: "and",
-  xxparam: [e1, e2]
+  xxparam: [ast_unwrap(e1), ast_unwrap(e2)]
 })
 // ---------- Fluent API ----------
 let Pipe = {
@@ -188,6 +200,7 @@ function logDebugOutput(info) {
 
 
 api["query"] = api["compile"] = (query, schema=typing.any) => {
+    query = ast_unwrap(query)
     let rep = ir.createIR(query)
     let c1 = codegen.generate(rep)
     let c1_opt = new_codegen.generate(rep)
@@ -229,6 +242,7 @@ api["query"] = api["compile"] = (query, schema=typing.any) => {
     return wrapper
 }
 api["compileC1"] = api["compileFastPathOnly"] = (query) => {
+    query = ast_unwrap(query)
     let rep = ir.createIR(query)
     let c1 = codegen.generate(rep)
     let c1_opt = new_codegen.generate(rep)
@@ -259,6 +273,7 @@ api["compileC1"] = api["compileFastPathOnly"] = (query) => {
 }
 
 api["compileNew"] = (query) => {
+  query = ast_unwrap(query)
   let rep = ir.createIR(query)
   let c1 = new_codegen.generate(rep)
   let c2 = simpleEval.compile(query)
@@ -295,6 +310,7 @@ api["compileNew"] = (query) => {
 }
 
 api["compileC2"] = (query) => {
+  query = ast_unwrap(query)
   // let rep = ir.createIR(query)
   let c2 = simpleEval.compile(query)
   let c2_new = simpleEval.compile(query, { newCodegen: true })

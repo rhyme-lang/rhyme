@@ -390,7 +390,8 @@ test("graphicsBasicTestParsing", () => {
         "$display": "select",
         data: data
     }
-    let res = api.compile(query)({ data })
+    let func = api.compile(query)
+    let res = func({ data })
     let expected = {
         "$display": "select",
         data: data

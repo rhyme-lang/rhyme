@@ -228,7 +228,7 @@ test("aggregateAsKey", () => {
     }
 
     let e2_alt_string = {
-        60: { 1: "true", 2: "true" }
+        60: { 1: true, 2: true }
     }
 
     // console.log(f1.c2.explain.pseudo0)
@@ -240,14 +240,14 @@ test("aggregateAsKey", () => {
 
     // actual result:
     let bug1 = {
-        1: { 10: "true", 40: "true" },
-        2: { 20: "true" }
+        1: { 10: true, 40: true },
+        2: { 20: true }
     }
 
     let bug2 = {
-        10: { 1: "true" },
-        30: { 2: "true" },
-        60: { 1: "true" }
+        10: { 1: true },
+        30: { 2: true },
+        60: { 1: true }
     }
 
     // instead of waiting for the final sum,

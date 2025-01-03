@@ -17,6 +17,21 @@ let primStateful = {
 }
 exports.primStateful = primStateful
 
+function ast_wrap(e) {
+  console.assert(e.xxkey)
+  return { rhyme_ast: e }
+}
+
+function ast_unwrap(e) {
+  if (typeof e === "object" && "rhyme_ast" in e) return e.rhyme_ast
+  if (e.xxkey) console.error("ERROR: double wrapping of ast node " + JSON.stringify(e))
+  return { xxkey: "hole", xxop: e }
+}
+
+
+// NOTE: in general, desugar preserves only xxkey and xxparam fields.
+// Field xxop is only preserved for 
+
 exports.desugar = (p) => {
 
   let argProvided = { xxkey: "raw", xxop: "inp" }
@@ -74,8 +89,8 @@ exports.desugar = (p) => {
     argProvided = save[0]; argUsed = save[1] // [argProvided, argUsed] = save doesn't work??
 
     // is it a present-stage function, spliced into a hole via ${p} ?
-    if (p instanceof Function)
-      return p(...args)
+    if (p.xxkey == "hole" && p.xxop instanceof Function)
+      return ast_unwrap(p.xxop(...args.map(ast_wrap)))
 
     // is the argument used? i.e. syntax '.foo' --> we have 'arg.foo', just return
     if (h)
@@ -93,7 +108,7 @@ exports.desugar = (p) => {
     } else if (p.xxkey == "closure") {
       console.assert(args.length >= 1)
       let [e1, ...args1] = args
-      let [env1, x, body] = p.xxparam
+      let [{xxop: env1}, x, body] = p.xxparam // need to unwrap env!
       let save = env
       env = {...env1}
       env[x.xxop] = args[0]
@@ -129,7 +144,7 @@ exports.desugar = (p) => {
       console.assert(args.length >= 2)
       console.assert(args[0].xxkey == "ident")
       let [e1, e2, ...args1] = args
-      let res = { xxkey: "closure", xxparam: [env, e1, e2] }
+      let res = { xxkey: "closure", xxparam: [ast_unwrap(env), e1, e2] } // env not an AST!
       if (args1.length > 0)
         return transApply(res, args1)
       else
@@ -149,9 +164,8 @@ exports.desugar = (p) => {
   }
 
   function trans(p) {
-    if (p == undefined) {
-      return p
-    } else if (p.xxkey == "ident") {
+    console.assert(p && p.xxkey && !p.rhyme_ast)
+    if (p.xxkey == "ident") {
       if (p.xxop in env)
         return env[p.xxop]
       return p
@@ -162,7 +176,7 @@ exports.desugar = (p) => {
       }
       return p
     } else if (p.xxkey == "hole") {
-      return p.xxop // do not recurse, already desugared
+      return ast_unwrap(p.xxop) // do not recurse, already desugared
     } else if (p.xxkey == "pipe") {
       let [e1,e2,...e3s] = p.xxparam
       return transPipe(e2,[e1,...e3s])

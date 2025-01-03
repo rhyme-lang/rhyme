@@ -100,7 +100,7 @@ exports.createIR = (query) => {
             return expr(p)
         if (p == "$display")
             return path1({ xxkey: "ident", xxop: "$display" }) // FixMe: handle this properly
-        return path1(parse(p))
+        return path1(parse(p).rhyme_ast)
     }
     //
     // special path operators: get, apply (TODO!)
@@ -113,6 +113,8 @@ exports.createIR = (query) => {
                     return ident(p.xxop)
                 } else if (p.xxkey == "raw") {
                     return expr(p.xxop)
+                } else if (p.xxkey == "const") {
+                    return expr(JSON.stringify(p.xxop))
                 } else if (p.xxkey == "get") {
                     let [e1, e2] = p.xxparam
                     if (e2 === undefined) { // XXX redundant with desugar?
@@ -163,19 +165,24 @@ exports.createIR = (query) => {
                     return binop("&&", path1(e1), path1(e2))
                 } else if (primStateful[p.xxkey]) { // reducer (stateful)
                     return transStatefulInPath(p)
+                } else if (p.xxkey == "hole") {
+                    return path1(resolveHole(p.xxop))
                 } else {
                     error("ERROR - unknown path key '" + p.xxkey + "'")
                     return expr("undefined")
                 }
             } else if (p instanceof Array) {
+                error("ERROR: shouldn't reach here: "+JSON.stringify(p))
                 print("WARN - Array in path expr not thoroughly tested yet!")
                 return transStatefulInPath({ xxkey: "array", xxparam: p })
             } else { // subquery
+                error("ERROR: shouldn't reach here: "+JSON.stringify(p))
                 return transStatefulInPath({ xxkey: "object", xxparam: Object.entries(p).flat() })
             }
         } else if (typeof (p) == "number") {
             return path0(p)
         } else {
+            error("ERROR: shouldn't reach here: "+JSON.stringify(p))
             // TODO: assert it's a string?
             return path0(String(p))
         }
@@ -279,6 +286,33 @@ exports.createIR = (query) => {
         //inspect({lhs1,entries,deps,plus})
         return lhs1
     }
+    // -- Wrap/unwrap, dealing with holes
+    //
+    function ast_unwrap(e) {
+      if (typeof e === "object" && "rhyme_ast" in e) return e.rhyme_ast
+      if (e.xxkey) console.error("ERROR: double wrapping of ast node " + JSON.stringify(e))
+      return { xxkey: "hole", xxop: e }
+    }
+    function resolveHole(p) {
+        if (typeof (p) == "number" || !Number.isNaN(Number(p))) { // number?
+            return { xxkey: "const", xxop: p }
+        } else if (typeof (p) == "string") {
+            if (p == "-" || p == "$display")
+              return { xxkey: "const", xxop: p }
+            return parse(p).rhyme_ast // includes desugaring, i.e., no internal holes left
+        } else if (typeof p == "object" || typeof (p) == "function") { // treat fct as obj
+            if ("rhyme_ast" in p) {
+                return p.rhyme_ast
+            } else if (p instanceof Array) {
+                return { xxkey: "array", xxparam: p.map(ast_unwrap) }
+            } else {
+                return { xxkey: "object", xxparam: Object.entries(p).flat().map(ast_unwrap) }
+            }
+        } else {
+            error("ERROR: unknown obect in query hole: " + JSON.stringify(p)) // user-facing error
+        }
+    }
+
     //
     // -- Reducers (side effects) --
     //
@@ -543,6 +577,8 @@ exports.createIR = (query) => {
         } else if (primStateful[p.xxkey]) {
             error("ERROR: unknown reducer key '" + p.xxkey + "'")
             return expr("undefined")
+        } else if (p.xxkey == "hole") {
+            return stateful(lhs, resolveHole(p.xxop))
         } else if (p instanceof Array) {
             return stateful(lhs, { xxkey: "array", xxparam: p })
         } else if (p instanceof Array) {
@@ -576,6 +612,7 @@ exports.createIR = (query) => {
             }
             return closeTempVar(lhs, lhs1)
         } else if (typeof (p) == "object" && !p.xxkey) {
+            error("ERROR: shouldn't reach here: "+JSON.stringify(p))
             return stateful(lhs, { xxkey: "object", xxparam: Object.entries(p).flat() })
         } else {
             // regular path
@@ -586,6 +623,7 @@ exports.createIR = (query) => {
         }
     }
 
+    console.assert(query && query.xxkey && !query.rhyme_ast)
     let res = transStatefulTopLevel(query)
     let ir = { assignmentStms, generatorStms, tmpVarWriteRank, res, query }
     return ir
