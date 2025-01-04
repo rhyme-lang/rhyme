@@ -170,10 +170,10 @@ exports.desugar = (p) => {
         return env[p.xxop]
       return p
     } else if (p.xxkey == "raw") {
-      if (p.xxop == "_ARG_") {
-        argUsed = true
-        return argProvided
-      }
+      // if (p.xxop == "_ARG_") {
+      //   argUsed = true
+      //   return argProvided
+      // }
       return p
     } else if (p.xxkey == "hole") {
       return ast_unwrap(p.xxop) // do not recurse, already desugared

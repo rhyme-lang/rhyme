@@ -30,9 +30,10 @@ function ast_object(as) {
 function ast_root() {
   return ast_raw("inp")
 }
-function ast_arg() {
-  return ast_raw("_ARG_")
-}
+// function ast_arg() {
+//   return ast_raw("_ARG_")
+// }
+
 let binop_table = {
   "|" : "pipe",
   "&" : "and",   // low prec, could give it some other grouping semantics
