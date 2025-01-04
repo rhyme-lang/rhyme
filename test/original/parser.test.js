@@ -14,6 +14,9 @@ function ast_unwrap(e) {
 function ast_ident(a) {
     return ast_wrap({ xxkey: "ident", xxop: a })
 }
+function ast_str(a) {
+    return ast_wrap({ xxkey: "const", xxop: a })
+}
 function ast_raw(a) {
     return ast_wrap({ xxkey: "raw", xxop: a })
 }
@@ -110,7 +113,7 @@ test("templateTest4", () => {
 
 test("stringTest1", () => {
     let res = parse('"a"')
-    let expected = ast_ident("a") // test stripping of quotes
+    let expected = ast_str("a") // test stripping of quotes
     expect(res).toEqual(expected)
 })
 

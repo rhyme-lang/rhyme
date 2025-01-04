@@ -11,7 +11,10 @@ function ast_hole(a) {
   return { xxkey: "hole", xxop: a }
 }
 function ast_num(a) {
-  return { xxkey: "raw", xxop: a } // treat as raw for now
+  return { xxkey: "const", xxop: a }
+}
+function ast_str(a) {
+  return { xxkey: "const", xxop: a } // XXX: want "const" here, but aoc fails ...
 }
 function ast_get(a,b) {
   if (!b)
@@ -138,7 +141,7 @@ exports.parserImpl = (strings, holes) => {
     } else if (isopchar()) {
       while (isopchar()) pos++
       peek = input.substring(start,pos)
-    } else if (input[pos] == '"') {
+    } else if (input[pos] == '"') { // TODO: also support single quotes '..' ?
       pos++
       while (input[pos] && input[pos] != '\n' && input[pos] != '"') pos++
       // note: unclosed string literals need to be detected later
@@ -363,15 +366,20 @@ exports.parserImpl = (strings, holes) => {
       return parens(expr)
     } else if (peek == "num" || peek == "str" || peek == "ident" || peek == "*") {
       let s = str
-      if (peek == "str") { // strip quotes
+      let res
+      if (peek == "num") {
+        res = ast_num(Number(s))
+      } else if (peek == "str") { // strip quotes
         if (s.startsWith('"')) {
           s = s.substring(1,s.length)
           if (!s.endsWith('"'))
             error("unclosed string literal")
           s = s.substring(0,s.length-1)
         }
+        res = ast_str(s)
+      } else {
+        res = ast_ident(s)
       }
-      let res = peek == "num" ? ast_num(s) : ast_ident(s)
       next()
       return res
     } else if (peek == "hole") {

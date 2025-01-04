@@ -37,8 +37,8 @@ function resolveHole(p) {
       return { xxkey: "const", xxop: Boolean(p) }
     } else if (p instanceof Array && p.length == 0) {
       return { xxkey: "const", xxop: [] }
-    } else if (typeof p == "number" || !Number.isNaN(Number(p))) { // number?
-        return { xxkey: "const", xxop: p }
+    } else if (typeof p == "number" /*|| !Number.isNaN(Number(p))*/) { // number?
+        return { xxkey: "const", xxop: Number(p) }
     } else if (typeof p == "string") {
         if (p == "-" || p == "$display")
           return { xxkey: "const", xxop: p }
@@ -51,7 +51,6 @@ function resolveHole(p) {
         } else {
             if (p.xxkey)
               console.error("ERROR: double wrapping of ast node " + JSON.stringify(e))
-
             return { xxkey: "object", xxparam: Object.entries(p).flat().map(ast_unwrap) }
         }
     } else {

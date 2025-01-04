@@ -1064,6 +1064,23 @@ let quoteStr = s => "\""+s+"\""
 let quoteVarXS = s => isDeepVarStr(s) ? quoteVar(s)+".join('-')+'-'" : quoteVar(s)
 let quoteIndexVarsXS = (s,vs) => s + vs.map(quoteVarXS).map(quoteIndex).join("")
 
+let quoteConst = e => {
+    if (typeof e === "boolean") {
+        return String(e)
+    } else if (typeof e === "number") {
+        return String(e)
+    } else if (typeof e === "string") {
+        return '"'+e+'"'
+    } else if (typeof e === "object" && e instanceof Array && e.length == 0) {
+        return "[]"
+    } else if (typeof e === "object" && Object.keys(e).length == 0) {
+        return "{}"
+    } else {
+        console.error("emit unsupported constant: "+e)
+        return "(throw new Error('unsupported constant:"+e+"'))"
+    }
+}
+
 
 let codegen = (q, scope) => {
   console.assert(scope.vars)
@@ -1076,18 +1093,7 @@ let codegen = (q, scope) => {
     let [e1] = q.arg.map(x => codegen(x,scope))
     return `loadInput('${q.op}', ${e1})`
   } else if (q.key == "const") {
-    if (typeof q.op === "string")
-      return "'"+q.op+"'"
-    else if (typeof q.op === "object" && q.op instanceof Array && q.op.length == 0)
-      return "[]"
-    else if (typeof q.op === "object" && Object.keys(q.op).length == 0)
-      return "{}"
-    else {
-      let s = String(q.op)
-      if (s == "[object Object]")
-        console.error("emit unknown constant: ",q.op)
-      return s
-    }
+    return quoteConst(q.op)
   } else if (q.key == "var") {
     // TODO: check that variables are always defined
     // console.assert(scope.vars.indexOf(q.op) >= 0)

@@ -2,6 +2,24 @@ const { quoteVar, debug, trace, print, inspect, error, warn } = require("./utils
 const { parse } = require("./parser")
 const { primStateful } = require("./desugar")
 
+
+let quoteConst = e => {
+    if (typeof e === "boolean") {
+        return String(e)
+    } else if (typeof e === "number") {
+        return String(e)
+    } else if (typeof e === "string") {
+        return '"'+e+'"'
+    } else if (typeof e === "object" && e instanceof Array && e.length == 0) {
+        return "[]"
+    } else if (typeof e === "object" && Object.keys(e).length == 0) {
+        return "{}"
+    } else {
+        error("ERROR - unsupported constant: "+e)
+    }
+}
+
+
 exports.createIR = (query) => {
     //
     // ---------- Internals ----------
@@ -95,7 +113,7 @@ exports.createIR = (query) => {
         } else if (p.xxkey == "raw") {
             return expr(p.xxop)
         } else if (p.xxkey == "const") {
-            return expr(JSON.stringify(p.xxop))
+            return expr(quoteConst(p.xxop))
         } else if (p.xxkey == "get") {
             let [e1, e2] = p.xxparam
             if (e2 === undefined) { // XXX redundant with desugar?
@@ -260,8 +278,12 @@ exports.createIR = (query) => {
       return { xxkey: "hole", xxop: e }
     }
     function resolveHole(p) {
-        if (typeof (p) == "number" || !Number.isNaN(Number(p))) { // number?
-            return { xxkey: "const", xxop: p }
+        if (p === true || p === false) {
+            return { xxkey: "const", xxop: Boolean(p) }
+        } else if (p instanceof Array && p.length == 0) {
+            return { xxkey: "const", xxop: [] }
+        } if (typeof (p) == "number" /*|| !Number.isNaN(Number(p))*/) { // number?
+            return { xxkey: "const", xxop: Number(p) }
         } else if (typeof (p) == "string") {
             if (p == "-" || p == "$display")
               return { xxkey: "const", xxop: p }
@@ -272,6 +294,8 @@ exports.createIR = (query) => {
             } else if (p instanceof Array) {
                 return { xxkey: "array", xxparam: p.map(ast_unwrap) }
             } else {
+                if (p.xxkey)
+                  console.error("ERROR: double wrapping of ast node " + JSON.stringify(e))
                 return { xxkey: "object", xxparam: Object.entries(p).flat().map(ast_unwrap) }
             }
         } else {

@@ -175,6 +175,8 @@ exports.desugar = (p) => {
       //   return argProvided
       // }
       return p
+    } else if (p.xxkey == "const") {
+      return p
     } else if (p.xxkey == "hole") {
       return ast_unwrap(p.xxop) // do not recurse, already desugared
     } else if (p.xxkey == "pipe") {
