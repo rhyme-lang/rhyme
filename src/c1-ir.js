@@ -36,7 +36,13 @@ exports.createIR = (query) => {
     let exprIsVar = e => e.deps.length == 1 && e.txt == quoteVar(e.deps[0])
     //
     // TODO: support vararg in select/call?
-    let select = (a, b) => expr(a.txt + "[" + b.txt + "]", ...a.deps, ...b.deps)
+    let select = (a, b) => {
+        let b1 = b.txt.match(/'([a-zA-Z_][a-zA-Z_0-9]*)'/)
+        if (b1)
+            return expr(a.txt + "." + b1[1], ...a.deps, ...b.deps)
+        else
+            return expr(a.txt + "[" + b.txt + "]", ...a.deps, ...b.deps)
+    }
     let call = (a, ...b) => expr("" + a.txt + "(" + b.map(x=>x.txt).join(",") + ")", ...a.deps, ...b.map(x=>x.deps).flat())
     let binop = (op, a, b) => expr("(" + a.txt + op + b.txt + ")", ...a.deps, ...b.deps)
     let unop = (op, a) => expr(op + "(" + a.txt + ")", ...a.deps)
@@ -240,7 +246,7 @@ exports.createIR = (query) => {
 
         currentGroupPath = [...currentGroupPath, ...plus]
         let lhs1 = createFreshTempVar(deps)
-        assign(lhs1, "??=", expr("{} //"))
+        assign(lhs1, "??=", expr("{}"))
         for (let i = 0; i < p.xxparam.length; i += 2) {
             let k = p.xxparam[i]
             let o = p.xxparam[i+1]
@@ -376,7 +382,7 @@ exports.createIR = (query) => {
         // if (trace) print("tmp"+tmpVarCount+" ... "+deps+" before "+allDeps)
         // XXX
         //
-        let lhs1 = select(expr("tmp"), expr("" + (tmpVarCount++)))
+        let lhs1 = select(expr("tmp"), ident("t" + (tmpVarCount++)))
         let root = lhs1.txt
         lhs1.root = root
         lhs1.deps = [root]
@@ -391,7 +397,7 @@ exports.createIR = (query) => {
         // this is not a group-by accumulator! create a temp var
         // that is directly indexed by deps (nothing less, nothing more)
         // TODO: remove duplicate deps?
-        let lhs1 = select(expr("tmp"), expr("" + (tmpVarCount++)))
+        let lhs1 = select(expr("tmp"), ident("t" + (tmpVarCount++)))
         let root = lhs1.txt
         lhs1.root = root
         lhs1.deps = [root]
