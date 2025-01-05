@@ -295,6 +295,10 @@ test("tensorView3_id", () => {
   let data = TensorView(raw, [3,2])
   let out = TensorView(new Array(6), [3,2])
 
+  // HACK: *WILDCARD means 'use all the variables needed',
+  // so it allows 'update' to work more like 'sum', where
+  // we don't specify the grouping variables.
+
   let query = rh`update_inplace .out *WILDCARD 10+data.*i.*j`
 
   let func = compile(query)
