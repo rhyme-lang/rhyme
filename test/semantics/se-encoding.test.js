@@ -1,7 +1,5 @@
-const { api, pipe } = require('../../src/rhyme')
-const { rh, parse } = require('../../src/parser')
+const { api, rh } = require('../../src/rhyme')
 const { compile } = require('../../src/simple-eval')
-
 
 
 // some sample data for testing

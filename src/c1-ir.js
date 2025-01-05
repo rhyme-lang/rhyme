@@ -1,6 +1,6 @@
 const { quoteVar, debug, trace, print, inspect, error, warn } = require("./utils")
 const { parse } = require("./parser")
-const { primStateful } = require("./desugar")
+const { ops, ast } = require("./shared")
 
 
 let quoteConst = e => {
@@ -162,7 +162,7 @@ exports.createIR = (query) => {
         } else if (p.xxkey == "and") {
             let [e1, e2] = p.xxparam
             return binop("&&", path(e1), path(e2))
-        } else if (primStateful[p.xxkey]) { // reducer (stateful)
+        } else if (ops.stateful[p.xxkey]) { // reducer (stateful)
             return transStatefulInPath(p)
         } else if (p.xxkey == "hole") {
             return path(resolveHole(p.xxop))
@@ -272,11 +272,6 @@ exports.createIR = (query) => {
 
     // -- Wrap/unwrap, dealing with holes
     //
-    function ast_unwrap(e) {
-      if (typeof e === "object" && "rhyme_ast" in e) return e.rhyme_ast
-      if (e.xxkey) console.error("ERROR: double wrapping of ast node " + JSON.stringify(e))
-      return { xxkey: "hole", xxop: e }
-    }
     function resolveHole(p) {
         if (p === true || p === false) {
             return { xxkey: "const", xxop: Boolean(p) }
@@ -292,11 +287,11 @@ exports.createIR = (query) => {
             if ("rhyme_ast" in p) {
                 return p.rhyme_ast
             } else if (p instanceof Array) {
-                return { xxkey: "array", xxparam: p.map(ast_unwrap) }
+                return { xxkey: "array", xxparam: p.map(ast.unwrap) }
             } else {
                 if (p.xxkey)
                   console.error("ERROR: double wrapping of ast node " + JSON.stringify(e))
-                return { xxkey: "object", xxparam: Object.entries(p).flat().map(ast_unwrap) }
+                return { xxkey: "object", xxparam: Object.entries(p).flat().map(ast.unwrap) }
             }
         } else {
             error("ERROR: unknown obect in query hole: " + JSON.stringify(p)) // user-facing error
@@ -490,7 +485,7 @@ exports.createIR = (query) => {
             let lhs1 = openTempVar(lhs, rhs.deps)
             assign(lhs1, "??=", expr(rhs.txt, ...rhs.deps))
             return closeTempVar(lhs, lhs1)
-        } else if (p.xxkey == "last") { // last
+        } else if (p.xxkey == "last" || p.xxkey == "single") { // last -- XXX single is a hack...
             let rhs = path(p.xxparam[0])
             let lhs1 = openTempVar(lhs, rhs.deps)
             assign(lhs1, "=", expr(rhs.txt + " ?? " + lhs1.txt, ...rhs.deps))
@@ -588,7 +583,7 @@ exports.createIR = (query) => {
                 currentGroupPath = save
             }
             return closeTempVar(lhs, lhs1)
-        } else if (primStateful[p.xxkey]) {
+        } else if (ops.stateful[p.xxkey]) {
             error("ERROR: unknown reducer key '" + p.xxkey + "'")
             return expr("undefined")
         } else if (p.xxkey == "hole") {

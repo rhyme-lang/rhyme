@@ -9,9 +9,7 @@
  *
  */
 
-const { api, pipe } = require('../../src/rhyme')
-const { rh } = require('../../src/parser')
-const { compile } = require('../../src/simple-eval')
+const { api, rh, pipe } = require('../../src/rhyme')
 
 
 // 2022

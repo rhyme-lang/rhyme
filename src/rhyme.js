@@ -9,134 +9,61 @@ const graphics = require('./graphics')
 
 const simpleEval = require('./simple-eval')
 const { typing } = require('./typing')
-// const primitiveEval = require('../src/primitive-eval')
+const { rh } = require('./parser')
 
+const { ops, ast } = require('./shared')
 
-function ast_wrap(e) {
-  console.assert(e.xxkey)
-  return { rhyme_ast: e }
-}
+//
+// ---------- Parser / quasiquote API ----------
+//
 
-function ast_unwrap(e) {
-  if (typeof e === "object" && "rhyme_ast" in e) return e.rhyme_ast
-  return { xxkey: "hole", xxop: e }
-}
+exports.rh = rh
 
 
 //
-// reducer (e.g., sum) expressions
+// ---------- Function-based syntax object API ----------
 //
-api["sum"] = (e) => ast_wrap({
-  xxkey: "sum",
-  xxparam: [ast_unwrap(e)]
+
+let ast_op = (key, param) => ({
+  xxkey: key,
+  xxparam: param
 })
-api["product"] = (e) => ast_wrap({
-  xxkey: "sum",
-  xxparam: [ast_unwrap(e)]
-})
-api["count"] = (e) => ast_wrap({
-  xxkey: "count",
-  xxparam: [ast_unwrap(e)]
-})
-api["max"] = (e) => ast_wrap({
-  xxkey: "max",
-  xxparam: [ast_unwrap(e)]
-})
-api["min"] = (e) => ast_wrap({
-  xxkey: "min",
-  xxparam: [ast_unwrap(e)]
-})
-api["join"] = (e) => ast_wrap({
-  xxkey: "join",
-  xxparam: [ast_unwrap(e)]
-})
-api["array"] = (...es) => ast_wrap({
-  xxkey: "array",
-  xxparam: es.map(ast_unwrap)
-})
-api["object"] = (...es) => ast_wrap({
-  xxkey: "object",
-  xxparam: es.map(ast_unwrap)
-})
-api["first"] = (e) => ast_wrap({
-  xxkey: "first",
-  xxparam: [ast_unwrap(e)]
-})
-api["last"] = (e) => ast_wrap({
-  xxkey: "last",
-  xxparam: [ast_unwrap(e)]
-})
-api["single"] = (e) => ast_wrap({
-  xxkey: "last", // TODO: check that values are equal, like c2
-  xxparam: [ast_unwrap(e)]
-})
-api["keyval"] = (k, v) => ast_wrap({
-  xxkey: "keyval",
-  xxparam: [ast_unwrap(k), ast_unwrap(v)]
-})
-api["flatten"] = (k, v) => ast_wrap({
-  xxkey: "flatten",
-  xxparam: [ast_unwrap(k), ast_unwrap(v)]
-})
-api["merge"] = (k, v) => ast_wrap({
-  xxkey: "merge",
-  xxparam: [ast_unwrap(k), ast_unwrap(v)]
-})
-api["group"] = (e, k) => ast_wrap({
-  xxkey: "object",
-  xxparam: [ast_unwrap(k),ast_unwrap(e)]
-})
-// api["group"] = (e, k) => ({
-//   "_IGNORE_": api.keyval(k,e) // alternative
-// })
+
+let ast_op_wrapped = key => (...param) => 
+  ast.wrap(ast_op(key, param.map(ast.unwrap)))
+
+
+// Create a corresponding syntax API entry for all
+// registered built-in ops, e.g:
 //
-// path expressions
+//  api.get(a,b)
+//  api.sum(a)
+//  ...
+
+for (let k in ops.special)
+  api[k] = ast_op_wrapped(k)
+
+for (let k in ops.pure)
+  api[k] = ast_op_wrapped(k)
+
+for (let k in ops.stateful)
+  api[k] = ast_op_wrapped(k)
+
+
+// some overrides:
+
+api["group"] = (e,k) => api["object"](k,e)
+
+api["input"] = () => ast.wrap(ast.root())
+
+
 //
-api["input"] = () => ast_wrap({
-  xxkey: "raw",
-  xxop: "inp"
-})
-api["get"] = (e1, e2) => ast_wrap({ // NOTE: single-arg case!
-  xxkey: "get",
-  xxparam: e2 ? [ast_unwrap(e1), ast_unwrap(e2)] : [ast_unwrap(e1)]
-})
-api["apply"] = (e1, e2) => ast_wrap({
-  xxkey: "apply",
-  xxparam: [ast_unwrap(e1), ast_unwrap(e2)]
-})
-api["pipe"] = (e1, e2) => ast_wrap({ // reverse apply
-  xxkey: "apply",
-  xxparam: [ast_unwrap(e2), ast_unwrap(e1)]
-})
-api["plus"] = (e1, e2) => ast_wrap({
-  xxkey: "plus",
-  xxparam: [ast_unwrap(e1), ast_unwrap(e2)]
-})
-api["minus"] = (e1, e2) => ast_wrap({
-  xxkey: "minus",
-  xxparam: [ast_unwrap(e1), ast_unwrap(e2)]
-})
-api["times"] = (e1, e2) => ast_wrap({
-  xxkey: "times",
-  xxparam: [ast_unwrap(e1), ast_unwrap(e2)]
-})
-api["fdiv"] = (e1, e2) => ast_wrap({
-  xxkey: "fdiv",
-  xxparam: [ast_unwrap(e1), ast_unwrap(e2)]
-})
-api["div"] = (e1, e2) => ast_wrap({
-  xxkey: "div",
-  xxparam: [ast_unwrap(e1), ast_unwrap(e2)]
-})
-api["mod"] = (e1, e2) => ast_wrap({
-  xxkey: "mod",
-  xxparam: [ast_unwrap(e1), ast_unwrap(e2)]
-})
-api["and"] = (e1, e2) => ast_wrap({
-  xxkey: "and",
-  xxparam: [ast_unwrap(e1), ast_unwrap(e2)]
-})
-// ---------- Fluent API ----------
+// ---------- Fluent syntax API ----------
+//
+
+// TODO: make this available on all user-facing
+// syntax objects?
+
 let Pipe = {
   sum: function () { return pipe(api.sum(this)) },
   count: function () { return pipe(api.count(this)) },
@@ -155,6 +82,12 @@ function pipe(e) {
     res[k] = e[k]
   return res
 }
+
+
+
+//
+// ---------- Compilation API ----------
+//
 
 //
 // main entrypoint
@@ -200,7 +133,7 @@ function logDebugOutput(info) {
 
 
 api["query"] = api["compile"] = (query, schema=typing.any) => {
-    query = ast_unwrap(query)
+    query = ast.unwrap(query)
     let rep = ir.createIR(query)
     let c1 = codegen.generate(rep)
     let c1_opt = new_codegen.generate(rep)
@@ -242,7 +175,7 @@ api["query"] = api["compile"] = (query, schema=typing.any) => {
     return wrapper
 }
 api["compileC1"] = api["compileFastPathOnly"] = (query) => {
-    query = ast_unwrap(query)
+    query = ast.unwrap(query)
     let rep = ir.createIR(query)
     let c1 = codegen.generate(rep)
     let c1_opt = new_codegen.generate(rep)
@@ -273,7 +206,7 @@ api["compileC1"] = api["compileFastPathOnly"] = (query) => {
 }
 
 api["compileNew"] = (query) => {
-  query = ast_unwrap(query)
+  query = ast.unwrap(query)
   let rep = ir.createIR(query)
   let c1 = new_codegen.generate(rep)
   let c2 = simpleEval.compile(query)
@@ -310,7 +243,7 @@ api["compileNew"] = (query) => {
 }
 
 api["compileC2"] = (query) => {
-  query = ast_unwrap(query)
+  query = ast.unwrap(query)
   // let rep = ir.createIR(query)
   let c2 = simpleEval.compile(query)
   let c2_new = simpleEval.compile(query, { newCodegen: true })

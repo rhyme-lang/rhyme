@@ -1,4 +1,4 @@
-const { api } = require('../../src/rhyme')
+const { api, rh } = require('../../src/rhyme')
 
 // sample tensors for testing
 // A: 2x2

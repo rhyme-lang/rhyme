@@ -1,25 +1,5 @@
-const { parse, rh } = require('../../src/parser')
+const { api, rh } = require('../../src/rhyme')
 const { desugar } = require('../../src/desugar')
-const { api } = require('../../src/rhyme')
-
-/*
-function ast_ident(a) {
-    return { xxkey: "ident", xxop: a }
-}
-function ast_raw(a) {
-    return { xxkey: "raw", xxop: a }
-}
-function ast_plus(a,b) {
-    return { xxkey: "plus", xxparam: [a,b] }
-}
-function ast_get(a,b) {
-    if (!b)
-      return { xxkey: "get", xxparam: [a] }
-    return { xxkey: "get", xxparam: [a,b] }
-}
-function ast_apply(a,b) {
-    return { xxkey: "apply", xxparam: [a,b] }
-}*/
 
 
 test("pipeTest1", () => {

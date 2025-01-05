@@ -1,41 +1,5 @@
 const { desugar } = require("./desugar")
-
-// XXX could use main api from rhyme.js
-function ast_ident(a) {
-  return { xxkey: "ident", xxop: a }
-}
-function ast_raw(a) {
-  return { xxkey: "raw", xxop: a }
-}
-function ast_hole(a) {
-  return { xxkey: "hole", xxop: a }
-}
-function ast_num(a) {
-  return { xxkey: "const", xxop: a }
-}
-function ast_str(a) {
-  return { xxkey: "const", xxop: a } // XXX: want "const" here, but aoc fails ...
-}
-function ast_get(a,b) {
-  if (!b)
-    return { xxkey: "get", xxparam: [a] }
-  return { xxkey: "get", xxparam: [a,b] }
-}
-function ast_call(a,b) {
-  return { xxkey: "apply", xxparam: [a,b] }
-}
-function ast_array(as) {
-  return { xxkey: "array", xxparam: as }
-}
-function ast_object(as) {
-  return { xxkey: "object", xxparam: as }
-}
-function ast_root() {
-  return ast_raw("inp")
-}
-// function ast_arg() {
-//   return ast_raw("_ARG_")
-// }
+const { ast } = require("./shared")
 
 let binop_table = {
   "|" : "pipe",
@@ -332,11 +296,11 @@ exports.parserImpl = (strings, holes) => {
       let body = expr()
 
       for (let x of args.reverse()) // mutates!
-        rhs = ast_call(ast_call(ast_ident("fn"), ast_ident(x)), rhs)
+        rhs = ast.call(ast.call(ast.ident("fn"), ast.ident(x)), rhs)
 
-      let res = ast_call(ast_ident("let"), ast_ident(lhs))
-      res = ast_call(res, rhs)
-      res = ast_call(res, body)
+      let res = ast.call(ast.ident("let"), ast.ident(lhs))
+      res = ast.call(res, rhs)
+      res = ast.call(res, body)
       return res
     } else {
       return binop(0)
@@ -368,7 +332,7 @@ exports.parserImpl = (strings, holes) => {
       let s = str
       let res
       if (peek == "num") {
-        res = ast_num(Number(s))
+        res = ast.num(Number(s))
       } else if (peek == "str") { // strip quotes
         if (s.startsWith('"')) {
           s = s.substring(1,s.length)
@@ -376,14 +340,14 @@ exports.parserImpl = (strings, holes) => {
             error("unclosed string literal")
           s = s.substring(0,s.length-1)
         }
-        res = ast_str(s)
+        res = ast.str(s)
       } else {
-        res = ast_ident(s)
+        res = ast.ident(s)
       }
       next()
       return res
     } else if (peek == "hole") {
-      let res = ast_hole(holes[hole])
+      let res = ast.hole(holes[hole])
       next()
       return res
     } else if (peek == '{') {
@@ -400,11 +364,11 @@ exports.parserImpl = (strings, holes) => {
       }
       let elems = braces(() => commaList(entry))
       // console.log(elems)
-      return ast_object(elems.flat())
+      return ast.object(elems.flat())
     } else if (peek == '[') {
       // error("array constructor syntax not supported yet")
       let elems = brackets(() => commaList(expr))
-      return ast_array(elems)
+      return ast.array(elems)
     } else {
       error("atom expected but got '"+sanitize(peek)+"'")
     }
@@ -413,27 +377,27 @@ exports.parserImpl = (strings, holes) => {
     let res
     if (peek == ".") { // e.g. .input, to distinguish 'get' from 'ident'  TODO: require no space?
       next()
-      res = ast_get(atom())
+      res = ast.get(atom())
     } else
       res = atom()
     while (gap == "" && (peek == "." || peek == "(" || peek == "[")) {
       if (peek == ".") {
         next()
         let rhs = atom()
-        res = ast_get(res, rhs)
+        res = ast.get(res, rhs)
         // TODO: might want to prevent .{}. and .[]. which don't make sense
         // if (peek == "ident" || peek == "*") {
-        //   let rhs = ast_ident(str)
-        //   res = ast_get(res, rhs)
+        //   let rhs = ast.ident(str)
+        //   res = ast.get(res, rhs)
         //   next()
         // } else 
         //   error("ident expected")
       } else if (peek == "(") {
         let rhs = parens(expr)
-        res = ast_call(res, rhs)
+        res = ast.call(res, rhs)
       } else if (peek == "[") {
         let rhs = brackets(expr)
-        res = ast_get(res, rhs)
+        res = ast.get(res, rhs)
       }
     }
     return res
@@ -443,7 +407,7 @@ exports.parserImpl = (strings, holes) => {
     while (peek == "num" || peek == "str" || peek == "hole" ||
            peek == "ident" || peek == "*" ||
            peek == "." || peek == "(" || peek == "[" || peek == "{") {
-      res = ast_call(res, exprTight())
+      res = ast.call(res, exprTight())
     }
     return res
   }
@@ -459,12 +423,12 @@ exports.parserImpl = (strings, holes) => {
 // not used anymore
 exports.parsePurePath = (p) => {
   let as = p.split(".")
-  if (as.length == 1) return ast_ident(as[0])
-    let ret = ast_raw("inp")
+  if (as.length == 1) return ast.ident(as[0])
+    let ret = ast.raw("inp")
   for (let i = 0; i < as.length; i++) {
     if (as[i] == "")
       continue // skip empty
-    ret = ast_get(ret, ast_ident(as[i]))
+    ret = ast.get(ret, ast.ident(as[i]))
   }
   return ret
 }

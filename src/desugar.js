@@ -1,33 +1,4 @@
-let primStateful = {
-  "sum":     true,
-  "product": true,
-  "count":   true,
-  "max":     true,
-  "min":     true,
-  "first":   true,
-  "last":    true,
-  "single":  true,
-  "print":   true,
-  "join":    true,
-  "array":   true,
-  "object":  true,
-  "keyval":  true,
-  "flatten": true,
-  "merge":   true,
-}
-exports.primStateful = primStateful
-
-function ast_wrap(e) {
-  console.assert(e.xxkey)
-  return { rhyme_ast: e }
-}
-
-function ast_unwrap(e) {
-  if (typeof e === "object" && "rhyme_ast" in e) return e.rhyme_ast
-  if (e.xxkey) console.error("ERROR: double wrapping of ast node " + JSON.stringify(e))
-  return { xxkey: "hole", xxop: e }
-}
-
+const { ops, ast } = require("./shared")
 
 // NOTE: in general, desugar preserves only xxkey and xxparam fields.
 // Field xxop is only preserved for 
@@ -67,7 +38,7 @@ exports.desugar = (p) => {
   function transPrimitiveApply(p, args) {
     if (p == "get") { // XXX others? plus, minus, etc?
       return transPath("get", args)
-    } else if (primStateful[p]) {
+    } else if (ops.stateful[p]) {
       return transStateful(p, args) // unpack!
     } else if (p == "group" && args.length < 2) {
       // partial application -- this will later turn into a keyval object
@@ -90,7 +61,7 @@ exports.desugar = (p) => {
 
     // is it a present-stage function, spliced into a hole via ${p} ?
     if (p.xxkey == "hole" && p.xxop instanceof Function)
-      return ast_unwrap(p.xxop(...args.map(ast_wrap)))
+      return ast.unwrap(p.xxop(...args.map(ast.wrap)))
 
     // is the argument used? i.e. syntax '.foo' --> we have 'arg.foo', just return
     if (h)
@@ -144,7 +115,7 @@ exports.desugar = (p) => {
       console.assert(args.length >= 2)
       console.assert(args[0].xxkey == "ident")
       let [e1, e2, ...args1] = args
-      let res = { xxkey: "closure", xxparam: [ast_unwrap(env), e1, e2] } // env not an AST!
+      let res = { xxkey: "closure", xxparam: [ast.unwrap(env), e1, e2] } // env not an AST!
       if (args1.length > 0)
         return transApply(res, args1)
       else
@@ -178,7 +149,7 @@ exports.desugar = (p) => {
     } else if (p.xxkey == "const") {
       return p
     } else if (p.xxkey == "hole") {
-      return ast_unwrap(p.xxop) // do not recurse, already desugared
+      return ast.unwrap(p.xxop) // do not recurse, already desugared
     } else if (p.xxkey == "pipe") {
       let [e1,e2,...e3s] = p.xxparam
       return transPipe(e2,[e1,...e3s])

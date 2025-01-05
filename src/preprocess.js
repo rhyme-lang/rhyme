@@ -1,6 +1,6 @@
 const { api } = require('./rhyme')
 const { parse } = require('./parser')
-const { runtime } = require('./simple-runtime')
+const { ops, ast } = require('./shared')
 
 //
 // Preprocess: convert Rhyme AST after parser and desugar to a stratified version
@@ -27,11 +27,6 @@ const { runtime } = require('./simple-runtime')
 
 let isVar = s => s.startsWith("*")
 
-function ast_unwrap(e) {
-  if (typeof e === "object" && "rhyme_ast" in e) return e.rhyme_ast
-  if (e.xxkey) console.error("ERROR: double wrapping of ast node " + JSON.stringify(e))
-  return { xxkey: "hole", xxop: e }
-}
 function resolveHole(p) {
     if (p === true || p === false) {
       return { xxkey: "const", xxop: Boolean(p) }
@@ -47,11 +42,11 @@ function resolveHole(p) {
         if ("rhyme_ast" in p) {
             return p.rhyme_ast
         } else if (p instanceof Array) {
-            return { xxkey: "array", xxparam: p.map(ast_unwrap) }
+            return { xxkey: "array", xxparam: p.map(ast.unwrap) }
         } else {
             if (p.xxkey)
               console.error("ERROR: double wrapping of ast node " + JSON.stringify(e))
-            return { xxkey: "object", xxparam: Object.entries(p).flat().map(ast_unwrap) }
+            return { xxkey: "object", xxparam: Object.entries(p).flat().map(ast.unwrap) }
         }
     } else {
         console.error("ERROR: unknown obect in query hole: " + JSON.stringify(p))  // user-facing error
@@ -176,13 +171,13 @@ let preproc = q => {
     let op = q.xxkey
     console.assert(typeof op === "string", op)
     let es2 = q.xxparam?.map(preproc)
-    if (op in runtime.special)
+    if (op in ops.special)
       return { key: op, arg: es2 }
-    else if (op in runtime.pure)
+    else if (op in ops.pure)
       return { key: "pure", op: op, arg: es2 }
-    else if (op in runtime.stateful || op == "print")
+    else if (op in ops.stateful || op == "print")
       return { key: "stateful", op: op, arg: es2 }
-    else if (op.startsWith && op.startsWith("prefix_") && op.substring(7) in runtime.stateful)
+    else if (op.startsWith && op.startsWith("prefix_") && op.substring(7) in ops.stateful)
       return { key: "prefix", op: op.substring(7), arg: es2 }
     console.error("unknown op", q)
   } else {

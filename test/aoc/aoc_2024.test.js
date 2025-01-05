@@ -6,13 +6,12 @@
  * Solutions are inspired by existing solutions in:
  * - JQ: https://github.com/odnoletkov/advent-of-code-jq
  * - Scala: https://scalacenter.github.io/scala-advent-of-code
+ * - SQL: http://databasearchitects.blogspot.com/2024/12/advent-of-code-2024-in-pure-sql.html
  *
  */
 
 
-const { api, pipe } = require('../../src/rhyme')
-const { rh } = require('../../src/parser')
-const { compile } = require('../../src/simple-eval')
+const { api, rh } = require('../../src/rhyme')
 
 let udf_stdlib = {
   split: d => s => s.split(d),
