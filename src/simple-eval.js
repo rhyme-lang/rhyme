@@ -923,6 +923,15 @@ let emitPseudo = (q) => {
 }
 
 
+
+
+const { 
+  setLoopgenState, 
+  loopgen, 
+} = require('./simple-loopgen')
+
+
+
 const { 
   setCodegenState, 
   codegen, 
