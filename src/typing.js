@@ -1,3 +1,8 @@
+const { sets } = require('./shared')
+
+const { unique, union, intersect, diff, subset, same } = sets
+
+
 let typing = {}
 let types = {}
 let typeSyms = {}
@@ -6,49 +11,6 @@ exports.typing = typing;
 exports.types = types;
 exports.typeSyms = typeSyms;
 exports.props = props;
-
-
-// ----- utils -----
-
-// sets, implemented as arrays
-
-let unique = xs => xs.filter((x,i) => xs.indexOf(x) == i)
-
-let union = (a,b) => unique([...a,...b])
-
-let intersect = (a,b) => {
-  let keys = {}
-  let res = []
-  for (let k of b)
-    keys[k] = true
-  for (let k of a)
-    if (keys[k])
-      res.push(k)
-  return res
-}
-
-let diff = (a,b) => {
-  let keys = {}
-  let res = []
-  for (let k of b)
-    keys[k] = true
-  for (let k of a)
-    if (!keys[k])
-      res.push(k)
-  return res
-}
-
-let subset = (a,b) => {
-  let keys = {}
-  for (let k of b)
-    keys[k] = true
-  for (let k of a)
-    if (!keys[k])
-      return false
-  return true
-}
-
-let same = (a,b) => subset(a,b) && subset(b,a)
 
 
 // ----- type definitions -----

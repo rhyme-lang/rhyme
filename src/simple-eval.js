@@ -1,5 +1,6 @@
 const { api } = require('./rhyme')
 const { parse } = require('./parser')
+const { sets } = require('./shared')
 const { scc } = require('./scc')
 const { generate } = require('./new-codegen')
 const { preproc } = require('./preprocess')
@@ -8,109 +9,8 @@ const { generateCSql } = require('./sql-codegen')
 const { generateCSqlNew } = require('./sql-newcodegen')
 const { typing, types, typeSyms } = require('./typing')
 
+const { unique, union, intersect, diff, subset, same } = sets
 
-// ----- utils -----
-
-// sets, implemented as arrays
-
-let unique = xs => xs.filter((x,i) => xs.indexOf(x) == i)
-
-let union = (a,b) => unique([...a,...b])
-
-let intersect = (a,b) => {
-  let keys = {}
-  let res = []
-  for (let k of b)
-    keys[k] = true
-  for (let k of a)
-    if (keys[k])
-      res.push(k)
-  return res
-}
-
-let diff = (a,b) => {
-  let keys = {}
-  let res = []
-  for (let k of b)
-    keys[k] = true
-  for (let k of a)
-    if (!keys[k])
-      res.push(k)
-  return res
-}
-
-let subset = (a,b) => {
-  let keys = {}
-  for (let k of b)
-    keys[k] = true
-  for (let k of a)
-    if (!keys[k])
-      return false
-  return true
-}
-
-let same = (a,b) => subset(a,b) && subset(b,a)
-
-
-// deep maps, access with key arrays
-
-let traverse = (...objs) => depth => body => {
-  console.assert(objs.length > 0)
-  if (depth == 0) return body([],...objs)
-  let [first, ...rest] = objs
-  for (let k in first) {
-    if (rest && !rest.every(e => k in e)) continue // inner join semantics
-    traverse(...objs.map(o=>o[k]))(depth-1)((ks,...os) => {
-      body([k,...ks],...os)
-    })
-  }
-}
-
-let update = obj => path => value => {
-  if (value === undefined) return obj
-  if (path.length > 0) {
-    let [k,...rest] = path
-    obj ??= {}
-    obj[k] = update(obj[k] ?? {})(rest)(value)
-    return obj
-  } else
-    return value
-}
-
-let reshape = obj => (path1, path2) => {
-  console.assert(same(path1, path2))
-  let perm = path2.map(x => path1.indexOf(x))
-  let res = {}
-  traverse(obj)(path1.length)((a1,o1) => {
-    let a2 = perm.map(i => a1[i])
-    res = update(res)(a2)(o1)
-  })
-  return res
-}
-
-
-let join = (obj1, obj2) => (schema1, schema2, schema3) => func => {
-  let r1 = schema1; let r2 = schema2; let real = schema3
-  let v1 = obj1; let v2 = obj2
-  console.assert(subset(r1, real))
-  console.assert(subset(r2, real))
-  console.assert(same(real, union(r1,r2)))
-  let r1only = diff(real,r2)
-  let r2only = diff(real,r1)
-  let r1r2 = intersect(r1,r2)
-  v1 = reshape(v1)(r1, [...r1only,...r1r2])
-  v2 = reshape(v2)(r2, [...r2only,...r1r2])
-  let res = {}
-  traverse(v1)(r1only.length)((a1,o1) =>
-    traverse(v2)(r2only.length)((a2,o2) => {
-      traverse(o1,o2)(r1r2.length)((a3,o3,o4) => {
-        res = update(res)([...a1,...a2,...a3])(func(o3,o4))
-      })
-    })
-  )
-  res = reshape(res)([...r1only,...r2only,...r1r2],real)
-  return res
-}
 
 
 // ----- configuration space -----

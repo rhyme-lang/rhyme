@@ -1,5 +1,8 @@
 const { generate } = require('./new-codegen')
 const { typing, typeSyms } = require('./typing')
+const { sets } = require('./shared')
+
+const { unique, union } = sets
 
 const KEY_SIZE = 256
 const HASH_SIZE = 256
@@ -13,8 +16,6 @@ let usedCols
 let mksetVarEnv
 let hashMapEnv
 
-let unique = xs => xs.filter((x, i) => xs.indexOf(x) == i)
-let union = (a, b) => unique([...a, ...b])
 
 let tmpSym = i => "tmp" + i
 
