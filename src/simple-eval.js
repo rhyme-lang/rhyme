@@ -927,7 +927,7 @@ let emitPseudo = (q) => {
 
 const { 
   setLoopgenState, 
-  loopgen, 
+  emitLoops,
 } = require('./simple-loopgen')
 
 
@@ -937,6 +937,7 @@ const {
   codegen, 
   translateToNewCodegen, 
   emitCode,
+  emitCodeLowLevel,
   emitCodeC,
   emitCodeCPP,
   fixIndent
@@ -1055,7 +1056,7 @@ let compile = (q,userSettings={}) => {
 
   // ---- back end ----
 
-  setCodegenState({ 
+  let backendIR = { 
     settings, 
     prefixes,
     path,
@@ -1063,7 +1064,10 @@ let compile = (q,userSettings={}) => {
     hints,
     filters,
     assignments
-  })
+  }
+
+  setCodegenState(backendIR)
+  setLoopgenState(backendIR)
 
   // 10. Pretty print (debug out)
   let pseudo = emitPseudo(q)
@@ -1139,6 +1143,19 @@ let execPromise = function(cmd) {
 
   trace.log(pseudo)
   trace.log(code)
+
+  let code0 = code
+
+  let loops = emitLoops(q,order)
+
+  code = emitCodeLowLevel(loops)
+  code = fixIndent(code)
+
+  if (code0 != code) {
+    console.log(code0)
+    console.log(code)
+    expect(code.split("\n")).toEqual(code0.split("\n"))
+  }
 
   // ---- link / eval ----
 

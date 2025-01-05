@@ -687,6 +687,95 @@ let emitCode = (q, order) => {
 }
 
 
+let cgList = xs => xs.map(x => x.key ? pretty(x) : String(x)).join(", ")
+
+let emitStmListLowLevel = (q, buf) => {
+  for (let stm of q) {
+    if (stm.key == "for") {
+      let [v1, i, g1] = stm.arg
+      let f = filters[i]
+      let scopeg1 = { vars: [], filters: [] }
+      let scopef = { vars: [], filters: [] }
+
+      if (isDeepVarStr(v1)) {
+          buf.push("rt.deepForIn("+codegen(g1,scopeg1)+", "+quoteVar(v1)+" => {")
+          buf.push("let gen"+i+" = "+codegen(f,scopef))
+          emitStmListLowLevel(stm.body, buf)
+          buf.push("})")
+      } else {
+          buf.push("for (let ["+quoteVar(v1)+", gen"+i+"] of Object.entries("+codegen(g1,scopeg1)+"??{})) {")
+          emitStmListLowLevel(stm.body, buf)
+          buf.push("}")
+      }
+
+    } else if (stm.key == "if") {
+      let [v1, i, g1] = stm.arg
+      let f = filters[i]
+      let scopeg1 = { vars: [], filters: [] }
+      let scopef = { vars: [], filters: [] }
+
+      if (isDeepVarStr(v1)) {
+          buf.push("rt.deepIfIn("+codegen(g1,scopeg1)+", "+quoteVar(v1)+", () => {")
+          buf.push("let gen"+i+" = "+codegen(f,scopef))
+          emitStmListLowLevel(stm.body, buf)
+          buf.push("})")
+      } else {
+          buf.push("if ("+quoteVar(v1)+" in ("+codegen(g1,scopeg1)+"??[])) {")
+          emitStmListLowLevel(stm.body, buf)
+          buf.push("}")
+      }
+
+    } else if (stm.key == "init") {
+      let [lhs,q] = stm.arg
+      let i = lhs.op
+      let scope1 = { vars: [], filters: [] }
+
+          let xs = [i,...q.fre.map(quoteVar)]
+          let ys = xs.map(x => ","+x).join("")
+
+          buf.push("  rt.init(tmp"+ys+")\n  ("+ emitStmInit(q, scope1) + ")")
+
+    } else if (stm.key == "update") {
+
+      let [lhs,q] = stm.arg
+      let i = lhs.op
+      let scope1 = { vars: [], filters: [] }
+
+          let xs = [i,...q.fre.map(quoteVar)]
+          let ys = xs.map(x => ","+x).join("")
+
+          buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStmUpdate(q, scope1) + ")")
+
+    } else if (stm.key == "return") {
+
+          buf.push("return " + stm.arg[0])
+
+    } else if (stm.key) {
+      buf.push(stm.key.padEnd(9) + " -- " + cgList(stm.arg))
+    } else {
+      buf.push(stm)
+    }
+  }
+}
+
+let emitCodeLowLevel = (q) => {
+  let buf = []
+  buf.push("(inp => {")
+  buf.push("let tmp = {}")
+
+  emitStmListLowLevel(q, buf)
+
+  buf.push("})")
+  return buf.join("\n")
+
+}
+
+
+
+
+
+
+
 let quoteIndexVarsXS_C = (s, vs) => {
   let res = s
   for (let v of vs) {
@@ -1385,6 +1474,8 @@ exports.codegen = codegen
 exports.translateToNewCodegen = translateToNewCodegen
 
 exports.emitCode = emitCode
+
+exports.emitCodeLowLevel = emitCodeLowLevel
 
 exports.emitCodeC = emitCodeC
 

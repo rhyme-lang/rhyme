@@ -52,7 +52,9 @@ let prettyPath = es => {
 }
 
 let pretty = q => {
-  if (q.key == "input") {
+  if (q.key == "raw") {
+    return q.op
+  } else if (q.key == "input") {
     return "inp"
   } else if (q.key == "loadInput") {
     let [e1] = q.arg.map(pretty)
@@ -360,12 +362,14 @@ let transViaFiltersFree = iter => {
   return res
 }
 
-let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
+let emitFilters1 = (scope, free, bnd) => (codegen) => body => {
   // approach: build explicit projection first
   // 1. iterate over transitive iter space to
   //    build projection map
   // 2. iterate over projection map to compute
   //    desired result
+
+  let buf = scope.buf
 
   let iter = diff(union(free, bnd), scope.vars)
 
@@ -392,7 +396,7 @@ let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
   // TODO: keep track of which filters were run in scope, not just vars
 
   if (same(diff(full,scope.vars), iter)) { // XXX should not disregard order?
-    emitFilters2(scope, full)(buf, codegen)(body)
+    emitFilters2(scope, full)(codegen)(body)
   } else {
 
     let closing = "}"
@@ -400,10 +404,11 @@ let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
     buf.push("// PROJECT "+full+" -> "+iter)
     buf.push("let proj = {}")
 
-    emitFilters2(scope, full)(buf, codegen)(() => {
+    emitFilters2(scope, full)(buf, codegen)((scope1) => {
       let xs = [...iter.map(quoteVar)]
       let ys = xs.map(x => ","+x).join("")
-      buf.push("  rt.initTemp(proj"+ys+")(() => true)")
+      scope1.buf.push("  rt.initTemp(proj"+ys+")(() => true)")
+      // buf.push({ key: "initTemp", arg: ["proj"+ys, "() => true)"]})
     })
 
     buf.push("// TRAVERSE "+iter)
@@ -416,6 +421,7 @@ let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
         closing = "})\n"+closing
       } else {
         buf.push("for (let "+quoteVar(x)+" in "+prefix+") {")
+        // buf.push({ key: "for1", arg: [quoteVar(x), prefix]})
         prefix += "["+quoteVar(x)+"]"
         closing = "}\n"+closing
       }
@@ -438,11 +444,13 @@ let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
 }
 
 
-let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
+let emitFilters2 = (scope, iter) => (codegen) => body => {
 
   // let watermark = buf.length
   // let buf0 = buf
   // let buf1 = []
+
+  let buf = scope.buf
 
   let vars = {}
   let seen = {}
@@ -551,27 +559,20 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
         console.error("extra dependency: "+extra)
       }
 
-      if (isDeepVarStr(v1)) { // ok, just emit current
-        if (!seen[v1]) {
-          buf.push("rt.deepForIn("+codegen(g1,scopeg1)+", "+quoteVar(v1)+" => {")
-        } else {
-          buf.push("rt.deepIfIn("+codegen(g1,scopeg1)+", "+quoteVar(v1)+", () => {")
-        }
-        buf.push("let gen"+i+" = "+codegen(f,scopef))
-        seen[v1] = true
-        closing = "})\n"+closing
-      } else { // ok, just emit current
-        if (!seen[v1]) {
-          buf.push("for (let ["+quoteVar(v1)+", gen"+i+"] of Object.entries("+codegen(g1,scopeg1)+"??{})) {")
-        //   buf.push("for (let "+quoteVar(v1)+" in "+codegen(g1,scopeg1)+") {")
-        //   buf.push("let gen"+i+" = "+codegen(f,scopef))
-        } else {
-          buf.push("if ("+quoteVar(v1)+" in ("+codegen(g1,scopeg1)+"??[])) {")
-        }
-        seen[v1] = true
-        closing = "}\n"+closing
+      if (!seen[v1]) {
+        let buf1 = []
+        buf.push({ key: "for", body: buf1, arg: [v1,i, g1]})
+        buf = buf1
+        // buf.push("for (let ["+quoteVar(v1)+", gen"+i+"] of Object.entries("+codegen(g1,scopeg1)+"??{})) {")
+      //   buf.push("for (let "+quoteVar(v1)+" in "+codegen(g1,scopeg1)+") {")
+      //   buf.push("let gen"+i+" = "+codegen(f,scopef))
+      } else {
+        let buf1 = []
+        buf.push({ key: "if", body: buf1, arg: [v1,i, g1]})
+        buf = buf1
+        // buf.push("if ("+quoteVar(v1)+" in ("+codegen(g1,scopeg1)+"??[])) {")
       }
-    // }
+      seen[v1] = true
   }
 
   if (pending.length > 0) {
@@ -586,10 +587,10 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
   // if (buf.length > watermark) buf.push("// main loop")
   // buf.push(...buf1)
 
-  let scope1 = {...scope, vars: [...scope.vars, ...iter], filters: [...filtersInScope]}
+  let scope1 = {...scope, buf, vars: [...scope.vars, ...iter], filters: [...filtersInScope]}
   body(scope1)
 
-  buf.push(closing)
+  // buf.push(closing)
 }
 
 
@@ -628,7 +629,7 @@ let emitStmInline = (q, scope) => {
   }
 
   // emit main computation
-  emitFilters1(scope, q.fre, bound)(buf, codegen)(scope1 => {
+  emitFilters1(scope, q.fre, bound)(codegen)(scope1 => {
     buf.push("tmp"+i+" = "+emitStmUpdate(q, scope1) + ".next(tmp"+i+")")
   })
 
@@ -641,8 +642,8 @@ let emitStmInline = (q, scope) => {
 
 let emitCode = (q, order) => {
   let buf = []
-  buf.push("(inp => {")
-  buf.push("let tmp = {}")
+  // buf.push("(inp => {")
+  // buf.push("let tmp = {}")
 
   if (settings.extractAssignments) {
     for (let is of order) {
@@ -656,19 +657,21 @@ let emitCode = (q, order) => {
 
       // emit initialization first (so that sum empty = 0)
       if (q.key == "stateful" && (q.op+"_init") in runtime.stateful || q.key == "update") {
-        emitFilters1(scope,q.fre,[])(buf, codegen)(scope1 => {
+        emitFilters1(scope,q.fre,[])(codegen)(scope1 => {
           let xs = [i,...q.fre.map(quoteVar)]
           let ys = xs.map(x => ","+x).join("")
 
-          buf.push("  rt.init(tmp"+ys+")\n  ("+ emitStmInit(q, scope1) + ")")
+          // buf.push("  rt.init(tmp"+ys+")\n  ("+ emitStmInit(q, scope1) + ")")
+          scope1.buf.push({ key: "init", arg: [{ key: "ref", op: i}, q]})
         })
       }
 
-      emitFilters1(scope,q.fre,q.bnd)(buf, codegen)(scope1 => {
+      emitFilters1(scope,q.fre,q.bnd)(codegen)(scope1 => {
         let xs = [i,...q.fre.map(quoteVar)]
         let ys = xs.map(x => ","+x).join("")
 
-        buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStmUpdate(q, scope1) + ")")
+        // buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStmUpdate(q, scope1) + ")")
+        scope1.buf.push({ key: "update", arg: [{ key: "ref", op: i}, q]})
       })
 
       buf.push("")
@@ -679,12 +682,11 @@ let emitCode = (q, order) => {
 
   console.assert(same(q.fre,[]))
   let scope = { vars:[], filters: [], buf }
-  buf.push("return "+codegen(q,scope))
+  buf.push({ key: "return", arg: [codegen(q,scope)]})
 
-  buf.push("})")
-
-  return buf.join("\n")
+  return buf
 }
+
 
 
 let quoteIndexVarsXS_C = (s, vs) => {
@@ -1379,3 +1381,5 @@ let translateToNewCodegen = q => {
 
 
 exports.loopgen = codegen
+
+exports.emitLoops = emitCode
