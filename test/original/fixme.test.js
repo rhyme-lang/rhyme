@@ -1,5 +1,4 @@
-const { api } = require('../../src/rhyme')
-const { rh } = require('../../src/parser')
+const { api, rh } = require('../../src/rhyme')
 
 test("siblingFields", () => {
     let data = [{ key: "A", value: 10 }, { key: "B", value: 20}, { key: "C", value: 30 }]
