@@ -1,6 +1,7 @@
 const { quoteVar, debug, trace, print, inspect, error, warn } = require("./utils")
 const { parse } = require("./parser")
 const { ops, ast } = require("./shared")
+const { resolveHole } = require("./preprocess")
 
 
 let quoteConst = e => {
@@ -274,34 +275,6 @@ exports.createIR = (query) => {
         //print("XXX fresh temp var ")
         //inspect({lhs1,entries,deps,plus})
         return lhs1
-    }
-
-    // -- Wrap/unwrap, dealing with holes
-    //
-    function resolveHole(p) {
-        if (p === true || p === false) {
-            return { xxkey: "const", xxop: Boolean(p) }
-        } else if (p instanceof Array && p.length == 0) {
-            return { xxkey: "const", xxop: [] }
-        } if (typeof (p) == "number" /*|| !Number.isNaN(Number(p))*/) { // number?
-            return { xxkey: "const", xxop: Number(p) }
-        } else if (typeof (p) == "string") {
-            if (p == "-" || p == "$display")
-              return { xxkey: "const", xxop: p }
-            return parse(p).rhyme_ast // includes desugaring, i.e., no internal holes left
-        } else if (typeof p == "object" || typeof (p) == "function") { // treat fct as obj
-            if ("rhyme_ast" in p) {
-                return p.rhyme_ast
-            } else if (p instanceof Array) {
-                return { xxkey: "array", xxparam: p.map(ast.unwrap) }
-            } else {
-                if (p.xxkey)
-                  console.error("ERROR: double wrapping of ast node " + JSON.stringify(e))
-                return { xxkey: "object", xxparam: Object.entries(p).flat().map(ast.unwrap) }
-            }
-        } else {
-            error("ERROR: unknown obect in query hole: " + JSON.stringify(p)) // user-facing error
-        }
     }
 
     //

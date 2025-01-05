@@ -53,31 +53,13 @@ function resolveHole(p) {
     }
 }
 
-
+exports.resolveHole = resolveHole
 
 let preproc = q => {
-  if (q === true || q === false)
-    return { key: "const", op: Boolean(q) }
-  if (q instanceof Array && q.length == 0)
-    return { key: "const", op: [] }
-  if (typeof (q) === "number" || !Number.isNaN(Number(q)))  // number?
-    return { key: "const", op: Number(q) }
-  if (typeof q === "string") {
-    if (q == "-" || q == "$display")
-      return { key: "const", op: q }
-    else
-      return preproc(parse(q).rhyme_ast)
-  }
-
-  if (q === undefined) {
-    console.error("why undefined?")
-    return q
-  }
-
+  console.assert(q && q.xxkey && !q.rhyme_ast)
   if (q.xxkey == "raw") {
     if (q.xxop == "inp") return { key: "input" }
-    else if (!Number.isNaN(Number(q.xxop))) return { key: "const", op: Number(q.xxop) }
-    else return { key: "const", op: q.xxop }
+    console.error("unexpected raw input: ", q)
   } if (q.xxkey == "const") {
     return { key: "const", op: q.xxop }
   } else if (q.xxkey == "loadCSV") {
@@ -122,16 +104,10 @@ let preproc = q => {
     else
       return { key: "pure", op: "flatten", 
         arg: p.map(x => preproc({ xxkey: "array", xxparam: [x]})) }
-  /*} else if (q instanceof Array) {
-    console.log("ERROR: NO GOOD preproc array", q)
-    if (q.length == 1)
-      return { key: "stateful", op: "array", arg: q.map(preproc) }
-    else
-      return { key: "pure", op: "flatten", arg: q.map(x => preproc([x])) } */
   } else if (q.xxkey == "hole") {
     return preproc(resolveHole(q.xxop))
   } else if (q.xxkey == "object") {
-    let res
+    let res = { key: "const", op: {} }
     for (let i = 0; i < q.xxparam.length; i += 2) {
       let k = q.xxparam[i]
       let v = q.xxparam[i+1]
@@ -141,30 +117,8 @@ let preproc = q => {
         e1 = e2.arg[0]
         e2 = e2.arg[1]
       }
-      if (!res) res = { key: "group", arg: [e1,e2] }
-      else res = { key: "update", arg: [res,e1,e2] }
+      res = { key: "update", arg: [res,e1,e2] }
     }
-    // return { key: "group", arg: [e1,{key:"stateful", op: "last", mode: "reluctant", arg:[e2]}] }
-    if (!res) // empty?
-      res = { key: "const", op: {} }
-    return res
-  } else if (typeof(q) === "object" && !q.xxkey) {
-    console.log("ERROR: NO GOOD preproc array", q)
-    let res
-    for (let k of Object.keys(q)) {
-      let v = q[k]
-      let e1 = preproc(k)
-      let e2 = preproc(v)
-      if (e2.key == "merge" || e2.key == "keyval") { // TODO: support 'flatten'
-        e1 = e2.arg[0]
-        e2 = e2.arg[1]
-      }
-      if (!res) res = { key: "group", arg: [e1,e2] }
-      else res = { key: "update", arg: [res,e1,e2] }
-    }
-    // return { key: "group", arg: [e1,{key:"stateful", op: "last", mode: "reluctant", arg:[e2]}] }
-    if (!res) // empty?
-      res = { key: "const", op: {} }
     return res
   } else if (q.xxkey) {
     // if 'update .. ident ..', convert ident to input ref?
@@ -184,6 +138,5 @@ let preproc = q => {
     console.error("malformed op", q)
   }
 }
-
 
 exports.preproc = preproc

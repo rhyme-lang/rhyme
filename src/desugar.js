@@ -1,7 +1,7 @@
 const { ops, ast } = require("./shared")
 
 // NOTE: in general, desugar preserves only xxkey and xxparam fields.
-// Field xxop is only preserved for 
+// Field xxop is only preserved for ident, raw, const.
 
 exports.desugar = (p) => {
 
