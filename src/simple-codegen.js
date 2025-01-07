@@ -239,7 +239,9 @@ let codegen = (q, scope) => {
   console.assert(scope.vars)
   console.assert(scope.filters)
   // console.assert(scope.buf)
-  if (q.key == "input") {
+  if (q.key == "raw") {
+    return q.op
+  } else if (q.key == "input") {
     return "inp"
   } else if (q.key == "loadInput") {
     console.error("op not implemented: ", pretty(q))
@@ -387,7 +389,7 @@ let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
   // 2. is it OK to take the ordering of iter, or
   //    do we need to compute topological order?
 
-  // NOTE: by passing `full` to emitFilter2 without diff, we will re-run
+  // NOTE: by passing `full` to emitFilters2 without diff, we will re-run
   // the full set of filters for each sym that's already in scope.
   // TODO: keep track of which filters were run in scope, not just vars
 
@@ -395,20 +397,23 @@ let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
     emitFilters2(scope, full)(buf, codegen)(body)
   } else {
 
-    let closing = "}"
-    buf.push("{")
+    let closing = ""//"}"
+    // buf.push("{")
+
+    let projName = "proj"+buf.length // TODO: CSE wrt iter
+
     buf.push("// PROJECT "+full+" -> "+iter)
-    buf.push("let proj = {}")
+    buf.push("let "+projName+" = {}")
 
     emitFilters2(scope, full)(buf, codegen)(() => {
       let xs = [...iter.map(quoteVar)]
       let ys = xs.map(x => ","+x).join("")
-      buf.push("  rt.initTemp(proj"+ys+")(() => true)")
+      buf.push("  rt.initTemp("+projName+ys+")(() => true)")
     })
 
     buf.push("// TRAVERSE "+iter)
 
-    let prefix = "proj"
+    let prefix = projName
     for (let x of iter) {
       if (isDeepVarStr(x)) { // ok, just emit current
         buf.push("rt.deepForInTemp("+prefix+", ("+quoteVar(x)+"_key, "+quoteVar(x)+") => {")
@@ -687,6 +692,9 @@ let emitCode = (q, order) => {
 }
 
 
+
+// the following is called with the output of simple-loopgen
+
 let cgList = xs => xs.map(x => x.key ? pretty(x) : String(x)).join(", ")
 
 let emitStmListLowLevel = (q, buf) => {
@@ -725,6 +733,43 @@ let emitStmListLowLevel = (q, buf) => {
           buf.push("}")
       }
 
+    } else if (stm.key == "forTemp") {
+      let [x, prefix] = stm.arg
+      let scopeg1 = { vars: [], filters: [] }
+
+      if (isDeepVarStr(x)) {
+          buf.push("rt.deepForInTemp("+codegen(prefix,scopeg1)+", ("+quoteVar(x)+"_key, "+quoteVar(x)+") => {")
+          emitStmListLowLevel(stm.body, buf)
+          buf.push("})")
+      } else {
+          buf.push("for (let "+quoteVar(x)+" in "+codegen(prefix,scopeg1)+") {")
+          emitStmListLowLevel(stm.body, buf)
+          buf.push("}")
+      }
+
+    } else if (stm.key == "forTempMult") {
+      let [id, iter] = stm.arg
+      let scopeg1 = { vars: [], filters: [] }
+
+      let projName = "proj"+id
+      let closing = ""
+      let prefix = projName
+      for (let x of iter) {
+        if (isDeepVarStr(x)) { // ok, just emit current
+          buf.push("rt.deepForInTemp("+prefix+", ("+quoteVar(x)+"_key, "+quoteVar(x)+") => {")
+          prefix += "["+quoteVar(x)+"_key]"
+          closing = "})\n"+closing
+        } else {
+          buf.push("for (let "+quoteVar(x)+" in "+prefix+") {")
+          prefix += "["+quoteVar(x)+"]"
+          closing = "}\n"+closing
+        }
+      }
+
+      emitStmListLowLevel(stm.body, buf)
+      buf.push(closing)
+
+
     } else if (stm.key == "init") {
       let [lhs,q] = stm.arg
       let i = lhs.op
@@ -734,6 +779,20 @@ let emitStmListLowLevel = (q, buf) => {
           let ys = xs.map(x => ","+x).join("")
 
           buf.push("  rt.init(tmp"+ys+")\n  ("+ emitStmInit(q, scope1) + ")")
+
+    } else if (stm.key == "declareTemp") {
+
+      let [id,iter] = stm.arg
+
+          buf.push("let proj"+id+" = {}")
+
+    } else if (stm.key == "initTemp") {
+
+      let [id,iter] = stm.arg
+
+        let xs = [...iter.map(quoteVar)]
+        let ys = xs.map(x => ","+x).join("")
+        buf.push("  rt.initTemp(proj"+id+ys+")(() => true)")
 
     } else if (stm.key == "update") {
 
@@ -748,8 +807,11 @@ let emitStmListLowLevel = (q, buf) => {
 
     } else if (stm.key == "return") {
 
-          buf.push("return " + stm.arg[0])
+      let scope = { vars:[], filters: [], buf }
+          buf.push("return " + codegen(stm.arg[0], scope))
 
+    } else if (stm.key == "raw") {
+      buf.push(stm.op)
     } else if (stm.key) {
       buf.push(stm.key.padEnd(9) + " -- " + cgList(stm.arg))
     } else {

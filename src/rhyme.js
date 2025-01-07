@@ -131,6 +131,7 @@ function logDebugOutput(info) {
   })
 }
 
+api.logDebugOutput = logDebugOutput
 
 api["query"] = api["compile"] = (query, schema=typing.any) => {
     query = ast.unwrap(query)

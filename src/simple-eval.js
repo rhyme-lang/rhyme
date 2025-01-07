@@ -22,6 +22,7 @@ let defaultSettings = {
 
   extractAssignments: true,
   extractFilters: true,
+  loopGen: true,
 
   newCodegen: false,
   backend: "js",
@@ -1144,18 +1145,24 @@ let execPromise = function(cmd) {
   trace.log(pseudo)
   trace.log(code)
 
-  let code0 = code
+  if (settings.loopGen) {
 
-  let loops = emitLoops(q,order)
+    let code0 = code
 
-  code = emitCodeLowLevel(loops)
-  code = fixIndent(code)
+    let loops = emitLoops(q,order)
 
-  if (code0 != code) {
-    console.log(code0)
-    console.log(code)
-    expect(code.split("\n")).toEqual(code0.split("\n"))
+    code = emitCodeLowLevel(loops)
+    code = fixIndent(code)
+
+    // if (code0 != code) {
+    //   console.log(code0)
+    //   console.log(code)
+    //   expect(code.split("\n")).toEqual(code0.split("\n"))
+    // }
+
+    api.logDebugOutput({c2_old: code0, c2: code})
   }
+
 
   // ---- link / eval ----
 
