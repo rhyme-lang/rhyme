@@ -21,6 +21,19 @@ let quoteConst = e => {
 }
 
 
+
+// Possible readability improvements:
+// 1: obj['key'] --> obj.key
+// 2: lhs ??= rhs --> lhs = rhs if lhs,rhs don't depend on loop vars
+// 3: tmp.tmp0 = ... --> let tmp0 = ...   
+
+// >= 2 not implemented. Issues: code is sometimes only
+// implicitly scoped. Example: 
+//  for (x <- data) tmp7 = f(x)
+//  ...
+//  for (x <- data) tmp8 = f(tmp7)  <--  ok: only run if data nonempty
+
+
 exports.createIR = (query) => {
     //
     // ---------- Internals ----------
