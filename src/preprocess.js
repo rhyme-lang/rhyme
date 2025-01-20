@@ -82,6 +82,11 @@ let preproc = q => {
       e1 = { key: "input" }
     } else
       e2 = preproc(q.xxparam[1])
+    // XXX 'data.*A?' syntax -- FIXME: make more resilient
+    if (e2.key == "var" && e2.op.endsWith("?")) {
+      e2.op = e2.op.slice(0,-1)
+      return { key: "get?", arg: [e1,e2] }
+    }
     return { key: "get", arg: [e1,e2] }
   } else if (q.xxkey == "apply") {
     let [q1,...qs2] = q.xxparam

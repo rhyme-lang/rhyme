@@ -57,6 +57,12 @@ exports.parserImpl = (strings, holes) => {
   let optable = {}
   for (let c of opchars) optable[c] = 1
 
+  // XXX 'sum?' and data.*A?' syntax -- FIXME: make more resilient
+  let idchars = '_?!'
+  let idtable = {}
+  for (let c of idchars) idtable[c] = 1
+
+
   // init lexer with first token to get going
   indent = whitespace();
   gap = input.substring(0, indent)
@@ -91,12 +97,12 @@ exports.parserImpl = (strings, holes) => {
       while (isdigit()) pos++
       peek = "num"
     } else if (isletter() || input[pos] == "_") {
-      while (isletter() || isdigit() || input[pos] == "_") pos++
+      while (isletter() || isdigit() || idtable[input[pos]]) pos++
       peek = "ident"
     } else if (input[pos] == "*") { // special case!
       while (input[pos] == "*") pos++
       if (isletter() || isdigit() || input[pos] == "_") {
-        while (isletter() || isdigit() || input[pos] == "_") pos++
+        while (isletter() || isdigit() || idtable[input[pos]]) pos++
         peek = "ident"
       } else {
         while (isopchar()) pos++
@@ -351,7 +357,7 @@ exports.parserImpl = (strings, holes) => {
       next()
       return res
     } else if (peek == '{') {
-      // error("object constructor syntax not supported yet")
+      // object constructor syntax
       let entry = () => {
         let key = expr()
         let val
@@ -363,10 +369,9 @@ exports.parserImpl = (strings, holes) => {
         return [key, val]
       }
       let elems = braces(() => commaList(entry))
-      // console.log(elems)
       return ast.object(elems.flat())
     } else if (peek == '[') {
-      // error("array constructor syntax not supported yet")
+      // array constructor syntax
       let elems = brackets(() => commaList(expr))
       return ast.array(elems)
     } else {

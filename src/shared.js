@@ -19,6 +19,11 @@ ops.special.update_inplace = true
 ops.special.merge = ops.special.keyval = true
 ops.special.flatten = true
 
+ops.special.["get?"] = true
+ops.special.["group?"] = true
+
+
+
 // pure operations
 
 ops.pure.input = true
@@ -53,6 +58,21 @@ ops.stateful.first = true
 ops.stateful.last = true
 ops.stateful.single = true
 ops.stateful.all = true
+
+ops.stateful["sum?"] = true
+ops.stateful["product?"] = true
+ops.stateful["count?"] = true
+ops.stateful["max?"] = true
+ops.stateful["min?"] = true
+ops.stateful["array?"] = true
+ops.stateful["object?"] = true
+ops.stateful["mkset?"] = true
+ops.stateful["group?"] = true
+ops.stateful["first?"] = true
+ops.stateful["last?"] = true
+ops.stateful["single?"] = true
+ops.stateful["all?"] = true
+
 
 
 // 
