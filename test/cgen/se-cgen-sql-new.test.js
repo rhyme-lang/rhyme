@@ -520,17 +520,15 @@ let regionData = [
   { region: "Europe", country: "UK" },
 ]
 
-// test("groupByArray", async () => {
-//   let country = rh`loadCSV "./cgen-sql/country.csv" ${countrySchema}`
-//   let region = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
+test("groupByArray", async () => {
+  let region = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
 
-//   let q1 = rh`${region}.*O.region | group ${region}.*O.country`
-//   let query = rh`array ${country}.*.city | group ${q1}.(${country}.*.country)`
+  let query = rh`array ${region}.*O.country | group ${region}.*O.region`
 
-//   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "groupByArrayJS.c", schema: types.never })
-//   let res = await func()
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "groupByArray.c", schema: types.never })
+  let res = await func()
 
-//   console.log(res)
-// })
+  console.log(res)
+})
 
 /**/

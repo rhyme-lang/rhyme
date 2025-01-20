@@ -8,6 +8,9 @@ const { unique, union } = sets
 const KEY_SIZE = 256
 const HASH_SIZE = 256
 
+const BUCKET_SIZE = 256
+const DATA_SIZE = KEY_SIZE * BUCKET_SIZE
+
 const HASH_MASK = HASH_SIZE - 1
 
 let filters
@@ -109,6 +112,8 @@ let cgen = {
 
   plus: (lhs, rhs) => cgen.binary(lhs, rhs, "+"),
   minus: (lhs, rhs) => cgen.binary(lhs, rhs, "-"),
+
+  mul: (lhs, rhs) => cgen.binary(lhs, rhs, "*"),
 
   and: (lhs, rhs) => cgen.binary(lhs, rhs, "&&"),
   equal: (lhs, rhs) => cgen.binary(lhs, rhs, "=="),
@@ -402,6 +407,7 @@ let hash = (buf, key, schema) => {
 // Emit the code that finds the key in the hashmap.
 // Linear probing is used for resolving collisions.
 // Comparison of keys is based on different key types.
+// The actual storage of the values / data does not affect the lookup
 let hashLookUp = (buf, sym, key) => {
   let { keySchema } = hashMapEnv[sym]
   let hashed = hash(buf, key, keySchema)
@@ -469,7 +475,9 @@ let hashLookUpOrUpdate = (buf, sym, key, update) => {
     }
 
     let lhs
-    if (typing.isString(valSchema)) {
+    if (typing.isObject(valSchema)) {
+      lhs = `${sym}_bucket_counts[${keyPos}]`
+    } else if (typing.isString(valSchema)) {
       lhs = { str: `${sym}_values_str[${keyPos}]`, len: `${sym}_values_len[${keyPos}]` }
     } else {
       lhs = `${sym}_values[${keyPos}]`
@@ -477,6 +485,8 @@ let hashLookUpOrUpdate = (buf, sym, key, update) => {
 
     update(lhs)
   })
+
+  return [pos, keyPos]
 }
 
 // Emit the code that performs a lookup of the key in the hashmap, then
@@ -506,13 +516,49 @@ let hashUpdate = (buf, sym, key, update) => {
   })
 
   let lhs
-  if (typing.isString(valSchema)) {
+  if (typing.isObject(valSchema)) {
+    lhs = `${sym}_bucket_counts[${keyPos}]`
+  } else if (typing.isString(valSchema)) {
     lhs = { str: `${sym}_values_str[${keyPos}]`, len: `${sym}_values_len[${keyPos}]` }
   } else {
     lhs = `${sym}_values[${keyPos}]`
   }
 
   update(lhs)
+
+  return [pos, keyPos]
+}
+
+let hashBufferInsert = (buf, sym, key, value) => {
+  let { keySchema, valSchema } = hashMapEnv[sym]
+
+  let [pos, keyPos] = hashLookUpOrUpdate(buf, sym, key, lhs => {
+    cgen.stmt(buf)(cgen.assign(lhs, "0"))
+  })
+
+  let dataPos = getNewName("data_pos")
+  cgen.declareInt(buf)(dataPos, `${sym}_data_count`)
+
+  cgen.stmt(buf)(cgen.inc(`${sym}_data_count`))
+
+  let bucketPos = getNewName("bucket_pos")
+  cgen.declareInt(buf)(bucketPos, `${sym}_bucket_counts[${keyPos}]`)
+
+  cgen.stmt(buf)(cgen.assign(`${sym}_bucket_counts[${keyPos}]`, cgen.plus(bucketPos, "1")))
+
+  let idx = cgen.plus(cgen.mul(keyPos, BUCKET_SIZE), bucketPos)
+  cgen.stmt(buf)(cgen.assign(`${sym}_buckets[${idx}]`, dataPos))
+
+  if (!typing.isObject(valSchema)) {
+    throw new Error("array type expected")
+  }
+
+  if (typing.isString(valSchema.objValue)) {
+    cgen.stmt(buf)(cgen.assign(`${sym}_data_str[${dataPos}]`, value.str))
+    cgen.stmt(buf)(cgen.assign(`${sym}_data_len[${dataPos}]`, value.len))
+  } else {
+    cgen.stmt(buf)(cgen.assign(`${sym}_data[${dataPos}]`, value))
+  }
 }
 
 // Emit code that initializes a hashmap.
@@ -544,15 +590,26 @@ let hashMapInit = (buf, sym, keySchema, valSchema) => {
 
   cgen.comment(buf)(`values of ${sym}`)
 
-  if (typing.isString(valSchema)) {
+  if (typing.isObject(valSchema)) {
+    // stateful "array" op
+    if (typing.isString(valSchema.objValue)) {
+      // arrays for the actual data will have size KEY_SIZE * BUCKET_SIZE
+      cgen.declareCharPtrPtr(buf)(`${sym}_data_str`, cgen.cast("char **", cgen.malloc("char *", DATA_SIZE)))
+      cgen.declareIntPtr(buf)(`${sym}_data_len`, cgen.cast("int *", cgen.malloc("int", DATA_SIZE)))
+    } else {
+      let cType = convertToCType(valSchema.objValue)
+      cgen.declarePtr(buf)(cType, `${sym}_data`, cgen.cast(`${cType} *`, cgen.malloc(cType, DATA_SIZE)))
+    }
+    cgen.declareInt(buf)(`${sym}_data_count`, "0")
+
+    cgen.declareIntPtr(buf)(`${sym}_buckets`, cgen.cast("int *", cgen.malloc("int", DATA_SIZE)))
+    cgen.declareIntPtr(buf)(`${sym}_bucket_counts`, cgen.cast("int *", cgen.malloc("int", KEY_SIZE)))
+    // throw new Error("hashMap value object not implemented")
+  } else if (typing.isString(valSchema)) {
     cgen.declareCharPtrPtr(buf)(`${sym}_values_str`, cgen.cast("char **", cgen.malloc("char *", KEY_SIZE)))
     cgen.declareIntPtr(buf)(`${sym}_values_len`, cgen.cast("int *", cgen.malloc("int", KEY_SIZE)))
-  } else if (typing.isObject(valSchema)) {
-    if (!typing.isInteger(valSchema.objKey)) {
-      throw new Error("hashMap value object does not support non-integer keys")
-    }
-    throw new Error("hashMap value object not implemented")
   } else {
+    // let convertToCType report "type not supported" errors
     let cType = convertToCType(valSchema)
     cgen.declarePtr(buf)(cType, `${sym}_values`, cgen.cast(`${cType} *`, cgen.malloc(cType, KEY_SIZE)))
   }
@@ -564,26 +621,27 @@ let hashMapInit = (buf, sym, keySchema, valSchema) => {
 let hashMapPrint = (buf, sym) => {
   let { keySchema, valSchema } = hashMapEnv[sym]
   buf.push(`for (int i = 0; i < ${HASH_SIZE}; i++) {`)
-  buf.push(`int keyPos = ${sym}_htable[i];`)
-  buf.push(`if (keyPos == -1) {`)
+  buf.push(`int key_pos = ${sym}_htable[i];`)
+  buf.push(`if (key_pos == -1) {`)
   buf.push(`continue;`)
   buf.push(`}`)
   buf.push(`// print key`)
 
   if (typing.isString(keySchema)) {
-    buf.push(`print(${sym}_keys_str[keyPos], ${sym}_keys_len[keyPos]);`)
+    buf.push(`print(${sym}_keys_str[key_pos], ${sym}_keys_len[key_pos]);`)
   } else {
-    buf.push(`printf("%${getFormatSpecifier(keySchema)}", ${sym}_keys[keyPos]);`)
+    buf.push(`printf("%${getFormatSpecifier(keySchema)}", ${sym}_keys[key_pos]);`)
   }
 
   buf.push(`print(": ", 2);`)
 
   buf.push(`// print value`)
-  if (typing.isString(valSchema)) {
-    buf.push(`print(${sym}_values_str[keyPos], ${sym}_values_len[keyPos]);`)
+  if (typing.isObject(valSchema)) {
+  } else if (typing.isString(valSchema)) {
+    buf.push(`print(${sym}_values_str[key_pos], ${sym}_values_len[key_pos]);`)
     buf.push(`print("\\n", 1);`)
   } else {
-    buf.push(`printf("%${getFormatSpecifier(valSchema)}\\n", ${sym}_values[keyPos]);`)
+    buf.push(`printf("%${getFormatSpecifier(valSchema)}\\n", ${sym}_values[key_pos]);`)
   }
   buf.push(`}`)
 }
@@ -670,7 +728,9 @@ let emitStmUpdate = (q, sym) => {
           update = (lhs) => cgen.stmt(buf)(cgen.assign(lhs, e1))
         }
       } else if (q.op == "array") {
-        throw new Error("stateful op not implmeneted: " + pretty(q))
+        let key = mksetVarEnv[q.fre[0]].val
+        hashBufferInsert(buf, sym, key, e1)
+        return buf
       } else {
         throw new Error("stateful op not supported: " + pretty(q))
       }
