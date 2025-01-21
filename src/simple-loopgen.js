@@ -32,6 +32,17 @@ exports.setLoopgenState = st => {
 
 let transf = ps => unique([...ps,...ps.flatMap(x => vars[x].varsf)])
 
+let getFilterIndex = () => {
+  let res = {}
+  for (let i in filters) {
+    let f = filters[i]
+    let v1 = f.arg[1].op
+    let g1 = f.arg[0]
+    res[v1] ??= []
+    res[v1].push(i)
+  }
+  return res
+}
 
 let emitFilters1 = (scope, free, bnd) => body => {
   // approach: build explicit projection first
@@ -55,19 +66,33 @@ let emitFilters1 = (scope, free, bnd) => body => {
   // any variables not in scope will need to be
   // reconstructed here (through iteration)
 
-
   // Questions:
   // 1. does trans(iter) do the right thing, or
   //    do we need to use q.free? (XX: had to use .fre)
   // 2. is it OK to take the ordering of iter, or
   //    do we need to compute topological order?
 
+
+  // For full outer joins, we compute the iteration domain
+  // as a big disjuction, with one loop for each 'data.*A?'
+  // generator. This is not the most efficient way, but
+  // it works.
+
+  let idx = getFilterIndex()
+  let disjunct = []
+  for (let v of iter) {
+    // does the variable have only 'maybe' generators?
+    if (idx[v] && idx[v].every(i => filters[i].mode == "maybe")) {
+      disjunct.push(...idx[v])
+    }
+  }
+
   // NOTE: by passing `full` to emitFilter2 without diff, we will re-run
   // the full set of filters for each sym that's already in scope.
   // TODO: keep track of which filters were run in scope, not just vars
 
-  if (same(diff(full,scope.vars), iter)) { // XXX should not disregard order?
-    emitFilters2(scope, full)(body)
+  if (same(diff(full,scope.vars), iter) && disjunct.length == 0) { // XXX should not disregard order?
+    emitFilters2(scope, full, -1)(body)
   } else {
 
     let id = buf.length // TODO: CSE wrt iter
@@ -77,10 +102,16 @@ let emitFilters1 = (scope, free, bnd) => body => {
     // emit: let $projName = {}
     buf.push({key: "declareTemp", arg: [id, iter]})
 
-    emitFilters2(scope, full)((scope1) => {
-      // emit: $projName[...iter] = true}
-      scope1.buf.push({key: "initTemp", arg: [id, iter]})
-    })
+    // emit one loop per outer join disjuct -- if none, emit at least one loop
+    if (disjunct.length == 0) 
+      disjunct = [-1]
+
+    for (let u of disjunct) {
+      emitFilters2(scope, full, u)((scope1) => {
+        // emit: $projName[...iter] = true}
+        scope1.buf.push({key: "initTemp", arg: [id, iter]})
+      })
+    }
 
     buf.push("// TRAVERSE "+iter)
 
@@ -136,7 +167,7 @@ let emitFilters1 = (scope, free, bnd) => body => {
 }
 
 
-let emitFilters2 = (scope, iter) => body => {
+let emitFilters2 = (scope, iter, u) => body => {
 
   let buf = scope.buf
 
@@ -159,8 +190,8 @@ let emitFilters2 = (scope, iter) => body => {
     let v1 = f.arg[1].op
     let g1 = f.arg[0]
 
-    if (g1.mode == "maybe")
-      continue // disregard outer join! data.*A?
+    if (g1.mode == "maybe" && i !== u)
+      continue // disregard outer join! data.*A? --> unless requested!
 
     if (vars[v1]) // not interested in this? skip
       pending.push(i)

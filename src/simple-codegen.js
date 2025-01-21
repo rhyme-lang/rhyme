@@ -364,6 +364,18 @@ let transViaFiltersFree = iter => {
   return res
 }
 
+let getFilterIndex = () => {
+  let res = {}
+  for (let i in filters) {
+    let f = filters[i]
+    let v1 = f.arg[1].op
+    let g1 = f.arg[0]
+    res[v1] ??= []
+    res[v1].push(i)
+  }
+  return res
+}
+
 let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
   // approach: build explicit projection first
   // 1. iterate over transitive iter space to
@@ -391,12 +403,27 @@ let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
   // 2. is it OK to take the ordering of iter, or
   //    do we need to compute topological order?
 
+
+  // For full outer joins, we compute the iteration domain
+  // as a big disjuction, with one loop for each 'data.*A?'
+  // generator. This is not the most efficient way, but
+  // it works.
+
+  let idx = getFilterIndex()
+  let disjunct = []
+  for (let v of iter) {
+    // does the variable have only 'maybe' generators?
+    if (idx[v] && idx[v].every(i => filters[i].mode == "maybe")) {
+      disjunct.push(...idx[v])
+    }
+  }
+
   // NOTE: by passing `full` to emitFilters2 without diff, we will re-run
   // the full set of filters for each sym that's already in scope.
   // TODO: keep track of which filters were run in scope, not just vars
 
-  if (same(diff(full,scope.vars), iter)) { // XXX should not disregard order?
-    emitFilters2(scope, full)(buf, codegen)(body)
+  if (same(diff(full,scope.vars), iter) && disjunct.length == 0) { // XXX should not disregard order?
+    emitFilters2(scope, full, -1)(buf, codegen)(body)
   } else {
 
     let closing = ""//"}"
@@ -407,11 +434,17 @@ let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
     buf.push("// PROJECT "+full+" -> "+iter)
     buf.push("let "+projName+" = {}")
 
-    emitFilters2(scope, full)(buf, codegen)(() => {
-      let xs = [...iter.map(quoteVar)]
-      let ys = xs.map(x => ","+x).join("")
-      buf.push("  rt.initTemp("+projName+ys+")(() => true)")
-    })
+    // emit one loop per outer join disjuct -- if none, emit at least one loop
+    if (disjunct.length == 0) 
+      disjunct = [-1]
+
+    for (let u of disjunct) {
+      emitFilters2(scope, full, u)(buf, codegen)(() => {
+        let xs = [...iter.map(quoteVar)]
+        let ys = xs.map(x => ","+x).join("")
+        buf.push("  rt.initTemp("+projName+ys+")(() => true)")
+      })
+    }
 
     buf.push("// TRAVERSE "+iter)
 
@@ -445,7 +478,7 @@ let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
 }
 
 
-let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
+let emitFilters2 = (scope, iter, u) => (buf, codegen) => body => {
 
   // let watermark = buf.length
   // let buf0 = buf
@@ -470,7 +503,7 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
     let v1 = f.arg[1].op
     let g1 = f.arg[0]
 
-    if (g1.mode == "maybe")
+    if (g1.mode == "maybe" && i !== u)
       continue // disregard outer join! data.*A?
 
     if (vars[v1]) // not interested in this? skip

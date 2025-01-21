@@ -498,7 +498,7 @@ test("testLeftOuterJoin", () => {
   ])
 })
 
-test.skip("testFullOuterJoin", () => {
+test("testFullOuterJoin", () => {
   let data = [ , , 3, 4 ]
   let other = [ 1, 2 ]
 
