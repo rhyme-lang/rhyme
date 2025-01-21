@@ -527,3 +527,38 @@ test("testFullOuterJoin2", () => {
     1, 2, 3, 4
   ])
 })
+
+
+test("testFullOuterJoin_other1", () => {
+  let data = [ , , 3, 4 ]
+
+  // NOTE: if there is only a single "maybe" 
+  // generator, missing values cannot be observed
+  let query = rh`data.*A? || 0`
+
+  let func = compile(query)
+  let res = func({data, other})
+
+
+  expect(res).toEqual({
+    2: 3, 3: 4
+  })
+})
+
+
+test("testFullOuterJoin_other2", () => {
+  let data = [ , , 3, 4 ]
+  let other = [ 1, 2 ]
+
+  // NOTE: if there is only a single "maybe" 
+  // generator, missing values cannot be observed
+  let query = rh`{ A: sum(data.*A?), B: sum(other.*A?), C: [*A] }`
+
+  let func = compile(query)
+  let res = func({data, other})
+
+
+  expect(res).toEqual({
+    A: 7, B: 3, C: ["0", "1", "2", "3"]
+  })
+})
