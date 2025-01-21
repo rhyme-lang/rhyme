@@ -411,7 +411,11 @@ test("testGroupPrefixSum1", () => {
 
 // ----- outer joins
 
-// want: left outer joins (observe failure) ...
+// want: outer joins (observe failure) ...
+
+// TODO: there is limited support for lef/right
+// outer joins but full outer joins (both sides
+// may observe failure) are not yet supported.
 
 test("testOuterJoin_pre1", () => {
   let data = [ 
@@ -444,8 +448,8 @@ test("testOuterJoin_pre2", () => {
 
   let other = { 'A': 7 }
 
-  // *inner* join behavior works ok
-  let query = rh`other.(data.*A.key)` // || -1 (not found)
+  // default (inner join) behavior: 
+  let query = rh`other.(data.*A.key)` // undefined if not found
 
   let func = compile(query)
   let res = func({data, other})
@@ -454,4 +458,57 @@ test("testOuterJoin_pre2", () => {
   expect(res).toEqual({
     0: 7, 2: 7
   })
+})
+
+test("testOuterJoin_pre3", () => {
+  let data = [ 
+    {key: 'A', val: 10}, 
+    {key: 'B', val: 20}, 
+    {key: 'A', val: 30} 
+  ]
+
+  let other = { 'A': 7 }
+
+  // outer join behavior: observe missing value
+  let query = rh`other.(data.*A.key) || "not found"` 
+
+  let func = compile(query)
+  let res = func({data, other})
+
+
+  expect(res).toEqual({
+    0: 7, 
+    1: "not found", 
+    2: 7,
+  })
+})
+
+test("testLeftOuterJoin", () => {
+  let data = [ 1, 2, 5, 5 ]
+  let other = [ 4, 3 ]
+
+  let query = rh`[data.*A + (other.*A? || 0)]`
+
+  let func = compile(query)
+  let res = func({data, other})
+
+
+  expect(res).toEqual([
+    5, 5, 5, 5
+  ])
+})
+
+test.skip("testFullOuterJoin", () => {
+  let data = [ , , 3, 4 ]
+  let other = [ 1, 2 ]
+
+  let query = rh`[(data.*A? || 0) + (other.*A? || 0)]`
+
+  let func = compile(query)
+  let res = func({data, other})
+
+
+  expect(res).toEqual([
+    1, 2, 3, 4
+  ])
 })
