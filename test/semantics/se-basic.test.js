@@ -498,11 +498,26 @@ test("testLeftOuterJoin", () => {
   ])
 })
 
-test("testFullOuterJoin", () => {
+test("testFullOuterJoin1", () => {
   let data = [ , , 3, 4 ]
   let other = [ 1, 2 ]
 
   let query = rh`[(data.*A? || 0) + (other.*A? || 0)]`
+
+  let func = compile(query)
+  let res = func({data, other})
+
+
+  expect(res).toEqual([
+    1, 2, 3, 4
+  ])
+})
+
+test("testFullOuterJoin2", () => {
+  let data = [ , , 3, 4 ]
+  let other = [ 1, 2 ]
+
+  let query = rh`[data.*A? + other.*A? || data.*A? || other.*A?]`
 
   let func = compile(query)
   let res = func({data, other})
