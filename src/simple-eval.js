@@ -112,7 +112,7 @@ let extract0 = q => {
   if (q.key == "var") {
     if (q.op == "*") throw console.error("cannot support free-standing *")
     return q
-  } else if (q.key == "get") {
+  } else if (q.key == "get" || q.key == "get?") {
     let [e1,e2] = q.arg
     if (e2.key == "var") {
       // canonicalize '*' in 'data.*' to a unique variable
@@ -122,6 +122,8 @@ let extract0 = q => {
     }
     e1 = extract0(e1)
     e2 = extract0(e2)
+    if (q.key == "get?")
+      return { ...q, key: "get", mode: "maybe", arg: [e1,e2]}
     return { ...q, arg: [e1,e2]}
   } else if (q.key == "group") {
     let arg = [{key:"const",op:{}}]

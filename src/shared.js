@@ -19,8 +19,8 @@ ops.special.update_inplace = true
 ops.special.merge = ops.special.keyval = true
 ops.special.flatten = true
 
-ops.special.["get?"] = true
-ops.special.["group?"] = true
+// ops.special["get?"] = true
+// ops.special["group?"] = true
 
 
 

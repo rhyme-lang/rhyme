@@ -11,19 +11,19 @@ exports.desugar = (p) => {
 
   // contract: args are already desugared
   function transPath(p, args) {
-    if (p == "get") {
+    if (p == "get" || p == "get?") {
       let [e1, ...e2s] = args
-      // incomplete path like .foo? implicit hole, treat as function!
+      // incomplete path like '.foo' ? implicit hole, treat as function!
       if (e2s.length == 0 || e2s[0] === undefined) {
         // implicit hole = argument ref
         e2s = [e1]
         e1 = argProvided
         argUsed = true
       }
-      // selecting on an ident like input.foo? implicit root field access
+      // selecting on an ident like 'input.foo' ? implicit root field access
       if (e1.xxkey == "ident")
-        e1 = { xxkey: "get", xxparam: [{ xxkey: "raw", xxop: "inp"}, e1] }
-      return { xxkey: "get", xxparam: [e1,...e2s] }
+        e1 = { xxkey: p, xxparam: [{ xxkey: "raw", xxop: "inp"}, e1] }
+      return { xxkey: p, xxparam: [e1,...e2s] }
     } else {
       return { xxkey: p, xxparam: args }
     }
@@ -36,8 +36,8 @@ exports.desugar = (p) => {
 
   // contract: args are already desugared, p is an ident
   function transPrimitiveApply(p, args) {
-    if (p == "get") { // XXX others? plus, minus, etc?
-      return transPath("get", args)
+    if (p == "get" || p == "get?") { // XXX others? plus, minus, etc?
+      return transPath(p, args)
     } else if (ops.stateful[p]) {
       return transStateful(p, args) // unpack!
     } else if (p == "group" && args.length < 2) {

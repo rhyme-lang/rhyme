@@ -22,9 +22,19 @@ let binop_table = {
   "//": "div",   // integer division
   "%" : "mod",
 }
+
 function ast_binop(op, a,b) {
   let op1 = binop_table[op] ?? op
   return { xxkey: op1, xxparam: [a,b] }
+}
+
+function ast_postop(op, a) {
+  if (op == "?" && a.xxkey == "ident") {
+    return { ...a, xxop: a.xxop + "?" }
+  } else if (op == "?" && a.xxkey == "get") {
+    return { ...a, xxkey: "get?" }
+  }
+  return { xxkey: op, xxparam: [a] }
 }
 
 //
@@ -58,7 +68,7 @@ exports.parserImpl = (strings, holes) => {
   for (let c of opchars) optable[c] = 1
 
   // XXX 'sum?' and data.*A?' syntax -- FIXME: make more resilient
-  let idchars = '_?!'
+  let idchars = '_'
   let idtable = {}
   for (let c of idchars) idtable[c] = 1
 
@@ -332,9 +342,7 @@ exports.parserImpl = (strings, holes) => {
     return res
   }
   function atom() {
-    if (peek == '(') {
-      return parens(expr)
-    } else if (peek == "num" || peek == "str" || peek == "ident" || peek == "*") {
+    if (peek == "num" || peek == "str" || peek == "ident" || peek == "*") {
       let s = str
       let res
       if (peek == "num") {
@@ -356,6 +364,8 @@ exports.parserImpl = (strings, holes) => {
       let res = ast.hole(holes[hole])
       next()
       return res
+    } else if (peek == '(') {
+      return parens(expr)
     } else if (peek == '{') {
       // object constructor syntax
       let entry = () => {
@@ -382,14 +392,24 @@ exports.parserImpl = (strings, holes) => {
     let res
     if (peek == ".") { // e.g. .input, to distinguish 'get' from 'ident'  TODO: require no space?
       next()
-      res = ast.get(atom())
-    } else
+      let rhs = atom()
+      res = ast.get(rhs)
+    } else {
       res = atom()
+    }
+
+    if (gap == "" && peek == "?") {
+      res = ast_postop(next(), res)
+    }
+
     while (gap == "" && (peek == "." || peek == "(" || peek == "[")) {
       if (peek == ".") {
         next()
         let rhs = atom()
         res = ast.get(res, rhs)
+        if (gap == "" && peek == "?") {
+          res = ast_postop(next(), res)
+        }
         // TODO: might want to prevent .{}. and .[]. which don't make sense
         // if (peek == "ident" || peek == "*") {
         //   let rhs = ast.ident(str)
