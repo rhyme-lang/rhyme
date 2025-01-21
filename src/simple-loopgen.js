@@ -1,6 +1,7 @@
 const { api } = require('./rhyme')
 const { sets } = require('./shared')
 const { runtime } = require('./simple-runtime')
+const { pretty } = require('./simple-codegen')
 const { typing, types, typeSyms } = require('./typing')
 
 const { unique, union, intersect, diff, subset, same } = sets
@@ -157,6 +158,10 @@ let emitFilters2 = (scope, iter) => body => {
     let f = filters[i]
     let v1 = f.arg[1].op
     let g1 = f.arg[0]
+
+    if (g1.mode == "maybe")
+      continue // disregard outer join! data.*A?
+
     if (vars[v1]) // not interested in this? skip
       pending.push(i)
   }
@@ -265,6 +270,13 @@ let emitFilters2 = (scope, iter) => body => {
       buf.push("// ERROR: unsolved filter ordering problem: "+i+" := "+pretty(filters[i]))
     }
   }
+
+  // check that all variables were seen
+  for (let v in vars) {
+    if (!seen[v])
+      console.error("no suitable generator for variable "+v)
+  }
+
 
   // emit loop body
   let scope1 = {...scope, buf, vars: [...scope.vars, ...iter], filters: [...filtersInScope]}

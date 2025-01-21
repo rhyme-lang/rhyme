@@ -72,6 +72,8 @@ let pretty = q => {
       // if (q.filter === undefined) // def
         // return e2 + " <- " + e1
     // }
+    if (q.mode == "maybe")
+      return e1+"["+e2+"?]"
     return e1+"["+e2+"]"
   } else if (q.key == "pure") {
     let es = q.arg.map(pretty)
@@ -467,6 +469,10 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
     let f = filters[i]
     let v1 = f.arg[1].op
     let g1 = f.arg[0]
+
+    if (g1.mode == "maybe")
+      continue // disregard outer join! data.*A?
+
     if (vars[v1]) // not interested in this? skip
       pending.push(i)
   }
@@ -579,12 +585,19 @@ let emitFilters2 = (scope, iter) => (buf, codegen) => body => {
     // }
   }
 
+  // check that all filters were emitted
   if (pending.length > 0) {
     let problem = pending.map(i => pretty(filters[i])).join(", ")
     console.warn("unsolved filter ordering problem: couldn't emit "+problem)
     for (let i of pending) {
       buf.push("// ERROR: unsolved filter ordering problem: "+i+" := "+pretty(filters[i]))
     }
+  }
+
+  // check that all variables were seen
+  for (let v in vars) {
+    if (!seen[v])
+      console.error("no suitable generator for variable "+v)
   }
 
   // combine buffers
@@ -1530,6 +1543,7 @@ let translateToNewCodegen = q => {
 
 
 
+exports.pretty = pretty
 
 exports.codegen = codegen
 
