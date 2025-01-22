@@ -409,6 +409,26 @@ rt.init = (root,...path) => (init) => {
 }
 
 
+
+// iteration utils: possible future hook for extension
+
+rt.entries = (root) => {
+  // possible extension point for user-defined
+  // data structures:
+  // 
+  // if (root.rhyme_iterator)
+  //   return root.rhyme_iterator()
+
+  return Object.entries(root ?? {})
+}
+
+rt.has = (root, key) => {
+  return (key in (root ?? {}))
+}
+
+
+
+
 // deep vars (tree paths)
 
 rt.deepGet = (root, a) => {

@@ -606,11 +606,11 @@ let emitFilters2 = (scope, iter, u) => (buf, codegen) => body => {
         closing = "})\n"+closing
       } else { // ok, just emit current
         if (!seen[v1]) {
-          buf.push("for (let ["+quoteVar(v1)+", gen"+i+"] of Object.entries("+codegen(g1,scopeg1)+"??{})) {")
+          buf.push("for (let ["+quoteVar(v1)+", gen"+i+"] of rt.entries("+codegen(g1,scopeg1)+")) {")
         //   buf.push("for (let "+quoteVar(v1)+" in "+codegen(g1,scopeg1)+") {")
         //   buf.push("let gen"+i+" = "+codegen(f,scopef))
         } else {
-          buf.push("if ("+quoteVar(v1)+" in ("+codegen(g1,scopeg1)+"??[])) {")
+          buf.push("if (rt.has("+codegen(g1,scopeg1)+", "+quoteVar(v1)+")) {")
         }
         seen[v1] = true
         closing = "}\n"+closing
@@ -757,7 +757,7 @@ let emitStmListLowLevel = (q, buf) => {
           emitStmListLowLevel(stm.body, buf)
           buf.push("})")
       } else {
-          buf.push("for (let ["+quoteVar(v1)+", gen"+i+"] of Object.entries("+codegen(g1,scopeg1)+"??{})) {")
+          buf.push("for (let ["+quoteVar(v1)+", gen"+i+"] of rt.entries("+codegen(g1,scopeg1)+")) {")
           emitStmListLowLevel(stm.body, buf)
           buf.push("}")
       }
@@ -774,7 +774,7 @@ let emitStmListLowLevel = (q, buf) => {
           emitStmListLowLevel(stm.body, buf)
           buf.push("})")
       } else {
-          buf.push("if ("+quoteVar(v1)+" in ("+codegen(g1,scopeg1)+"??[])) {")
+          buf.push("if (rt.has("+codegen(g1,scopeg1)+", "+quoteVar(v1)+")) {")
           emitStmListLowLevel(stm.body, buf)
           buf.push("}")
       }
