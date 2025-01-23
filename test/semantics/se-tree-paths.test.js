@@ -236,6 +236,32 @@ test("testPathGroup4-2", () => {
   expect(res).toEqual(expected)
 })
 
+test("testPathGroup4-3-pre", () => {
+  // perform structural modifications in a tree 
+  // simple case: want to leave non-object intact!
+  let query = { "*A": rh`update data.*A "newfield" 1` }
+
+  let func = compile(query)
+  let res = func({data,other})
+
+  // console.log(func.explain.pseudo)
+  // console.log(func.explain.code)
+  // console.log(res)
+
+  let expected = {
+    A: 7, B: 8, 
+    foo1: {
+      A: 17, B: 18, 
+      newfield: 1,
+      foo2: {
+        A: 27, B: 28,
+      }
+    }
+  }
+
+  expect(res).toEqual(expected)
+})
+
 test("testPathGroup4-3", () => {
   // perform structural modifications -- add computed sum of all numbers
   // for every node in the tree
@@ -312,23 +338,7 @@ test("testPathGroup4-4", () => {
   // adding an undefined entry appears to skip
   // the entire object.
 
-  // NOTE: we get expected2 if we change **A to *A,
-  // a reasonable prior would be to seek consistency
-
-
-  // The actual result now drops hasNoEntriesAtAll.sum:
-  // presumaby, since there are no entries traverses,
-  // the init case in rt.stateful.update is never
-  // called.
-
-  let expected3 = {
-    hasNumbers: { A: 1, B: 2, C: "foo", sum: 3 },
-    hasNoNumbers: { U: "foo", V: "bar", sum: 0 },
-    hasNoEntriesAtAll: { /* sum: 0 */ },
-    sum: 0
-  }
-
-  expect(res).toEqual(expected3)
+  expect(res).toEqual(expected2)
 })
 
 

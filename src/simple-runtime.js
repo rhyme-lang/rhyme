@@ -309,11 +309,15 @@ rt.stateful.group = (x1,x2) => ({
 
 
 rt.uniqueMutableCopy = x0 => {
-  // console.assert(typeof x0 === "object")
+  console.assert(typeof x0 === "object")
   return {...x0}
 }
 
-rt.stateful.update_init = (x0) => () => rt.uniqueMutableCopy(x0)
+rt.stateful.update_init = (x0) => () => {
+  if (typeof x0 === "object")
+    return rt.uniqueMutableCopy(x0)
+  return x0 // should return undefined?
+}
 
 rt.stateful.update = (x0,x1,x2) => ({
   init: () => ({...x0}), // NOTE: preserve init value! 
@@ -324,20 +328,12 @@ rt.stateful.update = (x0,x1,x2) => ({
     if (x1 === undefined) return s
     if (x2 === undefined) return s
     if (s === undefined) {
-      // still needed for tree paths, even now with
-      // pre-init path (see testPathGroup3,4)
-      // XXX todo: ensure more generally that we're only
-      // updating proper objects
-      if (typeof x0 === "object") // testPathGroup3,4: String!
-        s = rt.uniqueMutableCopy(x0)
-      else
-        s = x0
+      s = {}
     }
+    if (!typeof s === "object") return s
     if (x1 instanceof Array) {
-      // console.error("TODO: add deep update (group)! "+x1)
       s = rt.deepUpdate(s, x1, x2)
     } else {
-      console.assert(typeof s === "object")
       s[x1] = x2
     }
     return s
@@ -347,6 +343,13 @@ rt.stateful.update = (x0,x1,x2) => ({
 
 
 // utils
+
+// update stateful tmp with a given reducer
+rt.update2 = (root,...path) => (fold) => {
+  return rt.update(root, ...path)(fold)
+}
+
+
 
 // update stateful tmp with a given reducer
 rt.update = (root,...path) => (fold) => {
@@ -362,26 +365,9 @@ rt.update = (root,...path) => (fold) => {
 
   let ix = path[path.length-1]
   if (ix instanceof Array) {
-    // console.error("TODO: add deep update (red)! "+ix)
-    // XXX trouble with tmp path vars, see testPathGroup3
-    ix = ix.join("-")+"-"
-    let s = fold.init()
-    // XXX hacky solution to distinguish cases in testPathGroup3/4
-    if (typeof(s) === "number")
-      obj[ix] ??= s
-    obj[ix] = fold.next(obj[ix])
-  } else {
-  // if (ix instanceof Array) {
-  //   // console.error("TODO: add deep update (red)! "+ix)
-  //   let v = rt.deepGet(obj, ix)
-  //   if (v === undefined)
-  //     rt.deepUpdate(obj, ix, fold.next(fold.init()))
-  //   else
-  //     rt.deepUpdate(obj, ix, fold.next(v))
-  // } else {
-    // obj[ix] ??= fold.init()
-    obj[ix] = fold.next(obj[ix])
+    ix = ix.join("-")+"-" // encodeTemp
   }
+  obj[ix] = fold.next(obj[ix])
 }
 
 // update stateful tmp with a given reducer
@@ -398,14 +384,9 @@ rt.init = (root,...path) => (init) => {
 
   let ix = path[path.length-1]
   if (ix instanceof Array) {
-    // console.error("TODO: add deep update (red)! "+ix)
-    let v = rt.deepGet(obj, ix)
-    if (v === undefined)
-      rt.deepUpdate(obj, ix, init())
-  } else {
-    obj[ix] ??= init()
-    // obj[ix] = fold.next(obj[ix])
+    ix = ix.join("-")+"-" // encodeTemp
   }
+  obj[ix] ??= init()
 }
 
 
