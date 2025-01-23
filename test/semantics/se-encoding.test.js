@@ -393,5 +393,22 @@ test("testGroup0-a7", () => {
   )
 })
 
+test("testGroup0-a8", () => {
+  let query = rh`(count (singleton data.*D.key).*KEYVAR) &
+  (group *KEYVAR (array data.*D.value))`
+  
+  // Another variation: use `singleton` (a pure op)
+  // instead of `mkset`:
+  //
+  //   ... (singleton data.*D.key).*KEYVAR ...
+  //
+
+  let func = compile(query)
+  let res = func({data})
+
+  expect(res).toEqual(
+   { U: [40, 20], V: [10] }
+  )
+})
 
 
