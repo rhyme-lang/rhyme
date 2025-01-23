@@ -216,7 +216,7 @@ let quoteIndexVars = (s,vs) => s + vs.map(quoteVar).map(quoteIndex).join("")
 let quoteStr = s => "\""+s+"\""
 
 // XXX trouble with tmp path vars, see testPathGroup3
-let quoteVarXS = s => isDeepVarStr(s) ? quoteVar(s)+".join('-')+'-'" : quoteVar(s)
+let quoteVarXS = s => isDeepVarStr(s) ? "rt.encodeTemp("+quoteVar(s)+")" : quoteVar(s)
 let quoteIndexVarsXS = (s,vs) => s + vs.map(quoteVarXS).map(quoteIndex).join("")
 
 let quoteConst = e => {

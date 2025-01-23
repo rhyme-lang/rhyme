@@ -327,10 +327,8 @@ rt.stateful.update = (x0,x1,x2) => ({
   next: s => {
     if (x1 === undefined) return s
     if (x2 === undefined) return s
-    if (s === undefined) {
-      s = {}
-    }
-    if (!typeof s === "object") return s
+    if (s === undefined) s = {} // not intialized? assume empty object
+    if (typeof s !== "object") return s // not an object? do nothing
     if (x1 instanceof Array) {
       s = rt.deepUpdate(s, x1, x2)
     } else {
@@ -345,28 +343,18 @@ rt.stateful.update = (x0,x1,x2) => ({
 // utils
 
 // update stateful tmp with a given reducer
-rt.update2 = (root,...path) => (fold) => {
-  return rt.update(root, ...path)(fold)
-}
-
-
-
-// update stateful tmp with a given reducer
 rt.update = (root,...path) => (fold) => {
   let obj = root
   let c = 0
   for (let ix of path.slice(0,path.length-1)) {
     if (ix === undefined) return
-    if (ix instanceof Array) 
-      console.error("TODO: add deep update! ", path)
+    ix = rt.encodeTemp(ix)
     obj[ix] ??= {}
     obj = obj[ix]
   }
 
   let ix = path[path.length-1]
-  if (ix instanceof Array) {
-    ix = ix.join("-")+"-" // encodeTemp
-  }
+  ix = rt.encodeTemp(ix)
   obj[ix] = fold.next(obj[ix])
 }
 
@@ -376,16 +364,13 @@ rt.init = (root,...path) => (init) => {
   let c = 0
   for (let ix of path.slice(0,path.length-1)) {
     if (ix === undefined) return
-    if (ix instanceof Array)
-      console.error("TODO: add deep init! ", path)
+    ix = rt.encodeTemp(ix)
     obj[ix] ??= {}
     obj = obj[ix]
   }
 
   let ix = path[path.length-1]
-  if (ix instanceof Array) {
-    ix = ix.join("-")+"-" // encodeTemp
-  }
+  ix = rt.encodeTemp(ix)
   obj[ix] ??= init()
 }
 
@@ -491,6 +476,7 @@ rt.initTemp = (root,...path) => (init) => {
   let obj = root
   let c = 0
   for (let ix of path.slice(0,path.length-1)) {
+    if (ix === undefined) return
     ix = rt.encodeTemp(ix)
     obj[ix] ??= {}
     obj = obj[ix]
