@@ -321,11 +321,10 @@ let emitStmUpdate = (q, scope) => {
     let [e1] = q.arg.map(x => codegen(x, scope))
     return "rt.stateful."+q.op+"("+e1+")"
   } else if (q.key == "update") {
-    let e0 = codegen(q.arg[0], scope)
+    // let e0 = codegen(q.arg[0], scope)
     let e2 = codegen(q.arg[2], scope)
     let e1 = q.arg[1].vars.map(quoteVar)
-    return "rt.stateful.update("+e0+", ["+e1+"], "+e2+")" // XXX: init is still needed for tree paths
-    // return "rt.stateful.update("+"null"+", "+e1+", "+e2+")" // see testPathGroup4-2
+    return "rt.stateful.update(["+e1+"], "+e2+")"
   } else {
     console.error("unknown op", q)
   }
@@ -672,7 +671,7 @@ let emitStmInline = (q, scope) => {
   }
 
   // emit initialization
-  if (q.key == "stateful" && (q.op+"_init") in runtime.stateful || q.key == "update") {
+  if (q.key == "stateful" && q.mode != "maybe" && (q.op+"_init") in runtime.stateful || q.key == "update") {
       buf.push("let tmp"+i+" = "+ emitStmInit(q, scope)+"()")
   } else {
       buf.push("let tmp"+i)
@@ -706,7 +705,7 @@ let emitCode = (q, order) => {
       let scope = { vars:[], filters:[], buf }
 
       // emit initialization first (so that sum empty = 0)
-      if (q.key == "stateful" && (q.op+"_init") in runtime.stateful || q.key == "update") {
+      if (q.key == "stateful" && q.mode != "maybe" && (q.op+"_init") in runtime.stateful || q.key == "update") {
         emitFilters1(scope,q.fre,[])(buf, codegen)(scope1 => {
           let xs = [i,...q.fre.map(quoteVar)]
           let ys = xs.map(x => ","+x).join("")
@@ -1391,7 +1390,7 @@ let emitCodeCPP = (q, order) => {
     let q = assignments[i]
 
     // emit initialization (see 'emitCode')
-    if (q.key == "stateful" && (q.op+"_init") in runtime.stateful) {
+    if (q.key == "stateful" && q.mode != "maybe" && (q.op+"_init") in runtime.stateful) {
         let xs = [...q.fre.map(quoteVar)]
         let ys = xs.map(x => "[\""+x+"\"]").join("")
 
@@ -1525,7 +1524,7 @@ let translateToNewCodegen = q => {
     let q = assignments[i]
 
     // emit initialization (see 'emitCode')
-    if (q.key == "stateful" && (q.op+"_init") in runtime.stateful || q.key == "update") {
+    if (q.key == "stateful" && q.mode != "maybe" && (q.op+"_init") in runtime.stateful || q.key == "update") {
         let xs = [i,...q.fre.map(quoteVar)]
         let ys = xs.map(x => ","+x).join("")
 

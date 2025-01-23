@@ -408,14 +408,23 @@ test("testGroupPrefixSum1", () => {
 })
 
 
+// ----- "maybe" aggregations
+
+test("testMaybeSum", () => {
+  let data = {}
+
+  let query = { A: "sum? data.*.value", B: "sum data.*.value" }
+
+  let func = compile(query)
+  let res = func({data, other})
+
+  expect(res).toEqual({ B: 0 })
+})
+
+
+
 
 // ----- outer joins
-
-// want: outer joins (observe failure) ...
-
-// TODO: there is limited support for lef/right
-// outer joins but full outer joins (both sides
-// may observe failure) are not yet supported.
 
 test("testOuterJoin_pre1", () => {
   let data = [ 

@@ -331,7 +331,7 @@ let emitLoops = (q, order) => {
       let scope = { vars:[], filters:[], buf }
 
       // emit initialization first (so that sum empty = 0)
-      if (q.key == "stateful" && (q.op+"_init") in runtime.stateful || q.key == "update") {
+      if (q.key == "stateful" && q.mode != "maybe" && (q.op+"_init") in runtime.stateful || q.key == "update") {
         emitFilters1(scope,q.fre,[])(scope1 => {
           scope1.buf.push({ key: "init", arg: [{ key: "ref", op: i}, q]})
         })

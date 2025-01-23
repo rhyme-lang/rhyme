@@ -145,6 +145,9 @@ let extract0 = q => {
       //       { key: "get", arg: [prefix, v2] }, e2]}]} ]}
     } else
       return { ...q, arg: [e0,e1,e2], mode: e2.mode }
+  } else if (q.key == "stateful" && q.op.endsWith("?")) {
+    let es = q.arg.map(extract0)
+    return { ...q, op: q.op.slice(0,-1), mode: "maybe", arg: es }
   } else if (q.arg) {
     let es = q.arg.map(extract0)
     return { ...q, arg: es }

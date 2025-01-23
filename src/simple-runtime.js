@@ -136,176 +136,138 @@ rt.singleton = (x1) => { // 'mkset'
 
 rt.stateful.sum_init = () => 0
 
-rt.stateful.sum = x => ({
-  init: () => 0,
-  next: s => {
-    // TODO: generalize NaN handling
-    if (x === undefined || Number.isNaN(Number(x))) return s
-    if (s === undefined || Number.isNaN(Number(s))) return x
-    return s + x
-  }
-})
+rt.stateful.sum = x => s => {
+  // TODO: generalize NaN handling
+  if (x === undefined || Number.isNaN(Number(x))) return s
+  if (s === undefined || Number.isNaN(Number(s))) return x
+  return s + x
+}
 
 rt.stateful.product_init = () => 1
 
-rt.stateful.product = x => ({
-  init: () => 1,
-  next: s => {
-    if (x === undefined) return s
-    if (s === undefined) return x
-    return s * x
-  }
-})
+rt.stateful.product = x => s => {
+  if (x === undefined) return s
+  if (s === undefined) return x
+  return s * x
+}
 
 rt.stateful.count_init = () => 0
 
-rt.stateful.count = x => ({
-  init: () => 0,
-  next: s => {
-    if (x === undefined) return s
-    if (s === undefined) return 1
-    return s + 1
-  }
-})
+rt.stateful.count = x => s => {
+  if (x === undefined) return s
+  if (s === undefined) return 1
+  return s + 1
+}
 
-rt.stateful.min = x => ({
-  init: () => undefined, 
-  next: s => {
-    if (x === undefined) return s
-    if (s === undefined) return x
-    return s <= x ? s : x
-  }
-})
+rt.stateful.min_init = () => Number.POSITIVE_INFINITY
 
-rt.stateful.max = x => ({
-  init: () => undefined, 
-  next: s => {
-    if (x === undefined) return s
-    if (s === undefined) return x
-    return s >= x ? s : x
-  }
-})
+rt.stateful.min = x => s => {
+  if (x === undefined) return s
+  if (s === undefined) return x
+  return s <= x ? s : x
+}
 
+rt.stateful.max_init = () => Number.NEGATIVE_INFINITY
+
+rt.stateful.max = x => s => {
+  if (x === undefined) return s
+  if (s === undefined) return x
+  return s >= x ? s : x
+}
 
 rt.stateful.all_init = () => true
 
-rt.stateful.all = x => ({
-  init: () => true, 
-  next: s => {
-    if (x === undefined) return undefined
-    if (s === undefined) return undefined
-    return s // return first encountered
-  }
-})
+rt.stateful.all = x => s => {
+  if (x === undefined) return undefined
+  if (s === undefined) return undefined
+  return s // return first encountered
+}
 
-rt.stateful.any = x => ({
-  init: () => undefined, 
-  next: s => {
-    if (x === undefined) return s
-    if (s === undefined) return x
-    return s // return first encountered
-  }
-})
+rt.stateful.any = x => s => {
+  if (x === undefined) return s
+  if (s === undefined) return x
+  return s // return first encountered
+}
 
-rt.stateful.first = x => ({
-  init: () => undefined,
-  next: s => {
-    if (x === undefined) return s
-    if (s === undefined) return x
-    return s
-  }
-})
+rt.stateful.first = x => s => {
+  if (x === undefined) return s
+  if (s === undefined) return x
+  return s
+}
 
-rt.stateful.last = x => ({
-  init: () => undefined,
-  next: s => {
-    if (x === undefined) return s
-    return x
-  }
-})
+rt.stateful.last = x => s => {
+  if (x === undefined) return s
+  return x
+}
 
-rt.stateful.single = x => ({ // error if more than one
-  init: () => undefined, 
-  next: s => {
-    if (x === undefined) return s
-    if (s === undefined) return x
-    // throw new Error("single value expected but got two: "+s+", "+x)
-    //
-    // NOTE: relaxed to support multiple occurrances of the
-    // same value. Tighter semantics (above) currently not 
-    // in line with expected output of test nestedIterators3 
-    // and variants.
-    //
-    // This seems to be related to not identifying 1:1 mappings,
-    // specifically for keys already on the grouping path
-    // (also see groupTest_explicitHoisting).
-    //
-    // In general, codegen must be careful not to produce
-    // values multiple times in a grouped context (consider
-    // e.g. count).
-    if (JSON.stringify(s) !== JSON.stringify(x))
-      console.error("single value expected but got two: "+s+", "+x)
-    return s
-  }
-})
+rt.stateful.single = x => s => { // error if more than one
+  if (x === undefined) return s
+  if (s === undefined) return x
+  // throw new Error("single value expected but got two: "+s+", "+x)
+  //
+  // NOTE: relaxed to support multiple occurrances of the
+  // same value. Tighter semantics (above) currently not 
+  // in line with expected output of test nestedIterators3 
+  // and variants.
+  //
+  // This seems to be related to not identifying 1:1 mappings,
+  // specifically for keys already on the grouping path
+  // (also see groupTest_explicitHoisting).
+  //
+  // In general, codegen must be careful not to produce
+  // values multiple times in a grouped context (consider
+  // e.g. count).
+  if (JSON.stringify(s) !== JSON.stringify(x))
+    console.error("single value expected but got two: "+s+", "+x)
+  return s
+}
 
 rt.stateful.array_init = () => []
 
-rt.stateful.array = x => ({
-  init: () => [], 
-  next: s => {
-    if (x === undefined) return s
-    s.push(x)
-    return s
-  }
-})
+rt.stateful.array = x => s => {
+  if (x === undefined) return s
+  s.push(x)
+  return s
+}
 
 rt.stateful.mkset_init = () => ({})
 
-rt.stateful.mkset = x => ({
-  init: () => ({}), 
-  next: s => {
-    if (x === undefined) return s
-    s[x] = true
-    return s
-  }
-})
+rt.stateful.mkset = x => s => {
+  if (x === undefined) return s
+  s[x] = true
+  return s
+}
 
 
 // sum, count, min, max, 
 // first, last, single, unique
 // array, mkset
 
+rt.stateful.prefix_init = () => ([])
 
-rt.stateful.prefix = p => ({
-  init: () => [],
-  next: s => {
-    if (s && s.length)
-      s.push(p.next(s[s.length-1]))
-    else
-      s = [p.next(p.init())]
-    return s
-  }
-})
+rt.stateful.prefix = fold => s => {
+  if (s && s.length)
+    s.push(fold(s[s.length-1]))
+  else
+    s = [fold(undefined)]
+  return s
+}
 
 
 
 // group and update
 
 // these are dealt with somewhat specially
-rt.stateful.group = (x1,x2) => ({
-  init: () => ({}), // {} vs undefined, what do we want?
-                    // (see undefinedFields2, tables.html)
-  next: s => {
-    if (x1 === undefined) return s
-    if (x2 === undefined) return s
-    if (s === undefined) s = {}
-    s[x1] = x2
-    return s
-  }
-})
 
+rt.stateful.group_init = () => ({})
 
+rt.stateful.group = (x1,x2) => s => {
+  if (x1 === undefined) return s
+  if (x2 === undefined) return s
+  if (s === undefined) s = {}
+  s[x1] = x2
+  return s
+}
 
 
 rt.uniqueMutableCopy = x0 => {
@@ -319,25 +281,18 @@ rt.stateful.update_init = (x0) => () => {
   return x0 // should return undefined?
 }
 
-rt.stateful.update = (x0,x1,x2) => ({
-  init: () => ({...x0}), // NOTE: preserve init value! 
-                         // (see react-todo-app.html)
-                         // XXX: conflicting use-cases,
-                         // see also testPathGroup3
-  next: s => {
-    if (x1 === undefined) return s
-    if (x2 === undefined) return s
-    if (s === undefined) s = {} // not intialized? assume empty object
-    if (typeof s !== "object") return s // not an object? do nothing
-    if (x1 instanceof Array) {
-      s = rt.deepUpdate(s, x1, x2)
-    } else {
-      s[x1] = x2
-    }
-    return s
+rt.stateful.update = (x1,x2) => s => {
+  if (x1 === undefined) return s
+  if (x2 === undefined) return s
+  if (s === undefined) s = {} // not intialized? assume empty object
+  if (typeof s !== "object") return s // not an object? do nothing
+  if (x1 instanceof Array) {
+    s = rt.deepUpdate(s, x1, x2)
+  } else {
+    s[x1] = x2
   }
-})
-
+  return s
+}
 
 
 // utils
@@ -355,7 +310,7 @@ rt.update = (root,...path) => (fold) => {
 
   let ix = path[path.length-1]
   ix = rt.encodeTemp(ix)
-  obj[ix] = fold.next(obj[ix])
+  obj[ix] = fold(obj[ix])
 }
 
 // update stateful tmp with a given reducer
