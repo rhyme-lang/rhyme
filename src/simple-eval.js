@@ -134,17 +134,21 @@ let extract0 = q => {
     let e0 = extract0(q.arg[0])
     let e1 = extractKey0(q.arg[1])
     let e2 = extractFlex0(q.arg[2])
+    let mode
+    if (q.key == "update_inplace") {
+      mode = "inplace"
+    }
     if (e1.key != "var" && e1.key != "placeholder") {
       let prefix = { key:"mkset", arg:[e1] }
       let v1 = { key: "var", op: canonicalVarName(prefix, true) }
       let v2 = { key: "var", op: canonicalVarName(prefix, true) }
-      return { ...q, arg: [e0, v1, e2, { key: "get", arg: [prefix, v2] }], mode: e2.mode }
+      return { ...q, key: "update", arg: [e0, v1, e2, { key: "get", arg: [prefix, v2] }], mode: mode }
       // return { ...q, arg: [v1,
       //   { key:"stateful", op: "single", mode: "reluctant", arg:[
       //     { key: "pure", op: "and", arg:[
       //       { key: "get", arg: [prefix, v2] }, e2]}]} ]}
     } else
-      return { ...q, arg: [e0,e1,e2], mode: e2.mode }
+      return { ...q, key: "update", arg: [e0,e1,e2], mode: mode }
   } else if (q.key == "stateful" && q.op.endsWith("?")) {
     let es = q.arg.map(extract0)
     return { ...q, op: q.op.slice(0,-1), mode: "maybe", arg: es }
@@ -360,13 +364,9 @@ let inferDims = q => {
     } else {
       q.dims = []
     }
-  } else if (q.key == "update" || q.key == "update_inplace" ) {
+  } else if (q.key == "update") {
     let [e0,e1,e2,e3] = q.arg.map(inferDims)
     e3 ??= { vars: [], mind: [], dims: [] }
-    if (q.key == "update_inplace") {
-      q.mode = "inplace"
-      q.key = "update"
-    }
     q.vars = unique([...e0.vars, ...e1.vars, ...e2.vars, ...e3.vars])
     // treat e3 like a reduction: do not propagate it's inner mind/dims
     if (e1.key == "placeholder") {
