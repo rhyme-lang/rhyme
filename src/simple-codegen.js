@@ -711,7 +711,7 @@ let emitCode = (q, order) => {
           let xs = [i,...q.fre.map(quoteVar)]
           let ys = xs.map(x => ","+x).join("")
 
-          buf.push("  rt.init(tmp"+ys+")\n  ("+ emitStmInit(q, scope1) + ")")
+          buf.push("  rt.init(tmp"+ys+")("+ emitStmInit(q, scope1) + ")")
         })
       }
 
@@ -719,7 +719,7 @@ let emitCode = (q, order) => {
         let xs = [i,...q.fre.map(quoteVar)]
         let ys = xs.map(x => ","+x).join("")
 
-        buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStmUpdate(q, scope1) + ")")
+        buf.push("  rt.update(tmp"+ys+")("+ emitStmUpdate(q, scope1) + ")")
       })
 
       buf.push("")
@@ -824,7 +824,7 @@ let emitStmListLowLevel = (q, buf) => {
           let xs = [i,...q.fre.map(quoteVar)]
           let ys = xs.map(x => ","+x).join("")
 
-          buf.push("  rt.init(tmp"+ys+")\n  ("+ emitStmInit(q, scope1) + ")")
+          buf.push("  rt.init(tmp"+ys+")("+ emitStmInit(q, scope1) + ")")
 
     } else if (stm.key == "declareTemp") {
 
@@ -849,7 +849,7 @@ let emitStmListLowLevel = (q, buf) => {
           let xs = [i,...q.fre.map(quoteVar)]
           let ys = xs.map(x => ","+x).join("")
 
-          buf.push("  rt.update(tmp"+ys+")\n  ("+ emitStmUpdate(q, scope1) + ")")
+          buf.push("  rt.update(tmp"+ys+")("+ emitStmUpdate(q, scope1) + ")")
 
     } else if (stm.key == "return") {
 
