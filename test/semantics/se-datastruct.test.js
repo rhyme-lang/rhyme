@@ -316,7 +316,8 @@ test("tensorView3_transpose", () => {
   let data = TensorView(raw, [3,2])
   let out = TensorView(new Array(6), [2,3])
 
-  let query = rh`update_inplace .out *j (update_inplace out.*j *i 10+data.*i.*j)`
+  // let query = rh`update_inplace .out *j (update_inplace out.*j *i 10+data.*i.*j)`
+  let query = rh`update_inplace .out (vars *j *i) 10+data.*i.*j`
 
   let func = compile(query)
   let res = func({data, out})

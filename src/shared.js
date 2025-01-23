@@ -43,6 +43,7 @@ ops.pure.equal = true
 ops.pure.notEqual = true
 ops.pure.join = true
 ops.pure.singleton = true
+ops.pure.vars = true
 
 // stateful operations
 

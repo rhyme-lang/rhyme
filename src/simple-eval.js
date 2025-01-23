@@ -138,7 +138,7 @@ let extract0 = q => {
     if (q.key == "update_inplace") {
       mode = "inplace"
     }
-    if (e1.key != "var" && e1.key != "placeholder") {
+    if (e1.key != "var" && e1.key != "placeholder" && (e1.key != "pure" || e1.op != "vars")) {
       let prefix = { key:"mkset", arg:[e1] }
       let v1 = { key: "var", op: canonicalVarName(prefix, true) }
       let v2 = { key: "var", op: canonicalVarName(prefix, true) }
