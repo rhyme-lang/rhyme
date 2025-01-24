@@ -22,6 +22,7 @@ let defaultSettings = {
 
   extractAssignments: true,
   extractFilters: true,
+  constantFold: true,
   loopGen: true,
 
   newCodegen: false,

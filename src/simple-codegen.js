@@ -223,7 +223,11 @@ let isDeepVarStr = s => s.startsWith("**")
 let isDeepVarExp = s => s.key == "var" && isDeepVarStr(s.op)
 
 
-let quoteVar = s => (c => c ? quoteConst(c) : s.replaceAll("*", "x"))(resolveConstForVar(s))
+let quoteVar = s => {
+  let c = settings.constantFold && resolveConstForVar(s)
+  if (c) return quoteConst(c)
+  else return s.replaceAll("*", "x")
+}
 
 let quoteIndex = s => "?.["+s+"]"
 
@@ -783,7 +787,7 @@ let emitStmListLowLevel = (q, buf) => {
           //  - a may eval to undefined  (see test undefinedKey)
           //  - x may already be defined in scope (see graphicsBasicTestParsing)
           //
-          if (resolveConstForVar(v1)) { // constant propagated directly
+          if (settings.constantFold && resolveConstForVar(v1)) { // constant propagated directly
             emitStmListLowLevel(stm.body, buf)
           } else if (g1.key == "mkset") {
             buf.push("if ("+codegen(g1.arg[0],scopeg1)+" !== undefined) {")
@@ -809,7 +813,7 @@ let emitStmListLowLevel = (q, buf) => {
           emitStmListLowLevel(stm.body, buf)
           buf.push("})")
       } else {
-          if (resolveConstForVar(v1)) { // constant propagated directly
+          if (settings.constantFold && resolveConstForVar(v1)) { // constant propagated directly
             emitStmListLowLevel(stm.body, buf)
           } else {
             buf.push("if (rt.has("+codegen(g1,scopeg1)+", "+quoteVar(v1)+")) {")
@@ -847,7 +851,8 @@ let emitStmListLowLevel = (q, buf) => {
       let [id, iter] = stm.arg
       let scopeg1 = { vars: [], filters: [] }
 
-      iter = iter.filter(x => !resolveConstForVar(x))
+      if (settings.constantFold)
+        iter = iter.filter(x => !resolveConstForVar(x))
 
       let projName = "proj"+id
       let closing = ""
@@ -888,7 +893,8 @@ let emitStmListLowLevel = (q, buf) => {
 
       let [id,iter] = stm.arg
 
-      iter = iter.filter(x => !resolveConstForVar(x))
+      if (settings.constantFold)
+        iter = iter.filter(x => !resolveConstForVar(x))
 
         let xs = [...iter.map(quoteVar)]
         let ys = xs.map(x => ","+x).join("")
