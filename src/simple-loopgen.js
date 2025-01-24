@@ -30,7 +30,7 @@ exports.setLoopgenState = st => {
   assignments = st.assignments
 }
 
-let transf = ps => unique([...ps,...ps.flatMap(x => vars[x].varsf)])
+let trans = ps => unique([...ps,...ps.flatMap(x => vars[x].vars)])
 
 let getFilterIndex = () => {
   let res = {}
@@ -57,9 +57,9 @@ let emitFilters1 = (scope, free, bnd, careAboutOrderingAndMultiplicity) => body 
 
   if (iter.length == 0) return body(scope)
 
-  let full = transf(union(free, bnd))
+  let full = trans(union(free, bnd))
 
-  // let full2 = union(free,transf(bnd))
+  // let full2 = union(free,trans(bnd))
   // assertSame(full, full2, "free "+free+" bound "+bnd)
 
   // full2 doesn't work: free was cut down to out, so

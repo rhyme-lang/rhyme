@@ -82,6 +82,8 @@ let isVar = s => s.startsWith("*")
 // 2: extract0:
 // - canonicalize *
 // - insert 'single' in nested stateful positions
+// - transform 'get?', 'sum?', etc to 'get', 'sum' with mode 'maybe'
+// - recognize other modes, e.g. 'update_inplace'
 // - ensure all grouping is wrt a variable, i.e.,
 //   transform { e1: e2 } to {}{ K1: e2 } / mkset(e1).K1
 
@@ -224,37 +226,25 @@ let extract0b = (q, out) => {
 }
 
 
-// 4: extract var -> filter variable deps
-//    - runs after inferDims()
-let extract1 = q => {
-  if (q.arg) q.arg.map(extract1)
-  if (q.key == "var") {
-    vars[q.op] ??= { vars:[], vars1: [] }
-  } else if (q.key == "get") {
-    let [e1,e2] = q.arg
-    if (e2.key == "var") {
-      vars[e2.op].vars = union(vars[e2.op].vars, e1.dims)
-      vars[e2.op].vars1 = union(vars[e2.op].vars1, e1.dims)
-    }
-  }
-}
-
+// 5: extract var -> filter variable deps
+//    - runs after inferBound()
+//    - in a fixpoint loop, hence checking convergence
 
 let varsChanged = false
 
-let extract1f = q => {
-  if (q.arg) q.arg.map(extract1f)
+let extract1 = q => {
+  if (q.arg) q.arg.map(extract1)
   if (q.key == "var") {
     vars[q.op] ??= { }
-    vars[q.op].varsf ??= []
-    vars[q.op].varsf1 ??= []
+    vars[q.op].vars ??= []
+    vars[q.op].vars1 ??= []
   } else if (q.key == "get") {
     let [e1,e2] = q.arg
     if (e2.key == "var") {
-      if (!subset(e1.fre ?? e1.dims, vars[e2.op].varsf)) {
+      if (!subset(e1.fre ?? e1.dims, vars[e2.op].vars)) {
         varsChanged = true
-        vars[e2.op].varsf = union(vars[e2.op].varsf, e1.fre ?? e1.dims)
-        vars[e2.op].varsf1 = union(vars[e2.op].varsf1, e1.fre ?? e1.dims)
+        vars[e2.op].vars = union(vars[e2.op].vars, e1.fre ?? e1.dims)
+        vars[e2.op].vars1 = union(vars[e2.op].vars1, e1.fre ?? e1.dims)
       }
     }
   }
@@ -262,8 +252,8 @@ let extract1f = q => {
 
 // TODO: cse for array-valued udfs?
 
-// 7: extract assignments
-//    - runs after inferBwd()
+// 8: extract assignments
+//    - runs after inferFree()
 let extract2 = q => {
   if (!q.arg) return { ...q, tmps:[] }
   let es = q.arg.map(extract2)
@@ -283,8 +273,8 @@ let extract2 = q => {
 }
 
 
-// 8: extract filters and hints
-//    - runs after inferBwd()
+// 9: extract filters and hints
+//    - runs after inferFree()
 let extract3 = q => {
   if (!q.arg) return
   q.arg.map(extract3)
@@ -387,7 +377,7 @@ let inferDims = q => {
 
 
 //
-// 6. Infer dependencies top down:
+// 4. Infer dependencies top down:
 //    - out:  maximum allowed set of variables in output (provided as input arg)
 //    - free: free variables, anticipating conversion to loops
 //    - bound: bound variables, anticipating conversion to loops (allBound: incl deep in subterms)
@@ -401,10 +391,6 @@ let isCorrelatedKeyVar = s => s.startsWith("K") || s.startsWith("*KEYVAR") // 2n
 let trans = ps => unique([...ps,...ps.flatMap(x => vars[x].vars)])
 
 let trans1 = ps => unique(ps.flatMap(x => vars[x].vars))
-
-let transf = ps => unique([...ps,...ps.flatMap(x => vars[x].varsf)])
-
-let transf1 = ps => unique(ps.flatMap(x => vars[x].varsf1))
 
 
 let intersects = (a,b) => intersect(a,b).length > 0
@@ -439,24 +425,18 @@ let inferBound = out => q => {
       }
     }
 
-    let e1Body
     if (q.arg[3]) {
-      let out3 = union(out, union([e1.op], q.arg[3].dims)) // e3 includes e1.op (union left for clarity)
+      let out3 = union(out, diff(q.arg[3].dims, e1.vars))
       let e3 = inferBound(out3)(q.arg[3]) // filter expr
       console.assert(e3.key == "get")
       console.assert(e3.arg[0].key == "mkset")
-      console.assert(e3.arg[1].key == "var" && e3.arg[1].op == e1.op)
-      e1Body = e3.arg[0].arg[0]
-    } else {
-      e1Body = { key: "const", op: "???",
-        vars: [], mind: [], dims: [], bnd: [] }
+      console.assert(e3.arg[1].key == "var" && e1.key == "var" && e3.arg[1].op == e1.op)
+      let e1Body = e3.arg[0].arg[0]
     }
-
-    q.e1BodyBnd = diff(e1Body.dims, out)
 
     let e2 = inferBound(union(out, e1.vars))(q.arg[2])
 
-    q.bnd = diff(union(e1.vars, []/*e1Body.dims*/), out)
+    q.bnd = diff(e1.vars, out)
 
   } else {
     console.error("unknown op", q)
@@ -467,8 +447,6 @@ let inferBound = out => q => {
 
   return q
 }
-
-let checkDimsFreeTrans = false
 
 // infer free vars (simple mode)
 let inferFree = out => q => {
@@ -486,110 +464,48 @@ let inferFree = out => q => {
     assertSame(out1, union(out,q.bnd)) // same as adding bnd
     let [e1] = q.arg.map(inferFree(out1))
 
-    // NOTE: for consistency with 'update' it would be interesting
-    // to eval e1 with path+q.bnd -- this mostly works but leads
-    // to unsolved filter ordering issues in testCycles2-2 and
-    // testCycles 3-2. We have since restricted path extension
-    // for 'update' due to same issues emerging in testCycles2-3.
-
-    // let save = path
-    // path = [...path, { xxFree: q.bnd }]
-    // let [e1] = q.arg.map(inferFree(out1))
-    // path = save
-
     // find correlated path keys: check overlap with our own bound vars
-    let extra = path.filter(x =>
-      intersects(trans(x.xxFree), trans(q.bnd))).flatMap(x => x.xxFree)
-
-    let extra2 = out
+    // - x is uncorrelated: trans(x) /\ trans(q.bnd) < out
+    let extra = out
     .filter(isCorrelatedKeyVar)
-    .filter(x => intersects(diff(transf([x]),out), transf(q.bnd)))
-    // .flatMap(x => transf([x]))
-
-    if (checkDimsFreeTrans) assertSame(extra, diff(extra2, ["*KEYVAR"]), "extra "+pretty(q)) // XX can use *KEYVAR manually now
-    extra = extra2
-
+    .filter(x => intersects(diff(trans([x]),out), trans(q.bnd)))
 
     // free variables: anything from current scope (out) that is:
-    // - used in any filter for q.bnd (here: trans via .dims)
+    // - used in any filter for q.bnd (via trans)
     // - free in e1
     // - an extra K from outer grouping
     q.fre = intersect(union(trans(q.bnd), union(e1.fre, extra)), out)
-
-    let fre2 = intersect(union(e1.fre, union(transf(q.bnd),extra)), out)
-
-    // XXXX is transf1 enough?
-    // What if a in (q.bnd \ out), b in (transf1(a) \ out), c in (transf1(b) & out)
-    // looks like we'll be missing c?
-
-    if (checkDimsFreeTrans) assertSame(q.fre, fre2, "FRE1.1 "+pretty(q))
-    // fre2 = diff(fre2, trans1(fre2))
-    // assertSame(q.fre, fre2, "FRE1.2 "+pretty(q))
-    q.fre = fre2
-
-    // previous:
-    // q.fre = intersect(union(trans(e1.fre), extra), out)
 
     // NOTE: we cannot just subtract q.bnd, because we'd retain the
     // parts of trans(q.bnd) in q.fre which aren't part of 'out'.
     // Those will be iterated over, but projected out.
 
-
   } else if (q.key == "update") {
     let e0 = inferFree(out)(q.arg[0]) // what are we extending
     let e1 = inferFree(union(out,q.arg[1].dims))(q.arg[1]) // key variable
 
-    let e1Body
     if (q.arg[3]) {
       // XXX NOTE: we should do this properly -- wrap it in a count(...) or something
-      let out3 = union(out, union([/*e1.op*/], diff(q.arg[3].dims, [e1.op]))) // e3 includes e1.op (union left for clarity)
+      let out3 = union(out, diff(q.arg[3].dims, e1.vars))
       let e3 = inferFree(out3)(q.arg[3]) // filter expr
       console.assert(e3.key == "get")
       console.assert(e3.arg[0].key == "mkset")
-      console.assert(e3.arg[1].key == "var" && e3.arg[1].op == e1.op)
-      e1Body = e3.arg[0].arg[0]
-    } else {
-      e1Body = { key: "const", op: "???",
-        vars: [], mind: [], dims: [], fre: [] }
+      console.assert(e3.arg[1].key == "var" &&  e1.key == "var" && e3.arg[1].op == e1.op)
+      let e1Body = e3.arg[0].arg[0]
     }
-
-    let save = path
-
-    // only extend path for nontrivial group expressions (see testCycles2-3)
-    if (q.arg[3])
-      path = [...path, { xxFree: e1.vars }]
 
     let e2 = inferFree(union(out, e1.vars))(q.arg[2])
 
-    path = save
-
     // find correlated path keys: check overlap with our own bound vars
-    let extra = path.filter(x =>
-      intersects(trans(x.xxFree), trans(q.bnd))).flatMap(x => x.xxFree)
-
-    let extra2 = out
+    let extra = out
     .filter(isCorrelatedKeyVar)
-    .filter(x => intersects(diff(transf([x]),out), transf(q.bnd)))
-    // .flatMap(x => transf([x]))
+    .filter(x => intersects(diff(trans([x]),out), trans(q.bnd)))
 
-    if (checkDimsFreeTrans) assertSame(extra, diff(extra2, ["*KEYVAR"]), "extra2 "+pretty(q)) // XX can use *KEYVAR manually now
-    extra = extra2
-
-    let fv = unique([...e0.fre, ...e1.fre, ...e2.fre, ...diff(e1Body.fre, q.e1BodyBnd)])
+    // e3 registered as filter, not necessary to include it here
+    let fv = unique([...e0.fre, ...e1.fre, ...e2.fre])
 
     // free variables: see note at stateful above
     q.fre = intersect(union(trans(q.bnd), union(fv, extra)), out)
-
-
-    let fre2 = intersect(union(fv, union(transf(q.bnd),extra)), out)
-    // assertSame(q.fre, intersect(transf(q.fre),out), "FRE2 "+pretty(q))
-
-    if (checkDimsFreeTrans) assertSame(q.fre, fre2, "FRE2.1 "+pretty(q))
-    // fre2 = diff(fre2, transf1(fre2))
-    // assertSame(q.fre, fre2, "FRE2.2 "+pretty(q))
-    q.fre = fre2
-
-
   } else {
     console.error("unknown op", q)
   }
@@ -670,7 +586,7 @@ let deno = q => k => {
 
 
 //
-// 5: Compute dependencies between vars
+// 6: Compute dependencies between vars
 //    - fill in vars[i].vars, which has been
 //      initialized to q.dims of filter
 //      expressions by extract1
@@ -705,35 +621,11 @@ let computeDependencies = () => {
   }
 }
 
-let computeDependenciesf = () => {
-  // calculate transitive dependencies between vars directly
-
-  let deps = {
-    var2var: {},
-  }
-
-  let followVarVar = (i,j) => {
-    if (deps.var2var[i][j]) return
-    deps.var2var[i][j] = true
-    for (let k of vars[j].varsf) followVarVar(i,k)
-  }
-
-  for (let i in vars) {
-    deps.var2var[i] ??= {}
-    for (let j of vars[i].varsf) followVarVar(i,j)
-  }
-
-  // inject transitive closure info so "inferBwd" will pick it up
-  for (let i in deps.var2var) {
-    vars[i].varsf = Object.keys(deps.var2var[i])
-  }
-}
-
 
 
 
 //
-// 9: Compute legal order of assignments
+// 10: Compute legal order of assignments
 //    - topological sort based on q.iter/q.free
 //
 
@@ -797,7 +689,7 @@ let computeOrder = q => {
 // ----- back end -----
 
 //
-// 10. Pretty print
+// 11. Pretty print
 //
 
 let prettyPath = es => {
@@ -876,19 +768,11 @@ let emitPseudo = (q) => {
     if (pseudoVerbose && q.fre.length)
       buf.push("  " + q.fre)
   }
-  if (pseudoVerbose) {
-    buf.push("")
-    let hi = buf.length
-    for (let v in vars) {
-      if (vars[v].vars.length > 0 || vars[v].tmps && vars[v].tmps.length > 0)
-        buf.push(v + " -> " + vars[v].vars +"  "+ (vars[v].tmps??[]))
-    }
-  }
   buf.push("")
   hi = buf.length
   for (let v in vars) {
-    if (vars[v].varsf.length > 0 || vars[v].tmps && vars[v].tmps.length > 0)
-      buf.push(v + " -> " + vars[v].varsf +"  "+ (vars[v].tmps??[]))
+    if (vars[v].vars.length > 0 || vars[v].tmps && vars[v].tmps.length > 0)
+      buf.push(v + " -> " + vars[v].vars +"  "+ (vars[v].tmps??[]))
   }
   if (buf.length > hi)
     buf.push("")
@@ -994,29 +878,33 @@ let compile = (q,userSettings={}) => {
   // 3. Infer dependencies bottom up
   q = inferDims(q)
 
-  // 4. Extract var->var dependencies due to filters
-  extract1(q)
-
-  // 5. Calculate transitive var->var dependencies
-  computeDependencies()
-
-  // 6. Backward pass to infer output dimensions
+  // 4. Backward pass to infer output dimensions
   let out = settings.singleResult ? q.mind : q.dims
   q = inferBound(out)(q)
 
+
+  // Fixpoint loop:
+
+  // 5. Extract var->var dependencies due to filters
+
+  // 6. Calculate transitive var->var dependencies
+
+  // 7. Infer free variables of term
+
   varsChanged = false
-  extract1f(q)
-  computeDependenciesf()
+  extract1(q)
+  computeDependencies()
   q = inferFree(out)(q)
 
   while (true) {
     varsChanged = false
-    extract1f(q)
+    extract1(q)
     if (!varsChanged) break
-    computeDependenciesf()
+    computeDependencies()
     q = inferFree(out)(q)
   }
 
+  // Wrap top level if necessary
 
   if (out.length > 0) {
     // wrap as (group (vars q.mind) q)
@@ -1048,16 +936,16 @@ let compile = (q,userSettings={}) => {
   // ---- middle tier, imperative form ----
 
   if (settings.extractAssignments) {
-    // 7. Extract assignments
+    // 8. Extract assignments
     q = extract2(q)
   }
 
-  // 8. Extract filters
+  // 9. Extract filters
   for (let e of assignments)
     extract3(e)
   extract3(q)
 
-  // 9. Compute legal order of assignments
+  // 10. Compute legal order of assignments
   let order = computeOrder(q)
 
 
@@ -1076,10 +964,10 @@ let compile = (q,userSettings={}) => {
   setCodegenState(backendIR)
   setLoopgenState(backendIR)
 
-  // 10. Pretty print (debug out)
+  // 11. Pretty print (debug out)
   let pseudo = emitPseudo(q)
 
-  // 11. Codegen
+  // 12. Codegen
 
   if (settings.newCodegen)
     return translateToNewCodegen(q)

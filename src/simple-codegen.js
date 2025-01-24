@@ -35,7 +35,7 @@ exports.setCodegenState = st => {
   assignments = st.assignments
 }
 
-let transf = ps => unique([...ps,...ps.flatMap(x => vars[x].varsf)])
+let trans = ps => unique([...ps,...ps.flatMap(x => vars[x].vars)])
 
 
 
@@ -350,39 +350,6 @@ let emitStmUpdate = (q, scope) => {
   }
 }
 
-
-// XX no longer used, now using transf/computeDependenciesf
-let transViaFiltersFree = iter => {
-  let vars = {}
-
-  // remember the set of iteration vars
-  for (let v of iter) vars[v] = true
-
-  // transitive closure
-  let done = false
-  while (!done) {
-    done = true
-    for (let i in filters) {
-      let f = filters[i]
-      let v1 = f.arg[1].op
-      let g1 = f.arg[0]
-      if (vars[v1]) { // not interested in this? skip
-        for (v2 of g1.fre) {
-          if (!vars[v2]) {
-            vars[v2] = true
-            done = false
-          }
-        }
-      }
-    }
-  }
-
-  let res = []
-  for (let v in vars)
-    res.push(v)
-  return res
-}
-
 let getFilterIndex = () => {
   let res = {}
   for (let i in filters) {
@@ -406,9 +373,9 @@ let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
 
   if (iter.length == 0) return body(scope)
 
-  let full = transf(union(free, bnd))
+  let full = trans(union(free, bnd))
 
-  // let full2 = union(free,transf(bnd))
+  // let full2 = union(free,trans(bnd))
   // assertSame(full, full2, "free "+free+" bound "+bnd)
 
   // full2 doesn't work: free was cut down to out, so
