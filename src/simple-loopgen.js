@@ -286,6 +286,7 @@ let emitFilters2 = (scope, iter, u) => body => {
     //
     //    if ($v1 in $g1 | $scopeg1) {
     //      ...
+    //
 
     let buf1 = []
     buf.push({ key: (seen[v1] ? "if" : "for"), body: buf1, arg: [v1,i, g1]})

@@ -196,6 +196,22 @@ let isFresh = q => {
 }
 
 
+let resolveConstForVar = s => {
+  let c
+  for (let i in filters) {
+    let f = filters[i]
+    let v1 = f.arg[1].op
+    let g1 = f.arg[0]
+    if (v1 == s && g1.key == "mkset" && g1.arg[0].key == "const") {
+      if (c === undefined)
+        c = g1.arg[0].op
+      else
+        return undefined
+    }
+  }
+  return c
+}
+
 
 //
 // 11. Code generation
@@ -207,7 +223,7 @@ let isDeepVarStr = s => s.startsWith("**")
 let isDeepVarExp = s => s.key == "var" && isDeepVarStr(s.op)
 
 
-let quoteVar = s => s.replaceAll("*", "x")
+let quoteVar = s => (c => c ? quoteConst(c) : s.replaceAll("*", "x"))(resolveConstForVar(s))
 
 let quoteIndex = s => "?.["+s+"]"
 
@@ -763,19 +779,22 @@ let emitStmListLowLevel = (q, buf) => {
           //
           // (could do this also in loopgen?)
           //
-          // problems:
+          // issues:
           //  - a may eval to undefined  (see test undefinedKey)
           //  - x may already be defined in scope (see graphicsBasicTestParsing)
           //
-          if (false && g1.key == "mkset") {
+          if (resolveConstForVar(v1)) { // constant propagated directly
+            emitStmListLowLevel(stm.body, buf)
+          } else if (g1.key == "mkset") {
+            buf.push("if ("+codegen(g1.arg[0],scopeg1)+" !== undefined) {")
             buf.push("let "+quoteVar(v1)+" = "+codegen(g1.arg[0],scopeg1))
             emitStmListLowLevel(stm.body, buf)
-            continue
+            buf.push("}")
+          } else {
+            buf.push("for (let ["+quoteVar(v1)+", gen"+i+"] of rt.entries("+codegen(g1,scopeg1)+")) {")
+            emitStmListLowLevel(stm.body, buf)
+            buf.push("}")
           }
-
-          buf.push("for (let ["+quoteVar(v1)+", gen"+i+"] of rt.entries("+codegen(g1,scopeg1)+")) {")
-          emitStmListLowLevel(stm.body, buf)
-          buf.push("}")
       }
 
     } else if (stm.key == "if") {
@@ -790,10 +809,25 @@ let emitStmListLowLevel = (q, buf) => {
           emitStmListLowLevel(stm.body, buf)
           buf.push("})")
       } else {
-          buf.push("if (rt.has("+codegen(g1,scopeg1)+", "+quoteVar(v1)+")) {")
-          emitStmListLowLevel(stm.body, buf)
-          buf.push("}")
+          if (resolveConstForVar(v1)) { // constant propagated directly
+            emitStmListLowLevel(stm.body, buf)
+          } else {
+            buf.push("if (rt.has("+codegen(g1,scopeg1)+", "+quoteVar(v1)+")) {")
+            emitStmListLowLevel(stm.body, buf)
+            buf.push("}")
+          }
       }
+
+    } else if (stm.key == "let") {
+      let [v1, g1] = stm.arg
+      let scopeg1 = { vars: [], filters: [] }
+      let scopef = { vars: [], filters: [] }
+
+      // XXX currently not used
+      buf.push("if ("+codegen(g1,scopeg1)+" !== undefined) {")
+      buf.push("let "+quoteVar(v1)+" = "+codegen(g1,scopeg1))
+      emitStmListLowLevel(stm.body, buf)
+      buf.push("}")
 
     } else if (stm.key == "forTemp") {
       let [x, prefix] = stm.arg
@@ -812,6 +846,8 @@ let emitStmListLowLevel = (q, buf) => {
     } else if (stm.key == "forTempMult") {
       let [id, iter] = stm.arg
       let scopeg1 = { vars: [], filters: [] }
+
+      iter = iter.filter(x => !resolveConstForVar(x))
 
       let projName = "proj"+id
       let closing = ""
@@ -851,6 +887,8 @@ let emitStmListLowLevel = (q, buf) => {
     } else if (stm.key == "initTemp") {
 
       let [id,iter] = stm.arg
+
+      iter = iter.filter(x => !resolveConstForVar(x))
 
         let xs = [...iter.map(quoteVar)]
         let ys = xs.map(x => ","+x).join("")
