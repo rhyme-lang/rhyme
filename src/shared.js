@@ -60,6 +60,7 @@ ops.stateful.first = true
 ops.stateful.last = true
 ops.stateful.single = true
 ops.stateful.all = true
+ops.stateful.any = true
 
 ops.stateful["sum?"] = true
 ops.stateful["product?"] = true
@@ -74,6 +75,7 @@ ops.stateful["first?"] = true
 ops.stateful["last?"] = true
 ops.stateful["single?"] = true
 ops.stateful["all?"] = true
+ops.stateful["any?"] = true
 
 
 
