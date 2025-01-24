@@ -44,7 +44,7 @@ let getFilterIndex = () => {
   return res
 }
 
-let emitFilters1 = (scope, free, bnd) => body => {
+let emitFilters1 = (scope, free, bnd, careAboutOrderingAndMultiplicity) => body => {
   // approach: build explicit projection first
   // 1. iterate over transitive iter space to
   //    build projection map
@@ -91,7 +91,7 @@ let emitFilters1 = (scope, free, bnd) => body => {
   // the full set of filters for each sym that's already in scope.
   // TODO: keep track of which filters were run in scope, not just vars
 
-  if (same(diff(full,scope.vars), iter) && disjunct.length == 0) { // XXX should not disregard order?
+  if (same(diff(full,scope.vars), iter) && disjunct.length == 0 || !careAboutOrderingAndMultiplicity) { // XXX should not disregard order?
     emitFilters2(scope, full, -1)(body)
   } else {
 
@@ -332,12 +332,12 @@ let emitLoops = (q, order) => {
 
       // emit initialization first (so that sum empty = 0)
       if (q.key == "stateful" && q.mode != "maybe" && (q.op+"_init") in runtime.stateful || q.key == "update") {
-        emitFilters1(scope,q.fre,[])(scope1 => {
+        emitFilters1(scope,q.fre,[],false)(scope1 => {
           scope1.buf.push({ key: "init", arg: [{ key: "ref", op: i}, q]})
         })
       }
 
-      emitFilters1(scope,q.fre,q.bnd)(scope1 => {
+      emitFilters1(scope,q.fre,q.bnd, true)(scope1 => {
         scope1.buf.push({ key: "update", arg: [{ key: "ref", op: i}, q]})
       })
 
