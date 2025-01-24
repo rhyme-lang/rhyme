@@ -756,6 +756,23 @@ let emitStmListLowLevel = (q, buf) => {
           emitStmListLowLevel(stm.body, buf)
           buf.push("})")
       } else {
+
+          // want: optimize 
+          //
+          //  `for (x <- singleton(a))` to `let x = a`
+          //
+          // (could do this also in loopgen?)
+          //
+          // problems:
+          //  - a may eval to undefined  (see test undefinedKey)
+          //  - x may already be defined in scope (see graphicsBasicTestParsing)
+          //
+          if (false && g1.key == "mkset") {
+            buf.push("let "+quoteVar(v1)+" = "+codegen(g1.arg[0],scopeg1))
+            emitStmListLowLevel(stm.body, buf)
+            continue
+          }
+
           buf.push("for (let ["+quoteVar(v1)+", gen"+i+"] of rt.entries("+codegen(g1,scopeg1)+")) {")
           emitStmListLowLevel(stm.body, buf)
           buf.push("}")
