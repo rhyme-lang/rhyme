@@ -259,3 +259,43 @@ test("aggregateAsKey", () => {
     expect(res1_new).toEqual(e1)
     expect(res2_new).toEqual(e2_alt)
 })
+
+
+test("aggregateAsKey_encoded", () => {
+
+    let data = [
+        {"A": 1, "B": 10},
+        {"A": 2, "B": 20},
+        {"A": 1, "B": 30},
+    ]
+
+    let q1 = rh`
+        count(singleton(data.*.A).*KEYVAR1) &
+        { *KEYVAR1: 
+            count(singleton(sum(data.*.B)).*KEYVAR2) &
+            { *KEYVAR2: true } }`
+
+/* first one:
+
+    t0 = "data.*.A" -> "sum(data.*.B)"
+    t1 = t0[K0] -> t0[K0][K1] -> true
+
+*/
+
+    let f1 = api.compile(q1)
+
+    let res1_new = f1.c2({data})
+
+    let e1 = {
+        1: { 40: true },
+        2: { 20: true }
+    }
+
+    expect(res1_new).toEqual(e1)
+})
+
+
+
+
+
+
