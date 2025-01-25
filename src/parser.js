@@ -355,6 +355,8 @@ exports.parserImpl = (strings, holes) => {
           s = s.substring(0,s.length-1)
         }
         res = ast.str(s)
+      } else if (s == "true" || s == "false") {
+        res = ast.num(Boolean(s))
       } else {
         res = ast.ident(s)
       }
