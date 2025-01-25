@@ -666,7 +666,7 @@ let emitStmInline = (q, scope) => {
 
   // emit main computation
   emitFilters1(scope, q.fre, bound)(buf, codegen)(scope1 => {
-    buf.push("tmp"+i+" = "+emitStmUpdate(q, scope1) + ".next(tmp"+i+")")
+    buf.push("tmp"+i+" = "+emitStmUpdate(q, scope1) + "(tmp"+i+")")
   })
 
   buf.push("/* --- end "+q.key+"_"+i+" */")
