@@ -402,6 +402,7 @@ test("testGroup0-a8", () => {
   //
   //   ... (singleton data.*D.key).*KEYVAR ...
   //
+  // (XX same as a5)
 
   let func = compile(query)
   let res = func({data})
