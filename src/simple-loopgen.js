@@ -39,7 +39,7 @@ let getFilterIndex = () => {
     let v1 = f.arg[1].op
     let g1 = f.arg[0]
     res[v1] ??= []
-    res[v1].push(i)
+    res[v1].push(Number(i))
   }
   return res
 }
@@ -194,7 +194,7 @@ let emitFilters2 = (scope, iter, u) => body => {
       continue // disregard outer join! data.*A? --> unless requested!
 
     if (vars[v1]) // not interested in this? skip
-      pending.push(i)
+      pending.push(Number(i))
   }
 
   let filtersInScope = [...scope.filters]
