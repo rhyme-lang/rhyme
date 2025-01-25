@@ -464,7 +464,7 @@ let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
 }
 
 
-let emitFilters2 = (scope, iter, u) => (buf, codegen) => body => {
+let emitFilters2 = (scope, iter, disjunctToDrop) => (buf, codegen) => body => {
 
   // let watermark = buf.length
   // let buf0 = buf
@@ -489,7 +489,7 @@ let emitFilters2 = (scope, iter, u) => (buf, codegen) => body => {
     let v1 = f.arg[1].op
     let g1 = f.arg[0]
 
-    if (g1.mode == "maybe" && i !== u)
+    if (g1.mode == "maybe" && Number(i) != disjunctToDrop)
       continue // disregard outer join! data.*A?
 
     if (vars[v1]) // not interested in this? skip
@@ -515,8 +515,8 @@ let emitFilters2 = (scope, iter, u) => (buf, codegen) => body => {
       // propagates too far -- it should only propagate
       // as far upwards as they are used!
 
-      if (settings.extractFilters)
-         avail &&= subset(g1.filters??[], filtersInScope) // plusTest4a has g1.filters null?
+      // if (settings.extractFilters)
+         // avail &&= subset(g1.filters??[], filtersInScope) // plusTest4a has g1.filters null?
 
       if (avail)
         available.push(i) // TODO: insert in proper place
@@ -597,6 +597,7 @@ let emitFilters2 = (scope, iter, u) => (buf, codegen) => body => {
         //   buf.push("let gen"+i+" = "+codegen(f,scopef))
         } else {
           buf.push("if (rt.has("+codegen(g1,scopeg1)+", "+quoteVar(v1)+")) {")
+          buf.push("let gen"+i+" = "+codegen(g1,scopeg1)+"["+quoteVar(v1)+"]")
         }
         seen[v1] = true
         closing = "}\n"+closing
@@ -615,8 +616,11 @@ let emitFilters2 = (scope, iter, u) => (buf, codegen) => body => {
 
   // check that all variables were seen
   for (let v in vars) {
-    if (!seen[v])
+    if (!seen[v]) {
       console.error("no suitable generator for variable "+v)
+      buf.push("{ let "+quoteVar(v)+"; throw 'no suitable generator for variable "+quoteVar(v)+"'")
+      closing = "}\n"+closing
+    }
   }
 
   // combine buffers
@@ -737,6 +741,8 @@ let emitStmListLowLevel = (q, buf) => {
       let scopeg1 = { vars: [], filters: [] }
       let scopef = { vars: [], filters: [] }
 
+      // XXX TODO: genX variables not picked up
+      
       if (isDeepVarStr(v1)) {
           buf.push("rt.deepForIn("+codegen(g1,scopeg1)+", "+quoteVar(v1)+" => {")
           buf.push("let gen"+i+" = "+codegen(f,scopef))
@@ -774,6 +780,8 @@ let emitStmListLowLevel = (q, buf) => {
       let scopeg1 = { vars: [], filters: [] }
       let scopef = { vars: [], filters: [] }
 
+      // XXX TODO: genX variables not picked up
+
       if (isDeepVarStr(v1)) {
           buf.push("rt.deepIfIn("+codegen(g1,scopeg1)+", "+quoteVar(v1)+", () => {")
           buf.push("let gen"+i+" = "+codegen(f,scopef))
@@ -784,6 +792,7 @@ let emitStmListLowLevel = (q, buf) => {
             emitStmListLowLevel(stm.body, buf)
           } else {
             buf.push("if (rt.has("+codegen(g1,scopeg1)+", "+quoteVar(v1)+")) {")
+            buf.push("let gen"+i+" = "+codegen(f,scopef))
             emitStmListLowLevel(stm.body, buf)
             buf.push("}")
           }

@@ -871,6 +871,9 @@ let compile = (q,userSettings={}) => {
 
   reset(userSettings)
 
+  if (settings.newCodegen || settings.backend != "js")
+    settings.extractAssignments = true
+
   let trace = {
     log: () => {}
     // log: console.log
@@ -1084,6 +1087,8 @@ let execPromise = function(cmd) {
     // }
 
     api.logDebugOutput({c2_old: code0, c2: code})
+  } else {
+    api.logDebugOutput({c2_old: "loopGen off", c2: code})
   }
 
 

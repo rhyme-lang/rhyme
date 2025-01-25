@@ -167,7 +167,7 @@ let emitFilters1 = (scope, free, bnd, careAboutOrderingAndMultiplicity) => body 
 }
 
 
-let emitFilters2 = (scope, iter, u) => body => {
+let emitFilters2 = (scope, iter, disjunctToDrop) => body => {
 
   let buf = scope.buf
 
@@ -190,7 +190,7 @@ let emitFilters2 = (scope, iter, u) => body => {
     let v1 = f.arg[1].op
     let g1 = f.arg[0]
 
-    if (g1.mode == "maybe" && i !== u)
+    if (g1.mode == "maybe" && Number(i) != disjunctToDrop)
       continue // disregard outer join! data.*A? --> unless requested!
 
     if (vars[v1]) // not interested in this? skip
@@ -216,8 +216,8 @@ let emitFilters2 = (scope, iter, u) => body => {
       // propagates too far -- it should only propagate
       // as far upwards as they are used!
 
-      if (settings.extractFilters)
-         avail &&= subset(g1.filters??[], filtersInScope) // plusTest4a has g1.filters null?
+      // if (settings.extractFilters)
+         // avail &&= subset(g1.filters??[], filtersInScope) // plusTest4a has g1.filters null?
 
       if (avail)
         available.push(i) // TODO: insert in proper place
@@ -305,8 +305,10 @@ let emitFilters2 = (scope, iter, u) => body => {
 
   // check that all variables were seen
   for (let v in vars) {
-    if (!seen[v])
+    if (!seen[v]) {
       console.error("no suitable generator for variable "+v)
+      buf.push("// ERROR: no suitable generator for variable "+quoteVar(v))
+    }
   }
 
 
