@@ -23,6 +23,8 @@ let defaultSettings = {
   extractGroupKeys: false,
   extractAssignments: true,
   extractFilters: true,
+
+  elimProjections: true,
   constantFold: true,
   loopGen: true,
 

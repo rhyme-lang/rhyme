@@ -333,12 +333,22 @@ let emitLoops = (q, order) => {
 
       // emit initialization first (so that sum empty = 0)
       if (q.key == "stateful" && q.mode != "maybe" && (q.op+"_init") in runtime.stateful || q.key == "update") {
-        emitFilters1(scope,q.fre,[],false)(scope1 => {
+        let needProject = !settings.elimProjections
+        emitFilters1(scope,q.fre,[],needProject)(scope1 => {
           scope1.buf.push({ key: "init", arg: [{ key: "ref", op: i}, q]})
         })
       }
 
-      emitFilters1(scope,q.fre,q.bnd, true)(scope1 => {
+      // idempotent ops do not need projection
+      let needProject = true
+      if (settings.elimProjections) {
+        if (q.key == "stateful" && ["single","first","last","all","any"].includes(q.op))
+          needProject = false
+        else if (q.key == "update" && q.arg[2].key == "ref")
+          needProject = false
+      }
+
+      emitFilters1(scope,q.fre,q.bnd, needProject)(scope1 => {
         scope1.buf.push({ key: "update", arg: [{ key: "ref", op: i}, q]})
       })
 
