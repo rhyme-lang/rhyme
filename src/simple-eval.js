@@ -22,6 +22,7 @@ let defaultSettings = {
 
   extractGroupKeys: false,
   extractAssignments: true,
+  extractAssignmentsLate: true,
   extractFilters: true,
 
   elimProjections: true,
@@ -967,7 +968,7 @@ let compile = (q,userSettings={}) => {
 
   // ---- middle tier, imperative form ----
 
-  if (settings.extractAssignments) {
+  if (settings.extractAssignments && !settings.extractAssignmentsLate) {
     // 8. Extract assignments
     q = extract2(q)
   }
@@ -976,6 +977,13 @@ let compile = (q,userSettings={}) => {
   for (let e of assignments)
     extract3(e)
   extract3(q)
+
+
+  if (settings.extractAssignments && settings.extractAssignmentsLate) {
+    for (let i in filters)
+      filters[i] = extract2(filters[i])
+    q = extract2(q)
+  }
 
   // 10. Compute legal order of assignments
   let order = computeOrder(q)
