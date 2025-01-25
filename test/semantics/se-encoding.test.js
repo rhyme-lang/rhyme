@@ -101,8 +101,8 @@ test("aggregateAsKey_encoded1", () => {
   let res1 = func({data})
 
   let e1 = {
-      1: { 40: "true" },
-      2: { 20: "true" }
+      1: { 40: true },
+      2: { 20: true }
   }
 
   expect(res1).toEqual(e1)
@@ -126,7 +126,7 @@ test("aggregateAsKey_encoded2", () => {
   let res2 = func({data})
 
   let e2_alt_string = {
-      60: { 1: "true", 2: "true" } // XXX is this the right one?
+      60: { 1: true, 2: true } // XXX is this the right one?
   }
 
   expect(res2).toEqual(e2_alt_string)
@@ -152,9 +152,9 @@ test("aggregateAsKey_encoded2b", () => {
   let res2 = func({data})
 
   let e2_alt_string = { // not sure?
-    10: { 1: "true" },
-    20: { 2: "true" },
-    30: { 1: "true" },
+    10: { 1: true },
+    20: { 2: true },
+    30: { 1: true },
   }
 
   expect(res2).toEqual(e2_alt_string)
