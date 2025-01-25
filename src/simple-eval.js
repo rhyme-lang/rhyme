@@ -20,6 +20,7 @@ let defaultSettings = {
   antiSubstGroupKey: false,
   singleResult: true, // TODO: elim flag? 14 tests failing when false globally
 
+  extractGroupKeys: false,
   extractAssignments: true,
   extractFilters: true,
   constantFold: true,
@@ -145,7 +146,20 @@ let extract0 = q => {
       let prefix = { key:"mkset", arg:[e1] }
       let v1 = { key: "var", op: canonicalVarName(prefix, true) }
       let v2 = { key: "var", op: canonicalVarName(prefix, true) }
-      return { ...q, key: "update", arg: [e0, v1, e2, { key: "get", arg: [prefix, v2] }], mode: mode }
+
+      if (settings.backend != "js" || !settings.extractGroupKeys)
+        return { ...q, key: "update", arg: [e0, v1, e2, { key: "get", arg: [prefix, v2] }], mode: mode }
+
+      // desugar update(e1,e2) as:
+      //   count(mkset(e1).K1) & update(K1, e2)
+
+      let p = { key: "stateful", op: "count", arg: [
+                { key: "get", arg: [prefix, v2] }] }
+
+      q = { ...q, key: "update", arg: [e0, v1, e2], mode: mode }
+
+      return { key: "pure", op: "and", arg: [p, q] }
+
       // return { ...q, arg: [v1,
       //   { key:"stateful", op: "single", mode: "reluctant", arg:[
       //     { key: "pure", op: "and", arg:[
@@ -466,7 +480,7 @@ let inferFree = out => q => {
 
     // find correlated path keys: check overlap with our own bound vars
     // - x is uncorrelated: trans(x) /\ trans(q.bnd) < out
-    let extra = out
+    let extra = path
     .filter(isCorrelatedKeyVar)
     .filter(x => intersects(diff(trans([x]),out), trans(q.bnd)))
 
@@ -494,10 +508,23 @@ let inferFree = out => q => {
       let e1Body = e3.arg[0].arg[0]
     }
 
+    // NOTE: path vs out
+    // We want to correlate key vars only when they really occur in
+    // a *key* position -- i.e., here, in an 'update'.
+    //
+    // Otherwise, if we desugar as count(singleton(...).K2) then K2
+    // is bound in the enclosing 'count', and will induce 
+    // a recursive dependency.
+
+    let save = path
+    path = [...path, ...e1.vars]
+
     let e2 = inferFree(union(out, e1.vars))(q.arg[2])
 
+    path = save
+
     // find correlated path keys: check overlap with our own bound vars
-    let extra = out
+    let extra = path
     .filter(isCorrelatedKeyVar)
     .filter(x => intersects(diff(trans([x]),out), trans(q.bnd)))
 
