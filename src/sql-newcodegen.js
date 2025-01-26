@@ -1,5 +1,6 @@
 const { generate } = require('./new-codegen')
 const { typing, typeSyms } = require('./typing')
+const { pretty } = require('./prettyprint')
 const { sets } = require('./shared')
 
 const { unique, union } = sets
@@ -163,60 +164,6 @@ let cgen = {
   return: (buf) => (expr) => buf.push(`return ${expr};`)
 }
 
-let prettyPath = es => {
-  if (es === undefined) return "[?]"
-  let sub = x => typeof (x) === "string" ? x : pretty(x)
-  return "[" + es.map(sub).join(",") + "]"
-}
-
-let pretty = q => {
-  if (q.key == "input") {
-    return "inp"
-  } else if (q.key == "loadInput") {
-    let [e1] = q.arg.map(pretty)
-    return `loadCSV(${e1})`
-  } else if (q.key == "const") {
-    if (typeof q.op === "object" && Object.keys(q.op).length == 0) return "{}"
-    else return "" + q.op
-  } else if (q.key == "var") {
-    return q.op
-  } else if (q.key == "ref") {
-    let e1 = assignments[q.op]
-    return "tmp" + q.op + prettyPath(e1.fre)
-  } else if (q.key == "get") {
-    let [e1, e2] = q.arg.map(pretty)
-    if (e1 == "inp") return e2
-    // if (q.arg[1].key == "var") { // hampers CSE pre-extract
-    // if (q.filter === undefined) // def
-    // return e2 + " <- " + e1
-    // }
-    return e1 + "[" + e2 + "]"
-  } else if (q.key == "pure") {
-    let es = q.arg.map(pretty)
-    return q.op + "(" + es.join(", ") + ")"
-  } else if (q.key == "hint") {
-    let es = q.arg.map(pretty)
-    return q.op + "(" + es.join(", ") + ")"
-  } else if (q.key == "mkset") {
-    let [e1] = q.arg.map(pretty)
-    return "mkset(" + e1 + ")"
-  } else if (q.key == "prefix") {
-    let [e1] = q.arg.map(pretty)
-    return "prefix_" + q.op + "(" + e1 + ")"
-  } else if (q.key == "stateful") {
-    let [e1] = q.arg.map(pretty)
-    return q.op + "(" + e1 + ")"
-  } else if (q.key == "group") {
-    let [e1, e2] = q.arg.map(pretty)
-    return "{ " + e1 + ": " + e2 + " }"
-  } else if (q.key == "update") {
-    let [e0, e1, e2, e3] = q.arg.map(pretty)
-    if (e3) return e0 + "{ " + e1 + ": " + e2 + " } / " + e3
-    return e0 + "{ " + e1 + ": " + e2 + " }"
-  } else {
-    console.error("unknown op", q)
-  }
-}
 
 let operators = {
   equal: "==",
