@@ -1547,9 +1547,15 @@ let translateToNewCodegen = q => {
   let generatorStms = []
   let tmpVarWriteRank = {}
 
+  let nonconst = xs => {
+    if (settings.constantFold)
+      return xs.filter(x => !resolveConstForVar(x))
+    else
+      return xs
+  }
 
   // generator ir api: mirroring necessary bits from ir.js
-  let expr = (txt, ...args) => ({ txt, deps: args })
+  let expr = (txt, ...args) => ({ txt, deps: nonconst(args) })
 
   let call = (func, ...es) => expr(func+"("+es.map(x => x.txt).join(",")+")", ...es.flatMap(x => x.deps))
 
@@ -1627,6 +1633,8 @@ let translateToNewCodegen = q => {
   // map filters/generators
   for (let i in filters) {
     let q = filters[i]
+    if (settings.constantFold && resolveConstForVar(q.arg[1].op))
+      continue
     let scope = { vars: q.fre, filters: [] } // XXX filters?
     let [a,b] = q.arg.map(x => transExpr(x, scope))
     selectGenFilter(a, b)
