@@ -39,6 +39,7 @@ let initRequired = {
   "min": true,
   "max": true,
   "count": true,
+  "array": true,
 }
 
 
@@ -530,9 +531,7 @@ let hashUpdate = (buf, sym, key, update) => {
 let hashBufferInsert = (buf, sym, key, value) => {
   let { keySchema, valSchema } = hashMapEnv[sym]
 
-  let [pos, keyPos] = hashLookUpOrUpdate(buf, sym, key, lhs => {
-    cgen.stmt(buf)(cgen.assign(lhs, "0"))
-  })
+  let [pos, keyPos] = hashLookUp(buf, sym, key)
 
   let dataPos = getNewName("data_pos")
   cgen.declareInt(buf)(dataPos, `${sym}_data_count`)
@@ -615,6 +614,53 @@ let hashMapInit = (buf, sym, keySchema, valSchema) => {
   hashMapEnv[sym] = { keySchema, valSchema }
 }
 
+let hashMapShallowCopy = (buf, sym1, sym2, keySchema, valSchema) => {
+  cgen.comment(buf)(`init hashmap for ${sym1}`)
+  // keys
+  cgen.comment(buf)(`keys of ${sym1}`)
+
+  if (typing.isString(keySchema)) {
+    cgen.declareCharPtrPtr(buf)(`${sym1}_keys_str`, `${sym2}_keys_str`)
+    cgen.declareIntPtr(buf)(`${sym1}_keys_len`, `${sym2}_keys_len`)
+  } else {
+    let cType = convertToCType(keySchema)
+    cgen.declarePtr(buf)(cType, `${sym1}_keys`, `${sym2}_keys`)
+  }
+
+  cgen.comment(buf)(`key count for ${sym1}`)
+  cgen.declareInt(buf)(`${sym1}_key_count`, `${sym2}_key_count`)
+
+  // htable
+  cgen.comment(buf)(`hash table for ${sym1}`)
+  cgen.declareIntPtr(buf)(`${sym1}_htable`, `${sym2}_htable`)
+
+  cgen.comment(buf)(`values of ${sym1}`)
+
+  if (typing.isObject(valSchema)) {
+    // stateful "array" op
+    if (typing.isString(valSchema.objValue)) {
+      cgen.declareCharPtrPtr(buf)(`${sym1}_data_str`, `${sym2}_data_str`)
+      cgen.declareIntPtr(buf)(`${sym1}_data_len`, `${sym2}_data_len`)
+    } else {
+      let cType = convertToCType(valSchema.objValue)
+      cgen.declarePtr(buf)(cType, `${sym1}_data`, `${sym2}_data`)
+    }
+    cgen.declareInt(buf)(`${sym1}_data_count`, `${sym2}_data_count`)
+
+    cgen.declareIntPtr(buf)(`${sym1}_buckets`, `${sym2}_buckets`)
+    cgen.declareIntPtr(buf)(`${sym1}_bucket_counts`, `${sym2}_bucket_counts`)
+  } else if (typing.isString(valSchema)) {
+    cgen.declareCharPtrPtr(buf)(`${sym1}_values_str`, `${sym2}_values_str`)
+    cgen.declareIntPtr(buf)(`${sym1}_values_len`, `${sym2}_values_len`)
+  } else {
+    // let convertToCType report "type not supported" errors
+    let cType = convertToCType(valSchema)
+    cgen.declarePtr(buf)(cType, `${sym1}_values`, `${sym2}_values`)
+  }
+
+  hashMapEnv[sym1] = { keySchema, valSchema }
+}
+
 // Emit code that prints the keys and values in a hashmap.
 let hashMapPrint = (buf, sym) => {
   let { keySchema, valSchema } = hashMapEnv[sym]
@@ -635,12 +681,28 @@ let hashMapPrint = (buf, sym) => {
 
   buf.push(`// print value`)
   if (typing.isObject(valSchema)) {
+    buf.push(`print("[", 1);`)
+    buf.push(`int bucket_count = ${sym}_bucket_counts[key_pos];`)
+    buf.push(`for (int j = 0; j < bucket_count; j++) {`)
+    buf.push(`int data_pos = ${sym}_buckets[key_pos * 256 + j];`)
+
+    if (typing.isString(valSchema.objValue)) {
+      buf.push(`print(${sym}_data_str[data_pos], ${sym}_data_len[data_pos]);`)
+    } else {
+      buf.push(`printf("%${getFormatSpecifier(valSchema.objValue)}", ${sym}_data[data_pos]);`)
+    }
+
+    buf.push(`if (j != bucket_count - 1) {`)
+    buf.push(`print(", ", 2);`)
+    buf.push(`}`)
+    buf.push(`}`)
+    buf.push(`print("]", 1);`)
   } else if (typing.isString(valSchema)) {
     buf.push(`print(${sym}_values_str[key_pos], ${sym}_values_len[key_pos]);`)
-    buf.push(`print("\\n", 1);`)
   } else {
-    buf.push(`printf("%${getFormatSpecifier(valSchema)}\\n", ${sym}_values[key_pos]);`)
+    buf.push(`printf("%${getFormatSpecifier(valSchema)}", ${sym}_values[key_pos]);`)
   }
+  buf.push(`print("\\n", 1);`)
   buf.push(`}`)
 }
 
@@ -658,6 +720,8 @@ let emitStmInit = (q, sym) => {
         init = `INT_MAX`
       } else if (q.op == "max") {
         init = `INT_MIN`
+      } else if (q.op == "array") {
+        init = `0`
       } else {
         throw new Error("stateful op not supported: " + pretty(q))
       }
@@ -928,6 +992,8 @@ let emitCode = (q, ir) => {
   prolog.push(`#include "rhyme-sql.h"`)
   prolog.push("int main() {")
 
+  let trivialUpdate = {}
+
   // Collect hashmaps for groupby
   for (let i in assignments) {
     let sym = tmpSym(i)
@@ -937,6 +1003,10 @@ let emitCode = (q, ir) => {
     if (q.key == "update") {
       let keySchema = q.arg[3].arg[0].arg[0].schema
       hashMapEnv[sym] = { keySchema: keySchema.type, valSchema: q.schema.type.objValue }
+
+      if (q.arg[2].fre.length == 1 && q.arg[1].op == q.arg[2].fre[0]) {
+        trivialUpdate[sym] = tmpSym(q.arg[2].op)
+      }
     }
   }
 
@@ -1007,7 +1077,13 @@ let emitCode = (q, ir) => {
       let keySchema = mksetVarEnv[q.fre[0]].schema
       let buf = []
       hashMapInit(buf, sym, keySchema.type, q.schema.type)
-      assign(buf, sym, [], []);
+      assign(buf, sym, [], [])
+    } else if (q.key == "update" && trivialUpdate[sym] !== undefined) {
+      let keySchema = mksetVarEnv[q.arg[1].op].schema
+      let buf = []
+      hashMapShallowCopy(buf, sym, trivialUpdate[sym], keySchema.type, q.schema.type.objValue)
+      assign(buf, sym, [], [trivialUpdate[sym]])
+      continue
     }
 
     // emit init
@@ -1019,7 +1095,7 @@ let emitCode = (q, ir) => {
     let fv = union(q.fre, q.bnd)
     let deps = [...fv, ...q.tmps.map(tmpSym)] // XXX rhs dims only?
 
-    assign(emitStmUpdate(q, sym, q.fre), sym, q.fre, deps)
+    assign(emitStmUpdate(q, sym), sym, q.fre, deps)
   }
 
   let res = codegen(q, [], {})
