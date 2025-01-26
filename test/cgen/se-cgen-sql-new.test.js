@@ -528,7 +528,9 @@ test("groupByArray", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "groupByArray.c", schema: types.never })
   let res = await func()
 
-  console.log(res)
+  expect(res).toBe(`Asia: [Japan, China]
+Europe: [France, UK]
+`)
 })
 
 test("hashJoinArray", async () => {
@@ -541,7 +543,9 @@ test("hashJoinArray", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "hashJoinArray.c", schema: types.never })
   let res = await func()
 
-  console.log(res)
+  expect(res).toBe(`Asia: [30, 20]
+Europe: [10, 10]
+`)
 })
 
 /**/

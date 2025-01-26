@@ -53,7 +53,7 @@ int main() {
         // generator: K0 <- mkset(loadCSV(./cgen-sql/region.csv)[*O][region])
         {
             // singleton value here
-            // update tmp0 for array
+            // init tmp0 for array
             unsigned long hash0 = hash(csv0 + csv0_xO_region_start, csv0_xO_region_end - csv0_xO_region_start);
             unsigned long pos0 = hash0 & 255;
             while (tmp0_htable[pos0] != -1 && compare_str2(tmp0_keys_str[tmp0_htable[pos0]], tmp0_keys_len[tmp0_htable[pos0]], csv0 + csv0_xO_region_start, csv0_xO_region_end - csv0_xO_region_start) != 0) {
@@ -68,11 +68,18 @@ int main() {
                 tmp0_keys_len[key_pos0] = csv0_xO_region_end - csv0_xO_region_start;
                 tmp0_bucket_counts[key_pos0] = 0;
             }
+            // update tmp0 for array
+            unsigned long hash1 = hash(csv0 + csv0_xO_region_start, csv0_xO_region_end - csv0_xO_region_start);
+            unsigned long pos1 = hash1 & 255;
+            while (tmp0_htable[pos1] != -1 && compare_str2(tmp0_keys_str[tmp0_htable[pos1]], tmp0_keys_len[tmp0_htable[pos1]], csv0 + csv0_xO_region_start, csv0_xO_region_end - csv0_xO_region_start) != 0) {
+                pos1 = (pos1 + 1) & 255;
+            }
+            int key_pos1 = tmp0_htable[pos1];
             int data_pos0 = tmp0_data_count;
             tmp0_data_count++;
-            int bucket_pos0 = tmp0_bucket_counts[key_pos0];
-            tmp0_bucket_counts[key_pos0] = bucket_pos0 + 1;
-            tmp0_buckets[key_pos0 * 256 + bucket_pos0] = data_pos0;
+            int bucket_pos0 = tmp0_bucket_counts[key_pos1];
+            tmp0_bucket_counts[key_pos1] = bucket_pos0 + 1;
+            tmp0_buckets[key_pos1 * 256 + bucket_pos0] = data_pos0;
             tmp0_data_str[data_pos0] = csv0 + csv0_xO_country_start;
             tmp0_data_len[data_pos0] = csv0_xO_country_end - csv0_xO_country_start;
         }
