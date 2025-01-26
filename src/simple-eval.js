@@ -491,7 +491,7 @@ let inferFree = out => q => {
     // find correlated path keys: check overlap with our own bound vars
     // - x is uncorrelated: trans(x) /\ trans(q.bnd) < out
     let extra = path
-    .filter(isCorrelatedKeyVar)
+    .filter(isCorrelatedKeyVar) // testGroup0-a1 is the only one that needs this!
     .filter(x => intersects(diff(trans([x]),out), trans(q.bnd)))
 
     // free variables: anything from current scope (out) that is:
@@ -535,7 +535,7 @@ let inferFree = out => q => {
 
     // find correlated path keys: check overlap with our own bound vars
     let extra = path
-    .filter(isCorrelatedKeyVar)
+    .filter(isCorrelatedKeyVar) // not strictly needed!
     .filter(x => intersects(diff(trans([x]),out), trans(q.bnd)))
 
     // e3 registered as filter, not necessary to include it here
