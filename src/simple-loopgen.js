@@ -216,8 +216,8 @@ let emitFilters2 = (scope, iter, disjunctToDrop) => body => {
       // propagates too far -- it should only propagate
       // as far upwards as they are used!
 
-      // if (settings.extractFilters)
-         // avail &&= subset(g1.filters??[], filtersInScope) // plusTest4a has g1.filters null?
+      if (settings.extractFilters)
+         avail &&= subset(g1.filters??[], filtersInScope) // plusTest4a has g1.filters null?
 
       if (avail)
         available.push(i) // TODO: insert in proper place

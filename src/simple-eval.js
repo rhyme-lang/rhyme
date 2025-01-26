@@ -22,8 +22,9 @@ let defaultSettings = {
 
   extractGroupKeys: false,
   extractAssignments: true,
-  extractAssignmentsLate: true,
+  extractAssignmentsLate: false, // works, but makes aoc tests go from 5s to 20s!
   extractFilters: true,
+  extractFiltersHard: true,
 
   elimProjections: true,
   constantFold: true,
@@ -293,9 +294,9 @@ let extract2 = q => {
 // 9: extract filters and hints
 //    - runs after inferFree()
 let extract3 = q => {
-  if (!q.arg) return
-  q.arg.map(extract3)
-  q.filters = unique(q.arg.flatMap(x => x.filters??[]))
+  if (!q.arg) return { ...q, filters:[] }
+  let es = q.arg.map(extract3)
+  let deps = unique(q.arg.flatMap(x => x.filters??[]))
   if (q.key == "get") {
     let [e1,e2] = q.arg
     if (e2.key == "var") {
@@ -311,10 +312,15 @@ let extract3 = q => {
       // the expression or a reference, depending on scope.
       // An alternative would be to return a ref expression
       // instead.
+      if (settings.extractFiltersHard)
+        return { ...q, key: "genref", op: ix, arg: [], filters:[ix] }
       q.filter = ix
-      q.filters.push(ix)
+      q.filters = [...deps, ix]
     }
   }
+  if (settings.extractFiltersHard)
+    return { ...q, arg: es, filters: deps }
+  q.filters = deps
   if (q.key == "hint") {
     let str = JSON.stringify(q) // extract & cse
     let ix = hints.map(JSON.stringify).indexOf(str)
@@ -325,6 +331,7 @@ let extract3 = q => {
     }
     q.hint = ix
   }
+  return q
 }
 
 
@@ -742,6 +749,9 @@ let pretty = q => {
   } else if (q.key == "ref") {
     let e1 = assignments[q.op]
     return "tmp"+q.op+prettyPath(e1.fre)
+  } else if (q.key == "genref") {
+    let e1 = filters[q.op]
+    return "gen"+q.op
   } else if (q.key == "get") {
     let [e1,e2] = q.arg.map(pretty)
     if (e1 == "inp") return e2
@@ -872,8 +882,10 @@ let compile = (q,userSettings={}) => {
 
   reset(userSettings)
 
-  if (settings.newCodegen || settings.backend != "js")
+  if (settings.newCodegen || settings.backend != "js") {
     settings.extractAssignments = true
+    settings.extractFiltersHard = false
+  }
 
   let trace = {
     log: () => {}
@@ -974,9 +986,9 @@ let compile = (q,userSettings={}) => {
   }
 
   // 9. Extract filters
-  for (let e of assignments)
-    extract3(e)
-  extract3(q)
+  for (let i in assignments)
+    assignments[i] = extract3(assignments[i])
+  q = extract3(q)
 
 
   if (settings.extractAssignments && settings.extractAssignmentsLate) {

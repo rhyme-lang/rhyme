@@ -65,6 +65,9 @@ let pretty = q => {
   } else if (q.key == "ref") {
     let e1 = assignments[q.op]
     return "tmp"+q.op+prettyPath(e1.fre)
+  } else if (q.key == "genref") {
+    let e1 = filters[q.op]
+    return "gen"+q.op
   } else if (q.key == "get") {
     let [e1,e2] = q.arg.map(pretty)
     if (e1 == "inp") return e2
@@ -284,6 +287,15 @@ let codegen = (q, scope) => {
     let q1 = assignments[q.op]
     let xs = [String(q.op),...q1.fre]
     return quoteIndexVarsXS("tmp", xs)
+  } else if (q.key == "genref") {
+    let q1 = filters[q.op]
+    if (!scope.filters.includes(q.op)) {
+      // If we have pre-projected and are now traversing the result,
+      // then we won't have genX in scope. Generate it now.
+      scope.buf.push("let gen"+q.op+" = "+codegen(q1, scope)+" // lazily generated")
+      scope.filters = [...scope.filters, q.op]
+    }
+    return "gen"+q.op
   } else if (settings.extractFilters
           && q.key == "get" && "filter" in q
           && scope.filters.indexOf(q.filter) >= 0) {
@@ -515,8 +527,8 @@ let emitFilters2 = (scope, iter, disjunctToDrop) => (buf, codegen) => body => {
       // propagates too far -- it should only propagate
       // as far upwards as they are used!
 
-      // if (settings.extractFilters)
-         // avail &&= subset(g1.filters??[], filtersInScope) // plusTest4a has g1.filters null?
+      if (settings.extractFilters)
+         avail &&= subset(g1.filters??[], filtersInScope) // plusTest4a has g1.filters null?
 
       if (avail)
         available.push(i) // TODO: insert in proper place
@@ -596,8 +608,8 @@ let emitFilters2 = (scope, iter, disjunctToDrop) => (buf, codegen) => body => {
         //   buf.push("for (let "+quoteVar(v1)+" in "+codegen(g1,scopeg1)+") {")
         //   buf.push("let gen"+i+" = "+codegen(f,scopef))
         } else {
-          buf.push("if (rt.has("+codegen(g1,scopeg1)+", "+quoteVar(v1)+")) {")
-          buf.push("let gen"+i+" = "+codegen(g1,scopeg1)+"["+quoteVar(v1)+"]")
+          buf.push("let gen"+i+" = "+codegen(g1,scopeg1)+"?.["+quoteVar(v1)+"]")
+          buf.push("if (gen"+i+" !== undefined) { // "+pretty(f))
         }
         seen[v1] = true
         closing = "}\n"+closing
@@ -733,20 +745,24 @@ let emitCode = (q, order) => {
 
 let cgList = xs => xs.map(x => x.key ? pretty(x) : String(x)).join(", ")
 
-let emitStmListLowLevel = (q, buf) => {
+let emitStmListLowLevel = (q, scope) => {
+  let buf = scope.buf
   for (let stm of q) {
     if (stm.key == "for") {
       let [v1, i, g1] = stm.arg
       let f = filters[i]
-      let scopeg1 = { vars: [], filters: [] }
-      let scopef = { vars: [], filters: [] }
+      let scopeg1 = { buf, vars: [...scope.vars], filters: [...scope.filters] }
+      let scopef = { buf, vars: [...scope.vars], filters: [...scope.filters] }
+      let scope1 = { buf, vars: [...scope.vars], filters: [...scope.filters] }
 
       // XXX TODO: genX variables not picked up
-      
+
       if (isDeepVarStr(v1)) {
           buf.push("rt.deepForIn("+codegen(g1,scopeg1)+", "+quoteVar(v1)+" => {")
           buf.push("let gen"+i+" = "+codegen(f,scopef))
-          emitStmListLowLevel(stm.body, buf)
+          scope1.vars.push(v1)
+          scope1.filters.push(i)
+          emitStmListLowLevel(stm.body, scope1)
           buf.push("})")
       } else {
 
@@ -761,15 +777,19 @@ let emitStmListLowLevel = (q, buf) => {
           //  - x may already be defined in scope (see graphicsBasicTestParsing)
           //
           if (settings.constantFold && resolveConstForVar(v1)) { // constant propagated directly
-            emitStmListLowLevel(stm.body, buf)
+            emitStmListLowLevel(stm.body, scope1)
           } else if (g1.key == "mkset") {
             buf.push("if ("+codegen(g1.arg[0],scopeg1)+" !== undefined) {")
             buf.push("let "+quoteVar(v1)+" = "+codegen(g1.arg[0],scopeg1))
-            emitStmListLowLevel(stm.body, buf)
+            scope1.vars.push(v1)
+            scope1.filters.push(i)
+            emitStmListLowLevel(stm.body, scope1)
             buf.push("}")
           } else {
             buf.push("for (let ["+quoteVar(v1)+", gen"+i+"] of rt.entries("+codegen(g1,scopeg1)+")) {")
-            emitStmListLowLevel(stm.body, buf)
+            scope1.vars.push(v1)
+            scope1.filters.push(i)
+            emitStmListLowLevel(stm.body, scope1)
             buf.push("}")
           }
       }
@@ -777,55 +797,68 @@ let emitStmListLowLevel = (q, buf) => {
     } else if (stm.key == "if") {
       let [v1, i, g1] = stm.arg
       let f = filters[i]
-      let scopeg1 = { vars: [], filters: [] }
-      let scopef = { vars: [], filters: [] }
+      let scopeg1 = { buf, vars: [...scope.vars], filters: [...scope.filters] }
+      let scopef = { buf, vars: [...scope.vars], filters: [...scope.filters] }
+      let scope1 = { buf, vars: [...scope.vars], filters: [...scope.filters] }
 
       // XXX TODO: genX variables not picked up
 
       if (isDeepVarStr(v1)) {
           buf.push("rt.deepIfIn("+codegen(g1,scopeg1)+", "+quoteVar(v1)+", () => {")
           buf.push("let gen"+i+" = "+codegen(f,scopef))
-          emitStmListLowLevel(stm.body, buf)
+          scope1.vars.push(v1)
+          scope1.filters.push(i)
+          emitStmListLowLevel(stm.body, scope1)
           buf.push("})")
       } else {
           if (settings.constantFold && resolveConstForVar(v1)) { // constant propagated directly
-            emitStmListLowLevel(stm.body, buf)
+            emitStmListLowLevel(stm.body, scope)
           } else {
-            buf.push("if (rt.has("+codegen(g1,scopeg1)+", "+quoteVar(v1)+")) {")
-            buf.push("let gen"+i+" = "+codegen(f,scopef))
-            emitStmListLowLevel(stm.body, buf)
-            buf.push("}")
+            buf.push("let gen"+i+" = "+codegen(g1,scopeg1)+"?.["+quoteVar(v1)+"]; " +
+                     "if (gen"+i+" === undefined) continue")
+            scope1.vars.push(v1)
+            scope1.filters.push(i)
+            emitStmListLowLevel(stm.body, scope1)
+            // buf.push("}")
           }
       }
 
     } else if (stm.key == "let") {
       let [v1, g1] = stm.arg
-      let scopeg1 = { vars: [], filters: [] }
-      let scopef = { vars: [], filters: [] }
+      let scopeg1 = { buf, vars: [...scope.vars], filters: [...scope.filters] }
+      let scopef = { buf, vars: [...scope.vars], filters: [...scope.filters] }
+      let scope1 = { buf, vars: [...scope.vars], filters: [...scope.filters] }
 
       // XXX currently not used
       buf.push("if ("+codegen(g1,scopeg1)+" !== undefined) {")
       buf.push("let "+quoteVar(v1)+" = "+codegen(g1,scopeg1))
-      emitStmListLowLevel(stm.body, buf)
+      scope1.vars.push(v1)
+      emitStmListLowLevel(stm.body, scope1)
       buf.push("}")
 
     } else if (stm.key == "forTemp") {
       let [x, prefix] = stm.arg
-      let scopeg1 = { vars: [], filters: [] }
+      let scopeg1 = { buf, vars: [...scope.vars], filters: [...scope.filters] }
+      let scope1 = { buf, vars: [...scope.vars], filters: [...scope.filters] }
 
       if (isDeepVarStr(x)) {
           buf.push("rt.deepForInTemp("+codegen(prefix,scopeg1)+", ("+quoteVar(x)+"_key, "+quoteVar(x)+") => {")
-          emitStmListLowLevel(stm.body, buf)
+          scope1.vars.push(x)
+          // scope1.filters.push(i)
+          emitStmListLowLevel(stm.body, scope1)
           buf.push("})")
       } else {
           buf.push("for (let "+quoteVar(x)+" in "+codegen(prefix,scopeg1)+") {")
-          emitStmListLowLevel(stm.body, buf)
+          scope1.vars.push(x)
+          // scope1.filters.push(i)
+          emitStmListLowLevel(stm.body, scope1)
           buf.push("}")
       }
 
     } else if (stm.key == "forTempMult") {
       let [id, iter] = stm.arg
-      let scopeg1 = { vars: [], filters: [] }
+      // let scopeg1 = { buf, vars: [], filters: [] }
+      let scope1 = { buf, vars: [...scope.vars], filters: [...scope.filters] }
 
       if (settings.constantFold)
         iter = iter.filter(x => !resolveConstForVar(x))
@@ -843,16 +876,18 @@ let emitStmListLowLevel = (q, buf) => {
           prefix += "["+quoteVar(x)+"]"
           closing = "}\n"+closing
         }
+        scope1.vars.push(x)
+        // scope1.filters.push(i)
       }
 
-      emitStmListLowLevel(stm.body, buf)
+      emitStmListLowLevel(stm.body, scope1)
       buf.push(closing)
 
 
     } else if (stm.key == "init") {
       let [lhs,q] = stm.arg
       let i = lhs.op
-      let scope1 = { vars: [], filters: [] }
+      let scope1 = scope // { buf, vars: [], filters: [] }
 
           let xs = [i,...q.fre.map(quoteVar)]
           let ys = xs.map(x => ","+x).join("")
@@ -880,7 +915,7 @@ let emitStmListLowLevel = (q, buf) => {
 
       let [lhs,q] = stm.arg
       let i = lhs.op
-      let scope1 = { vars: [], filters: [] }
+      let scope1 = scope // { buf, vars: [], filters: [] }
 
           let xs = [i,...q.fre.map(quoteVar)]
           let ys = xs.map(x => ","+x).join("")
@@ -889,8 +924,8 @@ let emitStmListLowLevel = (q, buf) => {
 
     } else if (stm.key == "return") {
 
-      let scope = { vars:[], filters: [], buf }
-          buf.push("return " + codegen(stm.arg[0], scope))
+      let scope1 = scope // { buf, vars:[], filters: [], buf }
+          buf.push("return " + codegen(stm.arg[0], scope1))
 
     } else if (stm.key == "raw") {
       buf.push(stm.op)
@@ -907,7 +942,8 @@ let emitCodeLowLevel = (q) => {
   buf.push("(inp => {")
   buf.push("let tmp = {}")
 
-  emitStmListLowLevel(q, buf)
+  let scope = { buf, vars: [], filters: [] }
+  emitStmListLowLevel(q, scope)
 
   buf.push("})")
   return buf.join("\n")
