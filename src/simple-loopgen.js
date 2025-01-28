@@ -51,13 +51,12 @@ let emitFilters1 = (scope, free, bnd, ext, careAboutOrderingAndMultiplicity) => 
   // 2. iterate over projection map to compute
   //    desired result
 
-  if (settings.extractAssignments)
+  if (settings.extractAssignments) {
     console.assert(intersect(free, scope.vars).length == 0)
-  else
+    console.assert(intersect(bnd, scope.vars).length == 0)
+    console.assert(intersect(ext, scope.vars).length == 0)
+  } else
     console.assert(subset(free, scope.vars))
-
-  console.assert(intersect(bnd, scope.vars).length == 0)
-  console.assert(intersect(ext, scope.vars).length == 0)
 
   let buf = scope.buf
 
@@ -100,8 +99,8 @@ let emitFilters1 = (scope, free, bnd, ext, careAboutOrderingAndMultiplicity) => 
   // This is necessary!
   // TODO: keep track of which filters were run in scope, not just vars
 
-  if (same(diff(full, scope.vars), iter) && disjunct.length == 0 || !careAboutOrderingAndMultiplicity) { // XXX should not disregard order?
-    emitFilters2(scope, full, -1)(body)
+  if (ext.length == 0 && disjunct.length == 0 || !careAboutOrderingAndMultiplicity) { // XXX should not disregard order?
+    emitFilters2(scope, intersect(free, scope.vars), full, -1)(body)
   } else {
 
     let id = buf.length // TODO: CSE wrt iter
@@ -116,7 +115,7 @@ let emitFilters1 = (scope, free, bnd, ext, careAboutOrderingAndMultiplicity) => 
       disjunct = [-1]
 
     for (let u of disjunct) {
-      emitFilters2(scope, full, u)((scope1) => {
+      emitFilters2(scope, intersect(free, scope.vars), full, u)((scope1) => {
         // emit: $projName[...iter] = true}
         scope1.buf.push({key: "initTemp", arg: [id, iter]})
       })
@@ -176,7 +175,7 @@ let emitFilters1 = (scope, free, bnd, ext, careAboutOrderingAndMultiplicity) => 
 }
 
 
-let emitFilters2 = (scope, iter, disjunctToDrop) => body => {
+let emitFilters2 = (scope, trueFree, iter, disjunctToDrop) => body => {
 
   let buf = scope.buf
 
@@ -190,7 +189,7 @@ let emitFilters2 = (scope, iter, disjunctToDrop) => body => {
   for (let v of iter) vars[v] = true
 
   // record current scope
-  for (let v of scope.vars) seen[v] = true
+  for (let v of trueFree) seen[v] = true
 
   // only consider filters contributing to iteration vars
   let pending = []
@@ -207,6 +206,9 @@ let emitFilters2 = (scope, iter, disjunctToDrop) => body => {
   }
 
   let filtersInScope = [...scope.filters]
+  let varsInScope = [...scope.vars]
+
+  scope = { ...scope, vars: varsInScope, filters: filtersInScope }
 
   // compute next set of available filters:
   // all dependent iteration vars have been seen (emitted before)
@@ -236,8 +238,6 @@ let emitFilters2 = (scope, iter, disjunctToDrop) => body => {
     return available.length > 0
   }
 
-  let vs = [...scope.vars]
-
   // process filters one by one
   while (next()) {
     // sort available by estimated selectivity
@@ -246,18 +246,13 @@ let emitFilters2 = (scope, iter, disjunctToDrop) => body => {
     available.sort((a,b) => selEst(b) - selEst(a))
 
     let i = available.shift()
-    filtersInScope.push(i)
 
     let f = filters[i]
     let v1 = f.arg[1].op
     let g1 = f.arg[0]
 
-    // let found = subset(g1.filters, filtersInScope)
-    // buf.push("// "+g1.filters+" | "+filtersInScope + " " +found)
-
-    // buf.push("// FILTER "+i+" := "+pretty(f))
-    let scopeg1 = {...scope, vars:g1.fre, filters:filtersInScope}
-    let scopef = {...scope, vars:f.fre,filters:filtersInScope}
+    let scopeg1 = {...scope}
+    let scopef = {...scope}
 
     // NOTE: we're restricting the scope to g1.fre when evaluating g1.
     //
@@ -276,9 +271,7 @@ let emitFilters2 = (scope, iter, disjunctToDrop) => body => {
     //
     //  Q:   do we need to prune scope.filters accordingly as well?
 
-    // scopeg1.vars = [...vs]
-    console.assert(subset(g1.fre,vs))
-    vs.push(v1)
+    console.assert(subset(g1.fre,varsInScope))
 
     // Contract: input is already transitively closed, so we don't
     // depend on any variables that we don't want to iterate over.
@@ -300,7 +293,11 @@ let emitFilters2 = (scope, iter, disjunctToDrop) => body => {
     let buf1 = []
     buf.push({ key: (seen[v1] ? "if" : "for"), body: buf1, arg: [v1,i, g1]})
     buf = buf1
-    seen[v1] = true
+    if (!seen[v1]) {
+      seen[v1] = true
+      varsInScope.push(v1)
+    }
+    filtersInScope.push(i)
   }
 
   // check that all filters were emitted
@@ -322,7 +319,7 @@ let emitFilters2 = (scope, iter, disjunctToDrop) => body => {
 
 
   // emit loop body
-  let scope1 = {...scope, buf, vars: [...scope.vars, ...iter], filters: [...filtersInScope]}
+  let scope1 = {...scope, buf, vars: [...varsInScope], filters: [...filtersInScope]}
   body(scope1)
 
   // all loops implicitly closed

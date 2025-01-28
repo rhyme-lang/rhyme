@@ -235,20 +235,19 @@ let getFilterIndex = () => {
   return res
 }
 
-let emitFilters1 = (scope, free, bnd, ext) => (buf, codegen) => body => {
+let emitFilters1 = (scope, free, bnd, ext, careAboutOrderingAndMultiplicity) => (buf, codegen) => body => {
   // approach: build explicit projection first
   // 1. iterate over transitive iter space to
   //    build projection map
   // 2. iterate over projection map to compute
   //    desired result
 
-  if (settings.extractAssignments)
+  if (settings.extractAssignments) {
     console.assert(intersect(free, scope.vars).length == 0)
-  else
+    console.assert(intersect(bnd, scope.vars).length == 0)
+    console.assert(intersect(ext, scope.vars).length == 0)
+  } else
     console.assert(subset(free, scope.vars))
-
-  console.assert(intersect(bnd, scope.vars).length == 0)
-  console.assert(intersect(ext, scope.vars).length == 0)
 
   let iter = union(bnd, diff(free, scope.vars)) // either bnd or bnd\free, depending on mode
 
@@ -290,8 +289,8 @@ let emitFilters1 = (scope, free, bnd, ext) => (buf, codegen) => body => {
   // This is necessary!
   // TODO: keep track of which filters were run in scope, not just vars (?)
 
-  if (same(diff(full, scope.vars), iter) && disjunct.length == 0) { // XXX should not disregard order?
-    emitFilters2(scope, full, -1)(buf, codegen)(body)
+  if (ext.length == 0 && disjunct.length == 0 || !careAboutOrderingAndMultiplicity) { // XXX should not disregard order?
+    emitFilters2(scope, intersect(free, scope.vars), full, -1)(buf, codegen)(body)
   } else {
 
     let closing = ""//"}"
@@ -307,7 +306,7 @@ let emitFilters1 = (scope, free, bnd, ext) => (buf, codegen) => body => {
       disjunct = [-1]
 
     for (let u of disjunct) {
-      emitFilters2(scope, full, u)(buf, codegen)(() => {
+      emitFilters2(scope, intersect(free, scope.vars), full, u)(buf, codegen)(() => {
         let xs = [...iter.map(quoteVar)]
         let ys = xs.map(x => ","+x).join("")
         buf.push("  rt.initTemp("+projName+ys+")(() => true)")
@@ -346,7 +345,7 @@ let emitFilters1 = (scope, free, bnd, ext) => (buf, codegen) => body => {
 }
 
 
-let emitFilters2 = (scope, iter, disjunctToDrop) => (buf, codegen) => body => {
+let emitFilters2 = (scope, trueFree, iter, disjunctToDrop) => (buf, codegen) => body => {
 
   // let watermark = buf.length
   // let buf0 = buf
@@ -362,7 +361,7 @@ let emitFilters2 = (scope, iter, disjunctToDrop) => (buf, codegen) => body => {
   for (let v of iter) vars[v] = true
 
   // record current scope
-  for (let v of scope.vars) seen[v] = true
+  for (let v of trueFree) seen[v] = true
 
   // only consider filters contributing to iteration vars
   let pending = []
@@ -379,6 +378,9 @@ let emitFilters2 = (scope, iter, disjunctToDrop) => (buf, codegen) => body => {
   }
 
   let filtersInScope = [...scope.filters]
+  let varsInScope = [...scope.vars]
+
+  scope = { ...scope, vars: varsInScope, filters: filtersInScope }
 
   // compute next set of available filters:
   // all dependent iteration vars have been seen (emitted before)
@@ -410,9 +412,7 @@ let emitFilters2 = (scope, iter, disjunctToDrop) => (buf, codegen) => body => {
 
   let closing = ""
 
-  let vs = [...scope.vars]
-
-  // process filters
+  // process filters one by one
   while (next()) {
     // sort available by estimated selectivity
     // crude proxy: number of free vars
@@ -420,71 +420,67 @@ let emitFilters2 = (scope, iter, disjunctToDrop) => (buf, codegen) => body => {
     available.sort((a,b) => selEst(b) - selEst(a))
 
     let i = available.shift()
-    filtersInScope.push(i)
 
-    // for (let i of available) {
-      let f = filters[i]
-      let v1 = f.arg[1].op
-      let g1 = f.arg[0]
+    let f = filters[i]
+    let v1 = f.arg[1].op
+    let g1 = f.arg[0]
 
-      // let found = subset(g1.filters, filtersInScope)
-      // buf.push("// "+g1.filters+" | "+filtersInScope + " " +found)
+    let scopeg1 = {...scope}
+    let scopef = {...scope}
 
-      // buf.push("// FILTER "+i+" := "+pretty(f))
-      let scopeg1 = {...scope, vars:g1.fre, filters:filtersInScope}
-      let scopef = {...scope, vars:f.fre,filters:filtersInScope}
+    // NOTE: we're restricting the scope to g1.fre when evaluating g1.
+    //
+    //       Why? The filter expression may have bound variables that
+    //       are already in scope here. We need to iterate over them
+    //       again to match the semantic behavior of the alternative
+    //       case where we're hoisting out assignments and the var
+    //       isn't already in scope.
+    //
+    //       An alternative would be to try and make reusing the
+    //       outer var the default case in the semantics. Then we
+    //       would have to detect this case and mark the variable
+    //       free instead of bound. This seems like it might
+    //
+    //  See: testGroup0-a3, aggregateAsKey_encoded1
+    //
+    //  Q:   do we need to prune scope.filters accordingly as well?
 
-      // NOTE: we're restricting the scope to g1.fre when evaluating g1.
-      //
-      //       Why? The filter expression may have bound variables that
-      //       are already in scope here. We need to iterate over them
-      //       again to match the semantic behavior of the alternative
-      //       case where we're hoisting out assignments and the var
-      //       isn't already in scope.
-      //
-      //       An alternative would be to try and make reusing the
-      //       outer var the default case in the semantics. Then we
-      //       would have to detect this case and mark the variable
-      //       free instead of bound. This seems like it might
-      //
-      //  See: testGroup0-a3, aggregateAsKey_encoded1
-      //
-      //  Q:   do we need to prune scope.filters accordingly as well?
+    console.assert(subset(g1.fre,varsInScope))
 
-      // scopeg1.vars = [...vs]
-      console.assert(subset(g1.fre,vs))
-      vs.push(v1)
+    // Contract: input is already transitively closed, so we don't
+    // depend on any variables that we don't want to iterate over.
+    // (sanity check!)
+    let extra = g1.fre.filter(x => !vars[x])
+    if (extra.length != 0) {
+      console.error("extra dependency: "+extra)
+    }
 
-      // Contract: input is already transitively closed, so we don't
-      // depend on any variables that we don't want to iterate over.
-      // (sanity check!)
-      let extra = g1.fre.filter(x => !vars[x])
-      if (extra.length != 0) {
-        console.error("extra dependency: "+extra)
+    if (isDeepVarStr(v1)) { // ok, just emit current
+      if (!seen[v1]) {
+        buf.push("rt.deepForIn("+codegen(g1,scopeg1)+", "+quoteVar(v1)+" => {")
+        seen[v1] = true
+        varsInScope.push(v1)
+      } else {
+        buf.push("rt.deepIfIn("+codegen(g1,scopeg1)+", "+quoteVar(v1)+", () => {")
       }
-
-      if (isDeepVarStr(v1)) { // ok, just emit current
-        if (!seen[v1]) {
-          buf.push("rt.deepForIn("+codegen(g1,scopeg1)+", "+quoteVar(v1)+" => {")
-        } else {
-          buf.push("rt.deepIfIn("+codegen(g1,scopeg1)+", "+quoteVar(v1)+", () => {")
-        }
-        buf.push("let gen"+i+" = "+codegen(f,scopef))
+      buf.push("let gen"+i+" = "+codegen(f,scopef))
+      closing = "})\n"+closing
+    } else { // ok, just emit current
+      if (!seen[v1]) {
+        buf.push("for (let ["+quoteVar(v1)+", gen"+i+"] of rt.entries("+codegen(g1,scopeg1)+")) {")
+      //   buf.push("for (let "+quoteVar(v1)+" in "+codegen(g1,scopeg1)+") {")
+      //   buf.push("let gen"+i+" = "+codegen(f,scopef))
+        closing = "}\n"+closing
         seen[v1] = true
-        closing = "})\n"+closing
-      } else { // ok, just emit current
-        if (!seen[v1]) {
-          buf.push("for (let ["+quoteVar(v1)+", gen"+i+"] of rt.entries("+codegen(g1,scopeg1)+")) {")
-        //   buf.push("for (let "+quoteVar(v1)+" in "+codegen(g1,scopeg1)+") {")
-        //   buf.push("let gen"+i+" = "+codegen(f,scopef))
-        } else {
-          buf.push("let gen"+i+" = "+codegen(g1,scopeg1)+"?.["+quoteVar(v1)+"]")
-          buf.push("if (gen"+i+" !== undefined) { // "+pretty(f))
-        }
-        seen[v1] = true
+        varsInScope.push(v1)
+      } else {
+        buf.push("if ("+codegen(g1,scopeg1)+"?.["+quoteVar(v1)+"] !== undefined) { // "+pretty(f))
+        buf.push("let gen"+i+" = "+codegen(g1,scopeg1)+"?.["+quoteVar(v1)+"]")
         closing = "}\n"+closing
       }
-    // }
+    }
+
+    filtersInScope.push(i)
   }
 
   // check that all filters were emitted
@@ -509,7 +505,7 @@ let emitFilters2 = (scope, iter, disjunctToDrop) => (buf, codegen) => body => {
   // if (buf.length > watermark) buf.push("// main loop")
   // buf.push(...buf1)
 
-  let scope1 = {...scope, vars: [...scope.vars, ...iter], filters: [...filtersInScope]}
+  let scope1 = {...scope, vars: [...varsInScope], filters: [...filtersInScope]}
   body(scope1)
 
   buf.push(closing)
@@ -522,25 +518,11 @@ let emitStmInline = (q, scope) => {
     scope.stmCount = [0]
   let i = scope.stmCount[0]++
 
-  let bound
-  if (q.key == "update") {
-    bound = diff(q.arg[1].vars, scope.vars) // explicit var -- still no traversal if already in scope
-  } else
-    bound = diff(q.arg[0].dims, scope.vars)
-
-
   buf.push("/* --- begin "+q.key+"_"+i+" --- "+pretty(q)+" ---*/")
-  buf.push("// env: "+scope.vars+" dims: "+q.dims+" bound: "+bound)
+  buf.push("// env: "+scope.vars+" free: "+q.fre+" bound: "+q.bnd+" ext: "+q.ext)
 
-  if (!same(bound,q.bnd)) {
-    buf.push("// WARNING! q.bound "+q.bnd)
-    console.warn("// WARNING! bound "+bound+" -> q.bnd "+q.bnd)
-  }
-  bound = q.bnd
-
-  if (intersect(bound,scope.vars).length > 0) {
-    buf.push("// WARNING: var '"+bound+"' already defined in "+scope.vars)
-    console.warn("// WARNING: var '"+bound+"' already defined in "+scope.vars)
+  if (intersect(q.bnd,scope.vars).length > 0) {
+    buf.push("// NOTICE: bound var '"+q.bnd+"' already defined in "+scope.vars)
   }
 
   // emit initialization
@@ -550,8 +532,11 @@ let emitStmInline = (q, scope) => {
       buf.push("let tmp"+i)
   }
 
+  // idempotent ops do not need projection
+  let needProject = true // XXX TODO
+
   // emit main computation
-  emitFilters1(scope, q.fre, bound, q.ext)(buf, codegen)(scope1 => {
+  emitFilters1(scope, q.fre, q.bnd, q.ext, needProject)(buf, codegen)(scope1 => {
     buf.push("tmp"+i+" = "+emitStmUpdate(q, scope1) + "(tmp"+i+")")
   })
 
@@ -579,7 +564,8 @@ let emitCode = (q, order) => {
 
       // emit initialization first (so that sum empty = 0)
       if (q.key == "stateful" && q.mode != "maybe" && (q.op+"_init") in runtime.stateful || q.key == "update") {
-        emitFilters1(scope, q.fre, [], q.extInit)(buf, codegen)(scope1 => {
+        let needProject = !settings.elimProjections
+        emitFilters1(scope, q.fre, [], q.extInit, needProject)(buf, codegen)(scope1 => {
           let xs = [i,...q.fre.map(quoteVar)]
           let ys = xs.map(x => ","+x).join("")
 
@@ -587,7 +573,10 @@ let emitCode = (q, order) => {
         })
       }
 
-      emitFilters1(scope, q.fre, q.bnd, q.ext)(buf, codegen)(scope1 => {
+      // idempotent ops do not need projection
+      let needProject = true // XXX TODO
+
+      emitFilters1(scope, q.fre, q.bnd, q.ext, needProject)(buf, codegen)(scope1 => {
         let xs = [i,...q.fre.map(quoteVar)]
         let ys = xs.map(x => ","+x).join("")
 
