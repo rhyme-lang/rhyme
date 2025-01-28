@@ -30,7 +30,7 @@ exports.setLoopgenState = st => {
   assignments = st.assignments
 }
 
-let trans = ps => unique([...ps,...ps.flatMap(x => vars[x].vars)])
+// let trans = ps => unique([...ps,...ps.flatMap(x => vars[x].vars)])
 
 let getFilterIndex = () => {
   let res = {}
@@ -44,20 +44,28 @@ let getFilterIndex = () => {
   return res
 }
 
-let emitFilters1 = (scope, free, bnd, careAboutOrderingAndMultiplicity) => body => {
+let emitFilters1 = (scope, free, bnd, ext, careAboutOrderingAndMultiplicity) => body => {
   // approach: build explicit projection first
   // 1. iterate over transitive iter space to
   //    build projection map
   // 2. iterate over projection map to compute
   //    desired result
 
+  if (settings.extractAssignments)
+    console.assert(intersect(free, scope.vars).length == 0)
+  else
+    console.assert(subset(free, scope.vars))
+
+  console.assert(intersect(bnd, scope.vars).length == 0)
+  console.assert(intersect(ext, scope.vars).length == 0)
+
   let buf = scope.buf
 
-  let iter = diff(union(free, bnd), scope.vars)
+  let iter = union(bnd, diff(free, scope.vars)) // either bnd or bnd\free, depending on mode
 
   if (iter.length == 0) return body(scope)
 
-  let full = trans(union(free, bnd))
+  let full = union(ext, union(free, bnd))
 
   // let full2 = union(free,trans(bnd))
   // assertSame(full, full2, "free "+free+" bound "+bnd)
@@ -89,9 +97,10 @@ let emitFilters1 = (scope, free, bnd, careAboutOrderingAndMultiplicity) => body 
 
   // NOTE: by passing `full` to emitFilter2 without diff, we will re-run
   // the full set of filters for each sym that's already in scope.
+  // This is necessary!
   // TODO: keep track of which filters were run in scope, not just vars
 
-  if (same(diff(full,scope.vars), iter) && disjunct.length == 0 || !careAboutOrderingAndMultiplicity) { // XXX should not disregard order?
+  if (same(diff(full, scope.vars), iter) && disjunct.length == 0 || !careAboutOrderingAndMultiplicity) { // XXX should not disregard order?
     emitFilters2(scope, full, -1)(body)
   } else {
 
@@ -336,7 +345,7 @@ let emitLoops = (q, order) => {
       // emit initialization first (so that sum empty = 0)
       if (q.key == "stateful" && q.mode != "maybe" && (q.op+"_init") in runtime.stateful || q.key == "update") {
         let needProject = !settings.elimProjections
-        emitFilters1(scope,q.fre,[],needProject)(scope1 => {
+        emitFilters1(scope, q.fre, [], q.extInit, needProject)(scope1 => {
           scope1.buf.push({ key: "init", arg: [{ key: "ref", op: i}, q]})
         })
       }
@@ -350,7 +359,7 @@ let emitLoops = (q, order) => {
           needProject = false
       }
 
-      emitFilters1(scope,q.fre,q.bnd, needProject)(scope1 => {
+      emitFilters1(scope, q.fre, q.bnd, q.ext, needProject)(scope1 => {
         scope1.buf.push({ key: "update", arg: [{ key: "ref", op: i}, q]})
       })
 

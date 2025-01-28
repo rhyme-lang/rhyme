@@ -36,7 +36,7 @@ exports.setCodegenState = st => {
   assignments = st.assignments
 }
 
-let trans = ps => unique([...ps,...ps.flatMap(x => vars[x].vars)])
+// let trans = ps => unique([...ps,...ps.flatMap(x => vars[x].vars)])
 
 
 
@@ -235,18 +235,26 @@ let getFilterIndex = () => {
   return res
 }
 
-let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
+let emitFilters1 = (scope, free, bnd, ext) => (buf, codegen) => body => {
   // approach: build explicit projection first
   // 1. iterate over transitive iter space to
   //    build projection map
   // 2. iterate over projection map to compute
   //    desired result
 
-  let iter = diff(union(free, bnd), scope.vars)
+  if (settings.extractAssignments)
+    console.assert(intersect(free, scope.vars).length == 0)
+  else
+    console.assert(subset(free, scope.vars))
+
+  console.assert(intersect(bnd, scope.vars).length == 0)
+  console.assert(intersect(ext, scope.vars).length == 0)
+
+  let iter = union(bnd, diff(free, scope.vars)) // either bnd or bnd\free, depending on mode
 
   if (iter.length == 0) return body(scope)
 
-  let full = trans(union(free, bnd))
+  let full = union(ext, union(free, bnd))
 
   // let full2 = union(free,trans(bnd))
   // assertSame(full, full2, "free "+free+" bound "+bnd)
@@ -279,9 +287,10 @@ let emitFilters1 = (scope, free, bnd) => (buf, codegen) => body => {
 
   // NOTE: by passing `full` to emitFilters2 without diff, we will re-run
   // the full set of filters for each sym that's already in scope.
-  // TODO: keep track of which filters were run in scope, not just vars
+  // This is necessary!
+  // TODO: keep track of which filters were run in scope, not just vars (?)
 
-  if (same(diff(full,scope.vars), iter) && disjunct.length == 0) { // XXX should not disregard order?
+  if (same(diff(full, scope.vars), iter) && disjunct.length == 0) { // XXX should not disregard order?
     emitFilters2(scope, full, -1)(buf, codegen)(body)
   } else {
 
@@ -542,7 +551,7 @@ let emitStmInline = (q, scope) => {
   }
 
   // emit main computation
-  emitFilters1(scope, q.fre, bound)(buf, codegen)(scope1 => {
+  emitFilters1(scope, q.fre, bound, q.ext)(buf, codegen)(scope1 => {
     buf.push("tmp"+i+" = "+emitStmUpdate(q, scope1) + "(tmp"+i+")")
   })
 
@@ -570,7 +579,7 @@ let emitCode = (q, order) => {
 
       // emit initialization first (so that sum empty = 0)
       if (q.key == "stateful" && q.mode != "maybe" && (q.op+"_init") in runtime.stateful || q.key == "update") {
-        emitFilters1(scope,q.fre,[])(buf, codegen)(scope1 => {
+        emitFilters1(scope, q.fre, [], q.extInit)(buf, codegen)(scope1 => {
           let xs = [i,...q.fre.map(quoteVar)]
           let ys = xs.map(x => ","+x).join("")
 
@@ -578,7 +587,7 @@ let emitCode = (q, order) => {
         })
       }
 
-      emitFilters1(scope,q.fre,q.bnd)(buf, codegen)(scope1 => {
+      emitFilters1(scope, q.fre, q.bnd, q.ext)(buf, codegen)(scope1 => {
         let xs = [i,...q.fre.map(quoteVar)]
         let ys = xs.map(x => ","+x).join("")
 

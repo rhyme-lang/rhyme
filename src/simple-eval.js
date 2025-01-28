@@ -450,7 +450,7 @@ let inferBound = out => q => {
     }
 
     if (q.arg[3]) {
-      let out3 = union(out, diff(q.arg[3].dims, e1.vars))
+      let out3 = union(out, q.arg[3].dims)
       let e3 = inferBound(out3)(q.arg[3]) // filter expr
       console.assert(e3.key == "get")
       console.assert(e3.arg[0].key == "mkset")
@@ -469,6 +469,8 @@ let inferBound = out => q => {
   console.assert(subset(q.mind, q.dims))
   console.assert(subset(q.dims, q.vars))
 
+  console.assert(!intersects(q.bnd, out))
+
   return q
 }
 
@@ -477,8 +479,8 @@ let inferFree = out => q => {
   if (q.key == "input" || q.key == "const" || q.key == "placeholder") {
     q.fre = []
   } else if (q.key == "var") {
-    // TODO: check that variables are always defined -- currently not for K vars
-    console.assert(subset([q.op], out) || isCorrelatedKeyVar(q.op))
+    // check that variables are always defined -- currently not for K vars
+    console.assert(subset([q.op], out))
     q.fre = [q.op]
   } else if (q.key == "get" || q.key == "pure"  || q.key == "hint" || q.key == "mkset" || q.key == "loadInput") {
     let es = q.arg.map(inferFree(out))
@@ -495,14 +497,22 @@ let inferFree = out => q => {
     .filter(x => intersects(diff(trans([x]),out), trans(q.bnd)))
 
     // free variables: anything from current scope (out) that is:
-    // - used in any filter for q.bnd (via trans)
+    // - used in any filter for q.bnd
     // - free in e1
     // - an extra K from outer grouping
-    q.fre = intersect(union(trans(q.bnd), union(e1.fre, extra)), out)
+    q.fre = intersect(trans(union(q.bnd, union(e1.fre, extra))), out)
+    // NOTE: the 'trans' is necessary for aoc day11 -- it's also
+    // the only case where it makes a difference to just trans(q.bnd)
 
     // NOTE: we cannot just subtract q.bnd, because we'd retain the
     // parts of trans(q.bnd) in q.fre which aren't part of 'out'.
     // Those will be iterated over, but projected out.
+
+    // existentials: we explicitly compute the variables projected out
+    // - everything transitively implied by fre/bnd but not fre/bnd itself
+    let full = trans(union(q.fre, q.bnd))
+    q.ext = diff(diff(full, q.bnd), q.fre)
+    q.extInit = diff(trans(q.fre), q.fre) // for init: disregard q.bnd
 
   } else if (q.key == "update") {
     let e0 = inferFree(out)(q.arg[0]) // what are we extending
@@ -510,7 +520,7 @@ let inferFree = out => q => {
 
     if (q.arg[3]) {
       // XXX NOTE: we should do this properly -- wrap it in a count(...) or something
-      let out3 = union(out, diff(q.arg[3].dims, e1.vars))
+      let out3 = union(out, q.arg[3].dims)
       let e3 = inferFree(out3)(q.arg[3]) // filter expr
       console.assert(e3.key == "get")
       console.assert(e3.arg[0].key == "mkset")
@@ -542,15 +552,30 @@ let inferFree = out => q => {
     let fv = unique([...e0.fre, ...e1.fre, ...e2.fre])
 
     // free variables: see note at stateful above
-    q.fre = intersect(union(trans(q.bnd), union(fv, extra)), out)
+    q.fre = intersect(trans(union(q.bnd, union(fv, extra))), out)
+    // NOTE: same as just trans(q.bnd) in all cases
+
+    // existentials: compute variables projected out
+    let full = trans(union(q.fre, q.bnd))
+    q.ext = diff(diff(full, q.bnd), q.fre)
+    q.extInit = diff(trans(q.fre), q.fre) // for init: disregard q.bnd
+
   } else {
     console.error("unknown op", q)
   }
 
+  if (q.ext === undefined) q.ext = []
+
   console.assert(subset(q.mind, q.dims))
   console.assert(subset(q.dims, q.vars))
 
+  console.assert(subset(q.fre, out))
+
+  console.assert(!intersects(q.bnd, out))
+  console.assert(!intersects(q.bnd, q.ext))
+
   console.assert(!intersects(q.fre, q.bnd))
+  console.assert(!intersects(q.fre, q.ext))
 
   return q
 }
@@ -837,6 +862,8 @@ let compile = (q,userSettings={}) => {
      dims: [],
      bnd: out,
      fre: [],
+     ext: diff(trans(out), out),
+     extInit: [],
     }
     // NOTE: compared to adding it earlier and
     //       following desugaring pipeline:
