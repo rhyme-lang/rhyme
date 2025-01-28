@@ -1,8 +1,8 @@
 const { api } = require('../../src/rhyme')
 const { rh } = require('../../src/parser')
-const { typing, types, props } = require("../../src/typing");
+const { typing, types, props, typeSyms } = require("../../src/typing");
 
-let key = typing.createKey(types.f64);
+let key = typing.createKey(types.string);
 
 let dataSchema = {
     "-": typing.keyval(key, {
@@ -36,10 +36,15 @@ let regionSchema = {
 let expectTypeSimilarity = (type, schema) => {
     if (schema === undefined)
         return undefined;
+    if(typeof schema === "string" || typeof type === "string") {
+        expect(type).toBe(schema);
+        return;
+    }
     if (typeof schema !== "object")
         throw new Error("Unknown type: " + schema);
     switch (schema.typeSym) {
         case undefined:
+            expect(type.typeSym).toBe(typeSyms.object);
             if (Object.keys(schema).length == 0) {
                 expect(type).toStrictEqual(typing.createSimpleObject({}));
                 return;

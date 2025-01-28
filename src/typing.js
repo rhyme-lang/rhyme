@@ -102,6 +102,8 @@ let sameType = (t1, t2) => {
         case "object":
             if(t1.objKey === null)
                 return t2.objKey === null;
+            if(t2.objKey === null)
+                return false;
             return sameType(t1.objKey, t2.objKey) && 
                 sameType(t1.objValue, t2.objValue) && 
                 sameType(t1.objParent, t2.objParent);
@@ -185,6 +187,19 @@ let createIntersection = (t1, t2) => {
             createIntersection(t1, t2.unionSet[0]),
             createIntersection(t1, t2.unionSet[1]),
         );
+    }
+    if(isObject(t1) && isObject(t2) && typeDoesntIntersect(getObjectKeys(t1), getObjectKeys(t2))) {
+        if(t1.typeSym != typeSyms.object && t2.typeSym != typeSyms.object) {
+            throw new Error("Unable to intersect non-object type.");
+        }
+        let newObj = objBuilder();
+        for(let obj = t1; obj.objParent != null; obj = obj.objParent) {
+            newObj.add(obj.objKey, obj.objValue);
+        }
+        for(let obj = t2; obj.objParent != null; obj = obj.objParent) {
+            newObj.add(obj.objKey, obj.objValue);
+        }
+        return newObj.build();
     }
     return {
         typeSym: typeSyms.intersect,
@@ -342,15 +357,16 @@ let performObjectGet = (objectTup, keyTup) => {
 }
 typing.performObjectGet = performObjectGet;
 
+// TODO: Determine why booleans should be numbers. (AOC2023 implementation)
 const SUBTYPE_ORDERS = [
-    [types.u8, types.u16, types.u32, types.u64],
-    [types.i8, types.i16, types.i32, types.i64],
-    [types.u8, types.i16, types.i32, types.i64],
+    [types.boolean, types.u8, types.u16, types.u32, types.u64],
+    [types.boolean, types.i8, types.i16, types.i32, types.i64],
+    [types.boolean, types.u8, types.i16, types.i32, types.i64],
     [types.u16, types.i32, types.i64],
     [types.u32, types.i64],
     [types.i8, types.i16, types.f32, types.f64],
-    [types.u8, types.u16, types.f32, types.f64],
-    [types.u8, types.u16, types.i32, types.f64],
+    [types.boolean, types.u8, types.u16, types.f32, types.f64],
+    [types.boolean, types.u8, types.u16, types.i32, types.f64],
     [types.u32, types.f64],
 ];
 
@@ -568,6 +584,8 @@ let isInteger = (type) => {
 typing.isInteger = isInteger;
 
 let isNumber = (type) => {
+    if(isBoolean(type))
+        return true;
     if (isInteger(type))
         return true;
     type = removeTag(type);
@@ -622,7 +640,7 @@ typing.isDense = isDense;
 
 let generalizeNumber = (type) => {
     if (!isNumber(type))
-        throw new Error("Unable to generalize non-number value.");
+        throw new Error("Unable to generalize non-number type: " + prettyPrintType(type));
     switch (type.typeSym) {
         case typeSyms.union:
             return createUnion(
@@ -674,7 +692,7 @@ let prettyPrintType = (schema) => {
     if (schema.typeSym === typeSyms.function)
         return "(" + schema.funcParams.map(type => prettyPrintType(type)).join(", ") + ") -> " + prettyPrintType(schema.funcResult);
     if (schema.typeSym === typeSyms.dynkey)
-        return "<"+prettyPrintType(schema.keySupertype)+">";
+        return `<${schema.keySymbol}: ${prettyPrintType(schema.keySupertype)}>`;
     if (schema.typeSym === typeSyms.tagged_type)
         return schema.tag +":"+prettyPrintType(schema.tagInnertype);
     if (isObject(schema)) {
@@ -752,12 +770,20 @@ let symIndex = 0;
 let freshSym = (pref) => pref + (symIndex++);
 
 let validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
-    // if (q.schema) {
-    //     return q.schema;
-    // }
+    if(q.schema)
+        return q.schema;
+    let stringify = JSON.stringify(q);
+    if(cseMap[stringify]) {
+        q.schema = cseMap[stringify];
+        if(q.arg)
+            q.arg.map(arg => validateIRQuery(schema, cseMap, boundKeys, nonEmptyGuarantees, arg));
+        return cseMap[stringify];
+    }
+
     let res = _validateIRQuery(schema, cseMap, boundKeys, nonEmptyGuarantees, q);
     q.schema = res;
-    //console.log(prettyPrint(q) + " : " + prettyPrintTuple(res));
+    cseMap[stringify] = res;
+
     return res;
 };
 
@@ -775,7 +801,7 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
         if (!isString(t1)) {
             throw new Error("Filename in loadInput expected to be a string but got " + prettyPrintType(t1))
         }
-        return {type: q.schema, props: argTups[0].props};
+        return {type: q.inputSchema, props: argTups[0].props};
     } else if (q.key === "const") {
         if (typeof q.op === "object" && Object.keys(q.op).length === 0)
             return intoTup(createSimpleObject({}));
@@ -789,6 +815,7 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
                     return intoTup(types.i32);
                 return intoTup(types.i64);
             }
+            // TODO: Constant types. Should u8's be expanded in case of sum?
             if (q.op < 256)
                 return intoTup(types.u8);
             if (q.op <= 65535)
@@ -837,25 +864,63 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
 
         if (q.op == "apply") {
             if (t1.typeSym != typeSyms.function)
-                throw new Error(`Unable to apply a value to a non-function value (type ${prettyPrintType(t1)})`)
+                throw new Error(`Unable to apply a value to a non-function value (type ${prettyPrintType(t1)})\nApplying to non-function: ${prettyPrint(q.arg[0])}\nWith argument: ${prettyPrint(q.arg[1])}`)
             if (t1.funcParams.length + 1 != argTups.length)
-                throw new Error(`Unable to apply function. Number of args do not align.`);
+                throw new Error(`Unable to apply function "${prettyPrint(q.arg[0])}". Number of args do not align.`);
             let props = [];
             for (let i = 0; i < argTups.length - 1; i++) {
                 let {type, props: argProps} = argTups[i + 1];
                 let expType = t1.funcParams[i];
                 if (!isSubtype(type, expType)) {
-                    throw new Error(`Unable to apply function. Argument ${i + 1} does not align.\nExpected: ${prettyPrintType(expType)}\nReceived: ${prettyPrintType(type)}.`);
+                    throw new Error(`Unable to apply function "${prettyPrint(q.arg[0])}". Argument ${i + 1} does not align.\nExpected: ${prettyPrintType(expType)}\nReceived: ${prettyPrintType(type)}.`);
                 }
                 props = union(props,argProps);
             }
             // All inputs conform.
             return {type: t1.funcResult, props};
-        }
-        // If q is a binary operation:
-        // TODO: Figure out difference between fdiv and div.
-        else if (q.op === "equal" || q.op === "and" || q.op === "notEqual" || q.op === "fdiv" || 
+        } else if(q.op == "flatten") {
+            
+            let tup1 = $validateIRQuery(q.arg[0]);
+            let innerTups = performObjectGet(tup1, intoTup(getObjectKeys(tup1.type)));
+            let key = createKey(types.u32, "Flatten");
+            // If argument always returns atleast one value, add a non-empty guarantee.
+            // TODO: Fix for flatten
+            // if (!innerTups.props.includes(props.nothing))
+            //    nonEmptyGuarantees.push(key);
+            return {
+                type: objBuilder()
+                    .add(key, innerTups.type).build(), 
+                props: diff(innerTups.props,nothingSet)
+            };
+
+        } else if(q.op == "join") {
+            
+            let argTypes = q.arg.map((arg) => {
+                let tup = $validateIRQuery(arg);
+                if(!isObject(tup.type)) {
+                    throw new Error("Unable to perform join operation on non-object: " + prettyPrintType(t1));
+                }
+                return tup.type
+            });
+            argTypes.reverse().reduce((acc, curr) => {
+                let obj = curr;
+                while(obj.objParent != null) {
+                    acc = {
+                        typeSym: typeSyms.object,
+                        objKey: obj.objKey,
+                        objValue: obj.objKey,
+                        objParent: acc,
+                    };
+                    obj = obj.objParent;
+                }
+                return acc;
+            }, createSimpleObject({}));
+            return intoTup(argTypes);
+
+        } else if (q.op === "equal" || q.op === "and" || q.op === "notEqual" || q.op === "fdiv" || 
             q.op === "plus" || q.op === "minus" || q.op === "times" || q.op === "div" || q.op === "mod") {
+            // If q is a binary operation:
+            // TODO: Figure out difference between fdiv and div.
             let {type: t2, props: p2} = argTups[1];
             if (q.op == "plus" || q.op == "minus" || q.op == "times" || q.op == "div" || q.op == "mod") {
                 if (!isNumber(t1) || !isNumber(t2))
@@ -917,10 +982,11 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
             // Check if each arg is a number.
             if (!isNumber(argType))
                 throw new Error(`Unable to ${q.op} non-number values currently. Got: ${prettyPrintType(argType)}`);
-            
+            // TODO: Boolean as numbers weirdness (AOC2023).
+            if(argType == types.boolean)
+                argType = types.u16
             return {type: argType, props: diff(argTup.props,nothingSet)};
         } else if (q.op === "min" || q.op === "max") {
-
             if (!isNumber(argType))
                 throw new Error("Unable to union non-number values currently.");
 
@@ -951,15 +1017,6 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
 
         throw new Error("Unimplemented stateful expression " + q.op);
 
-    } else if (q.key === "group") {
-        throw new Error("Unimplemented");
-        let [e1, e2] = q.arg;
-        let t1 = validateIRQuery(schema, cseMap, boundKeys, e1);
-        let t2 = validateIRQuery(schema, cseMap, boundKeys, e2);
-        if (!sameType(t1, types.string) && !typing.isKeySym(t2))
-            throw new Error("Unable to use non-string field as key. Found: " + prettyPrintType(t1));
-        //return "{ "+ e1 + ": " + e2 + " }"
-        //return {"*": t2};
     } else if (q.key === "update") {
         if (q.arg[3])  $validateIRQuery(q.arg[3]);
         let argTup1 = $validateIRQuery(q.arg[0]);
@@ -989,11 +1046,11 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
         }
         let {type: keyType, props: p2} = argTup2;
         let {type: valueType, props: p3} = argTup3;
-        if (!isInteger(keyType) && !isString(keyType))
+        if (!isNumber(keyType) && !isString(keyType))
             throw new Error("Unable to use type: " + prettyPrintType(keyType) + " as object key");
 
         let props = union(p2, p3);
-        let key = createKey(keyType, "update");
+        let key = keyType;// createKey(keyType, "update");
         // If the key and value are not nothing, then the key must not be empty.
         // TODO: Determine if this is true given free variable constraints.
         if (!props.includes(props.nothing))
@@ -1011,12 +1068,174 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
     throw new Error("Unable to determine type of query: " + prettyPrint(q));
 }
 
+let stringStream = (string, holes) => {
+    let index = 0;
+    let holeIndex = 0;
+    let consumeWhitespace = () => {
+        while(
+            string.charAt(index) == " " ||
+            string.charAt(index) == "\n" ||
+            string.charAt(index) == "\t" ||
+            string.charAt(index) == "\r"
+        ) index += 1;
+    }
+    consumeWhitespace();
+    return {
+        string: () => string,
+        index: () => index,
+        expect: (str) => {
+            if(string.substring(index).startsWith(str)) {
+                index += str.length;
+                consumeWhitespace();
+                return;
+            }
+            throw new Error(`Error when parsing type: Unable to parse type. Expected: ${str} at "${string.substring(index)}"`);
+        },
+        peek: () => {
+            return string.charAt(index);
+        },
+        substring: () => {
+            return string.substring(index);
+        },
+        consumeHole: () => {
+            holeIndex += 1;
+            return holes[holeIndex - 1];
+        },
+        consume: (i) => {
+            if(index >= string.length)
+                throw new Error(`Error when parsing type: Unable to consume character at end of string.`);
+            index += i;
+            consumeWhitespace();
+        }
+    }
+}
+
+// Note: Usage of this will result in certain value types (specific strings) to be converted to other unrelated types.
+let parseTypeString_Atom = (stream, vars) => {
+    if(stream.peek() === "\0") {
+        stream.expect('\0');
+        return typing.parseType(stream.consumeHole());
+    }
+    if(stream.peek() == "(") {
+        stream.expect("(");
+        let argArr = [];
+        if(stream.peek() == ")") {
+            stream.expect(")");
+        } else {
+            argArr.push(parseTypeString_Infix(stream, vars));
+            while(stream.peek() == ",") {
+                stream.expect(",");
+                argArr.push(parseTypeString_Infix(stream, vars));
+            }
+            stream.expect(")")
+        }
+        stream.expect("=>");
+        let resType = parseTypeString_Infix(stream, vars);
+        return typing.createFunction(resType, ...argArr);
+    }
+    if(stream.peek() == "{") {
+        stream.expect("{");
+        let objResult = typing.objBuilder();
+        if(stream.peek() != "}") {
+            let key = parseTypeString_Infix(stream, vars);
+            stream.expect(":");
+            let val = parseTypeString_Infix(stream, vars);
+            objResult.add(key, val)
+            while(stream.peek() == ",") {
+                stream.expect(",");
+                let key = parseTypeString_Infix(stream, vars);
+                stream.expect(":");
+                let val = parseTypeString_Infix(stream, vars);
+                objResult.add(key, val)
+            }
+        }
+        stream.expect("}")
+        return objResult.build();
+    }
+    if(stream.peek() == "[") {
+        stream.expect("[");
+        let resType = parseTypeString_Infix(stream, vars);
+        stream.expect("]");
+        return typing.objBuilder()
+            .add(typing.createKey(types.u32), resType)
+            .build();
+    }
+    if(stream.peek() == "\"") {
+        stream.expect("\"");
+        let str = "";
+        while(stream.peek() != "\"") {
+            str += stream.peek();
+            stream.consume(1);
+        }
+        stream.expect("\"");
+        return str;
+    }
+    if(stream.peek() == "*") {
+        stream.expect("*");
+        let type = parseTypeString_Infix(stream, vars);
+        // If *u8=A has been done before, set *A to refer to the same key.
+        let key
+        if(typeof type === "string") {
+            if(vars[type])
+                key = vars[type]
+        } else if(stream.peek() === "=") {
+            stream.expect("=");
+            let match = stream.substring().match(/^([a-zA-Z0-9]+)/);
+            if(!match)
+                throw new Error(`Error when parsing type: Unknown identifier at ${stream.substring()}`);
+            key = typing.createKey(type, match[1]);
+            vars[match[1]] = key;
+            stream.consume(match[1].length);
+        } else {
+            key = typing.createKey(type);
+        }
+        return key;
+    }
+    let match = stream.substring().match(/^([a-zA-Z0-9\-_]+)($|[|&\s,\:\[\]\{\}\*\(\)=])/);
+    if(!match)
+        throw new Error(`Error when parsing type: Unknown type at ${stream.substring()}`);
+    stream.consume(match[1].length);
+
+    if(Object.values(types).map((obj) => obj.typeSym).includes(match[1]))
+        return types[match[1]];
+    return match[1];
+}
+
+let parseTypeString_Infix = (stream, vars) => {
+    let exp = parseTypeString_Atom(stream, vars);
+    while(stream.peek() == "&" || stream.peek() == "|") {
+        let char = stream.peek();
+        stream.expect(char);
+        let nextExp = parseTypeString_Atom(stream, vars);
+        if(char == "&") {
+            exp = typing.createIntersection(exp, nextExp);
+        } else if(char == "|") {
+            exp = typing.createUnion(exp, nextExp);
+        }
+    }
+    return exp;
+}
+
 // Used for converting human-readable types into their proper format.
-typing.parseType = (schema) => {
+typing.parseType = (schema, ...typeHoles) => {
     if (schema === undefined)
         return undefined;
-    if (typeof schema === "string")
-        return schema;
+    if(Array.isArray(schema)) {
+        for(let i = 0; i < schema.length; i++) {
+            if(schema[i].includes("\0")) {
+                throw new Error("Unable to include '\\0' character inside type parsing.");
+            }
+        }
+        schema = [...schema].join("\0");
+        let resType = parseTypeString_Infix(stringStream(schema, typeHoles), {});
+        return resType;
+    }
+    if (typeof schema === "string") {
+        if(schema.includes("\0"))
+            throw new Error("Unable to include '\\0' character inside type parsing.");
+        let resType = parseTypeString_Infix(stringStream(schema, []), {});
+        return resType;
+    }
     if (typeof schema !== "object")
         throw new Error("Unknown type: " + schema);
     switch (schema.typeSym) {
@@ -1025,20 +1244,21 @@ typing.parseType = (schema) => {
                 return typing.createSimpleObject({});
             }
             let key = Object.keys(schema)[Object.keys(schema).length - 1];
-            let value = typing.parseType(schema[key]);
             // Create new schema without key, without mutating the existing object.
             let {[key]: _, ...newSchema} = schema;
             // If keyval is used, extract the pair.
-            if (value.typeSym == typeSyms.keyval) {
-                key = typing.parseType(value.keyvalKey);
-                value = typing.parseType(value.keyvalValue);
+            let keyType = typing.parseType(key);
+            let valueType = typing.parseType(schema[key]);
+            if (valueType.typeSym == typeSyms.keyval) {
+                keyType = typing.parseType(valueType.keyvalKey);
+                valueType = typing.parseType(valueType.keyvalValue);
             }
             // Recurse until the base object is reached, then construct object.
             let parent = typing.parseType(newSchema);
             return {
                 typeSym: typeSyms.object,
-                objKey: key,
-                objValue: value,
+                objKey: keyType,
+                objValue: valueType,
                 objParent: parent
             };
         case typeSyms.union:
@@ -1074,6 +1294,170 @@ typing.parseType = (schema) => {
     }
 }
 
+let unwrapType = (type) => {
+    switch(type.typeSym) {
+        case typeSyms.tagged_type:
+            return unwrapType(type.tagInnertype);
+        case typeSyms.dynkey:
+            return unwrapType(type.keySupertype);
+        case typeSyms.union:
+            return createUnion(
+                unwrapType(type.unionSet[0]),
+                unwrapType(type.unionSet[1])
+            )
+        case typeSyms.intersect:
+            return createIntersection(
+                unwrapType(type.intersectSet[0]),
+                unwrapType(type.intersectSet[1])
+            )
+    }
+    return type;
+}
+
+let convertQuery = (q, type) => {
+    // Tagged types and key types don't need conversion.
+    // Just unwrap them.
+    let curType = unwrapType(q.schema.type);
+    // Check if type is equal.
+    if(curType == type)
+        return q;
+    // For Objects and functions:
+    // - No conversion is necessary or can be done. Hence, this function should never be ran on them.
+
+    // All leafs in the union-interseciton tree must then be primitive number/string types.
+    // This leaves that it is:
+    // 1. A different sub/supertype (u8 vs u16).
+    // 2. A different type. (string vs u16).
+    // 3. A union (of non-subtypes)
+    // 4. A intersection (of non-subtypes)
+
+    let convert = () => {
+        // Remove redundant conversions.
+        while(q.key == "pure" && (q.op == "convert_string" || q.op.startsWith("convert_") && 
+            // If type is being narrowed, no need to narrow it twice.
+            // NOTE: Cannot do the same when narrowed and then widened, hence the subtype check.
+            typing.isSubtype(type, types[q.op.substring("convert_".length)])
+        )) {
+            q = q.arg[0];
+        }
+        return {
+            ...q,
+            key: "pure",
+            op: "convert_" + type.typeSym,
+            arg: [q],
+            schema: {type: type, props: q.schema.props}
+        };
+    };
+
+    if(curType.typeSym === typeSyms.union || curType.typeSym === typeSyms.intersect)
+        // If not guaranteed by now, then it has to be converted to be guaranteed.
+        return convert();
+    if(type === types.u64 || type === types.i64)
+        // u64 and i64 must be converted because they use BigInt type in JS.
+        // TODO: Determine how to unify JS and C conversion, since this might not be necessary in C.
+        // Edit: It doesn't matter because C just uses casting (and will optimize anyway).
+        return convert();
+    if(typing.isSubtype(curType, type)) {
+        return q;
+    }
+    return convert();
+}
+
+let convertAST = (schema, q, completedMap, dontConvertVar = false) => {
+    
+    let $convertAST = (q, dontConvertVar = false) => {
+        if(completedMap[JSON.stringify(q)])
+            return completedMap[JSON.stringify(q)];
+        let res = convertAST(schema, q, completedMap, dontConvertVar)
+        completedMap[JSON.stringify(q)] = res;
+        return res;
+    };
+
+    if(q.key == "input") {
+        return q;
+    } else if (q.key === "loadInput") {
+        return q;
+    } else if(q.key == "const") {
+        return q;
+    } else if(q.key == "var") {
+        // TODO: Number | String union type is (perhaps) impossible to handle as key.
+        // Atleast it is without a check that converts it to a number iff matches \-?[1-9][0-9]*(\.[1-9][0-9]*)?\
+        if(isNumber(q.schema.type) && !dontConvertVar) {
+            // Convert to lcd num type.
+            let resType = generalizeNumber(q.schema.type);
+            return {
+                ...q,
+                key: "pure",
+                op: "convert_" + resType.typeSym,
+                arg: [q],
+            };
+        } else {
+            // Default to string type, so no conversion is needed.
+            return q;
+        }
+    } else if(q.key === "get") {
+        q.arg = q.arg.map((q) => $convertAST(q, true));
+        // Assuming the object is well-formed, the result doesn't need converted.
+        return q;
+    } else if(q.key == "hint") {
+        throw new Error("Unknown.");
+    } else if(q.key == "pure") {
+        
+        if (q.op == "apply" || q.op == "flatten" || q.op == "join") {
+            q.arg = q.arg.map($convertAST);
+            return q;
+        } else if (q.op === "equal" || q.op === "and" || q.op === "notEqual" || q.op === "fdiv" || 
+            q.op === "plus" || q.op === "minus" || q.op === "times" || q.op === "div" || q.op === "mod") {
+            
+            if (q.op == "plus" || q.op == "minus" || q.op == "times" || q.op == "div" || q.op == "mod") {
+                
+                let resType = generalizeNumber(createUnion(q.arg[0].schema.type, q.arg[1].schema.type));
+                q.arg = q.arg.map((q) => convertQuery($convertAST(q), resType));
+                
+                return convertQuery(q, resType);
+
+            } else if(q.op == "fdiv") {
+                // Convert args to f64 and do float division.
+                q.arg = q.arg.map((q) => convertQuery($convertAST(q), types.f64));
+                return q;
+            } else if (q.op == "equal" || q.op == "notEqual") {
+                let argSchema1 = unwrapType(q.arg[0].schema.type);
+                let argSchema2 = unwrapType(q.arg[1].schema.type);
+                // TODO: i64 | u64 union figure out type at runtime?????
+                if(isSubtype(types.u64, argSchema1) || isSubtype(types.i64, argSchema1) || isSubtype(types.u64, argSchema2) || isSubtype(types.i64, argSchema2)) {
+                    let resType = generalizeNumber(createUnion(argSchema1, argSchema2));
+                    q.arg = q.arg.map((q) => convertQuery($convertAST(q), resType));
+                    return q;
+                }
+                q.arg = q.arg.map($convertAST);
+                return q;
+            } else if (q.op == "and") {
+                return q;
+            }
+            throw new Error("Pure operation not implemented: " + q.op);
+        }
+        throw new Error("Pure operation not implemented: " + q.op);
+    } else if (q.key == "stateful") {
+        q.arg = q.arg.map($convertAST);
+        if(q.op == "sum" || q.op == "product") {
+            return {
+                ...q,
+                key: "pure",
+                op: "convert_" + q.schema.type.typeSym,
+                arg: [q],
+            };
+        }
+        return q;
+    } else if (q.key == "mkset") {
+        q.arg = q.arg.map($convertAST);
+        return q;
+    } else if(q.key == "update") {
+        q.arg = q.arg.map($convertAST);
+        return q;
+    }
+    throw new Error("Unknown key: " + q.key);
+}
+
 typing.validateIR = (schema, q) => {
     if (schema === undefined)
         return undefined;
@@ -1081,7 +1465,6 @@ typing.validateIR = (schema, q) => {
     let boundKeys = {};
     let cseMap = {};
     let nonEmptyGuarantees = [];
-    let res = validateIRQuery(schema, cseMap, boundKeys, nonEmptyGuarantees, q);
-    //console.log(prettyPrintType(res));
-    return res;
+    validateIRQuery(schema, cseMap, boundKeys, nonEmptyGuarantees, q);
+    return convertAST(schema, q, {});
 }

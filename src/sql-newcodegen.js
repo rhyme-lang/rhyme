@@ -376,6 +376,8 @@ let codegen = (q, buf) => {
       })
       let e2 = codegen(q.arg[1], buf)
       return e2
+    } else if (q.op.startsWith("convert_")) {
+      return cgen.cast(ctypeMap[q.op.substring("convert_".length)], e1)
     } else {
       throw new Error("pure operation not supported: " + pretty(q))
     }

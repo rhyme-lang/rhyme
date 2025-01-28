@@ -8,6 +8,7 @@
 
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdint.h>
 
 typedef void* rh;
 
@@ -55,6 +56,10 @@ rh rt_pure_plus(rh a, rh b) {
 
 rh rt_pure_and(rh a, rh b) {
   return a == 0 ? a : b;
+}
+
+rh rt_pure_convert_i16(rh a) {
+  return encode_int((uint16_t) decode_int(a));
 }
 
 rh rt_get(rh a, rh b) {

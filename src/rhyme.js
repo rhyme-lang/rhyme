@@ -133,7 +133,7 @@ function logDebugOutput(info) {
 
 api.logDebugOutput = logDebugOutput
 
-api["query"] = api["compile"] = (query, schema=typing.any) => {
+api["query"] = api["compile"] = (query, schema) => {
     query = ast.unwrap(query)
     let rep = ir.createIR(query)
     let c1 = codegen.generate(rep)

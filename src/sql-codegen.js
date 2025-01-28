@@ -131,8 +131,12 @@ let codegenCSql = (q, scope) => {
     return "malformed get"
   } else if (q.key == "pure") {
     let es = q.arg.map(x => codegenCSql(x, scope))
-    // only do plus for now
-    return `${es[0]} + ${es[1]}`
+    // TODO: add more pure operators
+    if(q.op == "plus") {
+      return `${es[0]} + ${es[1]}`
+    } else if(q.op.startsWith("convert_")) {
+      return `((${ctypeMap[q.op.substring("convert_".length)]}) ${es[0]})`;
+    }
   } else if (q.key == "hint") {
     // no-op!
     return "not supported"

@@ -9,6 +9,7 @@ const { pretty, setEmitPseudoState, emitPseudo } = require('./prettyprint')
 const { generateCSql } = require('./sql-codegen')
 const { generateCSqlNew } = require('./sql-newcodegen')
 const { typing, types, typeSyms } = require('./typing')
+const { optimizer } = require('./optimizer')
 
 const { unique, union, intersect, diff, subset, same } = sets
 
@@ -33,8 +34,6 @@ let defaultSettings = {
 
   newCodegen: false,
   backend: "js",
-
-  schema: typing.any,
 
   outDir: "cgen-sql",
   outFile: "tmp.c"
@@ -106,7 +105,7 @@ let extractFlex0 = q => {
   if (q.key == "stateful" || q.key == "group" || q.key == "update") // prefix?
     return extract0(q)
   else
-    return extract0({ key:"stateful", op: "single", mode: "reluctant", arg:[q] })
+    return extract0({ key:"stateful", op: "single", mode: "reluctant", arg:[q], schema: q.schema })
 }
 
 let extractKey0 = q => {
@@ -765,6 +764,7 @@ let compile = (q,userSettings={}) => {
 
   // 1. Preprocess (after parse, desugar)
   q = preproc(q)
+
   let src = q
 
   if (settings.altInfer) { // alternative analysis implementation
@@ -844,9 +844,12 @@ let compile = (q,userSettings={}) => {
     //  2: multiple vars encoded using (vars *A *B *C)
   }
 
+  // Deduplicate 
+  q = optimizer.deduplicate(q, {});
   // Perform type checking, and modify ast to include types.
-  typing.validateIR(settings.schema, q);
-
+  if(settings.schema) {
+    q = typing.validateIR(settings.schema, q);
+  }
   // ---- middle tier, imperative form ----
 
   if (settings.extractAssignments && !settings.extractAssignmentsLate) {
@@ -899,14 +902,14 @@ let compile = (q,userSettings={}) => {
     const fs = require('fs/promises')
     const os = require('child_process')
 
-let execPromise = function(cmd) {
-    return new Promise(function(resolve, reject) {
+    let execPromise = function(cmd) {
+      return new Promise(function(resolve, reject) {
         os.exec(cmd, function(err, stdout) {
-            if (err) return reject(err);
-            resolve(stdout);
+          if (err) return reject(err);
+          resolve(stdout);
         });
-    });
-}
+      });
+    }
 
     let code, cc, filename, flags
     if (settings.backend == "c") {

@@ -69,7 +69,7 @@ let preproc = q => {
     if (q.xxparam[1] === undefined || q.xxparam[1].xxkey != "hole") {
       console.error("csv schema expected")
     }
-    return { key: "loadInput", op: "csv", arg: [e1], schema: q.xxparam[1].xxop }
+    return { key: "loadInput", op: "csv", arg: [e1], inputSchema: q.xxparam[1].xxop }
   } else if (q.xxkey == "ident") {
     if (isVar(q.xxop)) return { key: "var", op: q.xxop }
     else return { key: "const", op: q.xxop }

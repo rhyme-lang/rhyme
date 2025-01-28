@@ -110,7 +110,7 @@ test("testScalar1", async () => {
   // console.log(func.explain.code)
   let res = await func({data})
 
-  expect(res).toEqual("undefined")
+  expect(res).toEqual("0")
 })
 
 test("testHint1", async () => {
@@ -123,7 +123,7 @@ test("testHint1", async () => {
   // console.log(func.explain.pseudo)
   let res = await func({data})
 
-  expect(res).toEqual("undefined")
+  expect(res).toEqual("0")
 })
 
 data = {
