@@ -124,3 +124,68 @@ test("day2-part1", () => {
   let res = func({input, udf})
   expect(res).toBe(2)
 })
+
+
+test("day3-part1", () => {
+
+  let input = `xmul(2,4)%&mul[3,7]!@^do_not_mul(5,5)+mul(32,64]then(mul(11,8)mul(8,5))`
+
+  let udf = {
+    ...udf_stdlib,
+    slice: a => array => array.slice(a),
+    range: (a,b) => { let res = {}; for (let i = a; i < b; i++) res[i] = true; return res },
+    orElse: (a,b) => (a || b) || undefined
+  }
+
+  let matches = rh`.input | udf.matchAll "mul\\\\((\\\\d{1,3}),(\\\\d{1,3})\\\\)" "g" | .*matchIndex`
+  let num1 = rh`${matches} | .1 | udf.toNum`;
+  let num2 = rh`${matches} | .2 | udf.toNum`;
+  let mults = rh`${num1} * ${num2}`;
+
+  let query = rh`sum ${mults}`
+
+  let func = api.compileC2(query);
+  let res = func({input, udf})
+  //console.log(res);
+  expect(res).toBe(161)
+})
+
+
+/*
+test("day4-part1", () => {
+
+  let input = `MMMSXXMASM
+  MSAMXMSMSA
+  AMXSXMAAMM
+  MSAMASMSMX
+  XMASAMXAMM
+  XXAMMXXAMA
+  SMSMSASXSS
+  SAXAMASAAA
+  MAMMMXMMMM
+  MXMXAXMASX`;
+
+  let udf = {
+    ...udf_stdlib,
+    slice: a => array => array.slice(a),
+    range: (a,b) => { let res = {}; for (let i = a; i < b; i++) res[i] = true; return res },
+    orElse: (a,b) => (a || b) || undefined,
+    filter: c => c ? { [c]: true } : {},
+  }
+  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`;
+
+  let line = rh`.input | udf.split "\\n" | .*line`;
+  let col = rh`${line} | udf.split "" | .*col`;
+
+  let grid = rh`${col} | group *col | group *line`;
+
+  let diagNames = rh`${grid}.*a.*b + ${grid}.(*a + 1).(*b + 1) + ${grid}.(*a + 2).(*b + 2) + ${grid}.(*a + 3).(*b + 3)`;
+  let diagNames2 = rh`${grid}.*a.*b + ${grid}.(*a).(*b - 1) + ${grid}.(*a).(*b - 2) + ${grid}.(*a).(*b - 3)`;
+
+  let count = rh`${filterBy("*f", rh`udf.isEqual ${diagNames2}.*val "XMAS"`)} | count`
+
+  let func = api.compileC2(count);
+  let res = func({input, udf})
+})
+*/
+
