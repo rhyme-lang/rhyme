@@ -117,6 +117,7 @@ function buildDeps(assignmentStms, generatorStms, tmpVarWriteRank) {
     }
   }
 
+  console.log(deps)
   let order = scc(Object.keys(deps), x => Object.keys(deps[x])).reverse()
 
   // check whether we have circular dependencies
