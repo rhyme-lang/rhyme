@@ -120,6 +120,7 @@ function buildDeps(assignmentStms, generatorStms, tmpVarWriteRank) {
   }
 
   if (g_backend === "c-sql") {
+    console.log(assignmentStms, generatorStms)
     console.log(deps)
   }
   let order = scc(Object.keys(deps), x => Object.keys(deps[x])).reverse()
