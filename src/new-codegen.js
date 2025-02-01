@@ -215,8 +215,6 @@ function buildDeps(assignmentStms, generatorStms, tmpVarWriteRank) {
 }
 
 exports.generate = (ir, backend = "js") => {
-  g_backend = backend
-
   let assignmentStms = ir.assignmentStms
   let generatorStms = ir.generatorStms
   let tmpVarWriteRank = ir.tmpVarWriteRank
