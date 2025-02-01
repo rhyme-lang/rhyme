@@ -1008,7 +1008,7 @@ let emitCode = (q, ir) => {
       hashMapEnv[sym] = { keySchema: keySchema.type, valSchema: q.schema.type.objValue }
 
       if (q.arg[2].fre.length == 1 && q.arg[1].op == q.arg[2].fre[0]) {
-        trivialUpdate[sym] = tmpSym(q.arg[2].op)
+        trivialUpdate[sym] = (q.arg[2].key == "pure" ? tmpSym(q.arg[2].arg[0].op) : tmpSym(q.arg[2].op))
       }
     }
   }
