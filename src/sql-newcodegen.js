@@ -135,17 +135,18 @@ let cgen = {
   comment: (buf) => (s) => buf.push("// " + s),
   stmt: (buf) => (expr) => buf.push(expr + ";"),
 
-  declareVar: (buf) => (type, name, init) => buf.push(type + " " + name + (init ? ` = ${init};` : ";")),
-  declareArr: (buf) => (type, name, len, init) => buf.push(`${type} ${name}[${len}]` + (init ? ` = ${init};` : ";")),
-  declarePtr: (buf) => (type, name, init) => buf.push(`${type} *${name}` + (init ? ` = ${init};` : ";")),
-  declarePtrPtr: (buf) => (type, name, init) => buf.push(`${type} **${name}` + (init ? ` = ${init};` : ";")),
+  declareVar: (buf) => (type, name, init, constant = false) => buf.push((constant ? "const " : "") + type + " " + name + (init ? ` = ${init};` : ";")),
+  declareArr: (buf) => (type, name, len, init, constant = false) => buf.push((constant ? "const " : "") + `${type} ${name}[${len}]` + (init ? ` = ${init};` : ";")),
+  declarePtr: (buf) => (type, name, init, constant = false) => buf.push((constant ? "const " : "") + `${type} *${name}` + (init ? ` = ${init};` : ";")),
+  declarePtrPtr: (buf) => (type, name, init, constant = false) => buf.push((constant ? "const " : "") + `${type} **${name}` + (init ? ` = ${init};` : ";")),
 
   declareInt: (buf) => (name, init) => cgen.declareVar(buf)("int", name, init),
   declareULong: (buf) => (name, init) => cgen.declareVar(buf)("unsigned long", name, init),
   declareCharArr: (buf) => (name, len, init) => cgen.declareArr(buf)("char", name, len, init),
-  declareIntPtr: (buf) => (name, len, init) => cgen.declarePtr(buf)("int", name, len, init),
-  declareCharPtr: (buf) => (name, len, init) => cgen.declarePtr(buf)("char", name, len, init),
-  declareCharPtrPtr: (buf) => (name, len, init) => cgen.declarePtrPtr(buf)("char", name, len, init),
+  declareIntPtr: (buf) => (name, init) => cgen.declarePtr(buf)("int", name, init),
+  declareCharPtr: (buf) => (name, init) => cgen.declarePtr(buf)("char", name, init),
+  declareConstCharPtr: (buf) => (name, init) => cgen.declarePtr(buf)("char", name, init, true),
+  declareCharPtrPtr: (buf) => (name, init) => cgen.declarePtrPtr(buf)("char", name, init),
 
   printErr: (buf) => (fmt, ...args) => buf.push(cgen.call("fprintf", "stderr", fmt, ...args) + ";"),
 
@@ -295,7 +296,7 @@ let codegen = (q, buf) => {
       return String(q.op)
     } else if (typeof q.op == "string") {
       let name = getNewName("tmp_str")
-      cgen.declareCharArr(buf)(name, q.op.length + 1, '"' + q.op + '"')
+      cgen.declareConstCharPtr(buf)(name, '"' + q.op + '"')
       return { str: name, len: q.op.length }
     } else {
       throw new Error("constant not supported: " + pretty(q))
