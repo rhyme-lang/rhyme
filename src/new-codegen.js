@@ -2,6 +2,8 @@ const { quoteVar, debug, trace, print, inspect, error, warn } = require("./utils
 const { scc } = require('./scc')
 const { runtime } = require('./simple-runtime')
 
+let g_backend
+
 // The new codegen guarantees the following key features:
 //    1. statement (assignment) will only be emitted once
 //    2. a loop maybe generated multiple times
@@ -117,7 +119,9 @@ function buildDeps(assignmentStms, generatorStms, tmpVarWriteRank) {
     }
   }
 
-  console.log(deps)
+  if (g_backend === "c-sql") {
+    console.log(deps)
+  }
   let order = scc(Object.keys(deps), x => Object.keys(deps[x])).reverse()
 
   // check whether we have circular dependencies
@@ -216,6 +220,8 @@ function buildDeps(assignmentStms, generatorStms, tmpVarWriteRank) {
 }
 
 exports.generate = (ir, backend = "js") => {
+  g_backend = backend
+
   let assignmentStms = ir.assignmentStms
   let generatorStms = ir.generatorStms
   let tmpVarWriteRank = ir.tmpVarWriteRank
