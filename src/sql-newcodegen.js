@@ -80,22 +80,22 @@ let formatSpecifierMap = {
 
 let convertToCType = (type) => {
   if (type.typeSym === "dynkey")
-    return convertToCType(type.keySuperkey);
+    return convertToCType(type.keySuperkey)
   if (type.typeSym === "union")
-    throw new Error("Unable to convert union type to C type currently: " + typing.prettyPrintType(type));
+    throw new Error("Unable to convert union type to C type currently: " + typing.prettyPrintType(type))
   if (type.typeSym in ctypeMap)
     return ctypeMap[type.typeSym]
-  throw new Error("Unknown type: " + typing.prettyPrintType(type));
+  throw new Error("Unknown type: " + typing.prettyPrintType(type))
 }
 
 let getFormatSpecifier = (type) => {
   if (type.typeSym === "dynkey")
-    return getFormatSpecifier(type.keySuperkey);
+    return getFormatSpecifier(type.keySuperkey)
   if (type.typeSym === "union")
-    throw new Error("Unable to get type specifier for union tpyes currently: " + typing.prettyPrintType(type));
+    throw new Error("Unable to get type specifier for union tpyes currently: " + typing.prettyPrintType(type))
   if (type.typeSym in formatSpecifierMap)
     return formatSpecifierMap[type.typeSym]
-  throw new Error("Unknown type: " + typing.prettyPrintType(type));
+  throw new Error("Unknown type: " + typing.prettyPrintType(type))
 }
 
 //
@@ -843,10 +843,10 @@ let emitRowScanning = (f, file, cursor, schema, first = true) => {
     } else if (format == "tbl") {
       return "'|'"
     }
-  } 
+  }
 
   if (schema.objKey === null)
-    return [];
+    return []
   let buf = []
   let v = f.arg[1].op
   let { mappedFile, size, format } = inputFilesEnv[file]
@@ -1120,7 +1120,7 @@ let emitCode = (q, ir) => {
     }
   }
   cgen.return(epilog)("0")
-  epilog.push("}");
+  epilog.push("}")
 
   let new_codegen_ir = {
     assignmentStms,
@@ -1137,7 +1137,7 @@ let emitCode = (q, ir) => {
 let generateCSqlNew = (q, ir, outDir, outFile) => {
   const fs = require('fs').promises
   const os = require('child_process')
-  // const path = require('path');
+  // const path = require('path')
   let joinPaths = (...args) => {
     return args.map((part, i) => {
       if (i === 0) {
@@ -1152,7 +1152,7 @@ let generateCSqlNew = (q, ir, outDir, outFile) => {
     return new Promise((resolve, reject) => {
       os.exec(cmd, (err, stdout) => {
         if (err) {
-          reject(err);
+          reject(err)
         } else {
           resolve(stdout)
         }

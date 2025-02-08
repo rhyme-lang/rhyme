@@ -4,21 +4,24 @@ const { typing, types } = require('../../src/typing')
 
 const os = require('child_process')
 
-let execPromise = function (cmd) {
+let sh = (cmd) => {
   return new Promise((resolve, reject) => {
-    os.exec(cmd, function (err, stdout) {
-      if (err) return reject(err);
-      resolve(stdout);
-    });
-  });
+    os.exec(cmd, (err, stdout) => {
+      if (err) {
+        reject(err)
+      } else {
+        resolve(stdout)
+      }
+    })
+  })
 }
 
 let outDir = "cgen-sql/out/"
 
 beforeAll(async () => {
-  await execPromise(`rm -rf ${outDir}`)
-  await execPromise(`mkdir ${outDir}`)
-  await execPromise(`cp cgen-sql/rhyme-sql.h ${outDir}`)
+  await sh(`rm -rf ${outDir}`)
+  await sh(`mkdir ${outDir}`)
+  await sh(`cp cgen-sql/rhyme-sql.h ${outDir}`)
 });
 
 test("testTrivial", async () => {
