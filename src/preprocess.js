@@ -62,14 +62,13 @@ let preproc = q => {
     console.error("unexpected raw input: ", q)
   } if (q.xxkey == "const") {
     return { key: "const", op: q.xxop }
-  } else if (q.xxkey == "loadCSV") {
+  } else if (q.xxkey.startsWith && q.xxkey.startsWith("load") && q.xxkey.substring(4) == "CSV" || q.xxkey.substring(4) == "TBL") {
     // Only process the first argument which is the filename
-    // We want to get the type info from xxextra instead of evaluating it as a Rhyme query
     let e1 = preproc(q.xxparam[0])
     if (q.xxparam[1] === undefined || q.xxparam[1].xxkey != "hole") {
-      console.error("csv schema expected")
+      console.error("schema expected for " + q.xxkey)
     }
-    return { key: "loadInput", op: "csv", arg: [e1], inputSchema: q.xxparam[1].xxop }
+    return { key: "loadInput", op: q.xxkey.substring(4).toLowerCase(), arg: [e1], inputSchema: q.xxparam[1].xxop }
   } else if (q.xxkey == "ident") {
     if (isVar(q.xxop)) return { key: "var", op: q.xxop }
     else return { key: "const", op: q.xxop }

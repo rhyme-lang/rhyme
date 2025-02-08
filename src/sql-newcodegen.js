@@ -15,7 +15,7 @@ const HASH_MASK = HASH_SIZE - 1
 
 let filters
 let assignments
-let csvFilesEnv
+let inputFilesEnv
 let usedCols
 let mksetVarEnv
 let hashMapEnv
@@ -212,7 +212,7 @@ let validateAndExtractUsedCols = (q) => {
     if (!(e1.key == "get" && e2.key == "const")) {
       throw new Error("malformed get: " + pretty(q))
     }
-    if (!(e1.arg[0].key == "loadInput" && e1.arg[1].key == "var")) {
+    if (e1.arg[0].key != "loadInput") {
       throw new Error("malformed e1 in get: " + pretty(e1))
     }
     if (typeof e2.op != "string") {
@@ -259,22 +259,13 @@ let validateAndExtractUsedCols = (q) => {
 }
 
 // Emit code that opens the CSV file and calls mmap
-let emitLoadCSV = (buf, filename, id, isConstStr = true) => {
+let emitLoadInput = (buf, filename, id) => {
   let fd = "fd" + id
-  let mappedFile = "csv" + id
+  let mappedFile = "file" + id
   let size = "n" + id
-  // add quotes if the file name is a const string
-  if (isConstStr) {
-    cgen.declareInt(buf)(fd, cgen.open('"' + filename + '"'))
-  } else {
-    cgen.declareInt(buf)(fd, cgen.open(filename))
-  }
+  cgen.declareInt(buf)(fd, cgen.open(filename))
   cgen.if(buf)(cgen.binary(fd, "-1", "=="), buf1 => {
-    if (isConstStr) {
-      cgen.printErr(buf1)(`"Unable to open file ${filename}\\n"`)
-    } else {
-      cgen.printErr(buf1)(`"Unable to open file ${filename}: %s\\n"`, filename)
-    }
+    cgen.printErr(buf1)(`"Unable to open file %s\\n"`, filename)
     cgen.return(buf1)("1")
   })
   cgen.declareInt(buf)(size, cgen.call("fsize", fd))
@@ -342,7 +333,7 @@ let codegen = (q, buf) => {
       filename = pretty(file)
     }
 
-    let { mappedFile } = csvFilesEnv[filename]
+    let { mappedFile } = inputFilesEnv[filename]
 
     let v = e1.arg[1].op
 
@@ -845,12 +836,20 @@ let emitStmUpdate = (q, sym) => {
 
 // Emit code that scans through each row in the CSV file.
 // Will extract the value of a column if the column is used by the query.
-let emitRowScanning = (f, filename, cursor, schema, first = true) => {
+let emitRowScanning = (f, file, cursor, schema, first = true) => {
+  let getDelim = (format, first) => {
+    if (format == "csv") {
+      return first ? "'\\n'" : "','"
+    } else if (format == "tbl") {
+      return "'|'"
+    }
+  } 
+
   if (schema.objKey === null)
     return [];
   let buf = []
   let v = f.arg[1].op
-  let { mappedFile, size } = csvFilesEnv[filename]
+  let { mappedFile, size, format } = inputFilesEnv[file]
 
   let colName = schema.objKey
   let type = schema.objValue
@@ -867,7 +866,7 @@ let emitRowScanning = (f, filename, cursor, schema, first = true) => {
     cgen.declareVar(buf)(convertToCType(type), name, "0")
   }
 
-  let delim = first ? "'\\n'" : "','"
+  let delim = getDelim(format, first)
 
   cgen.declareInt(buf)(start, cursor)
 
@@ -890,14 +889,17 @@ let emitRowScanning = (f, filename, cursor, schema, first = true) => {
   cgen.declareInt(buf)(end, cursor)
   cgen.stmt(buf)(cgen.inc(cursor))
 
-  return [...emitRowScanning(f, filename, cursor, schema.objParent, false), ...buf]
+  // consume the newline character for tbl
+  if (first && format == "tbl") cgen.stmt(buf)(cgen.inc(cursor))
+
+  return [...emitRowScanning(f, file, cursor, schema.objParent, false), ...buf]
 }
 
 // Returns a function that will be invoked during the actual code generation
 // It requests a new cursor name every time it is invoked
-let getLoopTxt = (f, filename, loadCSV) => () => {
+let getLoopTxt = (f, file, loadInput) => () => {
   let v = f.arg[1].op
-  let { mappedFile, size } = csvFilesEnv[filename]
+  let { mappedFile, size, format } = inputFilesEnv[file]
 
   let initCursor = []
 
@@ -906,14 +908,17 @@ let getLoopTxt = (f, filename, loadCSV) => () => {
   let cursor = getNewName("i")
   cgen.declareInt(initCursor)(cursor, "0")
 
-  cgen.while(initCursor)(
-    cgen.and(
-      cgen.lt(cursor, size),
-      cgen.notEqual(`${mappedFile}[${cursor}]`, "'\\n'")
-    ),
-    buf1 => cgen.stmt(buf1)(cgen.inc(cursor))
-  )
-  cgen.stmt(initCursor)(cgen.inc(cursor))
+  // for csv files, skip the schema line
+  if (format == "csv") {
+    cgen.while(initCursor)(
+      cgen.and(
+        cgen.lt(cursor, size),
+        cgen.notEqual(`${mappedFile}[${cursor}]`, "'\\n'")
+      ),
+      buf1 => cgen.stmt(buf1)(cgen.inc(cursor))
+    )
+    cgen.stmt(initCursor)(cgen.inc(cursor))
+  }
 
   let loopHeader = []
   cgen.stmt(loopHeader)(cgen.assign(quoteVar(v), "-1"))
@@ -923,10 +928,10 @@ let getLoopTxt = (f, filename, loadCSV) => () => {
   let boundsChecking = [`if (${cursor} >= ${size}) break;`]
 
   let schema = f.schema.type
-  let rowScanning = emitRowScanning(f, filename, cursor, schema)
+  let rowScanning = emitRowScanning(f, file, cursor, schema)
 
   return {
-    info, data: loadCSV, initCursor, loopHeader, boundsChecking, rowScanning
+    info, data: loadInput, initCursor, loopHeader, boundsChecking, rowScanning
   }
 }
 
@@ -941,7 +946,7 @@ let emitCode = (q, ir) => {
   vars = ir.vars
   order = ir.ordeer
 
-  csvFilesEnv = {}
+  inputFilesEnv = {}
   nameIdMap = {}
   usedCols = {}
 
@@ -1019,35 +1024,33 @@ let emitCode = (q, ir) => {
     let v1 = f.arg[1].op
     let g1 = f.arg[0]
 
-    if (g1.key == "loadInput" && g1.op == "csv") {
-      let loadCSV = []
-      let filename
+    if (g1.key == "loadInput") {
+      let loadInput = []
+      let file = pretty(g1.arg[0])
       // constant string filename
 
       // TODO: need to have a better way to do CSE
       // should be done when the loop is actually emitted by new-codegen
       // where we have the info about the current scope
-      if (g1.arg[0].key == "const" && typeof g1.arg[0].op == "string") {
-        filename = g1.arg[0].op
-        if (csvFilesEnv[filename] == undefined) {
-          cgen.comment(prolog)(`loading CSV file: ${filename}`)
-          let { mappedFile, size } = emitLoadCSV(prolog, filename, i)
-          csvFilesEnv[filename] = { mappedFile, size }
+
+      if (inputFilesEnv[file] == undefined) {
+        let isConstStr = g1.arg[0].key == "const" && typeof g1.arg[0].op == "string"
+        let buf = isConstStr ? prolog : loadInput
+        cgen.comment(buf)(`loading input file: ${file}`)
+        let filename = codegen(g1.arg[0], buf)
+        let filenameStr
+        if (!isConstStr) {
+          filenameStr = getNewName("tmp_filename")
+          cgen.declareCharArr(buf)(filenameStr, `${filename.len} + 1`)
+          cgen.stmt(buf)(cgen.call("extract_str1", filename.str, filename.len, filenameStr))
+        } else {
+          filenameStr = filename.str
         }
-      } else {
-        filename = pretty(g1.arg[0])
-        if (csvFilesEnv[filename] == undefined) {
-          cgen.comment(loadCSV)(`loading CSV file: ${filename}`)
-          let file = codegen(g1.arg[0], [])
-          let tmpStr = getNewName("tmp_filename")
-          cgen.declareCharArr(loadCSV)(tmpStr, `${file.len} + 1`)
-          cgen.stmt(loadCSV)(cgen.call("extract_str1", file.str, file.len, tmpStr))
-          let { mappedFile, size } = emitLoadCSV(loadCSV, tmpStr, i, false)
-          csvFilesEnv[filename] = { mappedFile, size }
-        }
+        let { mappedFile, size } = emitLoadInput(buf, filenameStr, i)
+        inputFilesEnv[file] = { mappedFile, size, format: g1.op }
       }
 
-      // declare the loop row counter e.g. xA, xB, D0 etc.
+      // declare the loop variable e.g. xA, xB, D0 etc.
       // should just be an integer
       if (!emittedCounter[v1]) {
         let counter = `${quoteVar(v1)}`
@@ -1055,7 +1058,7 @@ let emitCode = (q, ir) => {
         emittedCounter[v1] = true
       }
 
-      let getLoopTxtFunc = getLoopTxt(f, filename, loadCSV)
+      let getLoopTxtFunc = getLoopTxt(f, file, loadInput)
       addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
     } else if (g1.key == "mkset") {
       let data = []
