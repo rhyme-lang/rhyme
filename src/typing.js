@@ -917,8 +917,10 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
             }, createSimpleObject({}));
             return intoTup(argTypes);
 
-        } else if (q.op === "equal" || q.op === "and" || q.op === "notEqual" || q.op === "fdiv" || 
-            q.op === "plus" || q.op === "minus" || q.op === "times" || q.op === "div" || q.op === "mod") {
+        } else if (q.op === "equal" || q.op === "and" || q.op === "notEqual" || q.op === "fdiv" ||
+            q.op === "plus" || q.op === "minus" || q.op === "times" || q.op === "div" || q.op === "mod" ||
+            q.op === "lessThan" || q.op === "greaterThan" || q.op === "lessThanOrEqual" || q.op === "greaterThanOrEqual" ||
+            q.op == "andAlso" || q.op == "orElse") {
             // If q is a binary operation:
             // TODO: Figure out difference between fdiv and div.
             let {type: t2, props: p2} = argTups[1];
@@ -933,11 +935,11 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
             } else if (q.op == "fdiv") {
                 // TODO: validate types for fdiv
                 return {type: types.f64, props: union(p1,p2)};
-            } else if (q.op == "equal") {
-                // TODO: validate types for equal
-                return {type: types.boolean, props: union(p1,p2)};
-            } else if (q.op == "notEqual") {
-                // TODO: validate types for notEqual
+            } else if (q.op === "equal" || q.op === "notEqual" ||
+                q.op === "lessThan" || q.op === "greaterThan" ||
+                q.op === "lessThanOrEqual" || q.op === "greaterThanOrEqual" ||
+                q.op == "andAlso" || q.op == "orElse") {
+                // TODO: validate types for comparison and logical ops
                 return {type: types.boolean, props: union(p1,p2)};
             } else if (q.op == "and") {
                 // TODO: validate types for and
@@ -945,6 +947,7 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
             }
             throw new Error("Pure operation not implemented: " + q.op);
         }
+        console.log(q)
         throw new Error("Pure operation not implemented: " + q.op);
     } else if (q.key === "hint") {
 

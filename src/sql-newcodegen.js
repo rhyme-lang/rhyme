@@ -172,9 +172,15 @@ let cgen = {
 }
 
 
-let operators = {
+let binaryOperators = {
   equal: "==",
   notEqual: "!=",
+
+  lessThan: "<",
+  greaterThan: ">",
+
+  lessThanOrEqual: "<=",
+  greaterThanOrEqual: ">=",
 
   plus: "+",
   minus: "-",
@@ -182,6 +188,8 @@ let operators = {
   fdiv: "/",
   div: "/",
   mod: "%",
+
+  andAlso: "&&"
 }
 
 // Extract all the used columns.
@@ -231,7 +239,7 @@ let validateAndExtractUsedCols = (q) => {
       // strings do not need to be extracted
       return
     }
-    if (typing.isInteger(q.schema.type)) {
+    if (typing.isNumber(q.schema.type)) {
       usedCols[prefix][e2.op] = true
     } else {
       throw new Error("column data type not supported: " + pretty(q) + " has type " + typing.prettyPrintTuple(q.schema))
@@ -341,7 +349,7 @@ let codegen = (q, buf) => {
     let start = name + "_start"
     let end = name + "_end"
 
-    if (typing.isInteger(q.schema.type)) {
+    if (typing.isNumber(q.schema.type)) {
       return name
     } else if (typing.isString(q.schema.type)) {
       return { str: `${mappedFile} + ${start}`, len: `${end} - ${start}` }
@@ -350,35 +358,41 @@ let codegen = (q, buf) => {
     }
   } else if (q.key == "pure") {
     let e1 = codegen(q.arg[0], buf)
-    let op = operators[q.op]
-    if (q.op == "plus" || q.op == "minus" || q.op == "times" || q.op == "fdiv" || q.op == "div" || q.op == "mod") {
+    let op = binaryOperators[q.op]
+    let res
+    if (op) {
+      // binary op
       let e2 = codegen(q.arg[1], buf)
-      if (q.op == "fdiv") {
-        return cgen.binary(cgen.cast("double", e1), cgen.cast("double", e2), op)
-      }
-      return cgen.binary(e1, e2, op)
-    } else if (q.op == "equal" || q.op == "notEqual") {
-      let e2 = codegen(q.arg[1], buf)
-      if (typing.isString(q.arg[0].schema.type) && typing.isString(q.arg[1].schema.type)) {
-        let { str: str1, len: len1 } = e1
-        let { str: str2, len: len2 } = e2
-        let name = getNewName("tmp_cmpstr")
-        cgen.declareInt(buf)(name, cgen.binary(cgen.call("compare_str2", str1, len1, str2, len2), "0", op))
-        return name
-      } else if (typing.isInteger(q.arg[0].schema.type) && typing.isInteger(q.arg[1].schema.type)) {
-        return `${e1} ${op} ${e2}`
+      if (q.op == "equal" || q.op == "notEqual" || q.op == "lessThan" || q.op == "greaterThan" || q.op == "lessThanOrEqual" || q.op == "greaterThanOrEqual") {
+        if (typing.isString(q.arg[0].schema.type) && typing.isString(q.arg[1].schema.type)) {
+          let { str: str1, len: len1 } = e1
+          let { str: str2, len: len2 } = e2
+          let name = getNewName("tmp_cmpstr")
+          cgen.declareInt(buf)(name, cgen.binary(cgen.call("compare_str2", str1, len1, str2, len2), "0", op))
+          return name
+        } else {
+          res = cgen.binary(e1, e2, op)
+        }
+      } else if (q.op == "fdiv") {
+        res = cgen.binary(cgen.cast("double", e1), cgen.cast("double", e2), op)
+      } else {
+        res = cgen.binary(e1, e2, op)
       }
     } else if (q.op == "and") {
+      if (q.arg[1].op == "and") {
+        throw new Error("chained & not supported")
+      }
       cgen.if(buf)(`!(${e1})`, buf1 => {
         cgen.continue(buf1)()
       })
       let e2 = codegen(q.arg[1], buf)
       return e2
     } else if (q.op.startsWith("convert_")) {
-      return cgen.cast(ctypeMap[q.op.substring("convert_".length)], e1)
+      res = cgen.cast(ctypeMap[q.op.substring("convert_".length)], e1)
     } else {
       throw new Error("pure operation not supported: " + pretty(q))
     }
+    return "(" + res + ")"
   } else {
     throw new Error("unknown op: " + pretty(q))
   }
@@ -757,7 +771,6 @@ let emitStmUpdate = (q, sym) => {
         let { str, len } = e1
         cgen.stmt(buf)(cgen.call("println1", str, len))
       } else {
-        let [e1] = q.arg.map(x => codegen(x, buf))
         cgen.stmt(buf)(cgen.call("printf", `"%${getFormatSpecifier(q.arg[0].schema.type)}\\n"`, e1))
       }
       return buf
@@ -862,8 +875,15 @@ let emitRowScanning = (f, file, cursor, schema, first = true) => {
   let start = name + "_start"
   let end = name + "_end"
 
-  if (needToExtract && typing.isInteger(type)) {
-    cgen.declareVar(buf)(convertToCType(type), name, "0")
+  if (needToExtract) {
+    if (typing.isInteger(type)) {
+      cgen.declareVar(buf)(convertToCType(type), name, "0")
+    } else if (type.typeSym === typeSyms.f32 || type.typeSym === typeSyms.f64) {
+      let strto = type.typeSym === typeSyms.f32 ? "strtof" : "strtod"
+      let tmpCharPtr = getNewName("tmp_charptr")
+      cgen.declareCharPtr(buf)(tmpCharPtr, "NULL")
+      cgen.declareVar(buf)(convertToCType(type), name, cgen.call(strto, cgen.plus(mappedFile, cursor), tmpCharPtr))
+    }
   }
 
   let delim = getDelim(format, first)
@@ -876,10 +896,12 @@ let emitRowScanning = (f, file, cursor, schema, first = true) => {
       cgen.notEqual(`${mappedFile}[${cursor}]`, delim)
     ),
     buf1 => {
-      if (needToExtract && typing.isInteger(type)) {
-        cgen.comment(buf1)("extract integer")
-        cgen.stmt(buf1)(cgen.binary(name, "10", "*="))
-        cgen.stmt(buf1)(cgen.binary(name, cgen.minus(`${mappedFile}[${cursor}]`, "'0'"), "+="))
+      if (needToExtract) {
+        if (typing.isInteger(type)) {
+          cgen.comment(buf1)("extract integer")
+          cgen.stmt(buf1)(cgen.binary(name, "10", "*="))
+          cgen.stmt(buf1)(cgen.binary(name, cgen.minus(`${mappedFile}[${cursor}]`, "'0'"), "+="))
+        }
       }
 
       cgen.stmt(buf1)(cgen.inc(cursor))
@@ -1164,7 +1186,7 @@ let generateCSqlNew = (q, ir, outDir, outFile) => {
   let out = joinPaths(outDir, "tmp")
   let code = emitCode(q, ir)
 
-  let cFlags = "-Icgen-sql"
+  let cFlags = "-Icgen-sql -O3"
 
   let func = async () => {
     let stdout = await sh(`./${out} `)

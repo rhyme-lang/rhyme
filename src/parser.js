@@ -396,6 +396,19 @@ exports.parserImpl = (strings, holes) => {
       next()
       let rhs = atom()
       res = ast.get(rhs)
+    } else if (peek == "num") {
+      // floating point literal? 0.123...
+      let int = str
+      res = ast.num(Number(int))
+      next()
+      if (peek == ".") {
+        next()
+        if (peek != "num") error("number expected but got '"+sanitize(peek)+"'")
+        let frac = str
+        res = ast.num(Number(int + "." + frac))
+        next()
+      }
+      return res
     } else {
       res = atom()
     }

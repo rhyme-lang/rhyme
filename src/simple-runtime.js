@@ -42,6 +42,30 @@ rt.pure.notEqual = (x1, x2) => {
   return x1 !== x2
 }
 
+rt.pure.lessThan = (x1, x2) => {
+  if (x1 === undefined) return undefined
+  if (x2 === undefined) return undefined
+  return x1 < x2
+}
+
+rt.pure.greaterThan = (x1, x2) => {
+  if (x1 === undefined) return undefined
+  if (x2 === undefined) return undefined
+  return x1 > x2
+}
+
+rt.pure.lessThanOrEqual = (x1, x2) => {
+  if (x1 === undefined) return undefined
+  if (x2 === undefined) return undefined
+  return x1 < x2
+}
+
+rt.pure.greaterThanOrEqual = (x1, x2) => {
+  if (x1 === undefined) return undefined
+  if (x2 === undefined) return undefined
+  return x1 > x2
+}
+
 rt.pure.plus = (x1,x2) => {
   if (x1 === undefined) return undefined
   if (x2 === undefined) return undefined

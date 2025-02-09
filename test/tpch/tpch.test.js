@@ -4,19 +4,20 @@ const { typing, types } = require('../../src/typing')
 const fs = require("fs")
 const os = require('child_process')
 
+// point to the data directory
 let dataDir = "/home/ran/projects/tpch-dbgen/SF1"
 let outDir = "cgen-sql/out/tpch"
 
 let lineitemSchema = typing.objBuilder()
   .add(typing.createKey(types.u32), typing.createSimpleObject({
-    l_orderkey: types.i64,
-    l_partkey: types.i64,
-    l_suppkey: types.i64,
-    l_linenumber: types.i64,
-    l_quantity: types.string,
-    l_extendedprice: types.string,
-    l_discount: types.string,
-    l_tax: types.string,
+    l_orderkey: types.i32,
+    l_partkey: types.i32,
+    l_suppkey: types.i32,
+    l_linenumber: types.i32,
+    l_quantity: types.f64,
+    l_extendedprice: types.f64,
+    l_discount: types.f64,
+    l_tax: types.f64,
     l_returnflag: types.string,
     l_linestatus: types.string,
     l_shipdate: types.string,
@@ -29,9 +30,9 @@ let lineitemSchema = typing.objBuilder()
 
 let nationSchema = typing.objBuilder()
   .add(typing.createKey(types.u32), typing.createSimpleObject({
-    n_nationkey: types.i64,
+    n_nationkey: types.i32,
     n_name: types.string,
-    n_regionkey: types.i64,
+    n_regionkey: types.i32,
     n_comment: types.string,
   })).build()
 
@@ -65,11 +66,17 @@ beforeAll(async () => {
   }
 })
 
-test("tmp", async () => {
-  let query = rh`print ${nation}.*.n_comment`
+test("q6", async () => {
+  let cond1 = rh`"1994-01-01" <= ${lineitem}.*.l_shipdate && ${lineitem}.*.l_shipdate < "1995-01-01"`
+  let cond2 = rh`0.05 <= ${lineitem}.*.l_discount && ${lineitem}.*.l_discount <= 0.07`
+  let cond3 = rh`${lineitem}.*.l_quantity < 24`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "tmp.c", schema: types.never })
+  let cond = rh`${cond1} && ${cond2} && ${cond3}`
+
+  let query = rh`sum (${cond}) & (${lineitem}.*.l_extendedprice * ${lineitem}.*.l_discount)`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q6.c", schema: types.never })
   let res = await func()
 
-  console.log(res)
+  expect(res).toBe("123141078.228\n")
 })
