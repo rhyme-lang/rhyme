@@ -397,7 +397,7 @@ exports.parserImpl = (strings, holes) => {
       let rhs = atom()
       res = ast.get(rhs)
     } else if (peek == "num") {
-      // floating point literal? 0.123...
+      // decimal literal? 0.123 ...
       let int = str
       res = ast.num(Number(int))
       next()
