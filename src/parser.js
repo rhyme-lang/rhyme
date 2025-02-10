@@ -408,7 +408,6 @@ exports.parserImpl = (strings, holes) => {
         res = ast.num(Number(int + "." + frac))
         next()
       }
-      return res
     } else {
       res = atom()
     }
