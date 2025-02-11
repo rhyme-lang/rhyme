@@ -1,5 +1,5 @@
 const { generate } = require('./new-codegen')
-const { typing, typeSyms } = require('./typing')
+const { typing, typeSyms, types } = require('./typing')
 const { pretty } = require('./prettyprint')
 const { sets } = require('./shared')
 
@@ -115,6 +115,7 @@ let cgen = {
   minus: (lhs, rhs) => cgen.binary(lhs, rhs, "-"),
 
   mul: (lhs, rhs) => cgen.binary(lhs, rhs, "*"),
+  div: (lhs, rhs) => cgen.binary(lhs, rhs, "/"),
 
   and: (lhs, rhs) => cgen.binary(lhs, rhs, "&&"),
   equal: (lhs, rhs) => cgen.binary(lhs, rhs, "=="),
@@ -122,6 +123,9 @@ let cgen = {
 
   lt: (lhs, rhs) => cgen.binary(lhs, rhs, "<"),
   gt: (lhs, rhs) => cgen.binary(lhs, rhs, ">"),
+
+  le: (lhs, rhs) => cgen.binary(lhs, rhs, "<="),
+  ge: (lhs, rhs) => cgen.binary(lhs, rhs, ">="),
 
   call: (f, ...args) => `${f}(${args.join(", ")})`,
 
@@ -236,7 +240,7 @@ let validateAndExtractUsedCols = (q) => {
     usedCols[prefix] ??= {}
 
     if (typing.isString(q.schema.type)) {
-      // strings do not need to be extracted
+      usedCols[prefix][e2.op] = true
       return
     }
     if (typing.isNumber(q.schema.type)) {
@@ -307,7 +311,7 @@ let codegen = (q, buf) => {
 
     if (q1.fre.length > 0) {
       let sym = tmpSym(q.op)
-      let key = mksetVarEnv[q1.fre[0]].val
+      let key = q1.fre[0].startsWith("K") ? mksetVarEnv[q1.fre[0]].val : q1.fre[0]
       let keyPos = hashLookUp(buf, sym, key)[1]
       let { valSchema } = hashMapEnv[sym]
       if (typing.isString(valSchema)) {
@@ -733,7 +737,7 @@ let emitStmInit = (q, sym) => {
       } else {
         throw new Error("stateful op not supported: " + pretty(q))
       }
-      let key = mksetVarEnv[q.fre[0]].val
+      let key = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].val : q.fre[0]
       hashLookUpOrUpdate(buf, sym, key, (lhs) => cgen.stmt(buf)(cgen.assign(lhs, init)))
     } else {
       if (q.op == "sum" || q.op == "count") {
@@ -803,7 +807,7 @@ let emitStmUpdate = (q, sym) => {
       } else {
         throw new Error("stateful op not supported: " + pretty(q))
       }
-      let key = mksetVarEnv[q.fre[0]].val
+      let key = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].val : q.fre[0]
       hashUpdate(buf, sym, key, update)
     } else {
       if (q.op == "sum") {
@@ -847,6 +851,63 @@ let emitStmUpdate = (q, sym) => {
   return buf
 }
 
+let scanColumn = (buf, mappedFile, cursor, size, delim) => {
+  cgen.while(buf)(
+    cgen.notEqual(`${mappedFile}[${cursor}]`, delim),
+    buf1 => {
+      cgen.stmt(buf1)(cgen.inc(cursor))
+    }
+  )
+}
+
+let scanInteger = (buf, mappedFile, cursor, size, delim, name) => {
+  cgen.while(buf)(
+    cgen.notEqual(`${mappedFile}[${cursor}]`, delim),
+    buf1 => {
+      cgen.comment(buf1)("extract integer")
+      cgen.if(buf1)(cgen.and(
+        cgen.ge(`${mappedFile}[${cursor}]`, "'0'"), cgen.le(`${mappedFile}[${cursor}]`, "'9'")
+      ), buf2 => {
+        cgen.stmt(buf2)(cgen.binary(name, "10", "*="))
+        cgen.stmt(buf2)(cgen.binary(name, cgen.minus(`${mappedFile}[${cursor}]`, "'0'"), "+="))
+      })
+      cgen.stmt(buf1)(cgen.inc(cursor))
+    }
+  )
+}
+
+let scanDecimal = (buf, mappedFile, cursor, size, delim, integer, frac, scale) => {
+  cgen.while(buf)(
+    cgen.and(
+      cgen.notEqual(`${mappedFile}[${cursor}]`, delim),
+      cgen.notEqual(`${mappedFile}[${cursor}]`, "'.'"),
+    ),
+    buf1 => {
+      cgen.comment(buf1)("extract integer part")
+      cgen.stmt(buf1)(cgen.binary(integer, "10", "*="))
+      cgen.stmt(buf1)(cgen.binary(integer, cgen.minus(`${mappedFile}[${cursor}]`, "'0'"), "+="))
+      cgen.stmt(buf1)(cgen.inc(cursor))
+    }
+  )
+
+  cgen.if(buf)(
+    cgen.equal(`${mappedFile}[${cursor}]`, "'.'"),
+    buf1 => {
+      cgen.stmt(buf1)(cgen.inc(cursor))
+      cgen.while(buf1)(
+        cgen.notEqual(`${mappedFile}[${cursor}]`, delim),
+        buf2 => {
+          cgen.comment(buf2)("extract fractional part")
+          cgen.stmt(buf2)(cgen.binary(frac, "10", "*="))
+          cgen.stmt(buf2)(cgen.binary(frac, cgen.minus(`${mappedFile}[${cursor}]`, "'0'"), "+="))
+          cgen.stmt(buf2)(cgen.binary(scale, "10", "*="))
+          cgen.stmt(buf2)(cgen.inc(cursor))
+        }
+      )
+    }
+  )
+}
+
 // Emit code that scans through each row in the CSV file.
 // Will extract the value of a column if the column is used by the query.
 let emitRowScanning = (f, file, cursor, schema, first = true) => {
@@ -867,7 +928,7 @@ let emitRowScanning = (f, file, cursor, schema, first = true) => {
   let colName = schema.objKey
   let type = schema.objValue
   let prefix = pretty(f)
-  let needToExtract = usedCols[prefix][colName]
+  let used = usedCols[prefix][colName]
 
   cgen.comment(buf)(`reading column ${colName}`)
 
@@ -875,40 +936,33 @@ let emitRowScanning = (f, file, cursor, schema, first = true) => {
   let start = name + "_start"
   let end = name + "_end"
 
-  if (needToExtract) {
-    if (typing.isInteger(type)) {
-      cgen.declareVar(buf)(convertToCType(type), name, "0")
-    } else if (type.typeSym === typeSyms.f32 || type.typeSym === typeSyms.f64) {
-      let strto = type.typeSym === typeSyms.f32 ? "strtof" : "strtod"
-      let tmpCharPtr = getNewName("tmp_charptr")
-      cgen.declareCharPtr(buf)(tmpCharPtr, "NULL")
-      cgen.declareVar(buf)(convertToCType(type), name, cgen.call(strto, cgen.plus(mappedFile, cursor), tmpCharPtr))
-    }
-  }
-
   let delim = getDelim(format, first)
 
-  cgen.declareInt(buf)(start, cursor)
-
-  cgen.while(buf)(
-    cgen.and(
-      cgen.lt(cursor, size),
-      cgen.notEqual(`${mappedFile}[${cursor}]`, delim)
-    ),
-    buf1 => {
-      if (needToExtract) {
-        if (typing.isInteger(type)) {
-          cgen.comment(buf1)("extract integer")
-          cgen.stmt(buf1)(cgen.binary(name, "10", "*="))
-          cgen.stmt(buf1)(cgen.binary(name, cgen.minus(`${mappedFile}[${cursor}]`, "'0'"), "+="))
-        }
-      }
-
-      cgen.stmt(buf1)(cgen.inc(cursor))
+  if (used) {
+    if (typing.isInteger(type)) {
+      cgen.declareVar(buf)(convertToCType(type), name, "0")
+      scanInteger(buf, mappedFile, cursor, size, delim, name)
+    } else if (type.typeSym === typeSyms.f32 || type.typeSym === typeSyms.f64) {
+      let integer = getNewName("integer")
+      let frac = getNewName("frac")
+      let scale = getNewName("scale")
+      cgen.declareInt(buf)(integer, "0")
+      cgen.declareInt(buf)(frac, "0")
+      cgen.declareInt(buf)(scale, "1")
+      scanDecimal(buf, mappedFile, cursor, size, delim, integer, frac, scale)
+      cgen.declareVar(buf)(convertToCType(type), name,
+        cgen.plus(integer, cgen.div(cgen.cast("double", frac), scale))
+      )
+    } else {
+      // String
+      cgen.declareInt(buf)(start, cursor)
+      scanColumn(buf, mappedFile, cursor, size, delim)
+      cgen.declareInt(buf)(end, cursor)
     }
-  )
+  } else {
+    scanColumn(buf, mappedFile, cursor, size, delim)
+  }
 
-  cgen.declareInt(buf)(end, cursor)
   cgen.stmt(buf)(cgen.inc(cursor))
 
   // consume the newline character for tbl
@@ -1102,7 +1156,7 @@ let emitCode = (q, ir) => {
       // we need to initialize the actual tmp variable separately
 
       // initialize hashmap
-      let keySchema = mksetVarEnv[q.fre[0]].schema
+      let keySchema = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].schema : { type: types.i32 }
       let buf = []
       hashMapInit(buf, sym, keySchema.type, q.schema.type)
       assign(buf, sym, [], [])

@@ -20,9 +20,9 @@ let lineitemSchema = typing.objBuilder()
     l_tax: types.f64,
     l_returnflag: types.string,
     l_linestatus: types.string,
-    l_shipdate: types.string,
-    l_commitdate: types.string,
-    l_receiptdate: types.string,
+    l_shipdate: types.i32,
+    l_commitdate: types.i32,
+    l_receiptdate: types.i32,
     l_shipinstruct: types.string,
     l_shipmode: types.string,
     l_comment: types.string,
@@ -36,11 +36,26 @@ let nationSchema = typing.objBuilder()
     n_comment: types.string,
   })).build()
 
+let ordersSchema = typing.objBuilder()
+  .add(typing.createKey(types.u32), typing.createSimpleObject({
+    o_orderkey: types.i32,
+    o_custkey: types.i32,
+    o_orderstatus: types.string,
+    o_totalprice: types.f64,
+    o_orderdate: types.i32,
+    o_orderpriority: types.string,
+    o_clerk: types.string,
+    o_shippriority: types.i32,
+    o_comment: types.string,
+  })).build()
+
 let lineitemFile = `"${dataDir}/lineitem.tbl"`
 let nationFile = `"${dataDir}/nation.tbl"`
+let ordersFile = `"${dataDir}/orders.tbl"`
 
 let lineitem = rh`loadTBL ${lineitemFile} ${lineitemSchema}`
 let nation = rh`loadTBL ${nationFile} ${nationSchema}`
+let orders = rh`loadTBL ${ordersFile} ${ordersSchema}`
 
 let sh = (cmd) => {
   return new Promise((resolve, reject) => {
@@ -66,8 +81,25 @@ beforeAll(async () => {
   }
 })
 
+// test("q4", async () => {
+//   // TODO: optimize, extremely slow
+//   let count = rh`count (${lineitem}.*O.l_commitdate < ${lineitem}.*O.l_receiptdate) & ${lineitem}.*O.l_comment | group (${lineitem}.*O.l_orderkey)`
+
+//   let cond1 = rh`19930701 <= ${orders}.*.o_orderdate && ${orders}.*.o_orderdate < 19931001`
+
+//   // TODO: sort the result by o_orderpriority
+//   let query = rh`count ((${cond1} && ${count} > 0) & ${orders}.*.o_orderkey) | group ${orders}.*.o_orderpriority`
+
+//   let q = rh`count ${orders}.*.o_orderkey`
+
+//   let func = await compile(count, { backend: "c-sql-new", outDir, outFile: "q4.c", schema: types.never })
+//   let res = await func()
+
+//   console.log(res)
+// })
+
 test("q6", async () => {
-  let cond1 = rh`"1994-01-01" <= ${lineitem}.*.l_shipdate && ${lineitem}.*.l_shipdate < "1995-01-01"`
+  let cond1 = rh`19940101 <= ${lineitem}.*.l_shipdate && ${lineitem}.*.l_shipdate < 19950101`
   let cond2 = rh`0.05 <= ${lineitem}.*.l_discount && ${lineitem}.*.l_discount <= 0.07`
   let cond3 = rh`${lineitem}.*.l_quantity < 24`
 

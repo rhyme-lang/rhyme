@@ -947,7 +947,6 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
             }
             throw new Error("Pure operation not implemented: " + q.op);
         }
-        console.log(q)
         throw new Error("Pure operation not implemented: " + q.op);
     } else if (q.key === "hint") {
 
