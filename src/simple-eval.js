@@ -102,7 +102,10 @@ let canonicalVarName = (e1, isCorrelatedGroupKey) => {
 }
 
 let extractFlex0 = q => {
-  if (q.key == "stateful" || q.key == "group" || q.key == "update") // prefix?
+  if (q.key == "pure" && q.op == "mkTuple") {
+    // return { key:"stateful", op: "single", mode: "reluctant", arg:[{ ...q, arg: q.arg.map(extractFlex0) }], schema: q.schema }
+    return { ...q, arg: q.arg.map((e, i) => i % 2 == 0 ? extract0(e) : extractFlex0(e)), schema: q.schema }
+  } else if (q.key == "stateful" || q.key == "group" || q.key == "update") // prefix?
     return extract0(q)
   else
     return extract0({ key:"stateful", op: "single", mode: "reluctant", arg:[q], schema: q.schema })

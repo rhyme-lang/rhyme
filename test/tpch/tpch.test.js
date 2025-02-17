@@ -4,6 +4,9 @@ const { typing, types } = require('../../src/typing')
 const fs = require("fs")
 const os = require('child_process')
 
+const ir = require('../../src/c1-ir')
+const newCodegen = require('../../src/new-codegen')
+
 // point to the data directory
 let dataDir = "/home/ran/projects/tpch-dbgen/SF1"
 let outDir = "cgen-sql/out/tpch"
@@ -81,6 +84,27 @@ beforeAll(async () => {
   }
 })
 
+test("q1", async () => {
+  let cond = rh`${lineitem}.*.l_shipdate <= 19980902`
+
+  let query = rh`{
+    sum_qty: sum (${cond} & ${lineitem}.*.l_quantity),
+    sum_base_price: sum (${cond} & ${lineitem}.*.l_extendedprice),
+    sum_disc_price: sum (${cond} & (${lineitem}.*.l_extendedprice * (1 - ${lineitem}.*.l_discount))),
+    sum_charge: sum (${cond} & (${lineitem}.*.l_extendedprice * (1 - ${lineitem}.*.l_discount) * (1 + ${lineitem}.*.l_tax))),
+    avg_qty: (sum (${cond} & ${lineitem}.*.l_quantity)) / (count (${cond} & ${lineitem}.*.l_quantity)),
+    avg_price: (sum (${cond} & ${lineitem}.*.l_extendedprice)) / (count (${cond} & ${lineitem}.*.l_extendedprice)),
+    avg_disc: (sum (${cond} & ${lineitem}.*.l_discount)) / (count (${cond} & ${lineitem}.*.l_discount)),
+    count_order: count (${cond} & ${lineitem}.*.l_orderkey)
+  } | group [${lineitem}.*.l_returnflag, ${lineitem}.*.l_linestatus]`
+
+  let q1 = rh`count (${cond} & ${lineitem}.*.l_orderkey) | group [${lineitem}.*.l_returnflag, ${lineitem}.*.l_linestatus]`
+  let func = await compile(q1, { backend: "c-sql-new", outDir, outFile: "q1.c", schema: types.never })
+  let res = await func()
+
+  console.log(res)
+})
+
 // test("q4", async () => {
 //   // TODO: optimize, extremely slow
 //   let count = rh`count (${lineitem}.*O.l_commitdate < ${lineitem}.*O.l_receiptdate) & ${lineitem}.*O.l_comment | group (${lineitem}.*O.l_orderkey)`
@@ -110,5 +134,5 @@ test("q6", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q6.c", schema: types.never })
   let res = await func()
 
-  expect(res).toBe("123141078.228\n")
+  expect(res).toBe("123141078.2283\n")
 })

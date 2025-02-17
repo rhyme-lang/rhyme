@@ -74,7 +74,7 @@ let formatSpecifierMap = {
   i32: "d",
   i64: "ld",
   f32: ".3f",
-  f64: ".3lf",
+  f64: ".4lf",
 }
 
 
@@ -118,6 +118,7 @@ let cgen = {
   div: (lhs, rhs) => cgen.binary(lhs, rhs, "/"),
 
   and: (lhs, rhs) => cgen.binary(lhs, rhs, "&&"),
+  or: (lhs, rhs) => cgen.binary(lhs, rhs, "||"),
   equal: (lhs, rhs) => cgen.binary(lhs, rhs, "=="),
   notEqual: (lhs, rhs) => cgen.binary(lhs, rhs, "!="),
 
@@ -311,8 +312,8 @@ let codegen = (q, buf) => {
 
     if (q1.fre.length > 0) {
       let sym = tmpSym(q.op)
-      let key = q1.fre[0].startsWith("K") ? mksetVarEnv[q1.fre[0]].val : q1.fre[0]
-      let keyPos = hashLookUp(buf, sym, key)[1]
+      let keys = q1.fre[0].startsWith("K") ? mksetVarEnv[q1.fre[0]].map(key => key.val) : [q1.fre[0]]
+      let keyPos = hashLookUp(buf, sym, keys)[1]
       let { valSchema } = hashMapEnv[sym]
       if (typing.isString(valSchema)) {
         return { str: `${sym}_values_str[${keyPos}]`, len: `${sym}_values_len[${keyPos}]` }
@@ -328,7 +329,7 @@ let codegen = (q, buf) => {
     if (e1.key == "ref") {
       let sym = tmpSym(e1.op)
       let key = codegen(e2, buf)
-      let keyPos = hashLookUp(buf, sym, key)[1]
+      let keyPos = hashLookUp(buf, sym, [key])[1]
       let { valSchema } = hashMapEnv[sym]
       if (typing.isString(valSchema)) {
         return { str: `${sym}_values_str[${keyPos}]`, len: `${sym}_values_len[${keyPos}]` }
@@ -402,15 +403,27 @@ let codegen = (q, buf) => {
   }
 }
 
-let hash = (buf, key, schema) => {
+let hash = (buf, keys, keysSchema) => {
   let hashed = getNewName("hash")
-  if (typing.isString(schema)) {
-    cgen.declareULong(buf)(hashed, cgen.call("hash", key.str, key.len))
-  } else if (typing.isInteger(schema)) {
-    cgen.declareULong(buf)(hashed, cgen.cast("unsigned long", key))
-  } else {
-    throw new Error("cannot hash key with type " + typing.prettyPrintType(schema))
+  cgen.declareULong(buf)(hashed, "0")
+
+  for (let i in keys) {
+    let key = keys[i]
+    let keySchema = keysSchema[i]
+    let tmpHash = getNewName("tmp_hash")
+
+    if (typing.isString(keySchema)) {
+      cgen.declareULong(buf)(tmpHash, cgen.call("hash", key.str, key.len))
+    } else if (typing.isInteger(keySchema)) {
+      cgen.declareULong(buf)(tmpHash, cgen.cast("unsigned long", key))
+    } else {
+      throw new Error("cannot hash key with type " + typing.prettyPrintType(keySchema))
+    }
+
+    cgen.stmt(buf)(cgen.binary(hashed, "41", "*="))
+    cgen.stmt(buf)(cgen.binary(hashed, tmpHash, "+="))
   }
+
 
   return hashed
 }
@@ -419,41 +432,40 @@ let hash = (buf, key, schema) => {
 // Linear probing is used for resolving collisions.
 // Comparison of keys is based on different key types.
 // The actual storage of the values / data does not affect the lookup
-let hashLookUp = (buf, sym, key) => {
-  let { keySchema } = hashMapEnv[sym]
-  let hashed = hash(buf, key, keySchema)
+let hashLookUp = (buf, sym, keys) => {
+  let { keysSchema } = hashMapEnv[sym]
+  let hashed = hash(buf, keys, keysSchema)
 
   let pos = getNewName("pos")
   cgen.declareULong(buf)(pos, cgen.binary(hashed, HASH_MASK, "&"))
 
   let keyPos = `${sym}_htable[${pos}]`
 
-  if (typing.isString(keySchema)) {
-    let keyStr = `${sym}_keys_str[${keyPos}]`
-    let keyLen = `${sym}_keys_len[${keyPos}]`
+  let compareKeys = undefined
 
-    let { str, len } = key
+  for (let i in keys) {
+    let key = keys[i]
+    let keySchema = keysSchema[i]
 
-    cgen.while(buf)(
-      cgen.and(
-        cgen.notEqual(keyPos, "-1"),
-        cgen.notEqual(cgen.call("compare_str2", keyStr, keyLen, str, len), "0")
-      ),
-      buf1 => {
-        cgen.stmt(buf1)(cgen.assign(pos, cgen.binary("(" + cgen.plus(pos, "1") + ")", HASH_MASK, "&")))
-      }
-    )
-  } else {
-    cgen.while(buf)(
-      cgen.and(
-        cgen.notEqual(keyPos, "-1"),
-        cgen.notEqual(`${sym}_keys[${keyPos}]`, key)
-      ),
-      buf1 => {
-        cgen.stmt(buf1)(cgen.assign(pos, cgen.binary("(" + cgen.plus(pos, "1") + ")", HASH_MASK, "&")))
-      }
-    )
+    if (typing.isString(keySchema)) {
+      let keyStr = `${sym}_keys_str${i}[${keyPos}]`
+      let keyLen = `${sym}_keys_len${i}[${keyPos}]`
+
+      let { str, len } = key
+      let comparison = cgen.notEqual(cgen.call("compare_str2", keyStr, keyLen, str, len), "0")
+      compareKeys = compareKeys ? cgen.or(compareKeys, comparison) : comparison
+    } else if (typing.isInteger(keySchema)) {
+      let comparison = cgen.notEqual(`${sym}_keys${i}[${keyPos}]`, key)
+      compareKeys = compareKeys ? cgen.or(compareKeys, comparison) : comparison
+    }
   }
+
+  cgen.while(buf)(
+    cgen.and(cgen.notEqual(keyPos, "-1"), "(" + compareKeys + ")"),
+    buf1 => {
+      cgen.stmt(buf1)(cgen.assign(pos, cgen.binary("(" + cgen.plus(pos, "1") + ")", HASH_MASK, "&")))
+    }
+  )
 
   keyPos = getNewName("key_pos")
   cgen.declareInt(buf)(keyPos, `${sym}_htable[${pos}]`)
@@ -466,23 +478,28 @@ let hashLookUp = (buf, sym, key) => {
 //   does nothing
 // if the key is not found:
 //   inserts a new key into the hashmap and initializes it
-let hashLookUpOrUpdate = (buf, sym, key, update) => {
-  let [pos, keyPos] = hashLookUp(buf, sym, key)
+let hashLookUpOrUpdate = (buf, sym, keys, update) => {
+  let [pos, keyPos] = hashLookUp(buf, sym, keys)
 
   cgen.if(buf)(cgen.equal(keyPos, "-1"), buf1 => {
     cgen.stmt(buf1)(cgen.assign(keyPos, `${sym}_key_count`))
     cgen.stmt(buf1)(cgen.inc(`${sym}_key_count`))
     cgen.stmt(buf1)(cgen.assign(`${sym}_htable[${pos}]`, keyPos))
-    let { keySchema, valSchema } = hashMapEnv[sym]
+    let { keysSchema, valSchema } = hashMapEnv[sym]
 
-    if (typing.isString(keySchema)) {
-      let keyStr = `${sym}_keys_str[${keyPos}]`
-      let keyLen = `${sym}_keys_len[${keyPos}]`
+    for (let i in keys) {
+      let key = keys[i]
+      let keySchema = keysSchema[i]
 
-      cgen.stmt(buf1)(cgen.assign(keyStr, key.str))
-      cgen.stmt(buf1)(cgen.assign(keyLen, key.len))
-    } else {
-      cgen.stmt(buf1)(cgen.assign(`${sym}_keys[${keyPos}]`, key))
+      if (typing.isString(keySchema)) {
+        let keyStr = `${sym}_keys_str${i}[${keyPos}]`
+        let keyLen = `${sym}_keys_len${i}[${keyPos}]`
+
+        cgen.stmt(buf1)(cgen.assign(keyStr, key.str))
+        cgen.stmt(buf1)(cgen.assign(keyLen, key.len))
+      } else {
+        cgen.stmt(buf1)(cgen.assign(`${sym}_keys${i}[${keyPos}]`, key))
+      }
     }
 
     let lhs
@@ -505,24 +522,29 @@ let hashLookUpOrUpdate = (buf, sym, key, update) => {
 //   updates the corresponding value.
 // if the key is not found:
 //   inserts a new key into the hashmap and initializes it.
-let hashUpdate = (buf, sym, key, update) => {
-  let [pos, keyPos] = hashLookUp(buf, sym, key)
+let hashUpdate = (buf, sym, keys, update) => {
+  let [pos, keyPos] = hashLookUp(buf, sym, keys)
 
-  let { keySchema, valSchema } = hashMapEnv[sym]
+  let { keysSchema, valSchema } = hashMapEnv[sym]
 
   cgen.if(buf)(cgen.equal(keyPos, "-1"), buf1 => {
     cgen.stmt(buf1)(cgen.assign(keyPos, `${sym}_key_count`))
     cgen.stmt(buf1)(cgen.inc(`${sym}_key_count`))
     cgen.stmt(buf1)(cgen.assign(`${sym}_htable[${pos}]`, keyPos))
 
-    if (typing.isString(keySchema)) {
-      let keyStr = `${sym}_keys_str[${keyPos}]`
-      let keyLen = `${sym}_keys_len[${keyPos}]`
+    for (let i in keys) {
+      let key = keys[i]
+      let keySchema = keysSchema[i]
 
-      cgen.stmt(buf1)(cgen.assign(keyStr, key.str))
-      cgen.stmt(buf1)(cgen.assign(keyLen, key.len))
-    } else {
-      cgen.stmt(buf1)(cgen.assign(`${sym}_keys[${keyPos}]`, key))
+      if (typing.isString(keySchema)) {
+        let keyStr = `${sym}_keys_str${i}[${keyPos}]`
+        let keyLen = `${sym}_keys_len${i}[${keyPos}]`
+
+        cgen.stmt(buf1)(cgen.assign(keyStr, key.str))
+        cgen.stmt(buf1)(cgen.assign(keyLen, key.len))
+      } else {
+        cgen.stmt(buf1)(cgen.assign(`${sym}_keys${i}[${keyPos}]`, key))
+      }
     }
   })
 
@@ -540,10 +562,30 @@ let hashUpdate = (buf, sym, key, update) => {
   return [pos, keyPos]
 }
 
-let hashBufferInsert = (buf, sym, key, value) => {
-  let { keySchema, valSchema } = hashMapEnv[sym]
+// Emit the code that performs a lookup of the key in the hashmap, then
+let hashUpdateExist = (buf, sym, keys, update) => {
+  let [pos, keyPos] = hashLookUp(buf, sym, keys)
 
-  let [pos, keyPos] = hashLookUp(buf, sym, key)
+  let { keysSchema, valSchema } = hashMapEnv[sym]
+
+  let lhs
+  if (typing.isObject(valSchema)) {
+    lhs = `${sym}_bucket_counts[${keyPos}]`
+  } else if (typing.isString(valSchema)) {
+    lhs = { str: `${sym}_values_str[${keyPos}]`, len: `${sym}_values_len[${keyPos}]` }
+  } else {
+    lhs = `${sym}_values[${keyPos}]`
+  }
+
+  update(lhs)
+
+  return [pos, keyPos]
+}
+
+let hashBufferInsert = (buf, sym, keys, value) => {
+  let { keysSchema, valSchema } = hashMapEnv[sym]
+
+  let [pos, keyPos] = hashLookUp(buf, sym, keys)
 
   let dataPos = getNewName("data_pos")
   cgen.declareInt(buf)(dataPos, `${sym}_data_count`)
@@ -573,17 +615,20 @@ let hashBufferInsert = (buf, sym, key, value) => {
 // Emit code that initializes a hashmap.
 // For string keys / values, they are represented by
 // a pointer to the beginning of the string and the length of the string
-let hashMapInit = (buf, sym, keySchema, valSchema) => {
+let hashMapInit = (buf, sym, keysSchema, valSchema) => {
   cgen.comment(buf)(`init hashmap for ${sym}`)
   // keys
   cgen.comment(buf)(`keys of ${sym}`)
 
-  if (typing.isString(keySchema)) {
-    cgen.declareCharPtrPtr(buf)(`${sym}_keys_str`, cgen.cast("char **", cgen.malloc("char *", KEY_SIZE)))
-    cgen.declareIntPtr(buf)(`${sym}_keys_len`, cgen.cast("int *", cgen.malloc("int", KEY_SIZE)))
-  } else {
-    let cType = convertToCType(keySchema)
-    cgen.declarePtr(buf)(cType, `${sym}_keys`, cgen.cast(`${cType} *`, cgen.malloc(cType, KEY_SIZE)))
+  for (let i in keysSchema) {
+    let keySchema = keysSchema[i]
+    if (typing.isString(keySchema)) {
+      cgen.declareCharPtrPtr(buf)(`${sym}_keys_str${i}`, cgen.cast("char **", cgen.malloc("char *", KEY_SIZE)))
+      cgen.declareIntPtr(buf)(`${sym}_keys_len${i}`, cgen.cast("int *", cgen.malloc("int", KEY_SIZE)))
+    } else {
+      let cType = convertToCType(keySchema)
+      cgen.declarePtr(buf)(cType, `${sym}_keys${i}`, cgen.cast(`${cType} *`, cgen.malloc(cType, KEY_SIZE)))
+    }
   }
 
   cgen.comment(buf)(`key count for ${sym}`)
@@ -623,20 +668,23 @@ let hashMapInit = (buf, sym, keySchema, valSchema) => {
     cgen.declarePtr(buf)(cType, `${sym}_values`, cgen.cast(`${cType} *`, cgen.malloc(cType, KEY_SIZE)))
   }
 
-  hashMapEnv[sym] = { keySchema, valSchema }
+  hashMapEnv[sym] = { keysSchema, valSchema }
 }
 
-let hashMapShallowCopy = (buf, sym1, sym2, keySchema, valSchema) => {
+let hashMapShallowCopy = (buf, sym1, sym2, keysSchema, valSchema) => {
   cgen.comment(buf)(`init hashmap for ${sym1}`)
   // keys
   cgen.comment(buf)(`keys of ${sym1}`)
 
-  if (typing.isString(keySchema)) {
-    cgen.declareCharPtrPtr(buf)(`${sym1}_keys_str`, `${sym2}_keys_str`)
-    cgen.declareIntPtr(buf)(`${sym1}_keys_len`, `${sym2}_keys_len`)
-  } else {
-    let cType = convertToCType(keySchema)
-    cgen.declarePtr(buf)(cType, `${sym1}_keys`, `${sym2}_keys`)
+  for (let i in keysSchema) {
+    let keySchema = keysSchema[i]
+    if (typing.isString(keySchema)) {
+      cgen.declareCharPtrPtr(buf)(`${sym1}_keys_str${i}`, `${sym2}_keys_str${i}`)
+      cgen.declareIntPtr(buf)(`${sym1}_keys_len${i}`, `${sym2}_keys_len${i}`)
+    } else {
+      let cType = convertToCType(keySchema)
+      cgen.declarePtr(buf)(cType, `${sym1}_keys${i}`, `${sym2}_keys${i}`)
+    }
   }
 
   cgen.comment(buf)(`key count for ${sym1}`)
@@ -670,12 +718,12 @@ let hashMapShallowCopy = (buf, sym1, sym2, keySchema, valSchema) => {
     cgen.declarePtr(buf)(cType, `${sym1}_values`, `${sym2}_values`)
   }
 
-  hashMapEnv[sym1] = { keySchema, valSchema }
+  hashMapEnv[sym1] = { keysSchema, valSchema }
 }
 
 // Emit code that prints the keys and values in a hashmap.
 let hashMapPrint = (buf, sym) => {
-  let { keySchema, valSchema } = hashMapEnv[sym]
+  let { keysSchema, valSchema } = hashMapEnv[sym]
   buf.push(`for (int i = 0; i < ${HASH_SIZE}; i++) {`)
   buf.push(`int key_pos = ${sym}_htable[i];`)
   buf.push(`if (key_pos == -1) {`)
@@ -683,10 +731,16 @@ let hashMapPrint = (buf, sym) => {
   buf.push(`}`)
   buf.push(`// print key`)
 
-  if (typing.isString(keySchema)) {
-    buf.push(`print(${sym}_keys_str[key_pos], ${sym}_keys_len[key_pos]);`)
-  } else {
-    buf.push(`printf("%${getFormatSpecifier(keySchema)}", ${sym}_keys[key_pos]);`)
+  for (let i in keysSchema) {
+    let keySchema = keysSchema[i]
+    if (typing.isString(keySchema)) {
+      buf.push(`print(${sym}_keys_str${i}[key_pos], ${sym}_keys_len${i}[key_pos]);`)
+    } else {
+      buf.push(`printf("%${getFormatSpecifier(keySchema)}", ${sym}_keys${i}[key_pos]);`)
+    }
+    if (i != keysSchema.length - 1) {
+      buf.push(`print("|", 1);`)
+    }
   }
 
   buf.push(`print(": ", 2);`)
@@ -737,8 +791,8 @@ let emitStmInit = (q, sym) => {
       } else {
         throw new Error("stateful op not supported: " + pretty(q))
       }
-      let key = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].val : q.fre[0]
-      hashLookUpOrUpdate(buf, sym, key, (lhs) => cgen.stmt(buf)(cgen.assign(lhs, init)))
+      let keys = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].map(key => key.val) : [q.fre[0]]
+      hashLookUpOrUpdate(buf, sym, keys, (lhs) => cgen.stmt(buf)(cgen.assign(lhs, init)))
     } else {
       if (q.op == "sum" || q.op == "count") {
         cgen.declareVar(buf)(convertToCType(q.schema.type), sym, "0")
@@ -801,14 +855,14 @@ let emitStmUpdate = (q, sym) => {
           update = (lhs) => cgen.stmt(buf)(cgen.assign(lhs, e1))
         }
       } else if (q.op == "array") {
-        let key = mksetVarEnv[q.fre[0]].val
-        hashBufferInsert(buf, sym, key, e1)
+        let keys = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].map(key => key.val) : [q.fre[0]]
+        hashBufferInsert(buf, sym, keys, e1)
         return buf
       } else {
         throw new Error("stateful op not supported: " + pretty(q))
       }
-      let key = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].val : q.fre[0]
-      hashUpdate(buf, sym, key, update)
+      let keys = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].map(key => key.val) : [q.fre[0]]
+      hashUpdate(buf, sym, keys, update)
     } else {
       if (q.op == "sum") {
         cgen.stmt(buf)(cgen.binary(sym, e1, "+="))
@@ -843,8 +897,8 @@ let emitStmUpdate = (q, sym) => {
         cgen.stmt(buf)(cgen.assign(lhs, e3))
       }
     }
-    let key = mksetVarEnv[q.arg[1].op].val
-    hashUpdate(buf, sym, key, update)
+    let keys = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].map(key => key.val) : [q.fre[0]]
+    hashUpdate(buf, sym, keys, update)
   } else {
     throw new Error("unknown op: " + pretty(q))
   }
@@ -1085,9 +1139,17 @@ let emitCode = (q, ir) => {
     let q = assignments[i]
 
     if (q.key == "update") {
-      let keySchema = q.arg[3].arg[0].arg[0].schema
-      hashMapEnv[sym] = { keySchema: keySchema.type, valSchema: q.schema.type.objValue }
+      let keysSchema
+      if (q.arg[3].arg[0].arg[0].key == "pure" && q.arg[3].arg[0].arg[0].op == "combine") {
+        keysSchema = q.arg[3].arg[0].arg[0].arg.map(e => e.schema.type)
+      } else {
+        keysSchema = [q.arg[3].arg[0].arg[0].schema.type]
+      }
+      hashMapEnv[sym] = { keysSchema: keysSchema, valSchema: q.schema.type.objValue }
 
+      if (q.arg[2].key == "pure" && q.arg[2].op == "mkTuple") {
+        console.log("here")
+      }
       if (q.arg[2].fre.length == 1 && q.arg[1].op == q.arg[2].fre[0]) {
         trivialUpdate[sym] = (q.arg[2].key == "pure" ? tmpSym(q.arg[2].arg[0].op) : tmpSym(q.arg[2].op))
       }
@@ -1138,8 +1200,16 @@ let emitCode = (q, ir) => {
       addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
     } else if (g1.key == "mkset") {
       let data = []
-      let val = codegen(g1.arg[0], data)
-      mksetVarEnv[v1] = { val, schema: g1.arg[0].schema }
+      if (g1.arg[0].key == "pure" && g1.arg[0].op == "combine") {
+        let vals = g1.arg[0].arg.map(e => ({
+          val: codegen(e, data),
+          schema: e.schema
+        }))
+        mksetVarEnv[v1] = vals
+      } else {
+        let val = codegen(g1.arg[0], data)
+        mksetVarEnv[v1] = [{ val, schema: g1.arg[0].schema }]
+      }
       addMkset(f.arg[0], f.arg[1], data)
     } else {
       throw new Error("invalid filter: " + pretty(f))
@@ -1156,14 +1226,14 @@ let emitCode = (q, ir) => {
       // we need to initialize the actual tmp variable separately
 
       // initialize hashmap
-      let keySchema = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].schema : { type: types.i32 }
+      let keysSchema = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].map(key => key.schema.type) : [{ type: types.i32 }]
       let buf = []
-      hashMapInit(buf, sym, keySchema.type, q.schema.type)
+      hashMapInit(buf, sym, keysSchema, q.schema.type)
       assign(buf, sym, [], [])
     } else if (q.key == "update" && trivialUpdate[sym] !== undefined) {
-      let keySchema = mksetVarEnv[q.arg[1].op].schema
+      let keysSchema = mksetVarEnv[q.arg[1].op].map(key => key.schema.type)
       let buf = []
-      hashMapShallowCopy(buf, sym, trivialUpdate[sym], keySchema.type, q.schema.type.objValue)
+      hashMapShallowCopy(buf, sym, trivialUpdate[sym], keysSchema, q.schema.type.objValue)
       assign(buf, sym, [], [trivialUpdate[sym]])
       continue
     }
@@ -1210,6 +1280,10 @@ let emitCode = (q, ir) => {
   return generate(new_codegen_ir, "c-sql")
 }
 
+let emitCode1 = (q, ir) => {
+
+}
+
 let generateCSqlNew = (q, ir, outDir, outFile) => {
   const fs = require('fs').promises
   const os = require('child_process')
@@ -1238,6 +1312,7 @@ let generateCSqlNew = (q, ir, outDir, outFile) => {
 
   let cFile = joinPaths(outDir, outFile)
   let out = joinPaths(outDir, "tmp")
+  let code1 = emitCode1(q, ir)
   let code = emitCode(q, ir)
 
   let cFlags = "-Icgen-sql -O3"

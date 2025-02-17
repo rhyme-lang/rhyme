@@ -946,6 +946,17 @@ let _validateIRQuery = (schema, cseMap, boundKeys, nonEmptyGuarantees, q) => {
                 return {type: t2, props: p2};
             }
             throw new Error("Pure operation not implemented: " + q.op);
+        } else if (q.op == "combine") {
+            return {type: t1, props: p1}
+        } else if (q.op === "mkTuple") {
+            let res = {}
+            for (let i = 0; i < q.arg.length; i += 2) {
+                let argTup1 = $validateIRQuery(q.arg[i]);
+                let argTup2 = $validateIRQuery(q.arg[i + 1]);
+
+                res[argTup1.type] = argTup2.type;
+            }
+            return intoTup(createSimpleObject(res));
         }
         throw new Error("Pure operation not implemented: " + q.op);
     } else if (q.key === "hint") {
@@ -1437,6 +1448,10 @@ let convertAST = (schema, q, completedMap, dontConvertVar = false) => {
                 return q;
             }
             throw new Error("Pure operation not implemented: " + q.op);
+        } else if (q.op == "mkTuple") {
+            return q;
+        } else if (q.op == "combine") {
+            return q;
         }
         throw new Error("Pure operation not implemented: " + q.op);
     } else if (q.key == "stateful") {

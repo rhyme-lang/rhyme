@@ -20,7 +20,7 @@ let outDir = "cgen-sql/out/"
 
 beforeAll(async () => {
   await sh(`rm -rf ${outDir}`)
-  await sh(`mkdir ${outDir}`)
+  await sh(`mkdir -p ${outDir}`)
   await sh(`cp cgen-sql/rhyme-sql.h ${outDir}`)
 });
 
@@ -362,7 +362,7 @@ test("plainAverageTest", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "plainAverageTest.c", schema: types.never })
 
   let res = await func()
-  expect(res).toBe("20.000\n")
+  expect(res).toBe("20.0000\n")
 })
 
 test("uncorrelatedAverageTest", async () => {
@@ -373,7 +373,7 @@ test("uncorrelatedAverageTest", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "uncorrelatedAverageTest.c", schema: types.never })
 
   let res = await func()
-  expect(res).toBe("20.000\n")
+  expect(res).toBe("20.0000\n")
 })
 
 test("groupByTest", async () => {
@@ -399,8 +399,8 @@ test("groupByAverageTest", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "groupByAverageTest.c", schema: types.never })
 
   let res = await func()
-  expect(res).toBe(`A: 20.000
-B: 20.000
+  expect(res).toBe(`A: 20.0000
+B: 20.0000
 `)
 })
 
@@ -412,8 +412,8 @@ test("groupByRelativeSum", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "groupByRelativeSum.c", schema: types.never })
 
   let res = await func()
-  expect(res).toBe(`A: 0.667
-B: 0.333
+  expect(res).toBe(`A: 0.6667
+B: 0.3333
 `)
 })
 
