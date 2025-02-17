@@ -8,7 +8,7 @@ const ir = require('./c1-ir')
 const graphics = require('./graphics')
 
 const simpleEval = require('./simple-eval')
-const { typing } = require('./typing')
+const { types } = require('./typing')
 const { rh } = require('./parser')
 
 const { ops, ast } = require('./shared')
@@ -133,7 +133,7 @@ function logDebugOutput(info) {
 
 api.logDebugOutput = logDebugOutput
 
-api["query"] = api["compile"] = (query, schema) => {
+api["query"] = api["compile"] = (query, schema = types.unknown) => {
     query = ast.unwrap(query)
     let rep = ir.createIR(query)
     let c1 = codegen.generate(rep)
@@ -206,12 +206,12 @@ api["compileC1"] = api["compileFastPathOnly"] = (query) => {
     return wrapper
 }
 
-api["compileNew"] = (query) => {
+api["compileNew"] = (query, schema = types.unknown) => {
   query = ast.unwrap(query)
   let rep = ir.createIR(query)
   let c1 = new_codegen.generate(rep)
-  let c2 = simpleEval.compile(query)
-  let c2_new = simpleEval.compile(query, { newCodegen: true })
+  let c2 = simpleEval.compile(query, { schema })
+  let c2_new = simpleEval.compile(query, { newCodegen: true, schema })
   let wrapper = (x) => {
       let res1 = c1(x)
       let res2 = c2(x)
@@ -243,11 +243,11 @@ api["compileNew"] = (query) => {
   return wrapper
 }
 
-api["compileC2"] = (query) => {
+api["compileC2"] = (query, schema = types.unknown) => {
   query = ast.unwrap(query)
   // let rep = ir.createIR(query)
-  let c2 = simpleEval.compile(query)
-  let c2_new = simpleEval.compile(query, { newCodegen: true })
+  let c2 = simpleEval.compile(query, { schema })
+  let c2_new = simpleEval.compile(query, { newCodegen: true, schema })
   let wrapper = (x) => {
       let res2 = c2(x)
       let res2_new = c2_new(x)

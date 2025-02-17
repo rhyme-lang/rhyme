@@ -12,10 +12,12 @@
 
 const { api, rh, pipe } = require('../../src/rhyme')
 const { compile } = require('../../src/simple-eval')
+const { typing, types } = require('../../src/typing')
 
 let udf_stdlib = {
   split: d => s => s.split(d),
   toNum: x => (n => Number.isNaN(n) ? undefined : n)(Number(x)),
+  asString: x => String(x),
   isGreaterThan: (x,y) => x > y,
   isGreaterOrEqual: (x,y) => x >= y,
   isLessThan: (x,y) => x < y,
@@ -41,6 +43,28 @@ let udf_stdlib = {
   ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
 }
 
+let udf_std_typ = typing.parseType`{
+  split: (string) => (string) => [string],
+  toNum: (any) => f64,
+  isGreaterThan: (f64, f64) => boolean,
+  isGreaterOrEqual: (f64, f64) => boolean,
+  isLessThan: (f64, f64) => boolean,
+  isLessOrEqual: (f64, f64) => boolean,
+  isEqual: (any, any) => boolean,
+  notEqual: (any, any) => boolean,
+  exp: (f64) => (f64) => f64,
+  sqrt: (f64) => f64,
+  floor: (f64) => f64,
+  ceil: (f64) => f64,
+  abs: (f64) => f64,
+  modulo: (f64) => f64,
+  int2Char: (f64) => string,
+  matchAll: (string, string) => (string) => [[string]],
+  logicalAnd: (boolean, boolean) => boolean,
+  logicalOr: (boolean, boolean) => boolean,
+  range: (u32, u32, u32) => [u32]
+}`;
+// TODO: Add typing support for slice and later functions.
 
 test("day1-part1", () => {
   let input = `1abc2
@@ -53,7 +77,7 @@ treb7uchet`
   let numbers = rh`first(${digits}) * 10 + last(${digits})`
   let query   = rh`${numbers} | group *line | sum .*`
 
-  let func = api.compile(query)
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ}}`)
   let res = func({input, udf})
   expect(res).toBe(142)
 })
@@ -77,11 +101,16 @@ zoneight234
     ...udf_stdlib
   }
 
+  let udf_typ = typing.parseType`${udf_std_typ} & {
+    match: (string) => [string],
+    toNumW: (string) => u16
+  }`
+
   let digits  = rh`.input | udf.split "\\n" | .*line | udf.match | .*match | udf.toNumW`
   let numbers = rh`first(${digits}) * 10 + last(${digits})`
   let query   = rh`${numbers} | group *line | sum .*`
 
-  let func = api.compile(query)
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_typ}}`)
   let res = func({input, udf})
   expect(res).toBe(281)
 })
@@ -121,7 +150,7 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green`
 
   let query = rh`${lineRes} | group *line | sum .*`
 
-  let func = api.compile(query)
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ}, bag: {red: u8, green: u8, blue: u8}}`)
   let res = func({input, udf, bag})
   expect(res).toBe(8)
 })
@@ -149,7 +178,7 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green`
 
   let query = rh`${lineRes} | group *line | sum .*`
 
-  let func = api.compile(query)
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ}}`)
   let res = func({input, udf})
   expect(res).toBe(2286)
 })
@@ -194,6 +223,15 @@ let udf = {
       return n
   }
 }
+let udf_typ = typing.parseType`${udf_std_typ} & {
+  splitN: (string) => {*u32=A: string},
+  splitB: (string) => {*u32=B: string},
+  match: (string) => [{*u32=D: string}],
+  getAdj: (f64) => [[f64]],
+  getCords: (f64) => ({*D: string}) => [f64],
+  optionalChaining: ({*B: string}) => (f64) => f64,
+  isSym: (f64) => boolean
+}`
 let root = api.input()
 
 // Temporay matrix of characters, joined in later queries.
@@ -213,11 +251,11 @@ let numbers = pipe(api.apply("udf.toNum", matches))
 let isPart = pipe(api.apply(api.apply("udf.optionalChaining", matrix.get(coordinates.get("0"))), coordinates.get("1"))).map("udf.isSym").max()
 
 // !!! api.times is a temporary hack for filtering,should change this after add filtering
-let partNum = pipe(api.times(numbers, isPart))
+let partNum = pipe(api.times(numbers, rh`${isPart} | udf.toNum`))
 
 // NOTE: change to group("*match").group("*row").get("*row").get("*match") will result in repeated generators because of coarse-grained dependencies
 let query = partNum.group("*match").group("*row").get("*0").get("*1").sum()
-let func = api.compile(query)
+let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_typ}}`)
 let res = func({input, udf})
 expect(res).toBe(4361)
 })
@@ -242,6 +280,11 @@ test("day3-part2", () => {
     andThen: (a,b) => b, // just to add a as dependency
     ...udf_stdlib
   }
+  let udf_typ = typing.parseType`${udf_std_typ} & {
+    isAdj: (i32, i32, line, match) => boolean,
+    filter: (boolean) => {*string: true} | {},
+    andThen: (any, any) => any
+  }`
 
   // filter x by the value of p
   // XXX: need a fresh generator for different filters, otherwise the generated code will be incorrect
@@ -277,6 +320,9 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
     getNums: s => s.match(/(\d+)/g),
     ...udf_stdlib
   }
+  let udf_typ = typing.parseType`${udf_std_typ} & {
+    getNums: (string) => [string]
+  }`
 
   let line = rh`.input | udf.split "\\n" | .*line
                        | udf.split ":" | .1
@@ -295,13 +341,13 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
   // each winning number and each number you have is unique
   let matchCount = rh`count ${number} | group ${number}
                                       | udf.isEqual .*freq 2
-                                      | sum`
+                                      | udf.toNum | sum`
 
   let lineRes = rh`${matchCount} - 1 | udf.exp 2 | udf.floor`
 
   let query = rh`${lineRes} | group *line | sum .*`
 
-  let func = api.compile(query)
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_typ}}`)
   let res = func({input, udf})
   expect(res).toBe(13)
 })
@@ -320,6 +366,10 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
     incCard: (cards, n) => cards.count += n,
     ...udf_stdlib
   }
+  let udf_typ = typing.parseType`${udf_std_typ} & {
+    andThen: (any, f64) => f64,
+    incCard: ({id: f64, match: u16, count: u32}, f64) => f64
+  }`
 
   let line = rh`.input | udf.split "\\n" | .*line
                        | udf.split ":"`
@@ -363,7 +413,8 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
                                   | last | group *lineRes
                                   | sum .*`
 
-  let func = api.compile(query)
+  // TODO: Figure out why adding typing is so slow.
+  let func = api.compile(query) // , typing.parseType`{input: string, udf: ${udf_typ}}`)
   let res = func({input, udf})
   expect(res).toBe(30)
 })
@@ -2266,7 +2317,7 @@ U 2 (#7a21e3)`
 
   let steps = rh`.input | udf.split "\\n" | .*line
                         | udf.matchAll "[a-z0-9]{6}" "g" | .0.0
-                        | udf.extractDirAndLen | udf.toNum ("0x" + .*part)
+                        | udf.extractDirAndLen | udf.toNum ("0x" :: .*part)
                         | group *part | group *line`
   let n = rh`.input | udf.split "\\n" | .length`
 
@@ -2383,20 +2434,20 @@ hdj{m>838:A,pv}
   // Separate workflows into multiple "subworkflows" that check a single condiiton and go to a specific state based on the result.
   // This allows simpler running by flattening the workflows into singular operations.
   let workflow_split = {
-      "-": api.keyval(api.plus(rh`${workflows}.*wf.name`, "*opt"), (
+      "-": api.keyval(rh`${rh`${workflows}.*wf.name`} :: (udf.asString *opt)`, (
           // Check if there is a predicate before the transition state.
           ifElsePred(rh`udf.isEqual (${workflows}.*wf.options.*opt | udf.split ":" | .length) 1`, {
               // A predicate isn't there, so create a fake one.
               predicate: {op: "\">\"", key: "a", value: "0"},
-              trueBranch: rh`${workflows}.*wf.options.*opt + "0"`,
-              falseBranch: rh`${workflows}.*wf.options.*opt + "0"`
+              trueBranch: rh`${workflows}.*wf.options.*opt :: "0"`,
+              falseBranch: rh`${workflows}.*wf.options.*opt :: "0"`
           }, {
               // A preedicate is there, so parse it.
               predicate: parsePredicate(rh`${workflows}.*wf.options.*opt | udf.split ":" | .0`),
               // If true, go to the state for it.
-              trueBranch: rh`(${workflows}.*wf.options.*opt | udf.split ":" | .1) + "0"`,
+              trueBranch: rh`(${workflows}.*wf.options.*opt | udf.split ":" | .1) :: "0"`,
               // Otherwise continue on the current workflow.
-              falseBranch: rh`${workflows}.*wf.name + ((udf.toNum *opt) + 1)`
+              falseBranch: rh`${workflows}.*wf.name :: (udf.asString ((udf.toNum *opt) + 1))`
           })
       ))
   };
@@ -2537,16 +2588,16 @@ hdj{m>838:A,pv}
   });
 
   let workflow_split = {
-      "-": api.keyval(api.plus(rh`${workflows}.*wf.name`, "*opt"), (
+      "-": api.keyval(rh`${workflows}.*wf.name :: (udf.asString *opt)`, (
           ifElsePred(rh`udf.isEqual (${workflows}.*wf.options.*opt | udf.split ":" | .length) 1`, {
               // A predicate is expected, so make a random one and have both branches go to the same place.
               predicate: {op: "\">\"", key: "a", value: "0"},
-              trueBranch: rh`${workflows}.*wf.options.*opt + "0"`,
-              falseBranch: rh`${workflows}.*wf.options.*opt + "0"`
+              trueBranch: rh`${workflows}.*wf.options.*opt :: "0"`,
+              falseBranch: rh`${workflows}.*wf.options.*opt :: "0"`
           }, {
               predicate: parsePredicate(rh`${workflows}.*wf.options.*opt | udf.split ":" | .0`),
-              trueBranch: rh`(${workflows}.*wf.options.*opt | udf.split ":" | .1) + "0"`,
-              falseBranch: rh`${workflows}.*wf.name + ((udf.toNum *opt) + 1)`
+              trueBranch: rh`(${workflows}.*wf.options.*opt | udf.split ":" | .1) :: "0"`,
+              falseBranch: rh`${workflows}.*wf.name :: (udf.asString ((udf.toNum *opt) + 1))`
           })
       ))
   };
@@ -3023,8 +3074,8 @@ test("day23-part1", () => {
                 (udf.isEqual ${grid}.*y.*x ".")
                 (udf.checkNearby ${grid} (udf.toNum *y) (udf.toNum *x) ${deltas}.*d)
             )).*f1`,
-        xy1: rh`*x + "," + *y`,
-        xy2: rh`((udf.toNum *x) + ${deltas}.*d.x) + "," + ((udf.toNum *y) + ${deltas}.*d.y)`,
+        xy1: rh`(udf.asString *x) :: "," :: (udf.asString *y)`,
+        xy2: rh`(((udf.toNum *x) + ${deltas}.*d.x) | udf.asString) :: "," :: (((udf.toNum *y) + ${deltas}.*d.y) | udf.asString)`,
     });
 
     let tuples = [
@@ -3035,8 +3086,8 @@ test("day23-part1", () => {
     ];
 
     let forceMap = (tup) => ({
-        xy1: rh`((udf.toNum *cells) + ${tup[2]}) + "," + ((udf.toNum *lines) + ${tup[3]})`,
-        xy2: rh`((udf.toNum *cells) + ${-tup[2]}) + "," + ((udf.toNum *lines) + ${-tup[3]})`,
+        xy1: rh`(((udf.toNum *cells) + ${tup[2]}) | udf.asString) :: "," :: (((udf.toNum *lines) + ${tup[3]}) | udf.asString)`,
+        xy2: rh`(((udf.toNum *cells) + ${-tup[2]}) | udf.asString) :: "," :: (((udf.toNum *lines) + ${-tup[3]}) | udf.asString)`,
         dep: rh`(udf.filter (udf.isEqual ${cells} ${tup[1]})).${tup[0]}`
     });
  
@@ -3050,7 +3101,7 @@ test("day23-part1", () => {
     let parse = api.compile({
         steps: rh`udf.sort ${steps}`,
         force: rh`udf.sort ${force}`,
-        keys: api.array(rh`udf.andThen ${grid}.*y.*x (*y + "," + *x)`),
+        keys: api.array(rh`udf.andThen ${grid}.*y.*x ((udf.asString *y) :: "," :: (udf.asString *x))`),
         maxX: rh`max (udf.andThen ${grid}.*y.*x (udf.toNum *x))`,
         maxY: rh`max (udf.andThen ${grid}.*y.*x (udf.toNum *y))`,
     });

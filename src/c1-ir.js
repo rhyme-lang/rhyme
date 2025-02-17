@@ -161,7 +161,7 @@ exports.createIR = (query) => {
             let [e1, ...es2] = p.xxparam
             // XXX: multiple args vs currying?
             return call(path(e1), ...es2.map(path))
-        } else if (p.xxkey == "plus") {
+        } else if (p.xxkey == "plus" || p.xxkey == "concat") {
             let [e1, e2] = p.xxparam
             return binop("+", path(e1), path(e2))
         } else if (p.xxkey == "minus") {

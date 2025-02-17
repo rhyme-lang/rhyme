@@ -35,6 +35,8 @@ let defaultSettings = {
   newCodegen: false,
   backend: "js",
 
+  schema: types.unknown,
+
   outDir: "cgen-sql",
   outFile: "tmp.c"
 }
@@ -299,6 +301,9 @@ let extract3 = q => {
   let deps = unique(q.arg.flatMap(x => x.filters??[]))
   if (q.key == "get") {
     let [e1,e2] = q.arg
+    // Unwrap type conversions.
+    while(e2.key == "pure" && e2.op.startsWith("convert_"))
+      e2 = e2.arg[0]
     if (e2.key == "var") {
       let str = JSON.stringify(q) // extract & cse
       let ix = filters.map(JSON.stringify).indexOf(str)
@@ -786,9 +791,10 @@ let compile = (q,userSettings={}) => {
   }
 
   // ---- front end ----
-
   // 1. Preprocess (after parse, desugar)
   q = preproc(q)
+  // rh`sum (x)` -> {op: "sum", arg: [x], deps: fre: [], bnd: []}.
+  // rh`update a k v` -> {op: "update", arg: [a, k, v]}
 
   let src = q
 
@@ -812,6 +818,9 @@ let compile = (q,userSettings={}) => {
     q = extract0b(q,[])
   }
 
+  //console.log(pretty(q));
+  //q = optimizer.constantFold(q);
+  //console.log(pretty(q));
   // ---- middle tier ----
 
   // 3. Infer dependencies bottom up
@@ -878,6 +887,39 @@ let compile = (q,userSettings={}) => {
     q = typing.validateIR(settings.schema, q);
   }
   // ---- middle tier, imperative form ----
+
+/*
+ (x + y) * z / q + w
+
+  let res1 = x + y;
+  let res2 = res1 * z;
+  let res3 = res2 / q;
+  let res4 = res3 + w;
+
+  return res4;
+
+
+  {data.*.key: data.*.value, total: sum(data.*.value), }
+
+  DO: data[D0] // D0 is all keys of data.
+  let res1 = {}{data.D0.key: data.D0.value}
+  let res2 = res1{total: sum(data.*.value)};
+
+  D0: data[D0]
+  K1: mkset(data[D0][key])[K1]
+  let res1 = {}{K1: data.D0.value}
+  let res2 = res1{total: sum(data.D0.value)}
+
+  D0: data[D0]
+  K1: mkset(data[D0][key])[K1]
+  let res1 = {}{K1: data.D0.value}
+  let res2 = sum(data.D0.value)
+  let res3 = res1{total: res2}
+  res3
+  */
+
+
+
 
   if (settings.extractAssignments && !settings.extractAssignmentsLate) {
     // 8. Extract assignments
