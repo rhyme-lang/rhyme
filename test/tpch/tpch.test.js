@@ -98,9 +98,14 @@ test("q1", async () => {
     count_order: count (${cond} & ${lineitem}.*.l_orderkey)
   } | group [${lineitem}.*.l_returnflag, ${lineitem}.*.l_linestatus]`
 
-  let q1 = rh`count (${cond} & ${lineitem}.*.l_orderkey) | group [${lineitem}.*.l_returnflag, ${lineitem}.*.l_linestatus]`
+  let q1 = rh`(sum (${cond} & ${lineitem}.*.l_quantity)) / (count (${cond} & ${lineitem}.*.l_quantity)) | group [${lineitem}.*.l_returnflag, ${lineitem}.*.l_linestatus]`
   let func = await compile(q1, { backend: "c-sql-new", outDir, outFile: "q1.c", schema: types.never })
   let res = await func()
+
+  // let condTmp = rh`lineitem.*.l_shipdate <= 19980902`
+  // let tmp = rh`(sum (${condTmp} & lineitem.*.l_quantity)) / (count (${condTmp} & lineitem.*.l_quantity)) | group lineitem.*.l_returnflag`
+  // let func1 = compile(tmp)
+  // console.log(func1.explain.code)
 
   console.log(res)
 })
