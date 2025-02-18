@@ -239,7 +239,7 @@ MAMMMXMMMM
 MXMXAXMASX`
 
   let delta = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]];
-  let udf = {
+let udf = {
     filter: c => c ? { [c]: true } : {},
     andThen: (a,b) => b,
     ...udf_stdlib,
@@ -397,7 +397,6 @@ test("day5-part2", () => {
     arrMid: (arr) => arr[Math.floor(arr.length / 2)],
     slice: a => array => array.slice(a),
     customSort: (rules, arr) => {
-      console.log(arr)
       return arr.sort((a, b) => rules.some(pair => pair[0] === b && pair[1] === a) ? 1 : -1)
     },
     ...udf_stdlib,
