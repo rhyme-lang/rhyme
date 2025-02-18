@@ -58,8 +58,12 @@ rh rt_pure_and(rh a, rh b) {
   return a == 0 ? a : b;
 }
 
+rh rt_pure_convert_u8(rh a) {
+  return encode_int((uint8_t) decode_int(a));
+}
+
 rh rt_pure_convert_i16(rh a) {
-  return encode_int((uint16_t) decode_int(a));
+  return encode_int((int16_t) decode_int(a));
 }
 
 rh rt_get(rh a, rh b) {

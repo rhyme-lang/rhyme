@@ -1,4 +1,5 @@
 const { api, rh } = require('../../src/rhyme')
+const { typing, types } = require('../../src/typing')
 
 // some sample data for testing
 let data = [
@@ -6,6 +7,15 @@ let data = [
     { key: "B", value: 20 },
     { key: "A", value: 30 }
 ]
+
+let key = typing.createKey(types.string);
+
+let dataSchema = {
+    "-": typing.keyval(key, {
+        key: typing.createUnion("A", "B"),
+        value: types.u8
+   })
+};
 
 let countryData = [
     { region: "Asia", country: "Japan", city: "Tokyo", population: 30 },
@@ -21,23 +31,42 @@ let regionData = [
     { region: "Europe", country: "UK" },
 ]
 
+let key2 = typing.createKey(types.string);
+
+let countrySchema = {
+    "-": typing.keyval(key2, {
+        region: types.string,
+        country: types.string,
+        city: types.string,
+        population: types.u8
+    })
+};
+
+let regionSchema = {
+    "-": typing.keyval(key2, {
+        region: types.string,
+        country: types.string,
+    })
+};
+
 test("plainSumTest", () => {
     let query = api.sum("data.*.value")
-    let res = api.compile(query)({ data })
+    let func = api.compile(query, typing.parseType({data: dataSchema}))
+    let res = func({ data })
     let expected = 60
     expect(res).toBe(expected)
 })
 
 test("plainSumTest_parse", () => {
     let query = rh`${api.sum("data.*.value")}`
-    let res = api.compile(query)({ data })
+    let res = api.compile(query, typing.parseType({data: dataSchema}))({ data })
     let expected = 60
     expect(res).toBe(expected)
 })
 
 test("plainSumTest_parse2", () => {
     let query = rh`sum(data.*.value)`
-    let res = api.compile(query)({ data })
+    let res = api.compile(query, typing.parseType({data: dataSchema}))({ data })
     let expected = 60
     expect(res).toBe(expected)
 })
@@ -45,7 +74,7 @@ test("plainSumTest_parse2", () => {
 test("plainAverageTest", () => {
     let query = api.div(api.sum("data.*.value"), api.count("data.*.value"))
     // console.dir(query)
-    let res = api.compile(query)({ data })
+    let res = api.compile(query, typing.parseType({data: dataSchema}))({ data })
     let expected = 20
     expect(res).toBe(expected)
 })
@@ -53,7 +82,7 @@ test("plainAverageTest", () => {
 test("plainAverageTest_parse", () => {
     let query = rh`${api.sum("data.*.value")} / ${api.count("data.*.value")}`
     // console.dir(query)
-    let res = api.compile(query)({ data })
+    let res = api.compile(query, typing.parseType({data: dataSchema}))({ data })
     let expected = 20
     expect(res).toBe(expected)
 })
@@ -61,28 +90,28 @@ test("plainAverageTest_parse", () => {
 test("plainAverageTest_parse2", () => {
     let query = rh`sum(data.*.value) / count(data.*.value)`
     // console.dir(query)
-    let res = api.compile(query)({ data })
+    let res = api.compile(query, typing.parseType({data: dataSchema}))({ data })
     let expected = 20
     expect(res).toBe(expected)
 })
 
 test("uncorrelatedAverageTest", () => {
     let query = api.div(api.sum("data.*A.value"), api.count("data.*B.value"))
-    let res = api.compile(query)({ data })
+    let res = api.compile(query, typing.parseType({data: dataSchema}))({ data })
     let expected = 20
     expect(res).toBe(expected)
 })
 
 test("uncorrelatedAverageTest_parse", () => {
     let query = rh`${api.sum("data.*A.value")} / ${api.count("data.*B.value")}`
-    let res = api.compile(query)({ data })
+    let res = api.compile(query, typing.parseType({data: dataSchema}))({ data })
     let expected = 20
     expect(res).toBe(expected)
 })
 
 test("uncorrelatedAverageTest_parse2", () => {
     let query = rh`sum(data.*A.value) / count(data.*B.value)`
-    let res = api.compile(query)({ data })
+    let res = api.compile(query, typing.parseType({data: dataSchema}))({ data })
     let expected = 20
     expect(res).toBe(expected)
 })
@@ -92,7 +121,7 @@ test("groupByTest", () => {
         total: api.sum("data.*.value"),
         "data.*.key": api.sum("data.*.value"),
     }
-    let res = api.compile(query)({ data })
+    let res = api.compile(query, typing.parseType({data: dataSchema}))({ data })
     let expected = { "total": 60, "A": 40, "B": 20 }
     expect(res).toEqual(expected)
 })
@@ -103,7 +132,7 @@ test("groupByAverageTest", () => {
         total: api.sum("data.*.value"),
         "data.*.key": avg("data.*.value"),
     }
-    let func = api.compile(query)
+    let func = api.compile(query, typing.parseType({data: dataSchema}))
     let res = func({ data })
     let expected = { "total": 60, "A": 20, "B": 20 }
     expect(res).toEqual(expected)
@@ -115,7 +144,7 @@ test("groupByAverageTest_parse", () => {
         total: api.sum("data.*.value"),
         "data.*.key": avg("data.*.value"),
     }
-    let res = api.compile(query)({ data })
+    let res = api.compile(query, typing.parseType({data: dataSchema}))({ data })
     let expected = { "total": 60, "A": 20, "B": 20 }
     expect(res).toEqual(expected)
 })
@@ -126,7 +155,7 @@ test("groupByAverageTest_parse2", () => {
         total: "sum(data.*.value)",
         "data.*.key": rh`${avg}(data.*.value)`,
     }
-    let res = api.compile(query)({ data })
+    let res = api.compile(query, typing.parseType({data: dataSchema}))({ data })
     let expected = { "total": 60, "A": 20, "B": 20 }
     expect(res).toEqual(expected)
 })
@@ -136,7 +165,7 @@ test("groupByRelativeSum", () => {
         total: api.sum("data.*.value"),
         "data.*.key": api.fdiv(api.sum("data.*.value"), api.sum("data.*B.value"))
     }
-    let func = api.compile(query)
+    let func = api.compile(query, typing.parseType({data: dataSchema}))
     let res = func({ data })
     let expected = { "total": 60, "A": 0.6666666666666666, "B": 0.3333333333333333 }
     expect(res).toEqual(expected)
@@ -147,7 +176,7 @@ test("groupByRelativeSum_parse", () => {
         total: api.sum("data.*.value"),
         "data.*.key": rh`${api.sum("data.*.value")} / ${api.sum("data.*B.value")}`
     }
-    let res = api.compile(query)({ data })
+    let res = api.compile(query, typing.parseType({data: dataSchema}))({ data })
     let expected = { "total": 60, "A": 0.6666666666666666, "B": 0.3333333333333333 }
     expect(res).toEqual(expected)
 })
@@ -160,7 +189,7 @@ test("nestedGroupAggregateTest", () => {
             "data.*.city": api.sum("data.*.population")
         },
     }
-    let res = api.compile(query)({ data: countryData })
+    let res = api.compile(query, typing.parseType({data: countrySchema}))({ data: countryData })
     let expected = {
         "total": 70,
         "Asia": { "total": 50, "Beijing": 20, "Tokyo": 30 },
@@ -179,7 +208,7 @@ test("joinSimpleTest1", () => {
             region: api.get(q1,"data.*.country")
         }
     }
-    let func = api.compile(query)
+    let func = api.compile(query, typing.parseType({data: countrySchema, other: regionSchema}))
     let res = func({ data: countryData, other: regionData })
     let expected = {
         "Beijing": { country: "China", region: "Asia" },
@@ -200,7 +229,7 @@ test("joinSimpleTest1B", () => { // use explicit 'single' aggregation
             region: api.single(api.get(q1,"data.*.country"))
         }
     }
-    let func = api.compile(query)
+    let func = api.compile(query, typing.parseType({data: countrySchema, other: regionSchema}))
     let res = func({ data: countryData, other: regionData })
     let expected = {
         "Beijing": { country: "China", region: "Asia" },
@@ -220,7 +249,7 @@ test("joinSimpleTest2", () => {
             "data.*.city": api.sum("data.*.population")
         }),
     }
-    let func = api.compile(query)
+    let func = api.compile(query, typing.parseType({data: countrySchema, other: regionSchema}))
     let res = func({ data: countryData, other: regionData })
     let expected = {
         "Asia": {
@@ -246,7 +275,7 @@ test("joinWithAggrTest", () => {
             "data.*.city": api.sum("data.*.population")
         }),
     }
-    let func = api.compile(query)
+    let func = api.compile(query, typing.parseType({data: countrySchema, other: regionSchema}))
     let res = func({ data: countryData, other: regionData })
     let expected = {
         "total": 70,
@@ -276,7 +305,16 @@ test("udfTest", () => {
         item: "data.*.item",
         price: api.apply("udf.formatDollar", "data.*.price")
     }]
-    let func = api.compile(query)
+    let func = api.compile(query, typing.parseType({
+        udf: {
+            formatDollar: typing.createFunction(types.string, types.u32)
+        }, data: {
+            "-": typing.keyval(typing.createKey(types.u8), {
+                item: types.string,
+                price: types.u32
+            })
+        }
+    }))
     let res = func({ data, udf })
     let expected = [{ item: "iPhone", price: "$1200.00" }, { item: "Galaxy", price: "$800.00" }]
     expect(res).toEqual(expected)
@@ -284,7 +322,7 @@ test("udfTest", () => {
 
 test("arrayTest1", () => {
     let query4 = api.sum(api.sum("data.*.value"))
-    let res = api.compile(query4)({ data })
+    let res = api.compile(query4, typing.parseType({data: dataSchema}))({ data })
     let expected = 60
     expect(res).toBe(expected)
 })
@@ -296,7 +334,7 @@ test("arrayTest2", () => {
     let query3 = api.join(api.array("data.*.value"))
     let query4 = api.sum(api.sum("data.*.value"))
 
-    let res = api.compile({ query1, query2, query2A, query3, query4 })({ data })
+    let res = api.compile({ query1, query2, query2A, query3, query4 }, typing.parseType({data: dataSchema}))({ data })
     let expected = {
         "query1": [[10, 20, 30]],
         "query2": [60],
@@ -312,7 +350,7 @@ test("arrayTest2", () => {
 // with a solution modeled after the manual flattening below
 test("arrayTest3", () => {
     let query = { "data.*.key": ["Extra1", { foo: "data.*.value" }, "Extra2"] }
-    let func = api.compile(query)
+    let func = api.compile(query, typing.parseType({data: dataSchema}))
     let res = func({ data })
     let expected = {
         A: ["Extra1", { foo: 10 }, { foo: 30 }, "Extra2"],
@@ -323,7 +361,7 @@ test("arrayTest3", () => {
 
 test("arrayTest4", () => {
     let query = { "data.*.key": [{ v1: "data.*.value" }, { v2: "data.*.value" }] }
-    let func = api.compile(query)
+    let func = api.compile(query, typing.parseType({data: dataSchema}))
     let res = func({ data })
     let expected = {
       "A": [{"v1": 10},{"v1": 30},{"v2": 10},{"v2": 30}],
@@ -334,7 +372,7 @@ test("arrayTest4", () => {
 // test manual zip and flatten patterns for nested array traversal
 test("arrayTest5Zip", () => {
     let query = { "data.*.key": [api.get({ v1: "data.*.value", v2: "data.*.value" },"*A")] }
-    let func = api.compile(query)
+    let func = api.compile(query, typing.parseType({data: dataSchema}))
     let res = func.c1({ data }) // NOTE: c2 behaves differently now (see test below)
     let expected = {
       "A": [10, 10, 30, 30],
@@ -345,7 +383,7 @@ test("arrayTest5Zip", () => {
 // c2 needs an explicit var *D pulled out to the right level
 test("arrayTest5ZipB", () => {
     let query = { "data.*D.key": [api.and("*D", api.get({ v1: "data.*D.value", v2: "data.*D.value" },"*A"))] }
-    let func = api.compile(query)
+    let func = api.compile(query, typing.parseType({data: dataSchema}))
     let res = func({ data })
     let expected = {
       "A": [10, 10, 30, 30],
@@ -357,7 +395,7 @@ test("arrayTest5ZipB", () => {
 test("arrayTest6Flatten", () => {
     let query0 = { "data.*.key": {v1:["data.*.value"], v2:["data.*.value"]} }
     let query = { "*k": [api.get(api.get(api.get(query0,"*k"), "*A"), "*B")] }
-    let func = api.compile(query)
+    let func = api.compile(query, typing.parseType({data: dataSchema}))
     let res = func({ data })
     let expected = {
       "A": [10, 30, 10,30],
@@ -369,7 +407,7 @@ test("arrayTest7Eta", () => {
     let query0 = { "data.*.key": ["data.*.value"] }
     let query = { "*k": api.get(query0,"*k") }
     //let func0 = api.compile(query0)
-    let func = api.compile(query)
+    let func = api.compile(query, typing.parseType({data: dataSchema}))
     let res = func({ data })
     let expected = {
       "A": [10, 30],
@@ -389,7 +427,7 @@ test("graphicsBasicTestParsing", () => {
         "$display": "select",
         data: data
     }
-    let func = api.compile(query)
+    let func = api.compile(query, typing.parseType`{data: {*u8: {x: u8, y: u8}}}`);
     let res = func({ data })
     let expected = {
         "$display": "select",

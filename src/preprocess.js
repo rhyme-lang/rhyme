@@ -127,9 +127,12 @@ let preproc = q => {
     let es2 = q.xxparam?.map(preproc)
     if (op in ops.special)
       return { key: op, arg: es2 }
-    else if (op in ops.pure)
+    else if (op in ops.pure || op == "concat") {
+      if(op == "concat") {
+        return { key: "pure", op: "plus", mode: "concat", arg: es2 }
+      }
       return { key: "pure", op: op, arg: es2 }
-    else if (op in ops.stateful || op == "print")
+    } else if (op in ops.stateful || op == "print")
       return { key: "stateful", op: op, arg: es2 }
     else if (op.startsWith && op.startsWith("prefix_") && op.substring(7) in ops.stateful)
       return { key: "prefix", op: op.substring(7), arg: es2 }
