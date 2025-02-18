@@ -239,7 +239,7 @@ MAMMMXMMMM
 MXMXAXMASX`
 
   let delta = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]];
-let udf = {
+  let udf = {
     filter: c => c ? { [c]: true } : {},
     andThen: (a,b) => b,
     ...udf_stdlib,
