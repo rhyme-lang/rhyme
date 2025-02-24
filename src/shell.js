@@ -75,7 +75,7 @@ let generateSchema = (q) => {
                         func = simpleEval.compile(query, {backend: backend, schema: generateSchema({data: queryData})});
                         console.log(await func({data: queryData}));
                     } else {
-                        func = api.compile(query);
+                        func = api.compileC2(query);
                         console.log(func({data: queryData}));
                     }
                 } catch(e) {

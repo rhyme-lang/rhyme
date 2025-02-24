@@ -142,20 +142,20 @@ rt.pure.singleton = (x1) => { // 'mkset'
   return {[x1]:true}
 }
 
-rt.pure.convert_u8 = (x) => (Number(x) & 0xff);
-rt.pure.convert_u16 = (x) => (Number(x) & 0xffff);
-rt.pure.convert_u32 = (x) => (Number(x) & 0xffffffff);
-rt.pure.convert_u64 = (x) => BigInt(x) & BigInt("0xffffffffffffffff");
+rt.pure.convert_u8 = (x) => x === undefined ? undefined : (Number(x) & 0xff);
+rt.pure.convert_u16 = (x) => x === undefined ? undefined : (Number(x) & 0xffff);
+rt.pure.convert_u32 = (x) => x === undefined ? undefined : (Number(x) & 0xffffffff);
+rt.pure.convert_u64 = (x) => x === undefined ? undefined : BigInt(x) & BigInt("0xffffffffffffffff");
 // TODO: Determine if these properly hold for really big numbers (Answer: They don't). Also, find a way to optimize?
-rt.pure.convert_i8 = (x) => (((Number(x) + 0x80) & 0xff) - 0x80);
-rt.pure.convert_i16 = (x) => (((Number(x) + 0x8000) & 0xffff) - 0x8000);
-rt.pure.convert_i32 = (x) => (((Number(x) + 0x80000000) & 0xffffffff) - 0x80000000);
-rt.pure.convert_i64 = (x) => ((BigInt(x) + BigInt("0x8000000000000000")) & BigInt("0xffffffffffffffff")) - BigInt("0x8000000000000000");
+rt.pure.convert_i8 = (x) => x === undefined ? undefined : (((Number(x) + 0x80) & 0xff) - 0x80);
+rt.pure.convert_i16 = (x) => x === undefined ? undefined : (((Number(x) + 0x8000) & 0xffff) - 0x8000);
+rt.pure.convert_i32 = (x) => x === undefined ? undefined : (((Number(x) + 0x80000000) & 0xffffffff) - 0x80000000);
+rt.pure.convert_i64 = (x) => x === undefined ? undefined : ((BigInt(x) + BigInt("0x8000000000000000")) & BigInt("0xffffffffffffffff")) - BigInt("0x8000000000000000");
 // TODO: Determine if all implementations have Math.fround implemented.
-rt.pure.convert_f32 = (x) => Math.fround(Number(x));
-rt.pure.convert_f64 = (x) => Number(x);
+rt.pure.convert_f32 = (x) => x === undefined ? undefined : Math.fround(Number(x));
+rt.pure.convert_f64 = (x) => x === undefined ? undefined : Number(x);
 
-rt.pure.convert_string = (x) => String(x);
+rt.pure.convert_string = (x) => x === undefined ? undefined : String(x);
 
 rt.singleton = (x1) => { // 'mkset'
   if (x1 === undefined) return {}

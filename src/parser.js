@@ -15,6 +15,7 @@ let binop_table = {
   "==":  "equal",
   "!=":  "notEqual",
 
+  "::" : "concat",
   "+" : "plus",
   "-" : "minus",
   "*" : "times",
@@ -63,7 +64,7 @@ exports.parserImpl = (strings, holes) => {
   let hole = -1
 
   // ----- Lexer -----
-  let opchars = '+-*/%<>=!?|&^~'
+  let opchars = '+-*/%<>=!?|&^~:'
   let optable = {}
   for (let c of opchars) optable[c] = 1
 
@@ -255,6 +256,7 @@ exports.parserImpl = (strings, holes) => {
     '>=':  90,
     '==':  90,
     '!=':  90,
+    '::':  95,
     '+' : 100,
     '-' : 100,
     '*' : 200,
@@ -275,6 +277,7 @@ exports.parserImpl = (strings, holes) => {
     '>=': 1,
     '==': 1,
     '!=': 1,
+    '::': 1,
     '+' : 1,
     '-' : 1,
     '*' : 1,

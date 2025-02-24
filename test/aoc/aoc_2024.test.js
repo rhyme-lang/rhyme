@@ -12,6 +12,7 @@
 
 
 const { api, rh } = require('../../src/rhyme')
+const { typing } = require('../../src/typing')
 
 let udf_stdlib = {
   split: d => s => s.split(d),
@@ -41,6 +42,27 @@ let udf_stdlib = {
   ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
 }
 
+let udf_std_typ = typing.parseType`{
+  split: (string) => (string) => [string],
+  toNum: (any) => f64,
+  isGreaterThan: (f64, f64) => boolean,
+  isGreaterOrEqual: (f64, f64) => boolean,
+  isLessThan: (f64, f64) => boolean,
+  isLessOrEqual: (f64, f64) => boolean,
+  isEqual: (any, any) => boolean,
+  notEqual: (any, any) => boolean,
+  exp: (f64) => (f64) => f64,
+  sqrt: (f64) => f64,
+  floor: (f64) => f64,
+  ceil: (f64) => f64,
+  abs: (f64) => f64,
+  modulo: (f64) => f64,
+  int2Char: (f64) => string,
+  matchAll: (string, string) => (string) => [[string]],
+  logicalAnd: (boolean, boolean) => boolean,
+  logicalOr: (boolean, boolean) => boolean,
+  range: (u32, u32, u32) => [u32]
+}`;
 
 test("day1-part1", () => {
   let input =
@@ -61,7 +83,7 @@ test("day1-part1", () => {
   let right = rh`${pairs}.1 | udf.toNum | array | udf.sort`
   let query   = rh`${left}.*i - ${right}.*i | udf.abs | sum`
 
-  let func = api.compileC2(query)
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ} & {sort: (any) => {*u16: i16}}}`)
   let res = func({input, udf})
   expect(res).toBe(11)
 })
@@ -87,7 +109,7 @@ test("day1-part2", () => {
 
   let query   = rh`${left} * ${histogram}.${left} | sum`
 
-  let func = api.compileC2(query)
+  let func = api.compileC2(query, typing.parseType`{input: string, udf: ${udf_std_typ}}`)
   let res = func({input, udf})
   expect(res).toBe(31)
 })
