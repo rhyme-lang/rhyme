@@ -1037,7 +1037,7 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
             } else if (q.op === "equal" || q.op === "notEqual" ||
                 q.op === "lessThan" || q.op === "greaterThan" ||
                 q.op === "lessThanOrEqual" || q.op === "greaterThanOrEqual" ||
-                q.op == "andAlso" || q.op == "orElse") {
+                q.op == "andAlso") {
                 // TODO: validate types for comparison and logical ops
                 return {type: types.boolean, props: union(p1,p2)};
             } else if (q.op == "and") {
@@ -1049,7 +1049,7 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
             }
             throw new Error("Pure operation not implemented: " + q.op);
         } else if (q.op == "combine") {
-            return {type: t1, props: p1}
+            return argTups[0];
         } else if (q.op === "mkTuple") {
             let res = {}
             for (let i = 0; i < q.arg.length; i += 2) {
@@ -1628,8 +1628,10 @@ let convertAST = (schema, q, completedMap, dontConvertVar = false) => {
             }
             throw new Error("Pure operation not implemented: " + q.op);
         } else if (q.op == "mkTuple") {
+            q.arg = q.arg.map($convertAST);
             return q;
         } else if (q.op == "combine") {
+            q.arg = q.arg.map($convertAST);
             return q;
         }
         throw new Error("Pure operation not implemented: " + q.op);
