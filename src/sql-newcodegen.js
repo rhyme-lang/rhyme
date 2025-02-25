@@ -25,6 +25,8 @@ let assignmentStms
 let generatorStms
 let tmpVarWriteRank
 
+let emittedStateful
+
 // generator ir api: mirroring necessary bits from ir.js
 let expr = (txt, ...args) => ({ txt, deps: args })
 
@@ -323,6 +325,28 @@ let validateAndExtractUsedCols = (q) => {
   }
 }
 
+// let analyzePath = (q) => {
+//   if (q.key == "stateful") {
+//     analyzeStateful(undefined, q)
+//   } else {
+//     analyzePath(q)
+//   }
+// }
+
+// let analyzeStateful = (lhs, q) => {
+//   if (q.key == "stateful") {
+//     let sym = lhs || getNewName("tmp")
+//     q.destination ??= []
+//     q.destination.push(sym)
+//   } else if (q.key == "update") {
+
+//   }
+// }
+
+// let analyzeDestination = (q) => {
+//   analyzeStateful(undefined, q)
+// }
+
 // Emit code that opens the CSV file and calls mmap
 let emitLoadInput = (buf, filename, id) => {
   let fd = "fd" + id
@@ -589,6 +613,9 @@ let emitPath = (buf, q) => {
 
     if (q1.fre.length > 0) {
       let sym = tmpSym(q.op)
+      if (q1.key == "stateful" && !emittedStateful[sym]) {
+        emitStatefulInPath(q1, sym)
+      }
       let keys = q1.fre[0].startsWith("K") ? mksetVarEnv[q1.fre[0]].map(key => key.val) : [q1.fre[0]]
       let keyPos = emitHashLookUp(buf, sym, keys)[1]
       let { valSchema } = hashMapEnv[sym]
@@ -598,13 +625,20 @@ let emitPath = (buf, q) => {
         return `${sym}_values[${keyPos}]`
       }
     } else {
-      return tmpSym(q.op)
+      let sym = tmpSym(q.op)
+      if (q1.key == "stateful" && !emittedStateful[sym]) {
+        emitStatefulInPath(q1, sym)
+      }
+      return sym
     }
   } else if (q.key == "get") {
     let [e1, e2] = q.arg
 
     if (e1.key == "ref") {
       let sym = tmpSym(e1.op)
+      if (assignments[e1.op].key == "stateful" && !emittedStateful[sym]) {
+        emitStatefulInPath(assignments[e1.op], sym)
+      }
       let key = emitPath(buf, e2)
       let keyPos = emitHashLookUp(buf, sym, [key])[1]
       let { valSchema } = hashMapEnv[sym]
@@ -794,15 +828,15 @@ let emitHashLookUpAndUpdate = (buf, sym, keys, target, update, checkExistance) =
       cgen.stmt(buf1)(cgen.assign(keyPos, `${sym}_key_count`))
       cgen.stmt(buf1)(cgen.inc(`${sym}_key_count`))
       cgen.stmt(buf1)(cgen.assign(`${sym}_htable[${pos}]`, keyPos))
-  
+
       for (let i in keys) {
         let key = keys[i]
         let schema = keySchema[i]
-  
+
         if (typing.isString(schema)) {
           let keyStr = `${sym}_keys_str${i}[${keyPos}]`
           let keyLen = `${sym}_keys_len${i}[${keyPos}]`
-  
+
           cgen.stmt(buf1)(cgen.assign(keyStr, key.str))
           cgen.stmt(buf1)(cgen.assign(keyLen, key.len))
         } else {
@@ -922,6 +956,8 @@ let reset = () => {
   inputFilesEnv = {}
   assignmentToSym = {}
 
+  emittedStateful = {}
+
   nameIdMap = {}
 }
 
@@ -995,7 +1031,7 @@ let emitStatefulUpdate = (buf, q, lhs, sym) => {
     emitOptionalAndOp(buf, e, (buf1, rhs) => {
       emitHashBucketInsert(buf1, lhs, rhs)
     })
-  }  else if (q.op == "print") {
+  } else if (q.op == "print") {
     emitOptionalAndOp(buf, e, (buf1, rhs) => {
       if (typing.isString(e.schema.type)) {
         let { str, len } = rhs
@@ -1009,6 +1045,61 @@ let emitStatefulUpdate = (buf, q, lhs, sym) => {
   }
 }
 
+let emitStatefulInPath = (q, sym) => {
+  if (q.fre.length > 1) throw new Error("unexpected number of free variables for stateful op " + pretty(v))
+
+  if (q.fre.length != 0) {
+    // Create hashmap
+    let buf = []
+    let keySchema = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].map(key => key.schema.type) : [{ type: types.i32 }]
+    let valSchema = [{ name: "values", schema: q.schema.type }]
+    emitHashMapInit(buf, sym, keySchema, valSchema)
+    assign(buf, sym, [], [])
+
+    hashMapEnv[sym] = { keySchema, valSchema }
+  }
+
+  let fv = trans(q.fre)
+
+  // Get the lhs of the assignment and emit the code for the stateful op
+
+  if (initRequired[q.op]) {
+    let buf = []
+    cgen.comment(buf)("init " + sym + (q.fre.length > 0 ? "[" + q.fre[0] + "]" : "") + " = " + pretty(q))
+    if (q.fre.length > 0) {
+      // perform hashmap lookup
+      let keys = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].map(key => key.val) : [q1.fre[0]]
+      emitHashLookUpOrUpdate(buf, sym, keys, "values", (buf1, lhs) => {
+        emitStatefulInit(buf1, q, lhs)
+      })
+    } else {
+      cgen.declareVar(buf)(convertToCType(q.schema.type), sym)
+      emitStatefulInit(buf, q, sym)
+    }
+    // init
+    assign(buf, sym, fv, [])
+  }
+
+  let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? assignmentToSym[tmp] : tmpSym(tmp))] // XXX rhs dims only?
+
+  // update
+  let buf = []
+  cgen.comment(buf)("update " + sym + (q.fre.length > 0 ? "[" + q.fre[0] + "]" : "") + " = " + pretty(q))
+  if (q.fre.length > 0) {
+    // perform hashmap lookup
+    // we need to check existance for the ops that don't need initialization
+    let keys = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].map(key => key.val) : [q1.fre[0]]
+    emitHashLookUpAndUpdate(buf, sym, keys, "values", (buf1, lhs) => {
+      emitStatefulUpdate(buf1, q, lhs, sym)
+    }, !initRequired[q.op])
+  } else {
+    emitStatefulUpdate(buf, q, sym)
+  }
+  assign(buf, sym, fv, deps)
+
+  emittedStateful[sym] = true
+}
+
 let emitCode = (q, ir) => {
   filters = ir.filters
   assignments = ir.assignments
@@ -1016,6 +1107,7 @@ let emitCode = (q, ir) => {
   reset()
 
   validateAndExtractUsedCols(q)
+  // analyzeDestination(q)
 
   let prolog = []
   prolog.push(`#include "rhyme-sql.h"`)
@@ -1140,31 +1232,31 @@ let emitCode = (q, ir) => {
 
   // Iterate through other stateful ops that does not come after an update op
   // and create hashmaps if needed
-  for (let i in assignments) {
-    let q = assignments[i]
+  // for (let i in assignments) {
+  //   let q = assignments[i]
 
-    if (q.key != "stateful" || assignmentToSym[i]) continue
-    let sym = tmpSym(i)
+  //   if (q.key != "stateful" || assignmentToSym[i]) continue
+  //   let sym = tmpSym(i)
 
-    if (q.fre.length > 1) throw new Error("unexpected number of free variables for stateful op " + pretty(v))
+  //   if (q.fre.length > 1) throw new Error("unexpected number of free variables for stateful op " + pretty(v))
 
-    if (q.fre.length != 0) {
-      // Create hashmap
-      let buf = []
-      let keySchema = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].map(key => key.schema.type) : [{ type: types.i32 }]
-      let valSchema = [{ name: "values", schema: q.schema.type }]
-      emitHashMapInit(buf, sym, keySchema, valSchema)
-      assign(buf, sym, [], [])
+  //   if (q.fre.length != 0) {
+  //     // Create hashmap
+  //     let buf = []
+  //     let keySchema = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].map(key => key.schema.type) : [{ type: types.i32 }]
+  //     let valSchema = [{ name: "values", schema: q.schema.type }]
+  //     emitHashMapInit(buf, sym, keySchema, valSchema)
+  //     assign(buf, sym, [], [])
 
-      hashMapEnv[sym] = { keySchema, valSchema }
-    }
-  }
+  //     hashMapEnv[sym] = { keySchema, valSchema }
+  //   }
+  // }
 
   // Iterate and emit stateful ops
   for (let i in assignments) {
     let q = assignments[i]
 
-    if (q.key != "stateful") continue
+    if (q.key != "stateful" || !assignmentToSym[i]) continue
 
     let sym = assignmentToSym[i] ? assignmentToSym[i] : tmpSym(i)
 
@@ -1208,7 +1300,7 @@ let emitCode = (q, ir) => {
   }
 
   let epilog = []
-  let res = emitPath([], q)
+  let res = emitPath(epilog, q)
 
   if (q.schema.type.typeSym !== typeSyms.never) {
     if (hashMapEnv[res]) {
@@ -1276,7 +1368,6 @@ let generateCSqlNew = (q, ir, outDir, outFile) => {
   func.explain = func.explain
 
   let writeAndCompile = async () => {
-    // await fs.writeFile(cFile + ".alt.c", codeNew)
     await fs.writeFile(cFile, codeNew)
     await sh(`gcc ${cFlags} ${cFile} -o ${out} -Icgen-sql`)
     return func
