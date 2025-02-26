@@ -582,7 +582,6 @@ let getLoopTxt = (f, file, loadInput) => () => {
   cgen.stmt(loopHeader)(cgen.assign(quoteVar(v), "-1"))
   loopHeader.push("while (1) {")
   cgen.stmt(loopHeader)(cgen.inc(quoteVar(v)))
-  cgen.stmt(loopHeader)(`if (${quoteVar(v)} % 1000000 == 0) fprintf(stderr, "%d\\n", ${quoteVar(v)})`)
 
   let boundsChecking = [`if (${cursor} >= ${size}) break;`]
 
@@ -1362,7 +1361,6 @@ let generateCSqlNew = (q, ir, outDir, outFile) => {
   let cFlags = "-Icgen-sql -O3"
 
   let func = async () => {
-    console.log(`executing ./${out}`)
     let stdout = await sh(`./${out} `)
     return stdout
   }
