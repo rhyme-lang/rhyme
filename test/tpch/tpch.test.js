@@ -4,12 +4,9 @@ const { typing, types } = require('../../src/typing')
 const fs = require("fs")
 const os = require('child_process')
 
-const ir = require('../../src/c1-ir')
-const newCodegen = require('../../src/new-codegen')
-
 // point to the data directory
-let dataDir = "/home/ran/projects/tpch-dbgen/SF1"
-let outDir = "cgen-sql/out/tpch"
+let dataDir = "cgen-sql/data/SF1"
+let outDir = "cgen-sql/out-tpch"
 
 let lineitemSchema = typing.objBuilder()
   .add(typing.createKey(types.u32), typing.createSimpleObject({

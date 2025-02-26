@@ -25,6 +25,13 @@ jobs:
       run: |
         git clone https://github.com/nlohmann/json.git
         sudo cp -r json/include/* /usr/include/
+    - name: Generate TPCH data files
+      run: |
+        git clone https://github.com/electrum/tpch-dbgen.git
+        make -C tpch-dbgen
+        tpch-dbgen/dbgen -s 1 -f -b ./tpch-dbgen/dists.dss
+        mkdir -p cgen-sql/data/SF1
+        mv *.tbl cgen-sql/data/SF1
     - name: Use Node.js ${{ matrix.node-version }}
       uses: actions/setup-node@v3
       with:
