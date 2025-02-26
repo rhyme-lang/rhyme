@@ -1007,8 +1007,10 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
 
             return q.schema;
 
-        } else if (q.op === "equal" || q.op === "and" || q.op === "notEqual" || q.op == "orElse" || q.op === "fdiv" || 
-            q.op === "plus" || q.op === "minus" || q.op === "times" || q.op === "div" || q.op === "mod") {
+        } else if (q.op === "equal" || q.op === "and" || q.op === "notEqual" || q.op === "fdiv" ||
+            q.op === "plus" || q.op === "minus" || q.op === "times" || q.op === "div" || q.op === "mod" ||
+            q.op === "lessThan" || q.op === "greaterThan" || q.op === "lessThanOrEqual" || q.op === "greaterThanOrEqual" ||
+            q.op == "andAlso" || q.op == "orElse") {
             // If q is a binary operation:
             // TODO: Figure out difference between fdiv and div.
             let {type: t1, props: p1} = argTups[0];
@@ -1032,11 +1034,11 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
             } else if (q.op == "fdiv") {
                 // TODO: validate types for fdiv
                 return {type: types.f64, props: union(p1,p2)};
-            } else if (q.op == "equal") {
-                // TODO: validate types for equal
-                return {type: types.boolean, props: union(p1,p2)};
-            } else if (q.op == "notEqual") {
-                // TODO: validate types for notEqual
+            } else if (q.op === "equal" || q.op === "notEqual" ||
+                q.op === "lessThan" || q.op === "greaterThan" ||
+                q.op === "lessThanOrEqual" || q.op === "greaterThanOrEqual" ||
+                q.op == "andAlso") {
+                // TODO: validate types for comparison and logical ops
                 return {type: types.boolean, props: union(p1,p2)};
             } else if (q.op == "and") {
                 // TODO: validate types for and
@@ -1046,6 +1048,17 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
                 return {type: createUnion(t1, t2), props: union(p1, p2)};
             }
             throw new Error("Pure operation not implemented: " + q.op);
+        } else if (q.op == "combine") {
+            return argTups[0];
+        } else if (q.op === "mkTuple") {
+            let res = {}
+            for (let i = 0; i < q.arg.length; i += 2) {
+                let argTup1 = $validateIRQuery(q.arg[i]);
+                let argTup2 = $validateIRQuery(q.arg[i + 1]);
+
+                res[argTup1.type] = argTup2.type;
+            }
+            return intoTup(createSimpleObject(res));
         } else if (q.op == "singleton") {
             // TODO Figure out what singleton does.
             let {type: t1, props: p1} = argTups[0];
@@ -1614,6 +1627,12 @@ let convertAST = (schema, q, completedMap, dontConvertVar = false) => {
               return q;
             }
             throw new Error("Pure operation not implemented: " + q.op);
+        } else if (q.op == "mkTuple") {
+            q.arg = q.arg.map($convertAST);
+            return q;
+        } else if (q.op == "combine") {
+            q.arg = q.arg.map($convertAST);
+            return q;
         }
         throw new Error("Pure operation not implemented: " + q.op);
     } else if (q.key == "stateful") {

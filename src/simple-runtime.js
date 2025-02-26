@@ -42,6 +42,30 @@ rt.pure.notEqual = (x1, x2) => {
   return x1 !== x2
 }
 
+rt.pure.lessThan = (x1, x2) => {
+  if (x1 === undefined) return undefined
+  if (x2 === undefined) return undefined
+  return x1 < x2
+}
+
+rt.pure.greaterThan = (x1, x2) => {
+  if (x1 === undefined) return undefined
+  if (x2 === undefined) return undefined
+  return x1 > x2
+}
+
+rt.pure.lessThanOrEqual = (x1, x2) => {
+  if (x1 === undefined) return undefined
+  if (x2 === undefined) return undefined
+  return x1 < x2
+}
+
+rt.pure.greaterThanOrEqual = (x1, x2) => {
+  if (x1 === undefined) return undefined
+  if (x2 === undefined) return undefined
+  return x1 > x2
+}
+
 rt.pure.plus = (x1,x2) => {
   if (x1 === undefined) return undefined
   if (x2 === undefined) return undefined
@@ -138,7 +162,15 @@ rt.singleton = (x1) => { // 'mkset'
   return {[x1]:true}
 }
 
-
+rt.pure.mkTuple = (...arg) => {
+  let res = {}
+  for (let i = 0; i < arg.length; i += 2) {
+    if (arg[i + 1] === undefined) continue
+    res[arg[i]] = arg[i + 1]
+  }
+  if (Object.keys(res) == 0) return undefined
+  return res
+}
 
 // stateful operations (reducers)
 
