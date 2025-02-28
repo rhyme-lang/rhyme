@@ -571,3 +571,163 @@ test("testFullOuterJoin_other2", () => {
     A: 7, B: 3, C: ["0", "1", "2", "3"]
   })
 })
+
+test("testEqualTrue", () => {
+  let query = rh`1 == 1`
+
+  let func = compile(query)
+  let res = func()
+  expect(res).toEqual(true)
+})
+
+test("testEqualUndefined", () => {
+  let query = rh`1 == 2`
+
+  let func = compile(query)
+  let res = func()
+  expect(res).toEqual(undefined)
+})
+
+test("testNotEqualTrue", () => {
+  let query = rh`1 != 2`
+
+  let func = compile(query)
+  let res = func()
+  expect(res).toEqual(true)
+})
+
+test("testNotEqualUndefined", () => {
+  let query = rh`1 != 1`
+
+  let func = compile(query)
+  let res = func()
+  expect(res).toEqual(undefined)
+})
+
+test("testLessThanTrue", () => {
+  let query = rh`1 < 2`
+
+  let func = compile(query)
+  let res = func()
+  expect(res).toEqual(true)
+})
+
+test("testLessThanUndefined", () => {
+  let query = rh`1 < 0`
+
+  let func = compile(query)
+  let res = func()
+  expect(res).toEqual(undefined)
+})
+
+test("testLessThanOrEqualTrue", () => {
+  let query = rh`1 <= 2`
+
+  let func = compile(query)
+  let res = func()
+  expect(res).toEqual(true)
+})
+
+test("testLessThanOrEqualUndefined", () => {
+  let query = rh`1 <= 0`
+
+  let func = compile(query)
+  let res = func()
+  expect(res).toEqual(undefined)
+})
+
+test("testGreaterThanTrue", () => {
+  let query = rh`2 > 1`
+
+  let func = compile(query)
+  let res = func()
+  expect(res).toEqual(true)
+})
+
+test("testGreaterThanUndefined", () => {
+  let query = rh`0 > 1`
+
+  let func = compile(query)
+  let res = func()
+  expect(res).toEqual(undefined)
+})
+
+test("testGreaterThanOrEqualTrue", () => {
+  let query = rh`2 >= 1`
+
+  let func = compile(query)
+  let res = func()
+  expect(res).toEqual(true)
+})
+
+test("testGreaterThanOrEqualUndefined", () => {
+  let query = rh`0 >= 1`
+
+  let func = compile(query)
+  let res = func()
+  expect(res).toEqual(undefined)
+})
+
+test("testAndTrue", () => {
+  let query = rh`1 == 1 & 2 == 2`
+
+  let func = compile(query)
+  let res = func()
+  expect(res).toEqual(true)
+})
+
+test("testAndUndefined", () => {
+  let query = rh`1 == 1 & 2 == 3`
+
+  let func = compile(query)
+  let res = func()
+  expect(res).toEqual(undefined)
+})
+
+test("testAndAlsoTrue", () => {
+  let query = rh`1 == 1 && 2 == 2`
+
+  let func = compile(query)
+  let res = func()
+  expect(res).toEqual(true)
+})
+
+test("testAndAlsoUndefined", () => {
+  let query = rh`1 == 1 && 2 == 3`
+
+  let func = compile(query)
+  let res = func()
+  expect(res).toEqual(undefined)
+})
+
+test("testOrElseTrue", () => {
+  let query = rh`1 == 2 || 2 == 2`
+
+  let func = compile(query)
+  let res = func()
+  expect(res).toEqual(true)
+})
+
+test("testOrElseUndefined", () => {
+  let query = rh`1 == 2 || 2 == 3`
+
+  let func = compile(query)
+  let res = func()
+  expect(res).toEqual(undefined)
+})
+
+test("testIfElseThenBranch", () => {
+  let query = rh`ifElse (1 == 1) 3 5`
+
+  let func = compile(query)
+  let res = func()
+  expect(res).toEqual(3)
+})
+
+test("testIfElseElseBranch", () => {
+  let query = rh`ifElse (1 != 1) 3 5`
+
+  let func = compile(query)
+  let res = func()
+  expect(res).toEqual(5)
+})
