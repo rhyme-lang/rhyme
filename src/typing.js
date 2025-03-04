@@ -1007,7 +1007,8 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
 
             return q.schema;
 
-        } else if (q.op === "equal" || q.op === "and" || q.op === "notEqual" || q.op == "orElse" || q.op === "fdiv" || 
+        } else if (q.op === "equal" || q.op === "lessThan" || q.op === "lessThanOrEqual" || q.op === "greaterThan" ||
+            q.op === "greaterThanOrEqual" || q.op === "and" || q.op == "andAlso" || q.op === "notEqual" || q.op == "orElse" || q.op === "fdiv" || 
             q.op === "plus" || q.op === "minus" || q.op === "times" || q.op === "div" || q.op === "mod") {
             // If q is a binary operation:
             // TODO: Figure out difference between fdiv and div.
@@ -1032,13 +1033,17 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
             } else if (q.op == "fdiv") {
                 // TODO: validate types for fdiv
                 return {type: types.f64, props: union(p1,p2)};
-            } else if (q.op == "equal") {
+            } else if (q.op == "equal" || q.op === "lessThan" || q.op === "lessThanOrEqual" || q.op === "greaterThan" ||
+                q.op === "greaterThanOrEqual") {
                 // TODO: validate types for equal
                 return {type: types.boolean, props: union(p1,p2)};
             } else if (q.op == "notEqual") {
                 // TODO: validate types for notEqual
                 return {type: types.boolean, props: union(p1,p2)};
             } else if (q.op == "and") {
+                // TODO: validate types for and
+                return {type: t2, props: p2};
+            } else if (q.op == "andAlso") {
                 // TODO: validate types for and
                 return {type: t2, props: p2};
             } else if (q.op == "orElse") {
@@ -1053,6 +1058,11 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
                 type: objBuilder().add(createKey(t1, "singleton"), types.boolean).build(),
                 props: p1
             };
+        } else if (q.op == "ifElse") {
+            // TODO Figure out what ifElse does.
+            let {type: t2, props: p2} = argTups[1];
+            let {type: t3, props: p3} = argTups[2];
+            return {type: createUnion(t2, t3), props: union(p2, p3)};
         }
         throw new Error("Pure operation not implemented: " + q.op);
     } else if (q.key === "hint") {
@@ -1567,7 +1577,8 @@ let convertAST = (schema, q, completedMap, dontConvertVar = false) => {
             return q;
         } else if (q.op.startsWith("convert_")) {
             return q;
-        } else if (q.op === "equal" || q.op === "and" || q.op === "notEqual" || q.op === "orElse" || q.op === "fdiv" || 
+        } else if (q.op === "equal" || q.op === "lessThan" || q.op === "lessThanOrEqual" || q.op === "greaterThan" ||
+            q.op === "greaterThanOrEqual" || q.op === "and" || q.op === "andAlso" || q.op === "notEqual" || q.op === "orElse" || q.op === "fdiv" || 
             q.op === "plus" || q.op === "minus" || q.op === "times" || q.op === "div" || q.op === "mod") {
             
             if (q.op == "plus" || q.op == "minus" || q.op == "times" || q.op == "div" || q.op == "mod") {
@@ -1597,7 +1608,8 @@ let convertAST = (schema, q, completedMap, dontConvertVar = false) => {
                 // Convert args to f64 and do float division.
                 q.arg = q.arg.map((q) => convertQuery($convertAST(q), types.f64));
                 return q;
-            } else if (q.op == "equal" || q.op == "notEqual") {
+            } else if (q.op == "equal" || q.op == "notEqual" || q.op === "lessThan" || q.op === "lessThanOrEqual" ||
+                q.op === "greaterThan" || q.op === "greaterThanOrEqual") {
                 let argSchema1 = unwrapType(q.arg[0].schema.type);
                 let argSchema2 = unwrapType(q.arg[1].schema.type);
                 // TODO: i64 | u64 union figure out type at runtime?????
@@ -1610,10 +1622,14 @@ let convertAST = (schema, q, completedMap, dontConvertVar = false) => {
                 return q;
             } else if (q.op == "and") {
                 return q;
+            } else if (q.op == "andAlso") {
+                return q;
             } else if (q.op == "orElse") {
               return q;
             }
             throw new Error("Pure operation not implemented: " + q.op);
+        } else if (q.op === "ifElse") {
+            return q;
         }
         throw new Error("Pure operation not implemented: " + q.op);
     } else if (q.key == "stateful") {
