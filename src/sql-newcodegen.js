@@ -773,7 +773,7 @@ let emitHashMapInit = (buf, sym, keySchema, valSchema) => {
 //   does nothing
 // if the key is not found:
 //   inserts a new key into the hashmap and initializes it
-let emitHashLookUpOrUpdate = (buf, sym, keys, target, update) => {
+let emitHashLookUpOrUpdate = (buf, sym, keys, update) => {
   let [pos, keyPos] = emitHashLookUp(buf, sym, keys)
 
   cgen.if(buf)(cgen.equal(keyPos, "-1"), buf1 => {
@@ -797,29 +797,13 @@ let emitHashLookUpOrUpdate = (buf, sym, keys, target, update) => {
       }
     }
 
-    let schema = valSchema.find(val => val.name === target).schema
-
-    let lhs
-    if (typing.isObject(schema)) {
-      lhs = {
-        keyPos,
-        dataCount: `${sym}_${target}_count`,
-        bucketCount: `${sym}_${target}_bucket_counts[${keyPos}]`,
-        buckets: `${sym}_${target}_buckets`,
-        target: `${sym}_${target}`,
-        schema
-      }
-    } else if (typing.isString(schema)) {
-      lhs = { str: `${sym}_${target}_str[${keyPos}]`, len: `${sym}_${target}_len[${keyPos}]` }
-    } else {
-      lhs = `${sym}_${target}[${keyPos}]`
-    }
-
-    update(buf1, lhs)
+    emitHashUpdate(buf, sym, pos, keyPos, update)
   })
+
+  return [pos, keyPos]
 }
 
-let emitHashLookUpAndUpdate = (buf, sym, keys, target, update, checkExistance) => {
+let emitHashLookUpAndUpdate = (buf, sym, keys, update, checkExistance) => {
   let [pos, keyPos] = emitHashLookUp(buf, sym, keys)
   let { keySchema, valSchema } = hashMapEnv[sym]
 
@@ -846,23 +830,35 @@ let emitHashLookUpAndUpdate = (buf, sym, keys, target, update, checkExistance) =
     })
   }
 
-  let schema = valSchema.find(val => val.name === target).schema
+  emitHashUpdate(buf, sym, pos, keyPos, update)
 
-  let lhs
-  if (typing.isObject(schema)) {
-    lhs = {
-      keyPos,
-      dataCount: `${sym}_${target}_count`,
-      bucketCount: `${sym}_${target}_bucket_counts[${keyPos}]`,
-      buckets: `${sym}_${target}_buckets`,
-      target: `${sym}_${target}`,
-      schema
+  return [pos, keyPos]
+}
+
+let emitHashUpdate = (buf, sym, pos, keyPos, update) => {
+  let { keySchema, valSchema } = hashMapEnv[sym]
+
+  let lhs = {}
+
+  for (let i in valSchema) {
+    let { name, schema } = valSchema[i]
+
+    if (typing.isObject(schema)) {
+      lhs[name] = {
+        keyPos,
+        dataCount: `${sym}_${name}_count`,
+        bucketCount: `${sym}_${name}_bucket_counts[${keyPos}]`,
+        buckets: `${sym}_${name}_buckets`,
+        target: `${sym}_${name}`,
+        schema
+      }
+    } else if (typing.isString(schema)) {
+      lhs[name] = { str: `${sym}_${name}_str[${keyPos}]`, len: `${sym}_${name}_len[${keyPos}]` }
+    } else {
+      lhs[name] = `${sym}_${name}[${keyPos}]`
     }
-  } else if (typing.isString(schema)) {
-    lhs = { str: `${sym}_${target}_str[${keyPos}]`, len: `${sym}_${target}_len[${keyPos}]` }
-  } else {
-    lhs = `${sym}_${target}[${keyPos}]`
   }
+
   update(buf, lhs)
 }
 
@@ -942,6 +938,7 @@ let emitHashMapPrint = (buf, sym) => {
 }
 
 let assignmentToSym
+let updateOps
 
 let reset = () => {
   // c1 IR
@@ -955,6 +952,7 @@ let reset = () => {
   mksetVarDeps = {}
   inputFilesEnv = {}
   assignmentToSym = {}
+  updateOps = {}
 
   emittedStateful = {}
 
@@ -992,7 +990,7 @@ let emitOptionalAndOp = (buf, e, update) => {
   }
 }
 
-let emitStatefulUpdate = (buf, q, lhs, sym) => {
+let emitStatefulUpdate = (buf, q, lhs) => {
   let e = q.arg[0]
   if (q.op == "sum") {
     emitOptionalAndOp(buf, e, (buf1, rhs) => {
@@ -1027,7 +1025,6 @@ let emitStatefulUpdate = (buf, q, lhs, sym) => {
     })
   } else if (q.op == "array") {
     // lhs passed will be the bucket info object
-    console.assert(sym !== undefined)
     emitOptionalAndOp(buf, e, (buf1, rhs) => {
       emitHashBucketInsert(buf1, lhs, rhs)
     })
@@ -1062,15 +1059,14 @@ let emitStatefulInPath = (q, sym) => {
   let fv = trans(q.fre)
 
   // Get the lhs of the assignment and emit the code for the stateful op
-
   if (initRequired[q.op]) {
     let buf = []
     cgen.comment(buf)("init " + sym + (q.fre.length > 0 ? "[" + q.fre[0] + "]" : "") + " = " + pretty(q))
     if (q.fre.length > 0) {
       // perform hashmap lookup
       let keys = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].map(key => key.val) : [q1.fre[0]]
-      emitHashLookUpOrUpdate(buf, sym, keys, "values", (buf1, lhs) => {
-        emitStatefulInit(buf1, q, lhs)
+      emitHashLookUpOrUpdate(buf, sym, keys, (buf1, lhs) => {
+        emitStatefulInit(buf1, q, lhs["values"])
       })
     } else {
       cgen.declareVar(buf)(convertToCType(q.schema.type), sym)
@@ -1089,8 +1085,8 @@ let emitStatefulInPath = (q, sym) => {
     // perform hashmap lookup
     // we need to check existance for the ops that don't need initialization
     let keys = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].map(key => key.val) : [q1.fre[0]]
-    emitHashLookUpAndUpdate(buf, sym, keys, "values", (buf1, lhs) => {
-      emitStatefulUpdate(buf1, q, lhs, sym)
+    emitHashLookUpAndUpdate(buf, sym, keys, (buf1, lhs) => {
+      emitStatefulUpdate(buf1, q, lhs["values"])
     }, !initRequired[q.op])
   } else {
     emitStatefulUpdate(buf, q, sym)
@@ -1141,9 +1137,9 @@ let emitCode = (q, ir) => {
     }
     let valSchema = []
     if (v.key == "pure" && v.op == "mkTuple") {
-      for (let i = 0; i < q.arg[2].arg.length; i += 2) {
-        let key = q.arg[2].arg[i]
-        let val = q.arg[2].arg[i + 1]
+      for (let j = 0; j < q.arg[2].arg.length; j += 2) {
+        let key = q.arg[2].arg[j]
+        let val = q.arg[2].arg[j + 1]
 
         if (val.key == "pure" && val.op.startsWith("convert_")) {
           val = val.arg[0]
@@ -1153,6 +1149,8 @@ let emitCode = (q, ir) => {
           throw new Error("stateful op expected but got " + pretty(val))
         }
         assignmentToSym[val.op] = sym
+        updateOps[i] ??= []
+        updateOps[i].push(val.op)
         val.extraGroupPath = [key.op]
         assignments[val.op].extraGroupPath = [key.op]
         valSchema.push({ name: key.op, schema: val.schema.type })
@@ -1162,6 +1160,8 @@ let emitCode = (q, ir) => {
         throw new Error("stateful op expected but got " + pretty(v))
       }
       assignmentToSym[v.op] = sym
+      updateOps[i] ??= []
+      updateOps[i].push(v.op)
       valSchema.push({ name: "values", schema: v.schema.type })
     }
 
@@ -1224,6 +1224,8 @@ let emitCode = (q, ir) => {
         let val = emitPath(data, g1.arg[0])
         mksetVarEnv[v1] = [{ val, schema: g1.arg[0].schema }]
       }
+      // let hashed = hash(data, mksetVarEnv[v1].map(e => e.val), mksetVarEnv[v1].map(e => e.schema.type))
+      mksetVarEnv[v1].hash = hash(data, mksetVarEnv[v1].map(e => e.val), mksetVarEnv[v1].map(e => e.schema.type))
       addMkset(f.arg[0], f.arg[1], data)
     } else {
       throw new Error("invalid filter: " + pretty(f))
@@ -1253,51 +1255,85 @@ let emitCode = (q, ir) => {
   // }
 
   // Iterate and emit stateful ops
-  for (let i in assignments) {
-    let q = assignments[i]
+  for (let i in updateOps) {
+    let k = assignments[i].arg[1].op
 
-    if (q.key != "stateful" || !assignmentToSym[i]) continue
+    let keys = k.startsWith("K") ? mksetVarEnv[k].map(key => key.val) : [k]
 
-    let sym = assignmentToSym[i] ? assignmentToSym[i] : tmpSym(i)
+    let sym = tmpSym(i)
 
-    let fv = trans(q.fre)
+    let fv = trans([k])
 
-    // Get the lhs of the assignment and emit the code for the stateful op
+    let init = []
 
-    if (initRequired[q.op]) {
-      let buf = []
-      cgen.comment(buf)("init " + sym + (q.fre.length > 0 ? "[" + q.fre[0] + "]" : "") + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
-      if (q.fre.length > 0) {
-        // perform hashmap lookup
-        let keys = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].map(key => key.val) : [q1.fre[0]]
-        emitHashLookUpOrUpdate(buf, sym, keys, q.extraGroupPath ? q.extraGroupPath[0] : "values", (buf1, lhs) => {
-          emitStatefulInit(buf1, q, lhs)
-        })
-      } else {
-        cgen.declareVar(buf)(convertToCType(q.schema.type), sym)
-        emitStatefulInit(buf, q, sym)
+    let [pos, keyPos] = emitHashLookUpOrUpdate(init, sym, keys, (buf1, lhs) => {
+      for (let j of updateOps[i]) {
+        let q = assignments[j]
+        if (!initRequired[q.op]) continue
+        emitStatefulInit(buf1, q, lhs[q.extraGroupPath ? q.extraGroupPath[0] : "values"])
       }
-      // init
-      assign(buf, sym, fv, [])
-    }
+    })
+    assign(init, sym, fv, [])
 
-    let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? assignmentToSym[tmp] : tmpSym(tmp))] // XXX rhs dims only?
+    let deps = []
 
-    // update
-    let buf = []
-    cgen.comment(buf)("update " + sym + (q.fre.length > 0 ? "[" + q.fre[0] + "]" : "") + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
-    if (q.fre.length > 0) {
-      // perform hashmap lookup
-      // we need to check existance for the ops that don't need initialization
-      let keys = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].map(key => key.val) : [q1.fre[0]]
-      emitHashLookUpAndUpdate(buf, sym, keys, q.extraGroupPath ? q.extraGroupPath[0] : "values", (buf1, lhs) => {
-        emitStatefulUpdate(buf1, q, lhs, sym)
-      }, !initRequired[q.op])
-    } else {
-      emitStatefulUpdate(buf, q, sym)
-    }
-    assign(buf, sym, fv, deps)
+    let update = []
+    emitHashUpdate(update, sym, pos, keyPos, (buf1, lhs) => {
+      for (let j of updateOps[i]) {
+        let q = assignments[j]
+        deps.push(...union(fv, q.bnd))
+        deps.push(...q.tmps.map(tmp => assignmentToSym[tmp] ? assignmentToSym[tmp] : tmpSym(tmp)))
+        emitStatefulUpdate(buf1, q, lhs[q.extraGroupPath ? q.extraGroupPath[0] : "values"], sym)
+      }
+    })
+    assign(update, sym, fv, deps)
   }
+
+  // for (let i in assignments) {
+  //   let q = assignments[i]
+
+  //   if (q.key != "stateful" || !assignmentToSym[i]) continue
+
+  //   let sym = assignmentToSym[i] ? assignmentToSym[i] : tmpSym(i)
+
+  //   let fv = trans(q.fre)
+
+  //   // Get the lhs of the assignment and emit the code for the stateful op
+
+  //   if (initRequired[q.op]) {
+  //     let buf = []
+  //     cgen.comment(buf)("init " + sym + (q.fre.length > 0 ? "[" + q.fre[0] + "]" : "") + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
+  //     if (q.fre.length > 0) {
+  //       // perform hashmap lookup
+  //       let keys = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].map(key => key.val) : [q1.fre[0]]
+  //       emitHashLookUpOrUpdate(buf, sym, keys, (buf1, lhs) => {
+  //         emitStatefulInit(buf1, q, lhs[q.extraGroupPath ? q.extraGroupPath[0] : "values"])
+  //       })
+  //     } else {
+  //       cgen.declareVar(buf)(convertToCType(q.schema.type), sym)
+  //       emitStatefulInit(buf, q, sym)
+  //     }
+  //     // init
+  //     assign(buf, sym, fv, [])
+  //   }
+
+  //   let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? assignmentToSym[tmp] : tmpSym(tmp))] // XXX rhs dims only?
+
+  //   // update
+  //   let buf = []
+  //   cgen.comment(buf)("update " + sym + (q.fre.length > 0 ? "[" + q.fre[0] + "]" : "") + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
+  //   if (q.fre.length > 0) {
+  //     // perform hashmap lookup
+  //     // we need to check existance for the ops that don't need initialization
+  //     let keys = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].map(key => key.val) : [q1.fre[0]]
+  //     emitHashLookUpAndUpdate(buf, sym, keys, (buf1, lhs) => {
+  //       emitStatefulUpdate(buf1, q, lhs[q.extraGroupPath ? q.extraGroupPath[0] : "values"], sym)
+  //     }, !initRequired[q.op])
+  //   } else {
+  //     emitStatefulUpdate(buf, q, sym)
+  //   }
+  //   assign(buf, sym, fv, deps)
+  // }
 
   let epilog = []
   let res = emitPath(epilog, q)
