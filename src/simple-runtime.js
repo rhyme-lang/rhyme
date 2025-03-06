@@ -33,37 +33,37 @@ rt.special.merge = rt.special.keyval = true
 rt.pure.equal = (x1, x2) => {
   if (x1 === undefined) return undefined
   if (x2 === undefined) return undefined
-  return x1 === x2
+  return x1 === x2 ? true : undefined
 }
 
 rt.pure.notEqual = (x1, x2) => {
   if (x1 === undefined) return undefined
   if (x2 === undefined) return undefined
-  return x1 !== x2
+  return x1 !== x2 ? true : undefined
 }
 
 rt.pure.lessThan = (x1, x2) => {
   if (x1 === undefined) return undefined
   if (x2 === undefined) return undefined
-  return x1 < x2
-}
-
-rt.pure.greaterThan = (x1, x2) => {
-  if (x1 === undefined) return undefined
-  if (x2 === undefined) return undefined
-  return x1 > x2
+  return x1 < x2 ? true : undefined
 }
 
 rt.pure.lessThanOrEqual = (x1, x2) => {
   if (x1 === undefined) return undefined
   if (x2 === undefined) return undefined
-  return x1 < x2
+  return x1 <= x2 ? true : undefined
+}
+
+rt.pure.greaterThan = (x1, x2) => {
+  if (x1 === undefined) return undefined
+  if (x2 === undefined) return undefined
+  return x1 > x2 ? true : undefined
 }
 
 rt.pure.greaterThanOrEqual = (x1, x2) => {
   if (x1 === undefined) return undefined
   if (x2 === undefined) return undefined
-  return x1 > x2
+  return x1 >= x2 ? true : undefined
 }
 
 rt.pure.plus = (x1,x2) => {
@@ -131,15 +131,23 @@ rt.pure.and = (x1,x2) => {
   return x2
 }
 
+rt.pure.andAlso = (x1,x2) => {
+  if (x1 === undefined) return undefined
+  return x2
+}
+
 rt.pure.orElse = (x1,x2) => {
   if (x1 === undefined) return x2
   return x1
 }
 
-
 rt.pure.singleton = (x1) => { // 'mkset'
   if (x1 === undefined) return {}
   return {[x1]:true}
+}
+
+rt.pure.ifElse = (c,tB,eB) => {
+  return c !== undefined ? tB : eB
 }
 
 rt.pure.convert_u8 = (x) => x === undefined ? undefined : (Number(x) & 0xff);

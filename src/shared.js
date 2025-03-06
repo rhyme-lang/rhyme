@@ -44,13 +44,13 @@ ops.pure.orElse = true
 ops.pure.equal = true
 ops.pure.notEqual = true
 ops.pure.lessThan = true
-ops.pure.greaterThan = true
 ops.pure.lessThanOrEqual = true
+ops.pure.greaterThan = true
 ops.pure.greaterThanOrEqual = true
-
 ops.pure.join = true
 ops.pure.singleton = true
 ops.pure.vars = true
+ops.pure.ifElse = true
 
 // stateful operations
 
