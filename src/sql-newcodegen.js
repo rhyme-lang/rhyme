@@ -27,6 +27,11 @@ let tmpVarWriteRank
 
 let emittedStateful
 
+let currentGroupKey
+
+let assignmentToSym
+let updateOps
+
 // generator ir api: mirroring necessary bits from ir.js
 let expr = (txt, ...args) => ({ txt, deps: args })
 
@@ -195,6 +200,7 @@ let cgen = {
   declarePtrPtr: (buf) => (type, name, init, constant = false) => buf.push((constant ? "const " : "") + `${type} **${name}` + (init ? ` = ${init};` : ";")),
 
   declareInt: (buf) => (name, init) => cgen.declareVar(buf)("int", name, init),
+  declareLong: (buf) => (name, init) => cgen.declareVar(buf)("long", name, init),
   declareULong: (buf) => (name, init) => cgen.declareVar(buf)("unsigned long", name, init),
   declareCharArr: (buf) => (name, len, init) => cgen.declareArr(buf)("char", name, len, init),
   declareIntPtr: (buf) => (name, init) => cgen.declarePtr(buf)("int", name, init),
@@ -218,6 +224,10 @@ let cgen = {
     buf.push(`while (${cond}) {`)
     body(buf)
     buf.push("}")
+  },
+
+  while1: (buf) => (cond, body) => {
+    buf.push(`while (${cond}) ${body};`)
   },
 
   continue: (buf) => () => buf.push("continue;"),
@@ -292,7 +302,7 @@ let validateAndExtractUsedCols = (q) => {
       usedCols[prefix][e2.op] = true
       return
     }
-    if (typing.isNumber(q.schema.type)) {
+    if (typing.isNumber(q.schema.type) || q.schema.type.typeSym == typeSyms.date) {
       usedCols[prefix][e2.op] = true
     } else {
       throw new Error("column data type not supported: " + pretty(q) + " has type " + typing.prettyPrintTuple(q.schema))
@@ -323,6 +333,18 @@ let validateAndExtractUsedCols = (q) => {
   } else if (q.arg) {
     q.arg.map(validateAndExtractUsedCols)
   }
+}
+
+let emitGetTime = (buf) => {
+  let timeval = getNewName("timeval")
+  cgen.stmt(buf)(`struct timeval ${timeval}`)
+
+  cgen.stmt(buf)(cgen.call("gettimeofday", `&${timeval}`, "NULL"))
+
+  let time = getNewName("t")
+  cgen.declareLong(buf)(time, cgen.plus(cgen.mul(`${timeval}.tv_sec`, "1000000L"), `${timeval}.tv_usec`))
+
+  return time
 }
 
 // let analyzePath = (q) => {
@@ -434,11 +456,9 @@ let emitHashLookUp = (buf, sym, keys) => {
 }
 
 let scanColumn = (buf, mappedFile, cursor, size, delim) => {
-  cgen.while(buf)(
+  cgen.while1(buf)(
     cgen.notEqual(`${mappedFile}[${cursor}]`, delim),
-    buf1 => {
-      cgen.stmt(buf1)(cgen.inc(cursor))
-    }
+    cgen.inc(cursor)
   )
 }
 
@@ -450,24 +470,22 @@ let scanInteger = (buf, mappedFile, cursor, size, delim, name) => {
       cgen.if(buf1)(cgen.and(
         cgen.ge(`${mappedFile}[${cursor}]`, "'0'"), cgen.le(`${mappedFile}[${cursor}]`, "'9'")
       ), buf2 => {
-        cgen.stmt(buf2)(cgen.binary(name, "10", "*="))
-        cgen.stmt(buf2)(cgen.binary(name, cgen.minus(`${mappedFile}[${cursor}]`, "'0'"), "+="))
+        cgen.stmt(buf1)(cgen.assign(name, cgen.plus(cgen.mul(name, "10"), cgen.minus(`${mappedFile}[${cursor}]`, "'0'"), "+")))
       })
       cgen.stmt(buf1)(cgen.inc(cursor))
     }
   )
 }
 
-let scanDecimal = (buf, mappedFile, cursor, size, delim, integer, frac, scale) => {
+let scanDecimal = (buf, mappedFile, cursor, size, delim, number, scale) => {
   cgen.while(buf)(
     cgen.and(
-      cgen.notEqual(`${mappedFile}[${cursor}]`, delim),
       cgen.notEqual(`${mappedFile}[${cursor}]`, "'.'"),
+      cgen.notEqual(`${mappedFile}[${cursor}]`, delim),
     ),
     buf1 => {
       cgen.comment(buf1)("extract integer part")
-      cgen.stmt(buf1)(cgen.binary(integer, "10", "*="))
-      cgen.stmt(buf1)(cgen.binary(integer, cgen.minus(`${mappedFile}[${cursor}]`, "'0'"), "+="))
+      cgen.stmt(buf1)(cgen.assign(number, cgen.plus(cgen.mul(number, "10"), cgen.minus(`${mappedFile}[${cursor}]`, "'0'"), "+")))
       cgen.stmt(buf1)(cgen.inc(cursor))
     }
   )
@@ -480,13 +498,30 @@ let scanDecimal = (buf, mappedFile, cursor, size, delim, integer, frac, scale) =
         cgen.notEqual(`${mappedFile}[${cursor}]`, delim),
         buf2 => {
           cgen.comment(buf2)("extract fractional part")
-          cgen.stmt(buf2)(cgen.binary(frac, "10", "*="))
-          cgen.stmt(buf2)(cgen.binary(frac, cgen.minus(`${mappedFile}[${cursor}]`, "'0'"), "+="))
-          cgen.stmt(buf2)(cgen.binary(scale, "10", "*="))
+          cgen.stmt(buf1)(cgen.assign(number, cgen.plus(cgen.mul(number, "10"), cgen.minus(`${mappedFile}[${cursor}]`, "'0'"), "+")))
+          cgen.stmt(buf1)(cgen.assign(scale, cgen.mul(scale, "10")))
           cgen.stmt(buf2)(cgen.inc(cursor))
         }
       )
     }
+  )
+}
+
+let scanDate = (buf, mappedFile, cursor, size, delim, name) => {
+  let digits = [
+    `${mappedFile}[${cursor}]`,
+    `${mappedFile}[${cursor} + 1]`,
+    `${mappedFile}[${cursor} + 2]`,
+    `${mappedFile}[${cursor} + 3]`,
+    ,
+    `${mappedFile}[${cursor} + 5]`,
+    `${mappedFile}[${cursor} + 6]`,
+    ,
+    `${mappedFile}[${cursor} + 8]`,
+    `${mappedFile}[${cursor} + 9]`,
+  ]
+  cgen.declareVar(buf)("int", name,
+    `(((((((${digits[0]} * 10 + ${digits[1]}) * 10 + ${digits[2]}) * 10 + ${digits[3]}) * 10 + ${digits[5]}) * 10 + ${digits[6]}) * 10 + ${digits[8]}) * 10 + ${digits[9]}) - 533333328`
   )
 }
 
@@ -524,28 +559,33 @@ let emitRowScanning = (f, file, cursor, schema, first = true) => {
     if (typing.isInteger(type)) {
       cgen.declareVar(buf)(convertToCType(type), name, "0")
       scanInteger(buf, mappedFile, cursor, size, delim, name)
+      cgen.stmt(buf)(cgen.inc(cursor))
     } else if (type.typeSym === typeSyms.f32 || type.typeSym === typeSyms.f64) {
-      let integer = getNewName("integer")
-      let frac = getNewName("frac")
+      let number = getNewName("number")
       let scale = getNewName("scale")
-      cgen.declareInt(buf)(integer, "0")
-      cgen.declareInt(buf)(frac, "0")
-      cgen.declareInt(buf)(scale, "1")
-      scanDecimal(buf, mappedFile, cursor, size, delim, integer, frac, scale)
+      cgen.declareLong(buf)(number, "0")
+      cgen.declareLong(buf)(scale, "1")
+      scanDecimal(buf, mappedFile, cursor, size, delim, number, scale)
       cgen.declareVar(buf)(convertToCType(type), name,
-        cgen.plus(integer, cgen.div(cgen.cast("double", frac), scale))
+        cgen.div(cgen.cast("double", number), scale)
       )
+      cgen.stmt(buf)(cgen.inc(cursor))
+    } else if (type.typeSym == typeSyms.date) {
+      scanDate(buf, mappedFile, cursor, size, delim, name)
+      cgen.stmt(buf)(cgen.binary(cursor, "11", "+="))
     } else {
       // String
       cgen.declareInt(buf)(start, cursor)
       scanColumn(buf, mappedFile, cursor, size, delim)
       cgen.declareInt(buf)(end, cursor)
+      cgen.stmt(buf)(cgen.inc(cursor))
     }
+  } else if (type.typeSym == typeSyms.date) {
+    cgen.stmt(buf)(cgen.binary(cursor, "11", "+="))
   } else {
     scanColumn(buf, mappedFile, cursor, size, delim)
+    cgen.stmt(buf)(cgen.inc(cursor))
   }
-
-  cgen.stmt(buf)(cgen.inc(cursor))
 
   // consume the newline character for tbl
   if (first && format == "tbl") cgen.stmt(buf)(cgen.inc(cursor))
@@ -579,9 +619,9 @@ let getLoopTxt = (f, file, loadInput) => () => {
   }
 
   let loopHeader = []
-  cgen.stmt(loopHeader)(cgen.assign(quoteVar(v), "-1"))
+  // cgen.stmt(loopHeader)(cgen.assign(quoteVar(v), "-1"))
   loopHeader.push("while (1) {")
-  cgen.stmt(loopHeader)(cgen.inc(quoteVar(v)))
+  // cgen.stmt(loopHeader)(cgen.inc(quoteVar(v)))
 
   let boundsChecking = [`if (${cursor} >= ${size}) break;`]
 
@@ -668,7 +708,7 @@ let emitPath = (buf, q) => {
     let start = name + "_start"
     let end = name + "_end"
 
-    if (typing.isNumber(q.schema.type)) {
+    if (typing.isNumber(q.schema.type) || q.schema.type.typeSym == typeSyms.date) {
       return name
     } else if (typing.isString(q.schema.type)) {
       return { str: `${mappedFile} + ${start}`, len: `${end} - ${start}` }
@@ -887,11 +927,7 @@ let emitHashBucketInsert = (buf, bucket, value) => {
 // Emit code that prints the keys and values in a hashmap.
 let emitHashMapPrint = (buf, sym) => {
   let { keySchema, valSchema } = hashMapEnv[sym]
-  buf.push(`for (int i = 0; i < ${HASH_SIZE}; i++) {`)
-  buf.push(`int key_pos = ${sym}_htable[i];`)
-  buf.push(`if (key_pos == -1) {`)
-  buf.push(`continue;`)
-  buf.push(`}`)
+  buf.push(`for (int key_pos = 0; key_pos < ${sym}_key_count; key_pos++) {`)
   buf.push(`// print key`)
 
   for (let i in keySchema) {
@@ -937,8 +973,7 @@ let emitHashMapPrint = (buf, sym) => {
   buf.push(`}`)
 }
 
-let assignmentToSym
-let updateOps
+let prolog
 
 let reset = () => {
   // c1 IR
@@ -957,6 +992,12 @@ let reset = () => {
   emittedStateful = {}
 
   nameIdMap = {}
+
+  let currentGroupKey = []
+
+
+  
+  prolog = []
 }
 
 let emitStatefulInit = (buf, q, lhs) => {
@@ -1045,33 +1086,61 @@ let emitStatefulUpdate = (buf, q, lhs) => {
 let emitStatefulInPath = (q, sym) => {
   if (q.fre.length > 1) throw new Error("unexpected number of free variables for stateful op " + pretty(v))
 
-  if (q.fre.length != 0) {
-    // Create hashmap
-    let buf = []
-    let keySchema = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].map(key => key.schema.type) : [{ type: types.i32 }]
-    let valSchema = [{ name: "values", schema: q.schema.type }]
-    emitHashMapInit(buf, sym, keySchema, valSchema)
-    assign(buf, sym, [], [])
+  // if (currentGroupKey.length != 0 && q.fre.length != 0 && currentGroupKey[0].var == q.fre[0]) {
+  //   let hashmapInit = []
+  //   emitHashMapInit(hashmapInit, sym, keySchema, valSchema)
+  //   assign(hashmapInit, sym, [], [])
 
-    hashMapEnv[sym] = { keySchema, valSchema }
-  }
+  //   hashMapEnv[sym] = { keySchema, valSchema }
+
+  //   let init
+  //   emitStatefulInit(buf, q, lhs["values"])
+
+  //   emittedStateful[sym] = true
+  //   return
+  // }
 
   let fv = trans(q.fre)
+
+  if (q.fre.length != 0) {
+    // Create hashmap
+    // let buf = []
+    let keySchema = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].map(key => key.schema.type) : [{ type: types.i32 }]
+    let valSchema = [{ name: "values", schema: q.schema.type }]
+    emitHashMapInit(prolog, sym, keySchema, valSchema)
+    // assign(buf, sym, [], [])
+
+    hashMapEnv[sym] = { keySchema, valSchema }
+
+    let init = []
+    cgen.comment(init)("init " + sym + "[" + q.fre[0] + "]" + " = " + pretty(q))
+
+    let keys = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].map(key => key.val) : [q1.fre[0]]
+    let [pos, keyPos] = emitHashLookUpOrUpdate(init, sym, keys, (buf1, lhs) => {
+      emitStatefulInit(buf1, q, lhs["values"])
+    })
+    assign(init, sym, fv, [])
+
+    let update = []
+    cgen.comment(update)("update " + sym + "[" + q.fre[0] + "]" + " = " + pretty(q))
+
+    let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? assignmentToSym[tmp] : tmpSym(tmp))]
+
+    emitHashUpdate(update, sym, pos, keyPos, (buf1, lhs) => {
+      emitStatefulUpdate(buf1, q, lhs["values"], sym)
+    })
+    assign(update, sym, fv, deps)
+    return
+  }
+
 
   // Get the lhs of the assignment and emit the code for the stateful op
   if (initRequired[q.op]) {
     let buf = []
     cgen.comment(buf)("init " + sym + (q.fre.length > 0 ? "[" + q.fre[0] + "]" : "") + " = " + pretty(q))
-    if (q.fre.length > 0) {
-      // perform hashmap lookup
-      let keys = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].map(key => key.val) : [q1.fre[0]]
-      emitHashLookUpOrUpdate(buf, sym, keys, (buf1, lhs) => {
-        emitStatefulInit(buf1, q, lhs["values"])
-      })
-    } else {
-      cgen.declareVar(buf)(convertToCType(q.schema.type), sym)
-      emitStatefulInit(buf, q, sym)
-    }
+
+    cgen.declareVar(buf)(convertToCType(q.schema.type), sym)
+    emitStatefulInit(buf, q, sym)
     // init
     assign(buf, sym, fv, [])
   }
@@ -1081,34 +1150,14 @@ let emitStatefulInPath = (q, sym) => {
   // update
   let buf = []
   cgen.comment(buf)("update " + sym + (q.fre.length > 0 ? "[" + q.fre[0] + "]" : "") + " = " + pretty(q))
-  if (q.fre.length > 0) {
-    // perform hashmap lookup
-    // we need to check existance for the ops that don't need initialization
-    let keys = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].map(key => key.val) : [q1.fre[0]]
-    emitHashLookUpAndUpdate(buf, sym, keys, (buf1, lhs) => {
-      emitStatefulUpdate(buf1, q, lhs["values"])
-    }, !initRequired[q.op])
-  } else {
-    emitStatefulUpdate(buf, q, sym)
-  }
+
+  emitStatefulUpdate(buf, q, sym)
   assign(buf, sym, fv, deps)
 
   emittedStateful[sym] = true
 }
 
-let emitCode = (q, ir) => {
-  filters = ir.filters
-  assignments = ir.assignments
-
-  reset()
-
-  validateAndExtractUsedCols(q)
-  // analyzeDestination(q)
-
-  let prolog = []
-  prolog.push(`#include "rhyme-sql.h"`)
-  prolog.push("int main() {")
-
+let collectHashMaps = () => {
   // Iterate through all update ops to group stateful ops together
   for (let i in assignments) {
     let q = assignments[i]
@@ -1129,6 +1178,7 @@ let emitCode = (q, ir) => {
     }
 
     if (v.fre.length !== 1 || k.op !== v.fre[0]) {
+      console.log(k.op, v.fre)
       throw new Error("unexpected number of free variables for stateful op " + pretty(v))
     }
 
@@ -1166,18 +1216,38 @@ let emitCode = (q, ir) => {
     }
 
     // Create hashmap
-    let buf = []
-    emitHashMapInit(buf, sym, keySchema, valSchema)
-    assign(buf, sym, [], [])
+    // let buf = []
+    emitHashMapInit(prolog, sym, keySchema, valSchema)
+    // assign(buf, sym, [], [])
 
     hashMapEnv[sym] = { keySchema, valSchema }
   }
+}
 
-  for (let v in ir.vars) {
-    if (v.startsWith("K")) continue
-    let counter = `${quoteVar(v)}`
-    cgen.declareInt(prolog)(counter)
-  }
+
+let emitCode = (q, ir) => {
+  filters = ir.filters
+  assignments = ir.assignments
+
+  reset()
+
+  validateAndExtractUsedCols(q)
+  // analyzeDestination(q)
+
+  prolog.push(`#include "rhyme-sql.h"`)
+  prolog.push(`#include <sys/time.h>`)
+  prolog.push("int main() {")
+
+  let t0 = emitGetTime(prolog)
+
+  collectHashMaps()
+
+  // Declare loop counter vars
+  // for (let v in ir.vars) {
+  //   if (v.startsWith("K")) continue
+  //   let counter = `${quoteVar(v)}`
+  //   cgen.declareInt(prolog)(counter)
+  // }
 
   for (let i in filters) {
     let f = filters[i]
@@ -1225,34 +1295,12 @@ let emitCode = (q, ir) => {
         mksetVarEnv[v1] = [{ val, schema: g1.arg[0].schema }]
       }
       // let hashed = hash(data, mksetVarEnv[v1].map(e => e.val), mksetVarEnv[v1].map(e => e.schema.type))
-      mksetVarEnv[v1].hash = hash(data, mksetVarEnv[v1].map(e => e.val), mksetVarEnv[v1].map(e => e.schema.type))
+      // mksetVarEnv[v1].hash = hash(data, mksetVarEnv[v1].map(e => e.val), mksetVarEnv[v1].map(e => e.schema.type))
       addMkset(f.arg[0], f.arg[1], data)
     } else {
       throw new Error("invalid filter: " + pretty(f))
     }
   }
-
-  // Iterate through other stateful ops that does not come after an update op
-  // and create hashmaps if needed
-  // for (let i in assignments) {
-  //   let q = assignments[i]
-
-  //   if (q.key != "stateful" || assignmentToSym[i]) continue
-  //   let sym = tmpSym(i)
-
-  //   if (q.fre.length > 1) throw new Error("unexpected number of free variables for stateful op " + pretty(v))
-
-  //   if (q.fre.length != 0) {
-  //     // Create hashmap
-  //     let buf = []
-  //     let keySchema = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].map(key => key.schema.type) : [{ type: types.i32 }]
-  //     let valSchema = [{ name: "values", schema: q.schema.type }]
-  //     emitHashMapInit(buf, sym, keySchema, valSchema)
-  //     assign(buf, sym, [], [])
-
-  //     hashMapEnv[sym] = { keySchema, valSchema }
-  //   }
-  // }
 
   // Iterate and emit stateful ops
   for (let i in updateOps) {
@@ -1265,28 +1313,34 @@ let emitCode = (q, ir) => {
     let fv = trans([k])
 
     let init = []
+    let buf = []
 
-    let [pos, keyPos] = emitHashLookUpOrUpdate(init, sym, keys, (buf1, lhs) => {
+    cgen.comment(buf)("init and update " + sym + "[" + q.fre[0] + "]" + " = " + pretty(q))
+
+    let [pos, keyPos] = emitHashLookUpOrUpdate(buf, sym, keys, (buf1, lhs) => {
       for (let j of updateOps[i]) {
         let q = assignments[j]
         if (!initRequired[q.op]) continue
+        cgen.comment(buf1)("init " + sym + "[" + q.fre[0] + "]" + " = " + pretty(q))
         emitStatefulInit(buf1, q, lhs[q.extraGroupPath ? q.extraGroupPath[0] : "values"])
       }
     })
-    assign(init, sym, fv, [])
+    // assign(init, sym, fv, [])
 
     let deps = []
 
     let update = []
-    emitHashUpdate(update, sym, pos, keyPos, (buf1, lhs) => {
+    currentGroupKey = [{ var: k, pos, keyPos }]
+    emitHashUpdate(buf, sym, pos, keyPos, (buf1, lhs) => {
       for (let j of updateOps[i]) {
         let q = assignments[j]
+        cgen.comment(buf1)("update " + sym + "[" + q.fre[0] + "]" + " = " + pretty(q))
         deps.push(...union(fv, q.bnd))
         deps.push(...q.tmps.map(tmp => assignmentToSym[tmp] ? assignmentToSym[tmp] : tmpSym(tmp)))
         emitStatefulUpdate(buf1, q, lhs[q.extraGroupPath ? q.extraGroupPath[0] : "values"], sym)
       }
     })
-    assign(update, sym, fv, deps)
+    assign(buf, sym, fv, deps)
   }
 
   // for (let i in assignments) {
@@ -1335,6 +1389,8 @@ let emitCode = (q, ir) => {
   //   assign(buf, sym, fv, deps)
   // }
 
+  let t1 = emitGetTime(prolog)
+
   let epilog = []
   let res = emitPath(epilog, q)
 
@@ -1350,6 +1406,10 @@ let emitCode = (q, ir) => {
       }
     }
   }
+
+  let t2 = emitGetTime(epilog)
+
+  cgen.printErr(epilog)(`"Timing:\\n\\tInitializaton:\\t%ld μs\\n\\tRuntime:\\t%ld μs\\n\\tTotal:\\t\\t%ld μs\\n"`, cgen.minus(t1, t0), cgen.minus(t2, t1), cgen.minus(t2, t0))
 
   cgen.return(epilog)("0")
   epilog.push("}")

@@ -44,6 +44,8 @@ createType("f64");
 // f32 <: f64
 //types["emptyObject"] = [];
 
+createType("date");
+
 let numberTypes = [
     types.u8, types.u16, types.u32, types.u64,
     types.i8, types.i16, types.i32, types.i64,
