@@ -128,7 +128,6 @@ test("day2-part1", () => {
     ...udf_stdlib,
     slice: a => array => array.slice(a),
     range: (a,b) => { let res = {}; for (let i = a; i < b; i++) res[i] = true; return res },
-    orElse: (a,b) => (a || b) || undefined
   }
 
   let line = rh`.input | udf.split "\\n" | .*line`
@@ -138,7 +137,7 @@ test("day2-part1", () => {
   let delta = rh`${tail}.*i - ${report}.*i`
 
   let monotonic = sign => rh`all (udf.range 1 4).(${sign} * ${delta})`
-  let safe = rh`udf.orElse ${monotonic(1)} ${monotonic(-1)}`
+  let safe = rh`${monotonic(1)} || ${monotonic(-1)}`
 
   let query   = rh`count (*line & ${safe})`
 
@@ -163,7 +162,6 @@ test("day2-part2", () => {
     splice: a => array => array.slice(0, a).concat(array.slice(a+1)),
     pushBack: (a, b) => [...a, b],
     range: (a,b) => { let res = {}; for (let i = a; i < b; i++) res[i] = true; return res },
-    orElse: (a,b) => (a || b) || undefined
   }
 
   let line = rh`.input | udf.split "\\n" | .*line`
@@ -173,7 +171,7 @@ test("day2-part2", () => {
   let tail = rh`${reports} | udf.slice 1`
   let delta = rh`${tail}.*i - ${reports}.*i`
   let monotonic = sign => rh`all (udf.range 1 4).(${sign} * ${delta})`
-  let safe = rh`udf.orElse ${monotonic(1)} ${monotonic(-1)} | group *report`
+  let safe = rh`${monotonic(1)} || ${monotonic(-1)} | group *report`
   let query = rh`count (*line & ${safe})`
 
   let func = api.compileC2(query)
@@ -241,17 +239,16 @@ MXMXAXMASX`
   let delta = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]];
   let udf = {
     filter: c => c ? { [c]: true } : {},
-    andThen: (a,b) => b,
     ...udf_stdlib,
   }
-  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+  let filterBy = (gen, p) => x => rh`(udf.filter ${p}).${gen} & ${x}`
 
   let line = rh`.input | udf.split "\\n" | .*line | udf.split ""`
   let grid = api.array(line)
 
   let substring = rh`${grid}.*x.*y + ${grid}.(*x + ${delta}.*d.0).(*y + ${delta}.*d.1) + 
     ${grid}.(*x + 2 * ${delta}.*d.0).(*y + 2 * ${delta}.*d.1) + ${grid}.(*x + 3 * ${delta}.*d.0).(*y + 3 * ${delta}.*d.1)`
-  let isXMAS = rh`udf.isEqual ${substring} "XMAS"`
+  let isXMAS = rh`${substring} == "XMAS"`
   let query = rh`${substring} | ${filterBy("*f0", isXMAS)} | count`
   
   let func = api.compileC2(query)
@@ -275,19 +272,18 @@ MXMXAXMASX`
 
   let udf = {
     filter: c => c ? { [c]: true } : {},
-    andThen: (a,b) => b,
     ...udf_stdlib,
   }
-  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+  let filterBy = (gen, p) => x => rh`(udf.filter ${p}).${gen} & ${x}`
 
   let line = rh`.input | udf.split "\\n" | .*line | udf.split ""`
   let grid = api.array(line)
 
   let substring1 = rh`${grid}.(*x - 1).(*y - 1) + ${grid}.*x.*y + ${grid}.(*x + 1).(*y + 1)`
   let substring2 = rh`${grid}.(*x - 1).(*y + 1) + ${grid}.*x.*y + ${grid}.(*x + 1).(*y - 1)`
-  let isMAS1 = rh`udf.logicalOr (udf.isEqual ${substring1} "MAS") (udf.isEqual ${substring1} "SAM")`
-  let isMAS2 = rh`udf.logicalOr (udf.isEqual ${substring2} "MAS") (udf.isEqual ${substring2} "SAM")`
-  let isXMAS = rh`udf.logicalAnd ${isMAS1} ${isMAS2}`
+  let isMAS1 = rh`(${substring1} == "MAS") || (${substring1} == "SAM")`
+  let isMAS2 = rh`(${substring2} == "MAS") || (${substring2} == "SAM")`
+  let isXMAS = rh`${isMAS1} & ${isMAS2}`
   let query = rh`${substring1} | ${filterBy("*f0", isXMAS)} | count`
   
   let func = api.compileC2(query)
@@ -329,25 +325,22 @@ test("day5-part1", () => {
 
   let udf = {
     filter: c => c ? { [c]: true } : {},
-    andThen: (a,b) => b,
-    orElse: (a) => a || undefined,
-    generatePairs: (a, b, x, y) => x < y ? {a, b} : undefined,
     arrMid: (arr) => arr[Math.floor(arr.length / 2)],
     ...udf_stdlib,
   }
-  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+  let filterBy = (gen, p) => x => rh`(udf.filter ${p}).${gen} & ${x}`
   
   let splitInput = rh`.input | udf.split "\\n\\n"`
   let updatesStr = rh`${splitInput}.1`
   let line = rh`${updatesStr} | udf.split "\\n" | .*line`
   let update = rh`${line} | udf.split "," | .*col | udf.toNum | array`
-  let arr = rh`udf.generatePairs ${update}.*x ${update}.*y udf.toNum(*x) udf.toNum(*y) | array`
+  let arr = rh`(udf.toNum(*x) < udf.toNum(*y)) & {a:${update}.*x, b:${update}.*y}`
 
   let rulesStr = rh`${splitInput}.0`
   let rule = rh`${rulesStr} | udf.matchAll "(\\\\d+)\\\\|(\\\\d+)" "g" | .*rule | udf.slice 1 | .*rulecol | udf.toNum | group *rulecol | array`
-  let rulesViolated = rh`udf.logicalAnd (udf.isEqual ${rule}.*i.0 ${arr}.*j.b) (udf.isEqual ${rule}.*i.1 ${arr}.*j.a)`
-  let countViolations = rh`udf.orElse ${rulesViolated} | count`
-  let isValid = rh`udf.isEqual ${countViolations} 0`
+  let rulesViolated = rh`(${rule}.*i.0 == ${arr}.b) & (${rule}.*i.1 == ${arr}.a)`
+  let countViolations = rh`${rulesViolated} | count`
+  let isValid = rh`${countViolations} == 0`
   
   let mid = rh`udf.arrMid ${update}`
   let query = rh`sum(*line & (${mid} | ${filterBy("*f0", isValid)}))`
@@ -391,9 +384,6 @@ test("day5-part2", () => {
 
   let udf = {
     filter: c => c ? { [c]: true } : {},
-    andThen: (a,b) => b,
-    orElse: (a) => a || undefined,
-    generatePairs: (a, b, x, y) => x < y ? {a, b} : undefined,
     arrMid: (arr) => arr[Math.floor(arr.length / 2)],
     slice: a => array => array.slice(a),
     customSort: (rules, arr) => {
@@ -401,19 +391,19 @@ test("day5-part2", () => {
     },
     ...udf_stdlib,
   }
-  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
+  let filterBy = (gen, p) => x => rh`(udf.filter ${p}).${gen} & ${x}`
   
   let splitInput = rh`.input | udf.split "\\n\\n"`
   let updatesStr = rh`${splitInput}.1`
   let line = rh`${updatesStr} | udf.split "\\n" | .*line`
   let update = rh`${line} | udf.split "," | .*col | udf.toNum | array`
-  let arr = rh`udf.generatePairs ${update}.*x ${update}.*y udf.toNum(*x) udf.toNum(*y) | array`
+  let arr = rh`(udf.toNum(*x) < udf.toNum(*y)) & {a:${update}.*x, b:${update}.*y}`
 
   let rulesStr = rh`${splitInput}.0`
   let rule = rh`${rulesStr} | udf.matchAll "(\\\\d+)\\\\|(\\\\d+)" "g" | .*rule | udf.slice 1 | .*rulecol | udf.toNum | group *rulecol | array`
-  let rulesViolated = rh`udf.logicalAnd (udf.isEqual ${rule}.*i.0 ${arr}.*j.b) (udf.isEqual ${rule}.*i.1 ${arr}.*j.a)`
-  let countViolations = rh`udf.orElse ${rulesViolated} | count`
-  let notValid = rh`udf.notEqual ${countViolations} 0`
+  let rulesViolated = rh`(${rule}.*i.0 == ${arr}.b) & (${rule}.*i.1 == ${arr}.a)`
+  let countViolations = rh`${rulesViolated} | count`
+  let notValid = rh`${countViolations} != 0`
   
   let invalidUpdate = rh`${update} | ${filterBy("*f0", notValid)}`
   let sortedUpdate = rh`udf.customSort ${rule} ${invalidUpdate}`
