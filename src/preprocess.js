@@ -62,14 +62,13 @@ let preproc = q => {
     console.error("unexpected raw input: ", q)
   } if (q.xxkey == "const") {
     return { key: "const", op: q.xxop }
-  } else if (q.xxkey == "loadCSV") {
+  } else if (q.xxkey.startsWith && q.xxkey.startsWith("load") && q.xxkey.substring(4) == "CSV" || q.xxkey.substring(4) == "TBL") {
     // Only process the first argument which is the filename
-    // We want to get the type info from xxextra instead of evaluating it as a Rhyme query
     let e1 = preproc(q.xxparam[0])
     if (q.xxparam[1] === undefined || q.xxparam[1].xxkey != "hole") {
-      console.error("csv schema expected")
+      console.error("schema expected for " + q.xxkey)
     }
-    return { key: "loadInput", op: "csv", arg: [e1], inputSchema: q.xxparam[1].xxop }
+    return { key: "loadInput", op: q.xxkey.substring(4).toLowerCase(), arg: [e1], inputSchema: q.xxparam[1].xxop }
   } else if (q.xxkey == "ident") {
     if (isVar(q.xxop)) return { key: "var", op: q.xxop }
     else return { key: "const", op: q.xxop }
@@ -108,17 +107,24 @@ let preproc = q => {
     return preproc(resolveHole(q.xxop))
   } else if (q.xxkey == "object") {
     let res = { key: "const", op: {} }
+    let constKeys = true
+    let arg = []
     for (let i = 0; i < q.xxparam.length; i += 2) {
       let k = q.xxparam[i]
       let v = q.xxparam[i+1]
-      let e1 = preproc(k)
+      let e1 = k.xxkey == "array" ? { key: "pure", op: "combine", arg: k.xxparam.map(preproc) } : preproc(k)
       let e2 = preproc(v)
       if (e2.key == "merge" || e2.key == "keyval") { // TODO: support 'flatten'
         e1 = e2.arg[0]
         e2 = e2.arg[1]
       }
+      if (e1.key != "const") constKeys = false
+      arg.push(e1)
+      arg.push(e2)
       res = { key: "update", arg: [res,e1,e2] }
     }
+    if (q.xxparam.length > 0 && constKeys)
+      return { key: "pure", op: "mkTuple", arg }
     return res
   } else if (q.xxkey) {
     // if 'update .. ident ..', convert ident to input ref?

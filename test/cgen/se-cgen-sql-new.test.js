@@ -4,21 +4,24 @@ const { typing, types } = require('../../src/typing')
 
 const os = require('child_process')
 
-let execPromise = function (cmd) {
+let sh = (cmd) => {
   return new Promise((resolve, reject) => {
-    os.exec(cmd, function (err, stdout) {
-      if (err) return reject(err);
-      resolve(stdout);
-    });
-  });
+    os.exec(cmd, (err, stdout) => {
+      if (err) {
+        reject(err)
+      } else {
+        resolve(stdout)
+      }
+    })
+  })
 }
 
 let outDir = "cgen-sql/out/"
 
 beforeAll(async () => {
-  await execPromise(`rm -rf ${outDir}`)
-  await execPromise(`mkdir ${outDir}`)
-  await execPromise(`cp cgen-sql/rhyme-sql.h ${outDir}`)
+  await sh(`rm -rf ${outDir}`)
+  await sh(`mkdir -p ${outDir}`)
+  await sh(`cp cgen-sql/rhyme-sql.h ${outDir}`)
 });
 
 test("testTrivial", async () => {
@@ -359,7 +362,7 @@ test("plainAverageTest", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "plainAverageTest.c", schema: types.never })
 
   let res = await func()
-  expect(res).toBe("20.000\n")
+  expect(res).toBe("20.0000\n")
 })
 
 test("uncorrelatedAverageTest", async () => {
@@ -370,7 +373,7 @@ test("uncorrelatedAverageTest", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "uncorrelatedAverageTest.c", schema: types.never })
 
   let res = await func()
-  expect(res).toBe("20.000\n")
+  expect(res).toBe("20.0000\n")
 })
 
 test("groupByTest", async () => {
@@ -381,8 +384,8 @@ test("groupByTest", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "groupByTest.c", schema: types.never })
 
   let res = await func()
-  expect(res).toBe(`A: 40
-B: 20
+  expect(res).toBe(`A|40|
+B|20|
 `)
 })
 
@@ -396,8 +399,8 @@ test("groupByAverageTest", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "groupByAverageTest.c", schema: types.never })
 
   let res = await func()
-  expect(res).toBe(`A: 20.000
-B: 20.000
+  expect(res).toBe(`A|20.0000|
+B|20.0000|
 `)
 })
 
@@ -409,8 +412,8 @@ test("groupByRelativeSum", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "groupByRelativeSum.c", schema: types.never })
 
   let res = await func()
-  expect(res).toBe(`A: 0.667
-B: 0.333
+  expect(res).toBe(`A|0.6667|
+B|0.3333|
 `)
 })
 
@@ -423,9 +426,9 @@ test("groupCountByPopulation", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "groupCountByPopulation.c", schema: types.never })
 
   let res = await func()
-  expect(res).toBe(`10: 2
-20: 1
-30: 1
+  expect(res).toBe(`30|1|
+20|1|
+10|2|
 `)
 })
 
@@ -438,10 +441,10 @@ test("groupRegionByCountry", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "groupRegionByCountry.c", schema: types.never })
 
   let res = await func()
-  expect(res).toBe(`France: Europe
-UK: Europe
-China: Asia
-Japan: Asia
+  expect(res).toBe(`Japan|Asia|
+China|Asia|
+France|Europe|
+UK|Europe|
 `)
 })
 
@@ -454,10 +457,10 @@ test("nestedLoopJoinSimpleTest", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "joinSimpleTest.c", schema: types.never })
 
   let res = await func()
-  expect(res).toBe(`Paris: Europe
-London: Europe
-Tokyo: Asia
-Beijing: Asia
+  expect(res).toBe(`Tokyo|Asia|
+Beijing|Asia|
+Paris|Europe|
+London|Europe|
 `)
 })
 
@@ -471,8 +474,8 @@ test("nestedLoopJoinWithAggrTest", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "joinWithAggrTest.c", schema: types.never })
 
   let res = await func()
-  expect(res).toBe(`Asia: 50
-Europe: 20
+  expect(res).toBe(`Asia|50|
+Europe|20|
 `)
 })
 
@@ -485,10 +488,10 @@ test("hashJoinSimpleTest", async () => {
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "hashJoinSimpleTest.c", schema: types.never })
   let res = await func()
-  expect(res).toBe(`Paris: Europe
-London: Europe
-Tokyo: Asia
-Beijing: Asia
+  expect(res).toBe(`Tokyo|Asia|
+Beijing|Asia|
+Paris|Europe|
+London|Europe|
 `)
 })
 
@@ -501,8 +504,8 @@ test("hashJoinWithAggrTest", async () => {
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "hashJoinWithAggrTest.c", schema: types.never })
   let res = await func()
-  expect(res).toBe(`Asia: 50
-Europe: 20
+  expect(res).toBe(`Asia|50|
+Europe|20|
 `)
 })
 
@@ -528,8 +531,8 @@ test("groupByArray", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "groupByArray.c", schema: types.never })
   let res = await func()
 
-  expect(res).toBe(`Asia: [Japan, China]
-Europe: [France, UK]
+  expect(res).toBe(`Asia|[Japan, China]|
+Europe|[France, UK]|
 `)
 })
 
@@ -543,9 +546,20 @@ test("hashJoinArray", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "hashJoinArray.c", schema: types.never })
   let res = await func()
 
-  expect(res).toBe(`Asia: [30, 20]
-Europe: [10, 10]
+  expect(res).toBe(`Asia|[30, 20]|
+Europe|[10, 10]|
 `)
+})
+
+test("plainSumTBLTest", async () => {
+  let csv = rh`loadTBL "./cgen-sql/data.tbl" ${dataSchema}`
+
+  let query = rh`sum ${csv}.*.value`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "plainSumTBLTest.c", schema: types.never })
+
+  let res = await func()
+  expect(res).toBe("60\n")
 })
 
 /**/

@@ -37,6 +37,7 @@ ops.pure.fdiv = true
 ops.pure.div = true
 ops.pure.mod = true
 ops.pure.and = true
+
 ops.pure.andAlso = true
 ops.pure.orElse = true
 
