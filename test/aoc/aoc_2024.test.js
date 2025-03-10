@@ -128,7 +128,6 @@ test("day2-part1", () => {
     ...udf_stdlib,
     slice: a => array => array.slice(a),
     range: (a,b) => { let res = {}; for (let i = a; i < b; i++) res[i] = true; return res },
-    orElse: (a,b) => (a || b) || undefined
   }
 
   let line = rh`.input | udf.split "\\n" | .*line`
@@ -138,7 +137,7 @@ test("day2-part1", () => {
   let delta = rh`${tail}.*i - ${report}.*i`
 
   let monotonic = sign => rh`all (udf.range 1 4).(${sign} * ${delta})`
-  let safe = rh`udf.orElse ${monotonic(1)} ${monotonic(-1)}`
+  let safe = rh`${monotonic(1)} || ${monotonic(-1)}`
 
   let query   = rh`count (*line & ${safe})`
 
@@ -147,67 +146,270 @@ test("day2-part1", () => {
   expect(res).toBe(2)
 })
 
+test("day2-part2", () => {
 
-test("day3-part1", () => {
-
-  let input = `xmul(2,4)%&mul[3,7]!@^do_not_mul(5,5)+mul(32,64]then(mul(11,8)mul(8,5))`
+  let input =
+`7 6 4 2 1
+1 2 7 8 9
+9 7 6 2 1
+1 3 2 4 5
+8 6 4 4 1
+1 3 6 7 9`
 
   let udf = {
     ...udf_stdlib,
     slice: a => array => array.slice(a),
+    splice: a => array => array.slice(0, a).concat(array.slice(a+1)),
+    pushBack: (a, b) => [...a, b],
     range: (a,b) => { let res = {}; for (let i = a; i < b; i++) res[i] = true; return res },
-    orElse: (a,b) => (a || b) || undefined
   }
 
-  let matches = rh`.input | udf.matchAll "mul\\\\((\\\\d{1,3}),(\\\\d{1,3})\\\\)" "g" | .*matchIndex`
-  let num1 = rh`${matches} | .1 | udf.toNum`;
-  let num2 = rh`${matches} | .2 | udf.toNum`;
-  let mults = rh`${num1} * ${num2}`;
+  let line = rh`.input | udf.split "\\n" | .*line`
+  let originalReport = rh`${line} | udf.split " " | .*col | udf.toNum | array`
+  let dampenedReports = rh`${originalReport}.*cols & (${originalReport} | udf.splice (udf.toNum *cols)) | array`
+  let reports = rh`udf.pushBack ${dampenedReports} ${originalReport} | .*report`
+  let tail = rh`${reports} | udf.slice 1`
+  let delta = rh`${tail}.*i - ${reports}.*i`
+  let monotonic = sign => rh`all (udf.range 1 4).(${sign} * ${delta})`
+  let safe = rh`${monotonic(1)} || ${monotonic(-1)} | group *report`
+  let query = rh`count (*line & ${safe})`
 
-  let query = rh`sum ${mults}`
-
-  let func = api.compileC2(query);
+  let func = api.compileC2(query)
   let res = func({input, udf})
-  //console.log(res);
+  expect(res).toBe(4)
+})
+
+test("day3-part1", () => {
+  
+  let input =
+`xmul(2,4)%&mul[3,7]!@^do_not_mul(5,5)+mul(32,64]then(mul(11,8)mul(8,5))`
+
+  let udf = {
+    ...udf_stdlib,
+  }
+
+  let match = rh`.input | udf.matchAll "mul\\\\((\\\\d{1,3}),(\\\\d{1,3})\\\\)" "g" | .*match`
+  let first = rh`${match}.1 | udf.toNum`
+  let second = rh`${match}.2 | udf.toNum`
+  let mul = rh`${first} * ${second}`
+  let query   = rh`sum ${mul}`
+
+  let func = api.compileC2(query)
+  let res = func({input, udf})
   expect(res).toBe(161)
 })
 
-
-/*
-test("day4-part1", () => {
-
-  let input = `MMMSXXMASM
-  MSAMXMSMSA
-  AMXSXMAAMM
-  MSAMASMSMX
-  XMASAMXAMM
-  XXAMMXXAMA
-  SMSMSASXSS
-  SAXAMASAAA
-  MAMMMXMMMM
-  MXMXAXMASX`;
+test("day3-part2", () => {
+  
+  let input =
+`xmul(2,4)&mul[3,7]!^don't()_mul(5,5)+mul(32,64](mul(11,8)undo()?mul(8,5))`
 
   let udf = {
+    reduce: array => array.reduce(([flag, sum], elem) => {
+      if (elem[0] === "don't()") return [false, sum]
+      else if (elem[0] === "do()") return [true, sum]
+      else if (flag === true) return [flag, sum + elem[2] * elem[3]]
+      else return [flag, sum]
+    }, [true, 0])[1],
     ...udf_stdlib,
-    slice: a => array => array.slice(a),
-    range: (a,b) => { let res = {}; for (let i = a; i < b; i++) res[i] = true; return res },
-    orElse: (a,b) => (a || b) || undefined,
-    filter: c => c ? { [c]: true } : {},
   }
-  let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`;
 
-  let line = rh`.input | udf.split "\\n" | .*line`;
-  let col = rh`${line} | udf.split "" | .*col`;
+  let match = rh`.input | udf.matchAll "(mul\\\\((\\\\d{1,3}),(\\\\d{1,3})\\\\)|do\\\\(\\\\)|don't\\\\(\\\\))" "g"`
+  let query   = rh`udf.reduce ${match}`
 
-  let grid = rh`${col} | group *col | group *line`;
-
-  let diagNames = rh`${grid}.*a.*b + ${grid}.(*a + 1).(*b + 1) + ${grid}.(*a + 2).(*b + 2) + ${grid}.(*a + 3).(*b + 3)`;
-  let diagNames2 = rh`${grid}.*a.*b + ${grid}.(*a).(*b - 1) + ${grid}.(*a).(*b - 2) + ${grid}.(*a).(*b - 3)`;
-
-  let count = rh`${filterBy("*f", rh`udf.isEqual ${diagNames2}.*val "XMAS"`)} | count`
-
-  let func = api.compileC2(count);
+  let func = api.compileC2(query)
   let res = func({input, udf})
+  expect(res).toBe(48)
 })
-*/
 
+test("day4-part1", () => {
+  
+  let input =
+`MMMSXXMASM
+MSAMXMSMSA
+AMXSXMAAMM
+MSAMASMSMX
+XMASAMXAMM
+XXAMMXXAMA
+SMSMSASXSS
+SAXAMASAAA
+MAMMMXMMMM
+MXMXAXMASX`
+
+  let delta = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]];
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    ...udf_stdlib,
+  }
+  let filterBy = (gen, p) => x => rh`(udf.filter ${p}).${gen} & ${x}`
+
+  let line = rh`.input | udf.split "\\n" | .*line | udf.split ""`
+  let grid = api.array(line)
+
+  let substring = rh`${grid}.*x.*y + ${grid}.(*x + ${delta}.*d.0).(*y + ${delta}.*d.1) + 
+    ${grid}.(*x + 2 * ${delta}.*d.0).(*y + 2 * ${delta}.*d.1) + ${grid}.(*x + 3 * ${delta}.*d.0).(*y + 3 * ${delta}.*d.1)`
+  let isXMAS = rh`${substring} == "XMAS"`
+  let query = rh`${substring} | ${filterBy("*f0", isXMAS)} | count`
+  
+  let func = api.compileC2(query)
+  let res = func({input, udf})
+  expect(res).toBe(18)
+})
+
+test("day4-part2", () => {
+  
+  let input =
+`MMMSXXMASM
+MSAMXMSMSA
+AMXSXMAAMM
+MSAMASMSMX
+XMASAMXAMM
+XXAMMXXAMA
+SMSMSASXSS
+SAXAMASAAA
+MAMMMXMMMM
+MXMXAXMASX`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    ...udf_stdlib,
+  }
+  let filterBy = (gen, p) => x => rh`(udf.filter ${p}).${gen} & ${x}`
+
+  let line = rh`.input | udf.split "\\n" | .*line | udf.split ""`
+  let grid = api.array(line)
+
+  let substring1 = rh`${grid}.(*x - 1).(*y - 1) + ${grid}.*x.*y + ${grid}.(*x + 1).(*y + 1)`
+  let substring2 = rh`${grid}.(*x - 1).(*y + 1) + ${grid}.*x.*y + ${grid}.(*x + 1).(*y - 1)`
+  let isMAS1 = rh`(${substring1} == "MAS") || (${substring1} == "SAM")`
+  let isMAS2 = rh`(${substring2} == "MAS") || (${substring2} == "SAM")`
+  let isXMAS = rh`${isMAS1} & ${isMAS2}`
+  let query = rh`${substring1} | ${filterBy("*f0", isXMAS)} | count`
+  
+  let func = api.compileC2(query)
+  let res = func({input, udf})
+  expect(res).toBe(9)
+})
+
+test("day5-part1", () => {
+  
+  let input =
+`47|53
+97|13
+97|61
+97|47
+75|29
+61|13
+75|53
+29|13
+97|29
+53|29
+61|53
+97|53
+61|29
+47|13
+75|47
+97|75
+47|61
+75|61
+47|29
+75|13
+53|13
+
+75,47,61,53,29
+97,61,53,29,13
+75,29,13
+75,97,47,61,53
+61,13,29
+97,13,75,29,47`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    arrMid: (arr) => arr[Math.floor(arr.length / 2)],
+    ...udf_stdlib,
+  }
+  let filterBy = (gen, p) => x => rh`(udf.filter ${p}).${gen} & ${x}`
+  
+  let splitInput = rh`.input | udf.split "\\n\\n"`
+  let updatesStr = rh`${splitInput}.1`
+  let line = rh`${updatesStr} | udf.split "\\n" | .*line`
+  let update = rh`${line} | udf.split "," | .*col | udf.toNum | array`
+  let arr = rh`(udf.toNum(*x) < udf.toNum(*y)) & {a:${update}.*x, b:${update}.*y}`
+
+  let rulesStr = rh`${splitInput}.0`
+  let rule = rh`${rulesStr} | udf.matchAll "(\\\\d+)\\\\|(\\\\d+)" "g" | .*rule | udf.slice 1 | .*rulecol | udf.toNum | group *rulecol | array`
+  let rulesViolated = rh`(${rule}.*i.0 == ${arr}.b) & (${rule}.*i.1 == ${arr}.a)`
+  let countViolations = rh`${rulesViolated} | count`
+  let isValid = rh`${countViolations} == 0`
+  
+  let mid = rh`udf.arrMid ${update}`
+  let query = rh`sum(*line & (${mid} | ${filterBy("*f0", isValid)}))`
+
+  let func = api.compileC2(query)
+  let res = func({input, udf})
+  expect(res).toBe(143)
+})
+
+test("day5-part2", () => {
+  
+  let input =
+`47|53
+97|13
+97|61
+97|47
+75|29
+61|13
+75|53
+29|13
+97|29
+53|29
+61|53
+97|53
+61|29
+47|13
+75|47
+97|75
+47|61
+75|61
+47|29
+75|13
+53|13
+
+75,47,61,53,29
+97,61,53,29,13
+75,29,13
+75,97,47,61,53
+61,13,29
+97,13,75,29,47`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    arrMid: (arr) => arr[Math.floor(arr.length / 2)],
+    slice: a => array => array.slice(a),
+    customSort: (rules, arr) => {
+      return arr.sort((a, b) => rules.some(pair => pair[0] === b && pair[1] === a) ? 1 : -1)
+    },
+    ...udf_stdlib,
+  }
+  let filterBy = (gen, p) => x => rh`(udf.filter ${p}).${gen} & ${x}`
+  
+  let splitInput = rh`.input | udf.split "\\n\\n"`
+  let updatesStr = rh`${splitInput}.1`
+  let line = rh`${updatesStr} | udf.split "\\n" | .*line`
+  let update = rh`${line} | udf.split "," | .*col | udf.toNum | array`
+  let arr = rh`(udf.toNum(*x) < udf.toNum(*y)) & {a:${update}.*x, b:${update}.*y}`
+
+  let rulesStr = rh`${splitInput}.0`
+  let rule = rh`${rulesStr} | udf.matchAll "(\\\\d+)\\\\|(\\\\d+)" "g" | .*rule | udf.slice 1 | .*rulecol | udf.toNum | group *rulecol | array`
+  let rulesViolated = rh`(${rule}.*i.0 == ${arr}.b) & (${rule}.*i.1 == ${arr}.a)`
+  let countViolations = rh`${rulesViolated} | count`
+  let notValid = rh`${countViolations} != 0`
+  
+  let invalidUpdate = rh`${update} | ${filterBy("*f0", notValid)}`
+  let sortedUpdate = rh`udf.customSort ${rule} ${invalidUpdate}`
+  let query = rh`sum(*line & (udf.arrMid ${sortedUpdate}))`
+
+  let func = api.compileC2(query)
+  let res = func({input, udf})
+  expect(res).toBe(123)
+})
