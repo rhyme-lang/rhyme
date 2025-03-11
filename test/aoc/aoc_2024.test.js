@@ -736,7 +736,7 @@ test("day8-part2", () => {
   let antinode = rh`${grid}.*i1.*j1 & ([(udf.toNum *i1), (udf.toNum *j1)] | ${filterBy("*", isAntinode)})`
   let query = rh`${antinode} | count`
   
-  let func = api.compileC2(query, null)
+  let func = api.compileC2(query)
   let res = func({input, udf})
   expect(res).toBe(34)
 })

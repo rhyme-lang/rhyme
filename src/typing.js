@@ -1105,7 +1105,7 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
         } else if (q.op === "count") {
             // As long as the argument is valid, it doesn't matter what type it is.
             return {type: types.u32, props: props};
-        } else if (q.op === "all") {
+        } else if (q.op === "all" || q.op === "any") {
             if (!isUnknown(argType) && !isBoolean(argType))
                 throw new Error(`Unable to use "all" operator on non-boolean type. Got: ${prettyPrintType(argType)}`);
             // As long as the argument is valid, it doesn't matter what type it is.
