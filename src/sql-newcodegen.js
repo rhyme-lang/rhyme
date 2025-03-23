@@ -31,6 +31,7 @@ let currentGroupKey
 
 let assignmentToSym
 let updateOps
+let updateOpsExtra
 
 // generator ir api: mirroring necessary bits from ir.js
 let expr = (txt, ...args) => ({ txt, deps: args })
@@ -660,22 +661,17 @@ let emitPath = (buf, q) => {
     throw new Error("cannot have stand-alone var")
   } else if (q.key == "ref") {
     let q1 = assignments[q.op]
+    let sym = tmpSym(q.op)
 
     if (q1.fre.length > 0) {
-      let sym = tmpSym(q.op)
-      if (q1.key == "stateful" && !emittedStateful[sym]) {
-        emitStatefulInPath(q1, sym)
-      }
-      let keys = q1.fre[0].startsWith("K") ? mksetVarEnv[q1.fre[0]].map(key => key.val) : [q1.fre[0]]
-      let keyPos = emitHashLookUp(buf, sym, keys)[1]
-      let { valSchema } = hashMapEnv[sym]
-      if (typing.isString(valSchema)) {
-        return { str: `${sym}_values_str[${keyPos}]`, len: `${sym}_values_len[${keyPos}]` }
-      } else {
-        return `${sym}_values[${keyPos}]`
-      }
+      // if (q1.key == "stateful" && !emittedStateful[sym]) {
+      //   emitStatefulInPath(q1, sym)
+      // }
+      console.assert(currentGroupKey.key == q1.fre[0])
+      let lhs = getHashMapValueEntry(buf, sym, currentGroupKey.pos, currentGroupKey.keyPos)
+      return lhs["values"]
+
     } else {
-      let sym = tmpSym(q.op)
       if (q1.key == "stateful" && !emittedStateful[sym]) {
         emitStatefulInPath(q1, sym)
       }
@@ -686,9 +682,9 @@ let emitPath = (buf, q) => {
 
     if (e1.key == "ref") {
       let sym = tmpSym(e1.op)
-      if (assignments[e1.op].key == "stateful" && !emittedStateful[sym]) {
-        emitStatefulInPath(assignments[e1.op], sym)
-      }
+      // if (assignments[e1.op].key == "stateful" && !emittedStateful[sym]) {
+      //   emitStatefulInPath(assignments[e1.op], sym)
+      // }
       let key = emitPath(buf, e2)
       let keyPos = emitHashLookUp(buf, sym, [key])[1]
       let { valSchema } = hashMapEnv[sym]
@@ -885,7 +881,7 @@ let emitHashLookUpAndUpdate = (buf, sym, keys, update, checkExistance) => {
   return [pos, keyPos]
 }
 
-let emitHashUpdate = (buf, sym, pos, keyPos, update) => {
+let getHashMapValueEntry = (buf, sym, pos, keyPos) => {
   let { keySchema, valSchema } = hashMapEnv[sym]
 
   let lhs = {}
@@ -909,7 +905,13 @@ let emitHashUpdate = (buf, sym, pos, keyPos, update) => {
     }
   }
 
-  update(buf, lhs)
+  return lhs
+}
+
+let emitHashUpdate = (buf, sym, pos, keyPos, update) => {
+  let lhs = getHashMapValueEntry(buf, sym, pos, keyPos)
+
+  update(buf, lhs, pos, keyPos)
 }
 
 let emitHashBucketInsert = (buf, bucket, value) => {
@@ -998,12 +1000,11 @@ let reset = () => {
   inputFilesEnv = {}
   assignmentToSym = {}
   updateOps = {}
+  updateOpsExtra = {}
 
   emittedStateful = {}
 
   nameIdMap = {}
-
-  let currentGroupKey = []
 
   prolog = []
 }
@@ -1078,66 +1079,9 @@ let emitStatefulUpdate = (buf, q, lhs) => {
 }
 
 let emitStatefulInPath = (q, sym) => {
-  if (q.fre.length > 1) throw new Error("unexpected number of free variables for stateful op " + pretty(v))
-
-  // if (currentGroupKey.length != 0 && q.fre.length != 0 && currentGroupKey[0].var == q.fre[0]) {
-  //   let hashmapInit = []
-  //   emitHashMapInit(hashmapInit, sym, keySchema, valSchema)
-  //   assign(hashmapInit, sym, [], [])
-
-  //   hashMapEnv[sym] = { keySchema, valSchema }
-
-  //   let init
-  //   emitStatefulInit(buf, q, lhs["values"])
-
-  //   emittedStateful[sym] = true
-  //   return
-  // }
+  if (q.fre.length > 0) throw new Error("unexpected number of free variables for stateful op in path: " + pretty(v))
 
   let fv = trans(q.fre)
-
-  if (q.fre.length != 0) {
-    // Create hashmap
-    // let buf = []
-    let keySchema = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].map(key => key.schema.type) : [{ type: types.i32 }]
-    let valSchema = [{ name: "values", schema: q.schema.type }]
-    emitHashMapInit(prolog, sym, keySchema, valSchema)
-    // assign(buf, sym, [], [])
-
-    hashMapEnv[sym] = { keySchema, valSchema }
-
-    let init = []
-    cgen.comment(init)("init " + sym + "[" + q.fre[0] + "]" + " = " + pretty(q))
-
-    let keys = q.fre[0].startsWith("K") ? mksetVarEnv[q.fre[0]].map(key => key.val) : [q1.fre[0]]
-    let [pos, keyPos] = emitHashLookUpOrUpdate(init, sym, keys, (buf1, lhs) => {
-      emitStatefulInit(buf1, q, lhs["values"])
-    })
-    assign(init, sym, fv, [])
-
-    let update = []
-    cgen.comment(update)("update " + sym + "[" + q.fre[0] + "]" + " = " + pretty(q))
-
-    let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? assignmentToSym[tmp] : tmpSym(tmp))]
-
-    let e = q.arg[0]
-    if (e.key == "pure" && e.op == "and") {
-      let cond = emitPath(update, e.arg[0])
-
-      cgen.if(update)(cond, buf1 => {
-        emitHashUpdate(buf1, sym, pos, keyPos, (buf2, lhs) => {
-          emitStatefulUpdate(buf2, q, lhs["values"], sym)
-        })
-      })
-    } else {
-      emitHashUpdate(update, sym, pos, keyPos, (buf1, lhs) => {
-        emitStatefulUpdate(buf1, q, lhs["values"], sym)
-      })
-    }
-    assign(update, sym, fv, deps)
-    return
-  }
-
 
   // Get the lhs of the assignment and emit the code for the stateful op
   if (initRequired[q.op]) {
@@ -1171,6 +1115,36 @@ let emitStatefulInPath = (q, sym) => {
   emittedStateful[sym] = true
 }
 
+let collectRelevantStatefulInPath = (q) => {
+  if (q.key == "ref") {
+    q1 = assignments[q.op]
+    if (q1.key == "update") {
+      return
+    }
+    if (q1.key == "stateful") {
+      if (q1.fre.length > 1) throw new Error("unexpected number of free variables for stateful op " + pretty(v))
+
+      if (q1.fre.length != 0) {
+        console.assert(currentGroupKey.key.op === q1.fre[0])
+
+        assignmentToSym[q.op] = currentGroupKey.sym
+        updateOpsExtra[currentGroupKey.sym].push(q.op)
+
+        let keySchema = currentGroupKey.keySchema
+        let valSchema = [{ name: "values", schema: q1.schema.type }]
+
+        emitHashMapInit(prolog, tmpSym(q.op), keySchema, valSchema)
+
+        hashMapEnv[tmpSym(q.op)] = { keySchema, valSchema }
+      }
+    }
+  }
+
+  if (q.arg) {
+    q.arg.map(collectRelevantStatefulInPath)
+  }
+}
+
 let collectHashMaps = () => {
   // Iterate through all update ops to group stateful ops together
   for (let i in assignments) {
@@ -1199,6 +1173,9 @@ let collectHashMaps = () => {
       v = v.arg[0]
     }
     let valSchema = []
+
+    updateOps[i] = []
+    updateOpsExtra[i] = []
     if (v.key == "pure" && v.op == "mkTuple") {
       for (let j = 0; j < q.arg[2].arg.length; j += 2) {
         let key = q.arg[2].arg[j]
@@ -1211,27 +1188,29 @@ let collectHashMaps = () => {
         if (val.key != "ref" || assignments[val.op].key == "update") {
           throw new Error("stateful op expected but got " + pretty(val))
         }
-        assignmentToSym[val.op] = sym
-        updateOps[i] ??= []
+        assignmentToSym[val.op] = i
         updateOps[i].push(val.op)
         val.extraGroupPath = [key.op]
         assignments[val.op].extraGroupPath = [key.op]
         valSchema.push({ name: key.op, schema: val.schema.type })
+
+        currentGroupKey = { sym: i, key: k, keySchema }
+        collectRelevantStatefulInPath(assignments[val.op].arg[0])
       }
     } else {
       if (v.key != "ref" || assignments[v.op].key == "update") {
         throw new Error("stateful op expected but got " + pretty(v))
       }
-      assignmentToSym[v.op] = sym
-      updateOps[i] ??= []
+      assignmentToSym[v.op] = i
       updateOps[i].push(v.op)
       valSchema.push({ name: "values", schema: v.schema.type })
+
+      currentGroupKey = { sym: i, key: k, keySchema }
+      collectRelevantStatefulInPath(assignments[v.op].arg[0])
     }
 
     // Create hashmap
-    // let buf = []
     emitHashMapInit(prolog, sym, keySchema, valSchema)
-    // assign(buf, sym, [], [])
 
     hashMapEnv[sym] = { keySchema, valSchema }
   }
@@ -1328,7 +1307,9 @@ let emitCode = (q, ir) => {
     let init = []
 
     cgen.comment(init)("init and update " + sym + " = " + pretty(assignments[i]))
-    let shouldInit = updateOps[i].some(j => initRequired[assignments[j].op])
+    let shouldInit = updateOps[i].some(j => initRequired[assignments[j].op]) || updateOpsExtra[i].some(j => initRequired[assignments[j].op])
+
+    // currentGroupKey = { var: k, pos, keyPos }
 
     if (!shouldInit) {
       // let update = []
@@ -1337,48 +1318,77 @@ let emitCode = (q, ir) => {
         let q = assignments[j]
         let e = q.arg[0]
         let buf = []
-        let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? assignmentToSym[tmp] : tmpSym(tmp))]
+        let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
         if (e.key == "pure" && e.op == "and") {
           let cond = emitPath(buf, e.arg[0])
           cgen.if(buf)(cond, (buf1) => {
-            emitHashLookUpAndUpdate(buf1, sym, keys, (buf2, lhs) => {
+            emitHashLookUpAndUpdate(buf1, sym, keys, (buf2, lhs, pos, keyPos) => {
+              currentGroupKey = { key: k, pos, keyPos }
               cgen.comment(buf2)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
 
-              // deps.push(...union(fv, q.bnd))
-              // deps.push(...q.tmps.map(tmp => assignmentToSym[tmp] ? assignmentToSym[tmp] : tmpSym(tmp)))
               emitStatefulUpdate(buf2, q, lhs[q.extraGroupPath ? q.extraGroupPath[0] : "values"], sym)
             }, true)
           })
         } else {
-          emitHashLookUpAndUpdate(buf, sym, keys, (buf1, lhs) => {
+          emitHashLookUpAndUpdate(buf, sym, keys, (buf1, lhs, pos, keyPos) => {
+            currentGroupKey = { key: k, pos, keyPos }
             cgen.comment(buf1)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
 
-            // deps.push(...union(fv, q.bnd))
-            // deps.push(...q.tmps.map(tmp => assignmentToSym[tmp] ? assignmentToSym[tmp] : tmpSym(tmp)))
             emitStatefulUpdate(buf1, q, lhs[q.extraGroupPath ? q.extraGroupPath[0] : "values"], sym)
           }, true)
         }
         assign(buf, sym, fv, deps)
       }
+      // extra not supported yet
       continue
     }
 
-    let [pos, keyPos] = emitHashLookUpOrUpdate(init, sym, keys, (buf1, lhs) => {
+    let [pos, keyPos] = emitHashLookUpOrUpdate(init, sym, keys, (buf1, lhs, pos, keyPos) => {
       for (let j of updateOps[i]) {
         let q = assignments[j]
         if (!initRequired[q.op]) continue
         cgen.comment(buf1)("init " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
         emitStatefulInit(buf1, q, lhs[q.extraGroupPath ? q.extraGroupPath[0] : "values"])
       }
+      for (let j of updateOpsExtra[i]) {
+        let q = assignments[j]
+        if (!initRequired[q.op]) continue
+        cgen.comment(buf1)("init " + tmpSym(j) + "[" + q.fre[0] + "]" + " = " + pretty(q))
+        let lhs1 = getHashMapValueEntry(buf1, tmpSym(j), pos, keyPos)
+        emitStatefulInit(buf1, q, lhs1["values"])
+      }
     })
     assign(init, sym, fv, [])
 
-    currentGroupKey = [{ var: k, pos, keyPos }]
+    currentGroupKey = { key: k, pos, keyPos }
+    for (let j of updateOpsExtra[i]) {
+      let update = []
+      let q = assignments[j]
+      cgen.comment(update)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
+      let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
+      let e = q.arg[0]
+      if (e.key == "pure" && e.op == "and") {
+        let cond = emitPath(update, e.arg[0])
+
+        cgen.if(update)(cond, buf1 => {
+          emitHashUpdate(buf1, sym, pos, keyPos, (buf2, lhs) => {
+            let lhs1 = getHashMapValueEntry(buf2, tmpSym(j), pos, keyPos)
+            emitStatefulUpdate(buf2, q, lhs1["values"], sym)
+          })
+        })
+      } else {
+        emitHashUpdate(update, sym, pos, keyPos, (buf1, lhs) => {
+          let lhs1 = getHashMapValueEntry(buf1, tmpSym(j), pos, keyPos)
+          emitStatefulUpdate(buf1, q, lhs1["values"], sym)
+        })
+      }
+      assign(update, sym, fv, deps)
+    }
     for (let j of updateOps[i]) {
       let update = []
       let q = assignments[j]
       cgen.comment(update)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
-      let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? assignmentToSym[tmp] : tmpSym(tmp))]
+      let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
       let e = q.arg[0]
       if (e.key == "pure" && e.op == "and") {
         let cond = emitPath(update, e.arg[0])
