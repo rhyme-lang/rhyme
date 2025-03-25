@@ -345,8 +345,8 @@ let performObjectGet = (objectTup, keyTup) => {
                 {type: removeTag(objectTup.type), props: objectTup.props},
                 keyTup);
         case typeSyms.union: {
-            let res1 = performObjectGet({type: gettableTup.type.unionSet[0], props: gettableTup.props}, keyTup);
-            let res2 = performObjectGet({type: gettableTup.type.unionSet[1], props: gettableTup.props}, keyTup);
+            let res1 = performObjectGet({type: objectTup.type.unionSet[0], props: objectTup.props}, keyTup);
+            let res2 = performObjectGet({type: objectTup.type.unionSet[1], props: objectTup.props}, keyTup);
             return {
                 type: createUnion(res1.type, res2.type),
                 props: union(res1.props, res2.props)
@@ -385,7 +385,7 @@ let performObjectGet = (objectTup, keyTup) => {
                 props: union(props, nothingSet)
             };
         default:
-            throw new Error("Unable to perform access on non-object type: " + prettyPrintType(gettableTup.type));
+            throw new Error("Unable to perform access on non-object type: " + prettyPrintType(objectTup.type));
     }
 }
 typing.performObjectGet = performObjectGet;
@@ -875,13 +875,13 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
                 return intoTup(types.i64);
             }
             // TODO: Constant types. Should u8's be expanded in case of sum?
-            if (q.op < 256)
-                return intoTup(types.u8);
-            if (q.op <= 65535)
-                return intoTup(types.u16);
-            if (q.op <= 4294967295)
-                return intoTup(types.u32);
-            return intoTup(types.u64);
+            if (q.op < 128)
+                return intoTup(types.i8);
+            if (q.op < 32768)
+                return intoTup(types.i16);
+            if (q.op < 2147483648)
+                return intoTup(types.i32);
+            return intoTup(types.i64);
         }
         if (typeof q.op === "string")
             return intoTup(q.op);
@@ -1510,7 +1510,8 @@ let convertQuery = (q, type) => {
 
     let convert = () => {
         // Remove redundant conversions.
-        while (q.key == "pure" && (q.op == "convert_string" || q.op.startsWith("convert_") && 
+        while (q.key == "pure" && (q.op == "convert_string" || 
+            q.op.startsWith("convert_") && Object.keys(types).includes(q.op.substring("convert_".length)) &&
             // If type is being narrowed, no need to narrow it twice.
             // NOTE: Cannot do the same when narrowed and then widened, hence the subtype check.
             typing.isSubtype(type, types[q.op.substring("convert_".length)])

@@ -103,7 +103,7 @@ zoneight234
 
   let udf_typ = typing.parseType`${udf_std_typ} & {
     match: (string) => [string],
-    toNumW: (string) => u16
+    toNumW: (string) => i16
   }`
 
   let digits  = rh`.input | udf.split "\\n" | .*line | udf.match | .*match | udf.toNumW`
