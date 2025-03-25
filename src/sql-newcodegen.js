@@ -630,9 +630,9 @@ let getLoopTxt = (f, file, loadInput) => () => {
   }
 
   let loopHeader = []
-  cgen.stmt(loopHeader)(cgen.assign(quoteVar(v), "-1"))
+  // cgen.stmt(loopHeader)(cgen.assign(quoteVar(v), "-1"))
   loopHeader.push("while (1) {")
-  cgen.stmt(loopHeader)(cgen.inc(quoteVar(v)))
+  // cgen.stmt(loopHeader)(cgen.inc(quoteVar(v)))
 
   let boundsChecking = [`if (${cursor} >= ${size}) break;`]
 
@@ -682,15 +682,14 @@ let emitPath = (buf, q) => {
 
     if (e1.key == "ref") {
       let sym = tmpSym(e1.op)
-      // if (assignments[e1.op].key == "stateful" && !emittedStateful[sym]) {
-      //   emitStatefulInPath(assignments[e1.op], sym)
-      // }
       let key = emitPath(buf, e2)
       let keyPos = emitHashLookUp(buf, sym, [key])[1]
       let { valSchema } = hashMapEnv[sym]
       if (valSchema.length > 1) {
         throw new Error("not supported for now")
       }
+      
+      // TODO: what if undefined
       if (typing.isString(valSchema[0].schema)) {
         return { str: `${sym}_${valSchema[0].name}_str[${keyPos}]`, len: `${sym}_${valSchema[0].name}_len[${keyPos}]` }
       } else {
@@ -823,6 +822,10 @@ let emitHashLookUpOrUpdate = (buf, sym, keys, update) => {
   let [pos, keyPos] = emitHashLookUp(buf, sym, keys)
 
   cgen.if(buf)(cgen.equal(keyPos, "-1"), buf1 => {
+    cgen.if(buf1)(cgen.equal(`${sym}_key_count`, HASH_SIZE), (buf2) => {
+      cgen.printErr(buf2)(`"hashmap size reached its full capacity"`)
+      cgen.return(buf2)("1")
+    })
     cgen.stmt(buf1)(cgen.assign(keyPos, `${sym}_key_count`))
     cgen.stmt(buf1)(cgen.inc(`${sym}_key_count`))
     cgen.stmt(buf1)(cgen.assign(`${sym}_htable[${pos}]`, keyPos))
@@ -855,6 +858,10 @@ let emitHashLookUpAndUpdate = (buf, sym, keys, update, checkExistance) => {
 
   if (checkExistance) {
     cgen.if(buf)(cgen.equal(keyPos, "-1"), buf1 => {
+      cgen.if(buf1)(cgen.equal(`${sym}_key_count`, HASH_SIZE), (buf2) => {
+        cgen.printErr(buf2)(`"hashmap size reached its full capacity"`)
+        cgen.return(buf2)("1")
+      })
       cgen.stmt(buf1)(cgen.assign(keyPos, `${sym}_key_count`))
       cgen.stmt(buf1)(cgen.inc(`${sym}_key_count`))
       cgen.stmt(buf1)(cgen.assign(`${sym}_htable[${pos}]`, keyPos))
@@ -1235,11 +1242,11 @@ let emitCode = (q, ir) => {
   collectHashMaps()
 
   // Declare loop counter vars
-  for (let v in ir.vars) {
-    if (v.startsWith("K")) continue
-    let counter = `${quoteVar(v)}`
-    cgen.declareInt(prolog)(counter)
-  }
+  // for (let v in ir.vars) {
+  //   if (v.startsWith("K")) continue
+  //   let counter = `${quoteVar(v)}`
+  //   cgen.declareInt(prolog)(counter)
+  // }
 
   for (let i in filters) {
     let f = filters[i]
@@ -1364,7 +1371,7 @@ let emitCode = (q, ir) => {
     for (let j of updateOpsExtra[i]) {
       let update = []
       let q = assignments[j]
-      cgen.comment(update)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
+      cgen.comment(update)("update " + tmpSym(j) + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
       let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
       let e = q.arg[0]
       if (e.key == "pure" && e.op == "and") {
@@ -1373,13 +1380,13 @@ let emitCode = (q, ir) => {
         cgen.if(update)(cond, buf1 => {
           emitHashUpdate(buf1, sym, pos, keyPos, (buf2, lhs) => {
             let lhs1 = getHashMapValueEntry(buf2, tmpSym(j), pos, keyPos)
-            emitStatefulUpdate(buf2, q, lhs1["values"], sym)
+            emitStatefulUpdate(buf2, q, lhs1["values"])
           })
         })
       } else {
         emitHashUpdate(update, sym, pos, keyPos, (buf1, lhs) => {
           let lhs1 = getHashMapValueEntry(buf1, tmpSym(j), pos, keyPos)
-          emitStatefulUpdate(buf1, q, lhs1["values"], sym)
+          emitStatefulUpdate(buf1, q, lhs1["values"])
         })
       }
       assign(update, sym, fv, deps)
@@ -1395,12 +1402,12 @@ let emitCode = (q, ir) => {
 
         cgen.if(update)(cond, buf1 => {
           emitHashUpdate(buf1, sym, pos, keyPos, (buf2, lhs) => {
-            emitStatefulUpdate(buf2, q, lhs[q.extraGroupPath ? q.extraGroupPath[0] : "values"], sym)
+            emitStatefulUpdate(buf2, q, lhs[q.extraGroupPath ? q.extraGroupPath[0] : "values"])
           })
         })
       } else {
         emitHashUpdate(update, sym, pos, keyPos, (buf1, lhs) => {
-          emitStatefulUpdate(buf1, q, lhs[q.extraGroupPath ? q.extraGroupPath[0] : "values"], sym)
+          emitStatefulUpdate(buf1, q, lhs[q.extraGroupPath ? q.extraGroupPath[0] : "values"])
         })
       }
       assign(update, sym, fv, deps)

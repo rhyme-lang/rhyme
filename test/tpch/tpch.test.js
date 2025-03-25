@@ -8,6 +8,18 @@ const os = require('child_process')
 let dataDir = "cgen-sql/data/SF1"
 let outDir = "cgen-sql/out-tpch"
 
+let customerSchema = typing.objBuilder()
+  .add(typing.createKey(types.u32), typing.createSimpleObject({
+    c_custkey: types.i32,
+    c_name: types.string,
+    c_address: types.string,
+    c_nationkey: types.i32,
+    c_phone: types.string,
+    c_acctbal: types.f64,
+    c_mktsegment: types.string,
+    c_comment: types.string,
+  })).build()
+
 let lineitemSchema = typing.objBuilder()
   .add(typing.createKey(types.u32), typing.createSimpleObject({
     l_orderkey: types.i32,
@@ -56,11 +68,13 @@ let ordersSchema = typing.objBuilder()
     o_comment: types.string,
   })).build()
 
+let customerFile = `"${dataDir}/customer.tbl"`
 let lineitemFile = `"${dataDir}/lineitem.tbl"`
 let nationFile = `"${dataDir}/nation.tbl"`
 let regionFile = `"${dataDir}/region.tbl"`
 let ordersFile = `"${dataDir}/orders.tbl"`
 
+let customer = rh`loadTBL ${customerFile} ${customerSchema}`
 let lineitem = rh`loadTBL ${lineitemFile} ${lineitemSchema}`
 let nation = rh`loadTBL ${nationFile} ${nationSchema}`
 let region = rh`loadTBL ${regionFile} ${regionSchema}`
@@ -142,6 +156,16 @@ test("q4", async () => {
 2-HIGH|10476|
 3-MEDIUM|10410|
 `)
+})
+
+test("q5", async () => {
+  let regionKeyToName = rh`${region}.*r.r_name == "ASIA" & ${region}.*r.r_name | group ${region}.*r.r_regionkey`
+  let query = rh`${regionKeyToName}.(${nation}.*n.n_regionkey) & ${nation}.*n.n_name | group ${nation}.*n.n_nationkey`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q5.c", schema: types.never })
+  let res = await func()
+
+  console.log(res)
 })
 
 test("q6", async () => {
