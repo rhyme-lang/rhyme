@@ -52,6 +52,8 @@ ops.pure.singleton = true
 ops.pure.vars = true
 ops.pure.ifElse = true
 
+ops.pure.sort = true
+
 // stateful operations
 
 ops.stateful.sum = true

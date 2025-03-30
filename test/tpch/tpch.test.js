@@ -1,4 +1,4 @@
-const { rh } = require('../../src/rhyme')
+const { rh, api } = require('../../src/rhyme')
 const { compile } = require('../../src/simple-eval')
 const { typing, types } = require('../../src/typing')
 const fs = require("fs")
@@ -118,6 +118,8 @@ test("q1", async () => {
     count_order: count (${cond} & ${lineitem}.*.l_orderkey)
   } | group [${lineitem}.*.l_returnflag, ${lineitem}.*.l_linestatus]`
 
+  // let q = rh`sort ["l_returnflag", "l_linestatus"] ${query}`
+
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q1.c", schema: types.never })
   let res = await func()
 
@@ -158,9 +160,18 @@ test("q4", async () => {
 `)
 })
 
+// test("q5-js", () => {
+//   let regionKeyToName = rh`[region.*r.r_name == "ASIA" & region.*r.r_name] | group region.*r.r_regionkey`
+//   let query = rh`n_name: [nation.*n.n_name] | group nation.*n.n_nationkey`
+
+//   let func = compile(query)
+
+//   console.log(func.explain_opt.code)
+// })
+
 test("q5", async () => {
-  let regionKeyToName = rh`${region}.*r.r_name == "ASIA" & ${region}.*r.r_name | group ${region}.*r.r_regionkey`
-  let query = rh`${regionKeyToName}.(${nation}.*n.n_regionkey) & ${nation}.*n.n_name | group ${nation}.*n.n_nationkey`
+  let regionKeyToName = rh`[${region}.*r.r_name == "ASIA" & ${region}.*r.r_name] | group ${region}.*r.r_regionkey`
+  let query = rh`[${regionKeyToName}.(${nation}.*n.n_regionkey).*R != undefined & ${nation}.*n.n_name] | group ${nation}.*n.n_nationkey`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q5.c", schema: types.never })
   let res = await func()

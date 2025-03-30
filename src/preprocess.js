@@ -130,6 +130,11 @@ let preproc = q => {
     // if 'update .. ident ..', convert ident to input ref?
     let op = q.xxkey
     console.assert(typeof op === "string", op)
+    if (op in ops.pure && op == "sort") {
+      let e1 = q.xxparam[0].xxkey == "array" ? { key: "pure", op: "combine", arg: q.xxparam[0].xxparam.map(preproc) } : preproc(q.xxparam[0])
+      let e2 = preproc(q.xxparam[1])
+      return { key: "pure", op: op, arg: [e1, e2] }
+    }
     let es2 = q.xxparam?.map(preproc)
     if (op in ops.special)
       return { key: op, arg: es2 }

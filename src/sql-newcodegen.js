@@ -33,6 +33,8 @@ let assignmentToSym
 let updateOps
 let updateOpsExtra
 
+let loopInfo
+
 // generator ir api: mirroring necessary bits from ir.js
 let expr = (txt, ...args) => ({ txt, deps: args })
 
@@ -186,6 +188,7 @@ let cgen = {
   call: (f, ...args) => `${f}(${args.join(", ")})`,
 
   malloc: (type, n) => cgen.call("malloc", `sizeof(${type}) * ${n}`),
+  calloc: (type, n) => cgen.call("calloc", n, `sizeof(${type})`),
   open: (file) => cgen.call("open", file, 0),
   close: (fd) => cgen.call("close", fd),
 
@@ -273,11 +276,24 @@ let validateAndExtractUsedCols = (q) => {
     // get from a tmp var
     if (e1.key == "ref") {
       e1 = assignments[e1.op]
-      if (e1.key != "update" && e1.fre.length != 1) {
+      if (e1.key != "update") {
         throw new Error("cannot get from a tmp that is not a hashmap: " + pretty(q))
       }
       validateAndExtractUsedCols(e1)
       validateAndExtractUsedCols(e2)
+      return
+    }
+
+    if (e1.key == "get" && e2.key == "var") {
+      let [e11, e12] = e1.arg
+      if (e11.key != "ref") throw new Error("malformed get: " + pretty(q))
+
+      e11 = assignments[e11.op]
+      if (e11.key != "update") {
+        throw new Error("cannot get from a tmp that is not a hashmap: " + pretty(q))
+      }
+      validateAndExtractUsedCols(e11)
+      validateAndExtractUsedCols(e12)
       return
     }
 
@@ -644,6 +660,22 @@ let getLoopTxt = (f, file, loadInput) => () => {
   }
 }
 
+let getHashBucketLoopTxt = (f, bucket, dataBuf) => () => {
+  let v = f.arg[1].op
+
+  let initCursor = []
+
+  let info = [`// generator: ${v} <- ${pretty(f.arg[0])}`]
+
+  let loopHeader = []
+
+  loopHeader.push(`for (int ${quoteVar(v)} = 0; ${quoteVar(v)} < ${bucket.bucketCount}; ${quoteVar(v)}++) {`)
+
+  return {
+    info, data: dataBuf, initCursor, loopHeader, boundsChecking: [], rowScanning: []
+  }
+}
+
 let emitPath = (buf, q) => {
   if (q.key == "loadInput") {
     throw new Error("cannot have stand-alone loadInput")
@@ -683,17 +715,23 @@ let emitPath = (buf, q) => {
     if (e1.key == "ref") {
       let sym = tmpSym(e1.op)
       let key = emitPath(buf, e2)
-      let keyPos = emitHashLookUp(buf, sym, [key])[1]
+      let [pos, keyPos] = emitHashLookUp(buf, sym, [key])
       let { valSchema } = hashMapEnv[sym]
       if (valSchema.length > 1) {
         throw new Error("not supported for now")
       }
-      
-      // TODO: what if undefined
-      if (typing.isString(valSchema[0].schema)) {
-        return { str: `${sym}_${valSchema[0].name}_str[${keyPos}]`, len: `${sym}_${valSchema[0].name}_len[${keyPos}]` }
+      return getHashMapValueEntry(buf, sym, pos, keyPos)["values"]
+    }
+
+    if (e1.key == "get" && e2.key == "var") {
+      let bucket = loopInfo[e2.op]
+
+      let dataPos = `${bucket.buckets}[${cgen.plus(cgen.mul(bucket.keyPos, BUCKET_SIZE), quoteVar(e2.op))}]`
+
+      if (typing.isString(bucket.schema.objValue)) {
+        return { str: `${bucket.target}_str[${dataPos}]`, len: `${bucket.target}_len[${dataPos}]` }
       } else {
-        return `${sym}_${valSchema[0].name}[${keyPos}]`
+        return `${bucket.target}[${dataPos}]`
       }
     }
 
@@ -965,8 +1003,7 @@ let emitHashMapPrint = (buf, sym) => {
     let { name, schema } = valSchema[i]
     if (typing.isObject(schema)) {
       buf.push(`print("[", 1);`)
-      buf.push(`int bucket_count = ${sym}_${name}_bucket_counts[key_pos];`)
-      buf.push(`for (int j = 0; j < bucket_count; j++) {`)
+      buf.push(`for (int j = 0; j < ${sym}_${name}_bucket_counts[key_pos]; j++) {`)
       buf.push(`int data_pos = ${sym}_${name}_buckets[key_pos * ${BUCKET_SIZE} + j];`)
 
       if (typing.isString(schema.objValue)) {
@@ -975,7 +1012,7 @@ let emitHashMapPrint = (buf, sym) => {
         buf.push(`printf("%${getFormatSpecifier(schema.objValue)}", ${sym}_${name}[data_pos]);`)
       }
 
-      buf.push(`if (j != bucket_count - 1) {`)
+      buf.push(`if (j != ${sym}_${name}_bucket_counts[key_pos] - 1) {`)
       buf.push(`print(", ", 2);`)
       buf.push(`}`)
       buf.push(`}`)
@@ -1014,6 +1051,8 @@ let reset = () => {
   nameIdMap = {}
 
   prolog = []
+
+  loopInfo = {}
 }
 
 let emitStatefulInit = (buf, q, lhs) => {
@@ -1296,6 +1335,15 @@ let emitCode = (q, ir) => {
       // let hashed = hash(data, mksetVarEnv[v1].map(e => e.val), mksetVarEnv[v1].map(e => e.schema.type))
       // mksetVarEnv[v1].hash = hash(data, mksetVarEnv[v1].map(e => e.val), mksetVarEnv[v1].map(e => e.schema.type))
       addMkset(f.arg[0], f.arg[1], data)
+    } else if (g1.key == "get") {
+      let data = []
+      let bucket = emitPath(data, g1)
+
+      loopInfo[v1] = bucket
+
+      let getLoopTxtFunc = getHashBucketLoopTxt(f, bucket, data)
+      addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
+      // throw new Error("not implemented: " + pretty(f))
     } else {
       throw new Error("invalid filter: " + pretty(f))
     }
