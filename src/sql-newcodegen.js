@@ -5,6 +5,14 @@ const { sets } = require('./shared')
 
 const { unique, union } = sets
 
+// C value representation:
+// Primitive value: { schema, val }
+// String: { schema, val: { str, len } }
+// Simple hashmap value (string or primitive): { schema, val, tag: "hashmapValue" }
+// Simple hashmap bucket: { schema, val: { dataCount, bucketCount, buckets, valArray, valSchema }, tag: "hashmapBucket" }
+// Structure: { schema, val: { <key>: <val>, ... }, tag: "structure" }
+// C values will have a keyPos property if it is a result from hash lookup
+
 const KEY_SIZE = 16777216
 const HASH_SIZE = KEY_SIZE
 
@@ -348,6 +356,13 @@ let validateAndExtractUsedCols = (q) => {
     }
     // mkset
     validateAndExtractUsedCols(e4.arg[0].arg[0])
+  } else if (q.key == "stateful" && q.op == "array") {
+    // console.log("here ", q.arg[0])
+    if (q.arg[0].key == "pure" && q.arg[0].op == "mkTuple") {
+      q.arg[0].arg.map(validateAndExtractUsedCols)
+    } else {
+      q.arg.map(validateAndExtractUsedCols)
+    }
   } else if (q.key == "pure" && q.op == "mkTuple") {
     throw new Error("unexpected mkTuple")
   } else if (q.arg) {
@@ -416,9 +431,9 @@ let hash = (buf, keys, keySchema) => {
     let tmpHash = getNewName("tmp_hash")
 
     if (typing.isString(schema)) {
-      cgen.declareULong(buf)(tmpHash, cgen.call("hash", key.str, key.len))
+      cgen.declareULong(buf)(tmpHash, cgen.call("hash", key.val.str, key.val.len))
     } else if (typing.isInteger(schema)) {
-      cgen.declareULong(buf)(tmpHash, cgen.cast("unsigned long", key))
+      cgen.declareULong(buf)(tmpHash, cgen.cast("unsigned long", key.val))
     } else {
       throw new Error("cannot hash key with type " + typing.prettyPrintType(schema))
     }
@@ -453,11 +468,11 @@ let emitHashLookUp = (buf, sym, keys) => {
       let keyStr = `${sym}_keys_str${i}[${keyPos}]`
       let keyLen = `${sym}_keys_len${i}[${keyPos}]`
 
-      let { str, len } = key
+      let { str, len } = key.val
       let comparison = cgen.notEqual(cgen.call("compare_str2", keyStr, keyLen, str, len), "0")
       compareKeys = compareKeys ? cgen.or(compareKeys, comparison) : comparison
     } else if (typing.isInteger(schema)) {
-      let comparison = cgen.notEqual(`${sym}_keys${i}[${keyPos}]`, key)
+      let comparison = cgen.notEqual(`${sym}_keys${i}[${keyPos}]`, key.val)
       compareKeys = compareKeys ? cgen.or(compareKeys, comparison) : comparison
     }
   }
@@ -669,7 +684,7 @@ let getHashBucketLoopTxt = (f, bucket, dataBuf) => () => {
 
   let loopHeader = []
 
-  loopHeader.push(`for (int ${quoteVar(v)} = 0; ${quoteVar(v)} < ${bucket.bucketCount}; ${quoteVar(v)}++) {`)
+  loopHeader.push(`for (int ${quoteVar(v)} = 0; ${quoteVar(v)} < ${bucket.val.bucketCount}; ${quoteVar(v)}++) {`)
 
   return {
     info, data: dataBuf, initCursor, loopHeader, boundsChecking: [], rowScanning: []
@@ -681,11 +696,11 @@ let emitPath = (buf, q) => {
     throw new Error("cannot have stand-alone loadInput")
   } else if (q.key == "const") {
     if (typeof q.op == "number") {
-      return String(q.op)
+      return { schema: q.schema, val: String(q.op) }
     } else if (typeof q.op == "string") {
       let name = getNewName("tmp_str")
       cgen.declareConstCharPtr(buf)(name, '"' + q.op + '"')
-      return { str: name, len: q.op.length }
+      return { schema: q.schema, val: { str: name, len: q.op.length } }
     } else {
       throw new Error("constant not supported: " + pretty(q))
     }
@@ -696,18 +711,16 @@ let emitPath = (buf, q) => {
     let sym = tmpSym(q.op)
 
     if (q1.fre.length > 0) {
-      // if (q1.key == "stateful" && !emittedStateful[sym]) {
-      //   emitStatefulInPath(q1, sym)
-      // }
       console.assert(currentGroupKey.key == q1.fre[0])
-      let lhs = getHashMapValueEntry(buf, sym, currentGroupKey.pos, currentGroupKey.keyPos)
-      return lhs["values"]
-
+      let value = getHashMapValueEntry(buf, sym, currentGroupKey.pos, currentGroupKey.keyPos)
+      // must be a simple hash
+      console.assert(value.tag == "hashmapValue")
+      return value
     } else {
       if (q1.key == "stateful" && !emittedStateful[sym]) {
         emitStatefulInPath(q1, sym)
       }
-      return sym
+      return { schema: q1.schema, val: sym }
     }
   } else if (q.key == "get") {
     let [e1, e2] = q.arg
@@ -720,18 +733,21 @@ let emitPath = (buf, q) => {
       if (valSchema.length > 1) {
         throw new Error("not supported for now")
       }
-      return getHashMapValueEntry(buf, sym, pos, keyPos)["values"]
+      let value = getHashMapValueEntry(buf, sym, pos, keyPos)
+      // must be a simple hash
+      console.assert(value.tag == "hashmapValue")
+      return value
     }
 
     if (e1.key == "get" && e2.key == "var") {
       let bucket = loopInfo[e2.op]
 
-      let dataPos = `${bucket.buckets}[${cgen.plus(cgen.mul(bucket.keyPos, BUCKET_SIZE), quoteVar(e2.op))}]`
+      let dataPos = `${bucket.val.buckets}[${cgen.plus(cgen.mul(bucket.val.keyPos, BUCKET_SIZE), quoteVar(e2.op))}]`
 
       if (typing.isString(bucket.schema.objValue)) {
-        return { str: `${bucket.target}_str[${dataPos}]`, len: `${bucket.target}_len[${dataPos}]` }
+        return { schema: bucket.schema.objValue, val: { str: `${bucket.val.valArray.str}[${dataPos}]`, len: `${bucket.val.valArray.len}[${dataPos}]` } }
       } else {
-        return `${bucket.target}[${dataPos}]`
+        return { schema: bucket.schema.objValue, val: `${bucket.target}[${dataPos}]` }
       }
     }
 
@@ -752,9 +768,9 @@ let emitPath = (buf, q) => {
     let end = name + "_end"
 
     if (typing.isNumber(q.schema.type) || q.schema.type.typeSym == typeSyms.date) {
-      return name
+      return { schema: q.schema, val: name }
     } else if (typing.isString(q.schema.type)) {
-      return { str: `${mappedFile} + ${start}`, len: `${end} - ${start}` }
+      return { schema: q.schema, val: { str: `${mappedFile} + ${start}`, len: `${end} - ${start}` } }
     } else {
       throw new Error("cannot extract value of type " + typing.prettyPrintTuple(q.schema))
     }
@@ -767,27 +783,26 @@ let emitPath = (buf, q) => {
       let e2 = emitPath(buf, q.arg[1])
       if (q.op == "equal" || q.op == "notEqual" || q.op == "lessThan" || q.op == "greaterThan" || q.op == "lessThanOrEqual" || q.op == "greaterThanOrEqual") {
         if (typing.isString(q.arg[0].schema.type) && typing.isString(q.arg[1].schema.type)) {
-          let { str: str1, len: len1 } = e1
-          let { str: str2, len: len2 } = e2
+          let { str: str1, len: len1 } = e1.val
+          let { str: str2, len: len2 } = e2.val
           let name = getNewName("tmp_cmpstr")
-          cgen.declareInt(buf)(name, cgen.binary(cgen.call("compare_str2", str1, len1, str2, len2), "0", op))
-          return name
+          cgen.declareInt(buf)(name, "(" + cgen.binary(cgen.call("compare_str2", str1, len1, str2, len2), "0", op) + ")")
+          return { schema: q.schema, val: name }
         } else {
-          res = cgen.binary(e1, e2, op)
+          return { schema: q.schema, val: "(" + cgen.binary(e1.val, e2.val, op) + ")" }
         }
       } else if (q.op == "fdiv") {
-        res = cgen.binary(cgen.cast("double", e1), cgen.cast("double", e2), op)
+        return { schema: q.schema, val: "(" + cgen.binary(cgen.cast("double", e1.val), cgen.cast("double", e2.val), op) + ")" }
       } else {
-        res = cgen.binary(e1, e2, op)
+        return { schema: q.schema, val: "(" + cgen.binary(e1.val, e2.val, op) + ")" }
       }
     } else if (q.op == "and") {
       throw new Error("unexpected and op" + pretty(q))
     } else if (q.op.startsWith("convert_")) {
-      res = cgen.cast(ctypeMap[q.op.substring("convert_".length)], e1)
+      return { schema: q.schema, val: cgen.cast(ctypeMap[q.op.substring("convert_".length)], e1.val) }
     } else {
       throw new Error("pure operation not supported: " + pretty(q))
     }
-    return "(" + res + ")"
   } else {
     throw new Error("unknown op: " + pretty(q))
   }
@@ -825,9 +840,13 @@ let emitHashMapInit = (buf, sym, keySchema, valSchema) => {
   for (let i in valSchema) {
     let { name, schema } = valSchema[i]
 
+    if (name == "_DEFAULT_") name = "values"
+
     if (typing.isObject(schema)) {
       // stateful "array" op
-      if (typing.isString(schema.objValue)) {
+      if (typing.isObject(schema.objValue)) {
+        throw new Error("Not implemented yet")
+      } else if (typing.isString(schema.objValue)) {
         // arrays for the actual data will have size KEY_SIZE * BUCKET_SIZE
         cgen.declareCharPtrPtr(buf)(`${sym}_${name}_str`, cgen.cast("char **", cgen.malloc("char *", DATA_SIZE)))
         cgen.declareIntPtr(buf)(`${sym}_${name}_len`, cgen.cast("int *", cgen.malloc("int", DATA_SIZE)))
@@ -877,10 +896,10 @@ let emitHashLookUpOrUpdate = (buf, sym, keys, update) => {
         let keyStr = `${sym}_keys_str${i}[${keyPos}]`
         let keyLen = `${sym}_keys_len${i}[${keyPos}]`
 
-        cgen.stmt(buf1)(cgen.assign(keyStr, key.str))
-        cgen.stmt(buf1)(cgen.assign(keyLen, key.len))
+        cgen.stmt(buf1)(cgen.assign(keyStr, key.val.str))
+        cgen.stmt(buf1)(cgen.assign(keyLen, key.val.len))
       } else {
-        cgen.stmt(buf1)(cgen.assign(`${sym}_keys${i}[${keyPos}]`, key))
+        cgen.stmt(buf1)(cgen.assign(`${sym}_keys${i}[${keyPos}]`, key.val))
       }
     }
 
@@ -912,10 +931,10 @@ let emitHashLookUpAndUpdate = (buf, sym, keys, update, checkExistance) => {
           let keyStr = `${sym}_keys_str${i}[${keyPos}]`
           let keyLen = `${sym}_keys_len${i}[${keyPos}]`
 
-          cgen.stmt(buf1)(cgen.assign(keyStr, key.str))
-          cgen.stmt(buf1)(cgen.assign(keyLen, key.len))
+          cgen.stmt(buf1)(cgen.assign(keyStr, key.val.str))
+          cgen.stmt(buf1)(cgen.assign(keyLen, key.val.len))
         } else {
-          cgen.stmt(buf1)(cgen.assign(`${sym}_keys${i}[${keyPos}]`, key))
+          cgen.stmt(buf1)(cgen.assign(`${sym}_keys${i}[${keyPos}]`, key.val))
         }
       }
     })
@@ -929,28 +948,60 @@ let emitHashLookUpAndUpdate = (buf, sym, keys, update, checkExistance) => {
 let getHashMapValueEntry = (buf, sym, pos, keyPos) => {
   let { keySchema, valSchema } = hashMapEnv[sym]
 
-  let lhs = {}
+  let res = {}
+
+  if (valSchema.length == 1 && valSchema[0].name == "_DEFAULT_") {
+    let { schema } = valSchema[0]
+    if (typing.isObject(schema)) {
+      let valArray = typing.isString(schema.objValue) ? { str: `${sym}_values_str`, len: `${sym}_values_len` } : `${sym}_values`
+      res = {
+        schema,
+        val: {
+          dataCount: `${sym}_values_count`,
+          bucketCount: `${sym}_values_bucket_counts[${keyPos}]`,
+          buckets: `${sym}_values_buckets`,
+          valArray,
+        },
+        keyPos,
+        tag: "hashmapBucket"
+      }
+    } else if (typing.isString(schema)) {
+      res = { schema, val: { str: `${sym}_values_str[${keyPos}]`, len: `${sym}_values_len[${keyPos}]` }, tag: "hashmapValue" }
+    } else {
+      res = { schema, val: `${sym}_values[${keyPos}]`, tag: "hashmapValue" }
+    }
+    return res
+  }
+
+  res.tag = "structure"
+  res.schema = valSchema
+  res.val = {}
 
   for (let i in valSchema) {
     let { name, schema } = valSchema[i]
 
     if (typing.isObject(schema)) {
-      lhs[name] = {
+
+      let valArray = typing.isString(schema.objValue) ? { str: `${sym}_${name}_str`, len: `${sym}_${name}_len` } : `${sym}_${name}`
+      res.val[name] = {
+        schema,
+        val: {
+          dataCount: `${sym}_${name}_count`,
+          bucketCount: `${sym}_${name}_bucket_counts[${keyPos}]`,
+          buckets: `${sym}_${name}_buckets`,
+          valArray
+        },
         keyPos,
-        dataCount: `${sym}_${name}_count`,
-        bucketCount: `${sym}_${name}_bucket_counts[${keyPos}]`,
-        buckets: `${sym}_${name}_buckets`,
-        target: `${sym}_${name}`,
-        schema
+        tag: "hashmapBucket"
       }
     } else if (typing.isString(schema)) {
-      lhs[name] = { str: `${sym}_${name}_str[${keyPos}]`, len: `${sym}_${name}_len[${keyPos}]` }
+      res.val[name] = { schema, val: { str: `${sym}_${name}_str[${keyPos}]`, len: `${sym}_${name}_len[${keyPos}]` }, keyPos, tag: "hashmapValue" }
     } else {
-      lhs[name] = `${sym}_${name}[${keyPos}]`
+      res.val[name] = { schema, val: `${sym}_${name}[${keyPos}]`, keyPos, tag: "hashmapValue" }
     }
   }
 
-  return lhs
+  return res
 }
 
 let emitHashUpdate = (buf, sym, pos, keyPos, update) => {
@@ -961,23 +1012,23 @@ let emitHashUpdate = (buf, sym, pos, keyPos, update) => {
 
 let emitHashBucketInsert = (buf, bucket, value) => {
   let dataPos = getNewName("data_pos")
-  cgen.declareInt(buf)(dataPos, bucket.dataCount)
+  cgen.declareInt(buf)(dataPos, bucket.val.dataCount)
 
-  cgen.stmt(buf)(cgen.inc(bucket.dataCount))
+  cgen.stmt(buf)(cgen.inc(bucket.val.dataCount))
 
   let bucketPos = getNewName("bucket_pos")
-  cgen.declareInt(buf)(bucketPos, bucket.bucketCount)
+  cgen.declareInt(buf)(bucketPos, bucket.val.bucketCount)
 
-  cgen.stmt(buf)(cgen.assign(bucket.bucketCount, cgen.plus(bucketPos, "1")))
+  cgen.stmt(buf)(cgen.assign(bucket.val.bucketCount, cgen.plus(bucketPos, "1")))
 
   let idx = cgen.plus(cgen.mul(bucket.keyPos, BUCKET_SIZE), bucketPos)
-  cgen.stmt(buf)(cgen.assign(`${bucket.buckets}[${idx}]`, dataPos))
+  cgen.stmt(buf)(cgen.assign(`${bucket.val.buckets}[${idx}]`, dataPos))
 
   if (typing.isString(bucket.schema.objValue)) {
-    cgen.stmt(buf)(cgen.assign(`${bucket.target}_str[${dataPos}]`, value.str))
-    cgen.stmt(buf)(cgen.assign(`${bucket.target}_len[${dataPos}]`, value.len))
+    cgen.stmt(buf)(cgen.assign(`${bucket.val.valArray.str}[${dataPos}]`, value.val.str))
+    cgen.stmt(buf)(cgen.assign(`${bucket.val.valArray.len}[${dataPos}]`, value.val.len))
   } else {
-    cgen.stmt(buf)(cgen.assign(`${bucket.target}[${dataPos}]`, value))
+    cgen.stmt(buf)(cgen.assign(`${bucket.val.valArray}[${dataPos}]`, value.val))
   }
 }
 
@@ -1001,6 +1052,7 @@ let emitHashMapPrint = (buf, sym) => {
 
   for (let i in valSchema) {
     let { name, schema } = valSchema[i]
+    if (name == "_DEFAULT_") name = "values"
     if (typing.isObject(schema)) {
       buf.push(`print("[", 1);`)
       buf.push(`for (int j = 0; j < ${sym}_${name}_bucket_counts[key_pos]; j++) {`)
@@ -1057,67 +1109,67 @@ let reset = () => {
 
 let emitStatefulInit = (buf, q, lhs) => {
   if (q.op == "sum" || q.op == "count") {
-    cgen.stmt(buf)(cgen.assign(lhs, "0"))
+    cgen.stmt(buf)(cgen.assign(lhs.val, "0"))
   } else if (q.op == "product") {
-    cgen.stmt(buf)(cgen.assign(lhs, "1"))
+    cgen.stmt(buf)(cgen.assign(lhs.val, "1"))
   } else if (q.op == "min") {
-    cgen.stmt(buf)(cgen.assign(lhs, "INT_MAX"))
+    cgen.stmt(buf)(cgen.assign(lhs.val, "INT_MAX"))
   } else if (q.op == "max") {
-    cgen.stmt(buf)(cgen.assign(lhs, "INT_MIN"))
+    cgen.stmt(buf)(cgen.assign(lhs.val, "INT_MIN"))
   } else if (q.op == "array") {
     // lhs passed will be the bucket info object
-    cgen.stmt(buf)(cgen.assign(lhs.bucketCount, "0"))
+    cgen.stmt(buf)(cgen.assign(lhs.val.bucketCount, "0"))
   } else {
     throw new Error("stateful op not supported: " + pretty(q))
   }
 }
 
-let emitOptionalAndOp = (buf, e, update) => {
-  if (e.key == "pure" && e.op == "and") {
-    let cond = emitPath(buf, e.arg[0])
-    let rhs = emitPath(buf, e.arg[1])
+// let emitOptionalAndOp = (buf, e, update) => {
+//   if (e.key == "pure" && e.op == "and") {
+//     let cond = emitPath(buf, e.arg[0])
+//     let rhs = emitPath(buf, e.arg[1])
 
-    cgen.if(buf)(cond, buf1 => {
-      update(buf1, rhs)
-    })
-  } else {
-    let rhs = emitPath(buf, e)
-    update(buf, rhs)
-  }
-}
+//     cgen.if(buf)(cond, buf1 => {
+//       update(buf1, rhs)
+//     })
+//   } else {
+//     let rhs = emitPath(buf, e)
+//     update(buf, rhs)
+//   }
+// }
 
 let emitStatefulUpdate = (buf, q, lhs) => {
   let e = q.arg[0]
   if (e.key == "pure" && e.op == "and") e = e.arg[1]
   let rhs = emitPath(buf, e)
   if (q.op == "sum") {
-    cgen.stmt(buf)(cgen.binary(lhs, rhs, "+="))
+    cgen.stmt(buf)(cgen.binary(lhs.val, rhs.val, "+="))
   } else if (q.op == "count") {
-    cgen.stmt(buf)(cgen.binary(lhs, "1", "+="))
+    cgen.stmt(buf)(cgen.binary(lhs.val, "1", "+="))
   } else if (q.op == "product") {
-    cgen.stmt(buf)(cgen.binary(lhs, rhs, "*="))
+    cgen.stmt(buf)(cgen.binary(lhs.val, rhs.val, "*="))
   } else if (q.op == "min") {
-    cgen.stmt(buf)(`${lhs} = ${rhs} < ${lhs} ? ${rhs} : ${lhs}`)
+    cgen.stmt(buf)(`${lhs.val} = ${rhs.val} < ${lhs.val} ? ${rhs.val} : ${lhs.val}`)
   } else if (q.op == "max") {
-    cgen.stmt(buf)(`${lhs} = ${rhs} > ${lhs} ? ${rhs} : ${lhs}`)
+    cgen.stmt(buf)(`${lhs.val} = ${rhs.val} > ${lhs.val} ? ${rhs.val} : ${lhs.val}`)
   } else if (q.op == "single") {
     if (typing.isString(e.schema.type)) {
-      let { str: lhsStr, len: lhsLen } = lhs
-      let { str: rhsStr, len: rhsLen } = rhs
+      let { str: lhsStr, len: lhsLen } = lhs.val
+      let { str: rhsStr, len: rhsLen } = rhs.val
       cgen.stmt(buf)(cgen.assign(lhsStr, rhsStr))
       cgen.stmt(buf)(cgen.assign(lhsLen, rhsLen))
     } else {
-      cgen.stmt(buf)(cgen.assign(lhs, rhs))
+      cgen.stmt(buf)(cgen.assign(lhs.val, rhs.val))
     }
   } else if (q.op == "array") {
     // lhs passed will be the bucket info object
     emitHashBucketInsert(buf, lhs, rhs)
   } else if (q.op == "print") {
     if (typing.isString(e.schema.type)) {
-      let { str, len } = rhs
+      let { str, len } = rhs.val
       cgen.stmt(buf)(cgen.call("println1", str, len))
     } else {
-      cgen.stmt(buf)(cgen.call("printf", `"%${getFormatSpecifier(q.arg[0].schema.type)}\\n"`, rhs))
+      cgen.stmt(buf)(cgen.call("printf", `"%${getFormatSpecifier(q.arg[0].schema.type)}\\n"`, rhs.val))
     }
   } else {
     throw new Error("stateful op not supported: " + pretty(q))
@@ -1135,7 +1187,7 @@ let emitStatefulInPath = (q, sym) => {
     cgen.comment(buf)("init " + sym + (q.fre.length > 0 ? "[" + q.fre[0] + "]" : "") + " = " + pretty(q))
 
     cgen.declareVar(buf)(convertToCType(q.schema.type), sym)
-    emitStatefulInit(buf, q, sym)
+    emitStatefulInit(buf, q, { schema: q.schema, val: sym })
     // init
     assign(buf, sym, fv, [])
   }
@@ -1150,11 +1202,11 @@ let emitStatefulInPath = (q, sym) => {
   if (e.key == "pure" && e.op == "and") {
     let cond = emitPath(buf, e.arg[0])
 
-    cgen.if(buf)(cond, buf1 => {
-      emitStatefulUpdate(buf1, q, sym)
+    cgen.if(buf)(cond.val, buf1 => {
+      emitStatefulUpdate(buf1, q, { schema: q.schema, val: sym })
     })
   } else {
-    emitStatefulUpdate(buf, q, sym)
+    emitStatefulUpdate(buf, q, { schema: q.schema, val: sym })
   }
   assign(buf, sym, fv, deps)
 
@@ -1177,7 +1229,7 @@ let collectRelevantStatefulInPath = (q) => {
         updateOpsExtra[currentGroupKey.sym].push(q.op)
 
         let keySchema = currentGroupKey.keySchema
-        let valSchema = [{ name: "values", schema: q1.schema.type }]
+        let valSchema = [{ name: "_DEFAULT_", schema: q1.schema.type }]
 
         emitHashMapInit(prolog, tmpSym(q.op), keySchema, valSchema)
 
@@ -1249,7 +1301,7 @@ let collectHashMaps = () => {
       }
       assignmentToSym[v.op] = i
       updateOps[i].push(v.op)
-      valSchema.push({ name: "values", schema: v.schema.type })
+      valSchema.push({ name: "_DEFAULT_", schema: v.schema.type })
 
       currentGroupKey = { sym: i, key: k, keySchema }
       collectRelevantStatefulInPath(assignments[v.op].arg[0])
@@ -1309,10 +1361,10 @@ let emitCode = (q, ir) => {
         let filenameStr
         if (!isConstStr) {
           filenameStr = getNewName("tmp_filename")
-          cgen.declareCharArr(buf)(filenameStr, `${filename.len} + 1`)
-          cgen.stmt(buf)(cgen.call("extract_str1", filename.str, filename.len, filenameStr))
+          cgen.declareCharArr(buf)(filenameStr, `${filename.val.len} + 1`)
+          cgen.stmt(buf)(cgen.call("extract_str1", filename.val.str, filename.val.len, filenameStr))
         } else {
-          filenameStr = filename.str
+          filenameStr = filename.val.str
         }
         let { mappedFile, size } = emitLoadInput(buf, filenameStr, i)
         inputFilesEnv[file] = { mappedFile, size, format: g1.op }
@@ -1323,14 +1375,11 @@ let emitCode = (q, ir) => {
     } else if (g1.key == "mkset") {
       let data = []
       if (g1.arg[0].key == "pure" && g1.arg[0].op == "combine") {
-        let vals = g1.arg[0].arg.map(e => ({
-          val: emitPath(data, e),
-          schema: e.schema
-        }))
+        let vals = g1.arg[0].arg.map(e => emitPath(data, e))
         mksetVarEnv[v1] = vals
       } else {
         let val = emitPath(data, g1.arg[0])
-        mksetVarEnv[v1] = [{ val, schema: g1.arg[0].schema }]
+        mksetVarEnv[v1] = [val]
       }
       // let hashed = hash(data, mksetVarEnv[v1].map(e => e.val), mksetVarEnv[v1].map(e => e.schema.type))
       // mksetVarEnv[v1].hash = hash(data, mksetVarEnv[v1].map(e => e.val), mksetVarEnv[v1].map(e => e.schema.type))
@@ -1338,6 +1387,7 @@ let emitCode = (q, ir) => {
     } else if (g1.key == "get") {
       let data = []
       let bucket = emitPath(data, g1)
+      console.assert(bucket.tag == "hashmapBucket")
 
       loopInfo[v1] = bucket
 
@@ -1353,7 +1403,7 @@ let emitCode = (q, ir) => {
   for (let i in updateOps) {
     let k = assignments[i].arg[1].op
 
-    let keys = k.startsWith("K") ? mksetVarEnv[k].map(key => key.val) : [k]
+    let keys = k.startsWith("K") ? mksetVarEnv[k] : [k]
 
     let sym = tmpSym(i)
 
@@ -1376,12 +1426,19 @@ let emitCode = (q, ir) => {
         let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
         if (e.key == "pure" && e.op == "and") {
           let cond = emitPath(buf, e.arg[0])
-          cgen.if(buf)(cond, (buf1) => {
+          cgen.if(buf)(cond.val, (buf1) => {
             emitHashLookUpAndUpdate(buf1, sym, keys, (buf2, lhs, pos, keyPos) => {
               currentGroupKey = { key: k, pos, keyPos }
               cgen.comment(buf2)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
 
-              emitStatefulUpdate(buf2, q, lhs[q.extraGroupPath ? q.extraGroupPath[0] : "values"], sym)
+              if (q.extraGroupPath) {
+                console.assert(lhs.tag == "structure")
+                lhs = lhs.val[q.extraGroupPath[0]]
+              } else {
+                console.assert(lhs.tag == "hashmapValue" || lhs.tag == "hashmapBucket")
+              }
+
+              emitStatefulUpdate(buf2, q, lhs, sym)
             }, true)
           })
         } else {
@@ -1389,7 +1446,14 @@ let emitCode = (q, ir) => {
             currentGroupKey = { key: k, pos, keyPos }
             cgen.comment(buf1)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
 
-            emitStatefulUpdate(buf1, q, lhs[q.extraGroupPath ? q.extraGroupPath[0] : "values"], sym)
+            if (q.extraGroupPath) {
+              console.assert(lhs.tag == "structure")
+              lhs = lhs.val[q.extraGroupPath[0]]
+            } else {
+              console.assert(lhs.tag == "hashmapValue" || lhs.tag == "hashmapBucket")
+            }
+
+            emitStatefulUpdate(buf1, q, lhs, sym)
           }, true)
         }
         assign(buf, sym, fv, deps)
@@ -1403,14 +1467,22 @@ let emitCode = (q, ir) => {
         let q = assignments[j]
         if (!initRequired[q.op]) continue
         cgen.comment(buf1)("init " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
-        emitStatefulInit(buf1, q, lhs[q.extraGroupPath ? q.extraGroupPath[0] : "values"])
+        let lhs1 = lhs
+        if (q.extraGroupPath) {
+          console.assert(lhs.tag == "structure")
+          lhs1 = lhs.val[q.extraGroupPath[0]]
+        } else {
+          console.assert(lhs1.tag == "hashmapValue" || lhs1.tag == "hashmapBucket")
+        }
+        emitStatefulInit(buf1, q, lhs1)
       }
       for (let j of updateOpsExtra[i]) {
         let q = assignments[j]
         if (!initRequired[q.op]) continue
         cgen.comment(buf1)("init " + tmpSym(j) + "[" + q.fre[0] + "]" + " = " + pretty(q))
         let lhs1 = getHashMapValueEntry(buf1, tmpSym(j), pos, keyPos)
-        emitStatefulInit(buf1, q, lhs1["values"])
+        console.assert(lhs1.tag == "hashmapValue" || lhs1.tag == "hashmapBucket")
+        emitStatefulInit(buf1, q, lhs1)
       }
     })
     assign(init, sym, fv, [])
@@ -1425,16 +1497,18 @@ let emitCode = (q, ir) => {
       if (e.key == "pure" && e.op == "and") {
         let cond = emitPath(update, e.arg[0])
 
-        cgen.if(update)(cond, buf1 => {
+        cgen.if(update)(cond.val, buf1 => {
           emitHashUpdate(buf1, sym, pos, keyPos, (buf2, lhs) => {
             let lhs1 = getHashMapValueEntry(buf2, tmpSym(j), pos, keyPos)
-            emitStatefulUpdate(buf2, q, lhs1["values"])
+            console.assert(lhs1.tag == "hashmapValue" || lhs1.tag == "hashmapBucket")
+            emitStatefulUpdate(buf2, q, lhs1)
           })
         })
       } else {
         emitHashUpdate(update, sym, pos, keyPos, (buf1, lhs) => {
           let lhs1 = getHashMapValueEntry(buf1, tmpSym(j), pos, keyPos)
-          emitStatefulUpdate(buf1, q, lhs1["values"])
+          console.assert(lhs1.tag == "hashmapValue" || lhs1.tag == "hashmapBucket")
+          emitStatefulUpdate(buf1, q, lhs1)
         })
       }
       assign(update, sym, fv, deps)
@@ -1448,14 +1522,26 @@ let emitCode = (q, ir) => {
       if (e.key == "pure" && e.op == "and") {
         let cond = emitPath(update, e.arg[0])
 
-        cgen.if(update)(cond, buf1 => {
+        cgen.if(update)(cond.val, buf1 => {
           emitHashUpdate(buf1, sym, pos, keyPos, (buf2, lhs) => {
-            emitStatefulUpdate(buf2, q, lhs[q.extraGroupPath ? q.extraGroupPath[0] : "values"])
+            if (q.extraGroupPath) {
+              console.assert(lhs.tag == "structure")
+              lhs = lhs.val[q.extraGroupPath[0]]
+            } else {
+              console.assert(lhs.tag == "hashmapValue" || lhs.tag == "hashmapBucket")
+            }
+            emitStatefulUpdate(buf2, q, lhs)
           })
         })
       } else {
         emitHashUpdate(update, sym, pos, keyPos, (buf1, lhs) => {
-          emitStatefulUpdate(buf1, q, lhs[q.extraGroupPath ? q.extraGroupPath[0] : "values"])
+          if (q.extraGroupPath) {
+            console.assert(lhs.tag == "structure")
+            lhs = lhs.val[q.extraGroupPath[0]]
+          } else {
+            console.assert(lhs.tag == "hashmapValue" || lhs.tag == "hashmapBucket")
+          }
+          emitStatefulUpdate(buf1, q, lhs)
         })
       }
       assign(update, sym, fv, deps)
@@ -1468,15 +1554,13 @@ let emitCode = (q, ir) => {
   let res = emitPath(epilog, q)
 
   if (q.schema.type.typeSym !== typeSyms.never) {
-    if (hashMapEnv[res]) {
+    if (hashMapEnv[res.val]) {
       cgen.comment(epilog)("print hashmap")
-      emitHashMapPrint(epilog, res)
+      emitHashMapPrint(epilog, res.val)
+    } else if (typing.isString(q.schema.type)) {
+      cgen.stmt(epilog)(cgen.call("println1", res.val.str, res.val.len))
     } else {
-      if (typing.isString(q.schema.type)) {
-        cgen.stmt(epilog)(cgen.call("println1", res.str, res.len))
-      } else {
-        cgen.stmt(epilog)(cgen.call("printf", `"%${getFormatSpecifier(q.schema.type)}\\n"`, res))
-      }
+      cgen.stmt(epilog)(cgen.call("printf", `"%${getFormatSpecifier(q.schema.type)}\\n"`, res.val))
     }
   }
 

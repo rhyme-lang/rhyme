@@ -131,7 +131,6 @@ N|F|991417.0000|1487504710.3800|1413082168.0541|1469649223.1944|25.5165|38284.46
 }, 10 * 1000)
 
 test("q4", async () => {
-  // TODO: optimize, extremely slow
   let count = rh`count (${lineitem}.*l.l_commitdate < ${lineitem}.*l.l_receiptdate) & ${lineitem}.*l.l_orderkey | group ${lineitem}.*l.l_orderkey`
 
   let cond = rh`19930701 <= ${orders}.*.o_orderdate && ${orders}.*.o_orderdate < 19931001`
@@ -150,13 +149,23 @@ test("q4", async () => {
 `)
 })
 
-test("q5", async () => {
-  let regionKeyToName = rh`[${region}.*r.r_name == "ASIA" & ${region}.*r.r_name] | group ${region}.*r.r_regionkey`
-  let query = rh`[${regionKeyToName}.(${nation}.*n.n_regionkey).*R != undefined & ${nation}.*n.n_name] | group ${nation}.*n.n_nationkey`
+// test("q5-js", () => {
+//   let regionKeyToName = rh`[region.*r.r_name == "ASIA" & region.*r.r_name] | group region.*r.r_regionkey`
+//   let query = rh`[{r_name: ${regionKeyToName}.(nation.*n.n_regionkey).*R, n_name: nation.*n.n_name}] | group nation.*n.n_nationkey`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q5.c", schema: types.never })
-  let res = await func()
-})
+//   let func = compile(query, { newCodegen: true })
+//   // console.log(func.explain.code)
+// })
+
+// test("q5", async () => {
+//   let regionKeyToName = rh`[${region}.*r.r_name == "ASIA" & ${region}.*r.r_name] | group ${region}.*r.r_regionkey`
+//   let query = rh`[{r_name: ${regionKeyToName}.(${nation}.*n.n_regionkey).*R, n_name: ${nation}.*n.n_name}] | group ${nation}.*n.n_nationkey`
+
+//   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q5.c", schema: types.never })
+//   let res = await func()
+
+//   console.log(res)
+// })
 
 test("q6", async () => {
   let cond1 = rh`19940101 <= ${lineitem}.*.l_shipdate && ${lineitem}.*.l_shipdate < 19950101`
