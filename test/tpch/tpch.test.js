@@ -1,4 +1,4 @@
-const { rh } = require('../../src/rhyme')
+const { rh, api } = require('../../src/rhyme')
 const { compile } = require('../../src/simple-eval')
 const { typing, types } = require('../../src/typing')
 const fs = require("fs")
@@ -7,6 +7,18 @@ const os = require('child_process')
 // point to the data directory
 let dataDir = "cgen-sql/data/SF1"
 let outDir = "cgen-sql/out-tpch"
+
+let customerSchema = typing.objBuilder()
+  .add(typing.createKey(types.u32), typing.createSimpleObject({
+    c_custkey: types.i32,
+    c_name: types.string,
+    c_address: types.string,
+    c_nationkey: types.i32,
+    c_phone: types.string,
+    c_acctbal: types.f64,
+    c_mktsegment: types.string,
+    c_comment: types.string,
+  })).build()
 
 let lineitemSchema = typing.objBuilder()
   .add(typing.createKey(types.u32), typing.createSimpleObject({
@@ -36,6 +48,13 @@ let nationSchema = typing.objBuilder()
     n_comment: types.string,
   })).build()
 
+let regionSchema = typing.objBuilder()
+  .add(typing.createKey(types.u32), typing.createSimpleObject({
+    r_regionkey: types.i32,
+    r_name: types.string,
+    r_comment: types.string,
+  })).build()
+
 let ordersSchema = typing.objBuilder()
   .add(typing.createKey(types.u32), typing.createSimpleObject({
     o_orderkey: types.i32,
@@ -49,12 +68,16 @@ let ordersSchema = typing.objBuilder()
     o_comment: types.string,
   })).build()
 
+let customerFile = `"${dataDir}/customer.tbl"`
 let lineitemFile = `"${dataDir}/lineitem.tbl"`
 let nationFile = `"${dataDir}/nation.tbl"`
+let regionFile = `"${dataDir}/region.tbl"`
 let ordersFile = `"${dataDir}/orders.tbl"`
 
+let customer = rh`loadTBL ${customerFile} ${customerSchema}`
 let lineitem = rh`loadTBL ${lineitemFile} ${lineitemSchema}`
 let nation = rh`loadTBL ${nationFile} ${nationSchema}`
+let region = rh`loadTBL ${regionFile} ${regionSchema}`
 let orders = rh`loadTBL ${ordersFile} ${ordersSchema}`
 
 let sh = (cmd) => {
@@ -95,6 +118,8 @@ test("q1", async () => {
     count_order: count (${cond} & ${lineitem}.*.l_orderkey)
   } | group [${lineitem}.*.l_returnflag, ${lineitem}.*.l_linestatus]`
 
+  // let q = rh`sort ["l_returnflag", "l_linestatus"] ${query}`
+
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q1.c", schema: types.never })
   let res = await func()
 
@@ -105,18 +130,38 @@ N|F|991417.0000|1487504710.3800|1413082168.0541|1469649223.1944|25.5165|38284.46
 `)
 }, 10 * 1000)
 
-// test("q4", async () => {
-//   // TODO: optimize, extremely slow
-//   let count = rh`count (${lineitem}.*O.l_commitdate < ${lineitem}.*O.l_receiptdate) & ${lineitem}.*O.l_comment | group (${lineitem}.*O.l_orderkey)`
+test("q4", async () => {
+  let count = rh`count (${lineitem}.*l.l_commitdate < ${lineitem}.*l.l_receiptdate) & ${lineitem}.*l.l_orderkey | group ${lineitem}.*l.l_orderkey`
 
-//   let cond1 = rh`19930701 <= ${orders}.*.o_orderdate && ${orders}.*.o_orderdate < 19931001`
+  let cond = rh`19930701 <= ${orders}.*.o_orderdate && ${orders}.*.o_orderdate < 19931001`
 
-//   // TODO: sort the result by o_orderpriority
-//   let query = rh`count ((${cond1} && ${count} > 0) & ${orders}.*.o_orderkey) | group ${orders}.*.o_orderpriority`
+  // TODO: sort the result by o_orderpriority
+  let query = rh`count ((${cond} && ${count}.(${orders}.*.o_orderkey) > 0) & ${orders}.*.o_orderkey) | group ${orders}.*.o_orderpriority`
 
-//   let q = rh`count ${orders}.*.o_orderkey`
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q4.c", schema: types.never })
+  let res = await func()
 
-//   let func = await compile(count, { backend: "c-sql-new", outDir, outFile: "q4.c", schema: types.never })
+  expect(res).toBe(`5-LOW|10487|
+1-URGENT|10594|
+4-NOT SPECIFIED|10556|
+2-HIGH|10476|
+3-MEDIUM|10410|
+`)
+})
+
+// test("q5-js", () => {
+//   let regionKeyToName = rh`[region.*r.r_name == "ASIA" & region.*r.r_name] | group region.*r.r_regionkey`
+//   let query = rh`[{r_name: ${regionKeyToName}.(nation.*n.n_regionkey).*R, n_name: nation.*n.n_name}] | group nation.*n.n_nationkey`
+
+//   let func = compile(query, { newCodegen: true })
+//   // console.log(func.explain.code)
+// })
+
+// test("q5", async () => {
+//   let regionKeyToName = rh`[${region}.*r.r_name == "ASIA" & ${region}.*r.r_name] | group ${region}.*r.r_regionkey`
+//   let query = rh`[{r_name: ${regionKeyToName}.(${nation}.*n.n_regionkey).*R, n_name: ${nation}.*n.n_name}] | group ${nation}.*n.n_nationkey`
+
+//   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q5.c", schema: types.never })
 //   let res = await func()
 
 //   console.log(res)

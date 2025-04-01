@@ -1075,6 +1075,8 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
             let {type: t2, props: p2} = argTups[1];
             let {type: t3, props: p3} = argTups[2];
             return {type: createUnion(t2, t3), props: union(p2, p3)};
+        } else if (q.op == "sort") {
+            return argTups[1]
         }
         throw new Error("Pure operation not implemented: " + q.op);
     } else if (q.key === "hint") {
@@ -1648,6 +1650,8 @@ let convertAST = (schema, q, completedMap, dontConvertVar = false) => {
             q.arg = q.arg.map($convertAST);
             return q;
         } else if (q.op === "ifElse") {
+            return q;
+        } else if (q.op === "sort") {
             return q;
         }
         throw new Error("Pure operation not implemented: " + q.op);
