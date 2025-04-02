@@ -150,7 +150,7 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green`
 
   let query = rh`${lineRes} | group *line | sum .*`
 
-  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ}, bag: {red: u8, green: u8, blue: u8}}`)
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ}, bag: {red: i32, green: i32, blue: i32}}`)
   let res = func({input, udf, bag})
   expect(res).toBe(8)
 })
@@ -248,7 +248,7 @@ let numbers = pipe(api.apply("udf.toNum", matches))
 // isPart: coordinates => coordinates.Some(coord => isSym(matrix[coord[0]]?.[coord[1]]))
 // Some of the generated coordinates maybe invalid, e.g. [-1, -1], need hack for optional chaining ?.
 // !!! api.max is a temporary hack for logic or, should change this after add all, some operator to rhyme
-let isPart = pipe(api.apply(api.apply("udf.optionalChaining", matrix.get(coordinates.get("0"))), coordinates.get("1"))).map("udf.isSym").max()
+let isPart = pipe(api.apply(api.apply("udf.optionalChaining", matrix.get(coordinates.get("0"))), coordinates.get("1"))).map("udf.isSym").map("udf.toNum").max()
 
 // !!! api.times is a temporary hack for filtering,should change this after add filtering
 let partNum = pipe(api.times(numbers, rh`${isPart} | udf.toNum`))
@@ -347,7 +347,8 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
 
   let query = rh`${lineRes} | group *line | sum .*`
 
-  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_typ}}`)
+  // TODO: Loop consolidation - "udf.getNums" returns an array with same keys, so winNum is consolidated with numYouHave, but this is very bad.
+  let func = api.compile(query) // , typing.parseType`{input: string, udf: ${udf_typ}}`
   let res = func({input, udf})
   expect(res).toBe(13)
 })
@@ -368,7 +369,7 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
   }
   let udf_typ = typing.parseType`${udf_std_typ} & {
     andThen: (any, f64) => f64,
-    incCard: ({id: f64, match: u16, count: u32}, f64) => f64
+    incCard: ({id: f64, match: f64, count: i32}, f64) => f64
   }`
 
   let line = rh`.input | udf.split "\\n" | .*line
@@ -392,6 +393,7 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
 
   let matchCount = rh`count ${number} | group ${number}
                                       | udf.isEqual .*freq 2
+                                      | udf.toNum
                                       | sum`
 
   let lineRes = {
@@ -409,11 +411,12 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
   // udf.andThen here use the first argument as a side effect so that the final result will contain only the count
 
   let query = rh`${matchCountObj} | .*lineRes
-                                  | udf.andThen (udf.incCard ${matchCountObj}.(${matchCountObj}.*j.id) ((udf.logicalAnd (udf.isGreaterThan ${matchCountObj}.*j.id .id) (udf.isLessOrEqual ${matchCountObj}.*j.id (.id + .match))) * .count)) .count
+                                  | udf.andThen (udf.incCard ${matchCountObj}.(${matchCountObj}.*j.id) ((udf.toNum (udf.logicalAnd (udf.isGreaterThan ${matchCountObj}.*j.id .id) (udf.isLessOrEqual ${matchCountObj}.*j.id (.id + .match)))) * .count)) .count
                                   | last | group *lineRes
                                   | sum .*`
 
   // TODO: Figure out why adding typing is so slow.
+  // TODO: Loop consolidation makes typing this fail.
   let func = api.compile(query) // , typing.parseType`{input: string, udf: ${udf_typ}}`)
   let res = func({input, udf})
   expect(res).toBe(30)

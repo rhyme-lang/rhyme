@@ -313,7 +313,7 @@ let emitFilters2 = (scope, trueFree, iter, disjunctToDrop) => body => {
   for (let v in vars) {
     if (!seen[v]) {
       console.error("no suitable generator for variable "+v)
-      buf.push("// ERROR: no suitable generator for variable "+quoteVar(v))
+      buf.push("// ERROR: no suitable generator for variable "+v)
     }
   }
 

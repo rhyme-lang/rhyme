@@ -158,7 +158,7 @@ test("testCount", async () => {
   let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
 
   let query = rh`count ${csv}.*.C`
-
+  
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "testCount.c", schema: types.never })
 
   let res = await func()
