@@ -82,7 +82,7 @@ let expectTypeSimilarity = (type, schema) => {
 test("intLitTest", () => {
     let func = api.compile(api.plus(1, 63), types.never);
     expect(func.explain2.resultType).toStrictEqual({
-        type: types.i8,
+        type: types.i16,
         props: []
     });
 })

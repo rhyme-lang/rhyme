@@ -69,13 +69,14 @@ rt.pure.greaterThanOrEqual = (x1, x2) => {
 rt.pure.plus = (x1,x2) => {
   if (x1 === undefined) return undefined
   if (x2 === undefined) return undefined
-  let res = Number(x1) + Number(x2)
-  // NOTE: falling back to string concat
-  // (see e.g. svg demo)
-  if (Number.isNaN(res)) return x1 + x2
-  // alternative: return undefined
-  // if (Number.isNaN(res)) return undefined
-  return res
+  // Remove string concat in favor of separate "concat" function.
+  return Number(x1) + Number(x2)
+}
+
+rt.pure.concat = (x1,x2) => {
+  if (x1 === undefined) return undefined
+  if (x2 === undefined) return undefined
+  return String(x1) + String(x2)
 }
 
 rt.pure.minus = (x1,x2) => {

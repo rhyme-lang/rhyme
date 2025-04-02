@@ -1,6 +1,5 @@
-const { api } = require('./rhyme')
+// const { api } = require('./rhyme')
 const { sets } = require('./shared')
-const { typing, types, typeSyms } = require('./typing')
 
 const { unique, union, intersect, diff, subset, same } = sets
 
@@ -53,7 +52,7 @@ let pretty = q => {
     let e1 = assignments[q.op]
     return "tmp"+q.op+prettyPath(e1.fre)
   } else if (q.key == "genref") {
-    let e1 = filters[q.op]
+    //let e1 = filters[q.op]
     return "gen"+q.op
   } else if (q.key == "get") {
     let [e1,e2] = q.arg.map(pretty)
@@ -79,7 +78,10 @@ let pretty = q => {
     return "prefix_"+q.op+"("+e1+")"
   } else if (q.key == "stateful") {
     let [e1] = q.arg.map(pretty)
-    return q.op+"("+e1+")"
+    let suffix = ""
+    if (q.mode == "maybe")
+      suffix = "?"
+    return q.op+suffix+"("+e1+")"
   } else if (q.key == "group") {
     let [e1,e2] = q.arg.map(pretty)
     return "{ "+ e1 + ": " + e2 + " }"
@@ -92,6 +94,9 @@ let pretty = q => {
   }
 }
 
+exports.pretty = pretty
+
+const { typing } = require('./typing')
 
 let pseudoVerbose = false
 
@@ -166,8 +171,6 @@ let emitPseudo = (q) => {
   return buf.join("\n")
 }
 
-
-exports.pretty = pretty
 
 exports.prettyPath = prettyPath
 

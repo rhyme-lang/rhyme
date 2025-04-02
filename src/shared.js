@@ -31,6 +31,7 @@ ops.pure.get = true
 ops.pure.apply = true
 ops.pure.pipe = true
 ops.pure.plus = true
+ops.pure.concat = true
 ops.pure.minus = true
 ops.pure.times = true
 ops.pure.fdiv = true

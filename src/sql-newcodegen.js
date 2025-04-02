@@ -603,7 +603,7 @@ let emitRowScanning = (f, file, cursor, schema, first = true) => {
   let colName = schema.objKey
   let type = schema.objValue
   let prefix = pretty(f)
-  let used = usedCols[prefix][colName]
+  let used = usedCols[prefix] && usedCols[prefix][colName]
 
   cgen.comment(buf)(`reading column ${colName}`)
 
@@ -1231,7 +1231,8 @@ let collectRelevantStatefulInPath = (q) => {
         let keySchema = currentGroupKey.keySchema
         let valSchema = [{ name: "_DEFAULT_", schema: q1.schema.type }]
 
-        emitHashMapInit(prolog, tmpSym(q.op), keySchema, valSchema)
+        if (!hashMapEnv[tmpSym(q.op)])
+          emitHashMapInit(prolog, tmpSym(q.op), keySchema, valSchema)
 
         hashMapEnv[tmpSym(q.op)] = { keySchema, valSchema }
       }

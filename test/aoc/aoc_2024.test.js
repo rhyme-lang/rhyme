@@ -172,7 +172,7 @@ test("day2-part2", () => {
   let delta = rh`${tail}.*i - ${reports}.*i`
   let monotonic = sign => rh`all (udf.range 1 4).(${sign} * ${delta})`
   let safe = rh`${monotonic(1)} || ${monotonic(-1)} | group *report`
-  let query = rh`count (*line & ${safe})`
+  let query = rh`count (*line & count?(${safe}.*A))`
 
   let func = api.compileC2(query)
   let res = func({input, udf})
@@ -246,8 +246,8 @@ MXMXAXMASX`
   let line = rh`.input | udf.split "\\n" | .*line | udf.split ""`
   let grid = api.array(line)
 
-  let substring = rh`${grid}.*x.*y + ${grid}.(*x + ${delta}.*d.0).(*y + ${delta}.*d.1) + 
-    ${grid}.(*x + 2 * ${delta}.*d.0).(*y + 2 * ${delta}.*d.1) + ${grid}.(*x + 3 * ${delta}.*d.0).(*y + 3 * ${delta}.*d.1)`
+  let substring = rh`${grid}.*x.*y :: ${grid}.(*x + ${delta}.*d.0).(*y + ${delta}.*d.1) ::
+    ${grid}.(*x + 2 * ${delta}.*d.0).(*y + 2 * ${delta}.*d.1) :: ${grid}.(*x + 3 * ${delta}.*d.0).(*y + 3 * ${delta}.*d.1)`
   let isXMAS = rh`${substring} == "XMAS"`
   let query = rh`${substring} | ${filterBy("*f0", isXMAS)} | count`
   
@@ -279,8 +279,8 @@ MXMXAXMASX`
   let line = rh`.input | udf.split "\\n" | .*line | udf.split ""`
   let grid = api.array(line)
 
-  let substring1 = rh`${grid}.(*x - 1).(*y - 1) + ${grid}.*x.*y + ${grid}.(*x + 1).(*y + 1)`
-  let substring2 = rh`${grid}.(*x - 1).(*y + 1) + ${grid}.*x.*y + ${grid}.(*x + 1).(*y - 1)`
+  let substring1 = rh`${grid}.(*x - 1).(*y - 1) :: ${grid}.*x.*y :: ${grid}.(*x + 1).(*y + 1)`
+  let substring2 = rh`${grid}.(*x - 1).(*y + 1) :: ${grid}.*x.*y :: ${grid}.(*x + 1).(*y - 1)`
   let isMAS1 = rh`(${substring1} == "MAS") || (${substring1} == "SAM")`
   let isMAS2 = rh`(${substring2} == "MAS") || (${substring2} == "SAM")`
   let isXMAS = rh`${isMAS1} & ${isMAS2}`

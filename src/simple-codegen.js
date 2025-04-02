@@ -114,6 +114,8 @@ let quoteConst = e => {
         return "[]"
     } else if (typeof e === "object" && Object.keys(e).length == 0) {
         return "{}"
+    } else if (e === undefined) {
+        return "undefined";
     } else {
         console.error("emit unsupported constant: "+e)
         return "(throw new Error('unsupported constant:"+e+"'))"
@@ -197,7 +199,7 @@ let emitStmInit = (q, scope) => {
   } else if (q.key == "update") {
     let e0 = codegen(q.arg[0], scope)
     if (q.mode == "inplace" || isFresh(q.arg[0]))
-      return "(() => "+e0+")"
+      return "(() => ("+e0+"))"
     else
       return "rt.stateful.update_init("+e0+")" // need to create copy
   } else {
