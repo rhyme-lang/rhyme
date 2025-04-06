@@ -128,7 +128,7 @@ R|F|37719753.0000|56568041380.9045|53741292684.6038|55889619119.8297|25.5058|382
 A|F|37734107.0000|56586554400.7299|53758257134.8651|55909065222.8256|25.5220|38273.1297|0.0500|1478493|
 N|F|991417.0000|1487504710.3800|1413082168.0541|1469649223.1944|25.5165|38284.4678|0.0501|38854|
 `)
-}, 10 * 1000)
+})
 
 test("q4", async () => {
   let count = rh`count (${lineitem}.*l.l_commitdate < ${lineitem}.*l.l_receiptdate) & ${lineitem}.*l.l_orderkey | group ${lineitem}.*l.l_orderkey`
@@ -157,15 +157,15 @@ test("q4", async () => {
 //   // console.log(func.explain.code)
 // })
 
-// test("q5", async () => {
-//   let regionKeyToName = rh`[${region}.*r.r_name == "ASIA" & ${region}.*r.r_name] | group ${region}.*r.r_regionkey`
-//   let query = rh`[{r_name: ${regionKeyToName}.(${nation}.*n.n_regionkey).*R, n_name: ${nation}.*n.n_name}] | group ${nation}.*n.n_nationkey`
+test("q5", async () => {
+  let regionKeyToName = rh`[${region}.*r.r_name == "ASIA" & ${region}.*r.r_name] | group ${region}.*r.r_regionkey`
+  let query = rh`[${regionKeyToName}.(${nation}.*n.n_regionkey).*R] | group ${nation}.*n.n_nationkey`
 
-//   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q5.c", schema: types.never })
-//   let res = await func()
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q5.c", schema: types.never })
+  let res = await func()
 
-//   console.log(res)
-// })
+  console.log(res)
+})
 
 test("q6", async () => {
   let cond1 = rh`19940101 <= ${lineitem}.*.l_shipdate && ${lineitem}.*.l_shipdate < 19950101`
