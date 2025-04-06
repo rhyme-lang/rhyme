@@ -108,6 +108,8 @@ test("q1", async () => {
   let cond = rh`${lineitem}.*.l_shipdate <= 19980902`
 
   let query = rh`{
+    l_returnflag: ${lineitem}.*.l_returnflag,
+    l_linestatus: ${lineitem}.*.l_linestatus,
     sum_qty: sum (${cond} & ${lineitem}.*.l_quantity),
     sum_base_price: sum (${cond} & ${lineitem}.*.l_extendedprice),
     sum_disc_price: sum (${cond} & (${lineitem}.*.l_extendedprice * (1 - ${lineitem}.*.l_discount))),
@@ -131,21 +133,25 @@ N|F|991417.0000|1487504710.3800|1413082168.0541|1469649223.1944|25.5165|38284.46
 })
 
 test("q4", async () => {
-  let count = rh`count (${lineitem}.*l.l_commitdate < ${lineitem}.*l.l_receiptdate) & ${lineitem}.*l.l_orderkey | group ${lineitem}.*l.l_orderkey`
+  let countR = rh`count (${lineitem}.*l.l_commitdate < ${lineitem}.*l.l_receiptdate) & ${lineitem}.*l.l_orderkey | group ${lineitem}.*l.l_orderkey`
 
   let cond = rh`19930701 <= ${orders}.*.o_orderdate && ${orders}.*.o_orderdate < 19931001`
 
   // TODO: sort the result by o_orderpriority
-  let query = rh`count ((${cond} && ${count}.(${orders}.*.o_orderkey) > 0) & ${orders}.*.o_orderkey) | group ${orders}.*.o_orderpriority`
+  let countL = rh`{
+    o_orderpriority: ${orders}.*.o_orderpriority,
+    order_count: count ((${cond} && ${countR}.(${orders}.*.o_orderkey) > 0) & ${orders}.*.o_orderkey)
+  } | group ${orders}.*.o_orderpriority`
+  let query = rh`sort "o_orderpriority" ${countL}`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q4.c", schema: types.never, enableOptimizations: false })
   let res = await func()
 
-  expect(res).toBe(`5-LOW|10487|
-1-URGENT|10594|
-4-NOT SPECIFIED|10556|
+  expect(res).toBe(`1-URGENT|10594|
 2-HIGH|10476|
 3-MEDIUM|10410|
+4-NOT SPECIFIED|10556|
+5-LOW|10487|
 `)
 })
 
@@ -158,8 +164,8 @@ test("q4", async () => {
 // })
 
 test("q5", async () => {
-  let regionKeyToName = rh`[${region}.*r.r_name == "ASIA" & ${region}.*r.r_name] | group ${region}.*r.r_regionkey`
-  let query = rh`[${regionKeyToName}.(${nation}.*n.n_regionkey).*R] | group ${nation}.*n.n_nationkey`
+  let regionKeyToName = rh`{r_name: ${region}.*r.r_name} | group ${region}.*r.r_regionkey`
+  let query = rh`print ${regionKeyToName}.(${nation}.*n.n_regionkey).r_name`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q5.c", schema: types.never })
   let res = await func()
