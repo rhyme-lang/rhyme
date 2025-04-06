@@ -379,7 +379,7 @@ test("uncorrelatedAverageTest", async () => {
 test("groupByTest", async () => {
   let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
 
-  let query = rh`sum ${csv}.*.value | group ${csv}.*.key`
+  let query = rh`{ key: ${csv}.*.key, sum: sum ${csv}.*.value } | group ${csv}.*.key`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "groupByTest.c", schema: types.never })
 
@@ -394,7 +394,7 @@ test("groupByAverageTest", async () => {
 
   let avg = rh`(sum ${csv}.*.value) / (count ${csv}.*.value)`
 
-  let query = rh`${avg} | group ${csv}.*.key`
+  let query = rh`{ key: ${csv}.*.key, avg: ${avg} } | group ${csv}.*.key`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "groupByAverageTest.c", schema: types.never })
 
@@ -407,7 +407,7 @@ B|20.0000|
 test("groupByRelativeSum", async () => {
   let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
 
-  let query = rh`(sum ${csv}.*.value) / (sum ${csv}.*B.value) | group ${csv}.*.key`
+  let query = rh`{ key: ${csv}.*.key, precentage: (sum ${csv}.*.value) / (sum ${csv}.*B.value) } | group ${csv}.*.key`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "groupByRelativeSum.c", schema: types.never })
 
@@ -421,7 +421,7 @@ test("groupCountByPopulation", async () => {
   let csv = rh`loadCSV "./cgen-sql/country.csv" ${countrySchema}`
 
   // test integer values as group key
-  let query = rh`count ${csv}.*.city | group ${csv}.*.population`
+  let query = rh`{ pop: ${csv}.*.population, count: count ${csv}.*.city } | group ${csv}.*.population`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "groupCountByPopulation.c", schema: types.never })
 
@@ -436,7 +436,7 @@ test("groupRegionByCountry", async () => {
   let csv = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
 
   // test strings as hashtable values
-  let query = rh`${csv}.*.region | group ${csv}.*.country`
+  let query = rh`{ country: ${csv}.*.country, region: ${csv}.*.region } | group ${csv}.*.country`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "groupRegionByCountry.c", schema: types.never })
 
@@ -452,9 +452,9 @@ test("nestedLoopJoinSimpleTest", async () => {
   let country = rh`loadCSV "./cgen-sql/country.csv" ${countrySchema}`
   let region = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
 
-  let query = rh`(${region}.*.country == ${country}.*.country) & ${region}.*.region | group ${country}.*.city`
+  let query = rh`{ city: ${country}.*.city, region: (${region}.*.country == ${country}.*.country) & ${region}.*.region } | group ${country}.*.city`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "joinSimpleTest.c", schema: types.never })
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "nestedLoopJoinSimpleTest.c", schema: types.never })
 
   let res = await func()
   expect(res).toBe(`Tokyo|Asia|
@@ -469,9 +469,9 @@ test("nestedLoopJoinWithAggrTest", async () => {
   let region = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
 
   // SELECT SUM(country.population) FROM country JOIN region ON region.country = country.country GROUP BY region.region
-  let query = rh`sum ((${region}.*.country == ${country}.*.country) & ${country}.*.population) | group ${region}.*.region`
+  let query = rh`{ region: ${region}.*.region, sum: sum ((${region}.*.country == ${country}.*.country) & ${country}.*.population) } | group ${region}.*.region`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "joinWithAggrTest.c", schema: types.never })
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "nestedLoopJoinWithAggrTest.c", schema: types.never })
 
   let res = await func()
   expect(res).toBe(`Asia|50|
@@ -484,7 +484,7 @@ test("hashJoinSimpleTest", async () => {
   let region = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
 
   let q1 = rh`${region}.*O.region | group ${region}.*O.country`
-  let query = rh`${q1}.(${country}.*.country) | group ${country}.*.city`
+  let query = rh`{ city: ${country}.*.city, country: ${q1}.(${country}.*.country) } | group ${country}.*.city`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "hashJoinSimpleTest.c", schema: types.never })
   let res = await func()
@@ -500,7 +500,7 @@ test("hashJoinWithAggrTest", async () => {
   let region = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
 
   let q1 = rh`${region}.*O.region | group ${region}.*O.country`
-  let query = rh`sum ${country}.*.population | group ${q1}.(${country}.*.country)`
+  let query = rh`{region: ${q1}.(${country}.*.country), sum: sum ${country}.*.population} | group ${q1}.(${country}.*.country)`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "hashJoinWithAggrTest.c", schema: types.never })
   let res = await func()
@@ -531,8 +531,8 @@ test("groupByArray", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "groupByArray.c", schema: types.never })
   let res = await func()
 
-  expect(res).toBe(`Asia|[Japan, China]|
-Europe|[France, UK]|
+  expect(res).toBe(`[Japan, China]|
+[France, UK]|
 `)
 })
 
@@ -546,8 +546,8 @@ test("hashJoinArray", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "hashJoinArray.c", schema: types.never })
   let res = await func()
 
-  expect(res).toBe(`Asia|[30, 20]|
-Europe|[10, 10]|
+  expect(res).toBe(`[30, 20]|
+[10, 10]|
 `)
 })
 
