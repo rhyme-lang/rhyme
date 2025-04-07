@@ -458,7 +458,7 @@ test("day6-part1", () => {
     grid: rh`(update_inplace state.grid.(${nextCoord}.0) (${nextCoord}.1) "^") & state.grid`,
     isBound: isBound
   }
-  let func = api.compileC2(query, null)
+  let func = api.compileC2(query)
   while(!state.isBound)
     state = func({input, udf, state})
 
@@ -521,7 +521,7 @@ test("day6-part2", () => {
     isLoop: isLoop,
     steps: rh`state.steps + 1`
   }
-  let func = api.compileC2(query, null)
+  let func = api.compileC2(query)
 
   emptyPoses.forEach((coord, _) => {
     let state = getInitialState({input, udf})
@@ -682,18 +682,18 @@ test("day8-part1", () => {
   let grid = api.array(lines)
   let isAntennas = rh`${grid}.*i.*j != "."`
   let allAntennas = rh`[(udf.toNum *i), (udf.toNum *j)] | ${filterBy("*f0", isAntennas)} | array`
-
   let allAntennaPair = rh`udf.toNum(*x) < udf.toNum(*y) & {a:${allAntennas}.*x, b:${allAntennas}.*y}`
   let isPair = rh`${grid}.(${allAntennaPair}.a.0).(${allAntennaPair}.a.1) == ${grid}.(${allAntennaPair}.b.0).(${allAntennaPair}.b.1)`
   let antennaPairs = rh`${allAntennaPair} | ${filterBy("*f1", isPair)}`
-  let antinode1 = rh`{node1:(${antennaPairs}.a.0 + ${antennaPairs}.a.0 - ${antennaPairs}.b.0), node2:(${antennaPairs}.a.1 + ${antennaPairs}.a.1 - ${antennaPairs}.b.1)}`
-  let antinode2 = rh`{node1:(${antennaPairs}.b.0 + ${antennaPairs}.b.0 - ${antennaPairs}.a.0), node2:(${antennaPairs}.b.1 + ${antennaPairs}.b.1 - ${antennaPairs}.a.1)}`
-  let antinode = rh`[${antinode1}, ${antinode2}] | udf.toSet`
 
-  let rowlen = rh`(${lines} | count | udf.toNum) - 1`
-  let collen = rh`(${lines}.*0 | count | group *line | .0 | udf.toNum) - 1`
-  let inBound = rh`${rowlen} >= ${antinode}.*node.node1 & 0 <= ${antinode}.*node.node1 & ${collen} >= ${antinode}.*node.node2 & 0 <= ${antinode}.*node.node2`
-  let query = rh`${antinode}.*node | ${filterBy("*f2", inBound)} | count`
+  let isAntinode = rh`any (
+    ((udf.toNum *i1) == (${antennaPairs}.a.0 + ${antennaPairs}.a.0 - ${antennaPairs}.b.0) &
+    (udf.toNum *j1) == (${antennaPairs}.a.1 + ${antennaPairs}.a.1 - ${antennaPairs}.b.1)) ||
+    ((udf.toNum *i1) == (${antennaPairs}.b.0 + ${antennaPairs}.b.0 - ${antennaPairs}.a.0) &
+    (udf.toNum *j1) == (${antennaPairs}.b.1 + ${antennaPairs}.b.1 - ${antennaPairs}.a.1))
+  )`
+  let antinode = rh`${grid}.*i1.*j1 & ([(udf.toNum *i1), (udf.toNum *j1)] | ${filterBy("*", isAntinode)})`
+  let query = rh`${antinode} | count`
 
   let func = api.compileC2(query)
   let res = func({input, udf})
