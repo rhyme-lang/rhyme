@@ -526,13 +526,13 @@ let regionData = [
 test("groupByArray", async () => {
   let region = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
 
-  let query = rh`array ${region}.*O.country | group ${region}.*O.region`
+  let query = rh`{ region: ${region}.*O.region, countries: array ${region}.*O.country} | group ${region}.*O.region`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "groupByArray.c", schema: types.never })
   let res = await func()
 
-  expect(res).toBe(`[Japan, China]|
-[France, UK]|
+  expect(res).toBe(`Asia|[Japan, China]|
+Europe|[France, UK]|
 `)
 })
 
@@ -541,13 +541,13 @@ test("hashJoinArray", async () => {
   let region = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
 
   let q1 = rh`${region}.*O.region | group ${region}.*O.country`
-  let query = rh`array ${country}.*.population | group ${q1}.(${country}.*.country)`
+  let query = rh`{ region: ${q1}.(${country}.*.country), pops: array ${country}.*.population } | group ${q1}.(${country}.*.country)`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "hashJoinArray.c", schema: types.never })
   let res = await func()
 
-  expect(res).toBe(`[30, 20]|
-[10, 10]|
+  expect(res).toBe(`Asia|[30, 20]|
+Europe|[10, 10]|
 `)
 })
 
