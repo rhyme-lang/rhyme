@@ -168,7 +168,7 @@ test("loop-consolidation", () => {
     ).toBe(true);
 
     let func3 = api.compileC2("sum(data.*A.value + data.*B.value)", typing.parseType({data: dataSchema}));
-    console.log(func3.explain2.pseudo);
+
     expect( // Check that both of the loops still exist
         func3.explain2.pseudo.match(/\\*B/g) !== null && func3.explain2.pseudo.match(/[*]A/g) !== null
     ).toBe(true);

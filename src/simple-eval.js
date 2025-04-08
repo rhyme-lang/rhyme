@@ -892,11 +892,11 @@ let compile = (q,userSettings={}) => {
   }
 
   // ---- middle tier, imperative form ----
-  if(settings.enableOptimizations) {
+  if(settings.enableOptimizations && settings.schema) {
     q = optimizer.loopsConsolidate(q, vars);
   }
 
-  if (settings.extractAssignments && !(settings.enableOptimizations || settings.extractAssignmentsLate)) {
+  if (settings.extractAssignments && !((settings.enableOptimizations && settings.schema) || settings.extractAssignmentsLate)) {
     // 8. Extract assignments
     q = extract2(q)
   }
@@ -906,12 +906,12 @@ let compile = (q,userSettings={}) => {
     assignments[i] = extract3(assignments[i])
   q = extract3(q)
 
-  if(settings.enableOptimizations) {
+  if(settings.enableOptimizations && settings.schema) {
     // Assignments must not be extracted yet.
     q = optimizer.shrinking(q);
   }
 
-  if (settings.extractAssignments  && (settings.enableOptimizations || settings.extractAssignmentsLate)) {
+  if (settings.extractAssignments  && ((settings.enableOptimizations && settings.schema) || settings.extractAssignmentsLate)) {
     for (let i in filters)
       filters[i] = extract2(filters[i])
     q = extract2(q)
