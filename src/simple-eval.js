@@ -36,6 +36,7 @@ let defaultSettings = {
   backend: "js",
 
   schema: types.unknown,
+  enableOptimizations: true,
 
   outDir: "cgen-sql",
   outFile: "tmp.c"
@@ -310,6 +311,9 @@ let extract3 = q => {
     if (e2.key == "var") {
       let str = JSON.stringify(q) // extract & cse
       let ix = filters.map(JSON.stringify).indexOf(str)
+      if(q.filter !== undefined) {
+        ix = q.filter
+      }
       if (ix < 0) {
         ix = filters.length
         let q1 = JSON.parse(str)
@@ -821,9 +825,6 @@ let compile = (q,userSettings={}) => {
     q = extract0b(q,[])
   }
 
-  //console.log(pretty(q));
-  //q = optimizer.constantFold(q);
-  //console.log(pretty(q));
   // ---- middle tier ----
 
   // 3. Infer dependencies bottom up
@@ -883,48 +884,19 @@ let compile = (q,userSettings={}) => {
     //  2: multiple vars encoded using (vars *A *B *C)
   }
 
-  // Deduplicate 
+  // Deduplicate
   q = optimizer.deduplicate(q, {});
   // Perform type checking, and modify ast to include types.
   if(settings.schema) {
     q = typing.validateIR(settings.schema, q);
   }
+
   // ---- middle tier, imperative form ----
+  if(settings.enableOptimizations) {
+    q = optimizer.loopsConsolidate(q, vars);
+  }
 
-/*
- (x + y) * z / q + w
-
-  let res1 = x + y;
-  let res2 = res1 * z;
-  let res3 = res2 / q;
-  let res4 = res3 + w;
-
-  return res4;
-
-
-  {data.*.key: data.*.value, total: sum(data.*.value), }
-
-  DO: data[D0] // D0 is all keys of data.
-  let res1 = {}{data.D0.key: data.D0.value}
-  let res2 = res1{total: sum(data.*.value)};
-
-  D0: data[D0]
-  K1: mkset(data[D0][key])[K1]
-  let res1 = {}{K1: data.D0.value}
-  let res2 = res1{total: sum(data.D0.value)}
-
-  D0: data[D0]
-  K1: mkset(data[D0][key])[K1]
-  let res1 = {}{K1: data.D0.value}
-  let res2 = sum(data.D0.value)
-  let res3 = res1{total: res2}
-  res3
-  */
-
-
-
-
-  if (settings.extractAssignments && !settings.extractAssignmentsLate) {
+  if (settings.extractAssignments && !(settings.enableOptimizations || settings.extractAssignmentsLate)) {
     // 8. Extract assignments
     q = extract2(q)
   }
@@ -934,8 +906,12 @@ let compile = (q,userSettings={}) => {
     assignments[i] = extract3(assignments[i])
   q = extract3(q)
 
+  if(settings.enableOptimizations) {
+    // Assignments must not be extracted yet.
+    q = optimizer.shrinking(q);
+  }
 
-  if (settings.extractAssignments && settings.extractAssignmentsLate) {
+  if (settings.extractAssignments  && (settings.enableOptimizations || settings.extractAssignmentsLate)) {
     for (let i in filters)
       filters[i] = extract2(filters[i])
     q = extract2(q)
@@ -963,7 +939,7 @@ let compile = (q,userSettings={}) => {
 
   // 11. Pretty print (debug out)
   let pseudo = emitPseudo(q)
-
+  
   // 12. Codegen
 
   if (settings.newCodegen)
@@ -1020,12 +996,12 @@ let compile = (q,userSettings={}) => {
   }
 
   if (settings.backend == "c-sql") {
-    let ir = {filters, assignments, vars, order}
+    let ir = {filters, assignments, vars, order, pseudo}
     return generateCSql(q, ir)
   }
 
   if (settings.backend == "c-sql-new") {
-    let ir = {filters, assignments, vars, order}
+    let ir = {filters, assignments, vars, order, pseudo}
     return generateCSqlNew(q, ir, settings.outDir, settings.outFile)
   }
 
@@ -1063,7 +1039,8 @@ let compile = (q,userSettings={}) => {
   let func = eval(code)
 
   let wrap = (input) => {
-    return func(input)
+    let res = func(input)
+    return res;
   }
 
   wrap.explain = {

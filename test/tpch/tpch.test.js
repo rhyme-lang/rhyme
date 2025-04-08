@@ -120,7 +120,7 @@ test("q1", async () => {
 
   // let q = rh`sort ["l_returnflag", "l_linestatus"] ${query}`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q1.c", schema: types.never })
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q1.c", schema: types.never, enableOptimizations: false })
   let res = await func()
 
   expect(res).toBe(`N|O|74476040.0000|111701729697.7356|106118230307.6122|110367043872.4921|25.5022|38249.1180|0.0500|2920374|
@@ -138,7 +138,7 @@ test("q4", async () => {
   // TODO: sort the result by o_orderpriority
   let query = rh`count ((${cond} && ${count}.(${orders}.*.o_orderkey) > 0) & ${orders}.*.o_orderkey) | group ${orders}.*.o_orderpriority`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q4.c", schema: types.never })
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q4.c", schema: types.never, enableOptimizations: false })
   let res = await func()
 
   expect(res).toBe(`5-LOW|10487|

@@ -15,6 +15,8 @@ let quoteConst = e => {
         return "[]"
     } else if (typeof e === "object" && Object.keys(e).length == 0) {
         return "{}"
+    } else if (e === undefined) {
+        return "undefined";
     } else {
         error("ERROR - unsupported constant: "+e)
     }
