@@ -177,7 +177,6 @@ test("q6", async () => {
   let query = rh`sum (${cond}) & (${lineitem}.*.l_extendedprice * ${lineitem}.*.l_discount)`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q6.c", schema: types.never })
-  console.log(func)
   let res = await func()
 
   expect(res).toBe("123141078.2283\n")

@@ -1039,9 +1039,7 @@ let compile = (q,userSettings={}) => {
   let func = eval(code)
 
   let wrap = (input) => {
-    console.time("thing");
     let res = func(input)
-    console.timeEnd("thing");
     return res;
   }
 

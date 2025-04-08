@@ -319,39 +319,6 @@ typing.createVecs = (vecType, keyType, dim, dataTypes) => {
   return typing.objBuilder().add(keyTy, typing.createVec(vecType, keyType, dim - 1, dataTypes)).build().map(ty => typing.createTaggedType(vecType, {dim: dim}, ty));
 }
 
-let denothingType = (typ) => {
-    switch (typ.typeSym) {
-        case "union":
-            return createUnion(denothingType(typ.unionSet[0]), denothingType(typ.unionSet[1]))
-        case "intersect":
-            return createIntersection(denothingType(typ.intersectSet[0]), denothingType(typ.intersectSet[1]))
-        case "dynkey":
-            return createKey(denothingType(typ.keySupertype), typ.keySymbol);
-        case "tagged_type":
-            return createTaggedType(typ.tag, typ.tagData, denothingType(typ.tagInnertype));
-        case "object":
-            if (typ.objKey === null)
-                return typ;
-            return {
-                typeSym: typeSyms.object,
-                objParent: denothingType(typ.objKey),
-                objKey: denothingType(typ.objValue), 
-                objValue: denothingType(typ.objParent)
-            };
-        case "function":
-            return {
-                typeSym: typeSyms.function,
-                funcParams: typ.funcParams.map(denothingType),
-                funcResult: denothingType(typ.funcResult)
-            };
-        case "nothing":
-            return types.never;
-        default:
-            return typ;
-    }
-}
-typing.denothingType = denothingType;
-
 let performObjectGet = (objectTup, keyTup) => {
     let props = union(objectTup.props, keyTup.props);
     switch (objectTup.type.typeSym) {
@@ -820,10 +787,6 @@ let validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
     }*/
 
     let res = _validateIRQuery(schema, cseMap, varMap, nonEmptyGuarantees, q);
-    if(isSubtype(types.nothing, res.type)) {
-        res.props = union(res.props, nothingSet);
-        res.type = denothingType(res.type)
-    }
     q.schema = res;
     //cseMap[stringify] = res;
     return res;
