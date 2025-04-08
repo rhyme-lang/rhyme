@@ -740,3 +740,278 @@ test("day8-part2", () => {
   let res = func({input, udf})
   expect(res).toBe(34)
 })
+
+test("day9-part1", () => {
+  let input = `2333133121414131402`
+
+  let udf = {
+    array: (a, d, file) => file !== undefined ? Array(Number(a)).fill(d) : Array(Number(a)).fill('.'),
+    ...udf_stdlib,
+  }
+
+  let state = {
+    disk: [],
+    file: true,
+    digit: 0,
+    index: 0,
+  }
+  let createDisk = {
+    disk: rh`[state.disk.*, (udf.array .input.(state.index) state.digit state.file).*]`,
+    file: rh`ifElse state.file (1 == 2) true`,
+    digit: rh`ifElse state.file (state.digit + 1) state.digit`,
+    index: rh`state.index + 1`,
+  }
+  let func = api.compileC2(createDisk)
+  while (state.index < input.length)
+    state = func({input, udf, state})
+
+  let res = {
+    disk: state.disk,
+    index: 0,
+    sum: 0,
+    last: state.disk.length - 1,
+  }
+  let compact = {
+    disk: rh`ifElse (res.disk.(res.index) == ".") (update res.disk res.index res.disk.(res.last)) res.disk`,
+    index: rh`ifElse (res.disk.(res.index) == ".") res.index (res.index + 1)`,
+    sum: rh`ifElse (res.disk.(res.index) == ".") res.sum (res.sum + res.disk.(res.index) * res.index)`,
+    last: rh`ifElse (res.disk.(res.index) == ".") (res.last - 1) res.last`,
+  }
+  let compactRec = api.compileC2(compact)
+
+  while (res.index <= res.last)
+    res = compactRec({udf, res})
+  expect(res.sum).toBe(1928)
+})
+
+test("day9-part2", () => {
+  let input = `2333133121414131402`
+
+  let udf = {
+    splice: (a, b) => array => array.slice(a, b),
+    ...udf_stdlib,
+  }
+
+  let rh_length = rh`.input | udf.split "" | .*col | count`
+  let func_length = api.compileC2(rh_length)
+  let length = func_length({input, udf})
+
+  let state = {
+    disk: [],
+    file: true,
+    digit: 0,
+    index: 0,
+  }
+  let createDisk = {
+    disk: rh`ifElse state.file [state.disk.*, {index: state.digit, size: (.input.(state.index) | udf.toNum)}]
+     [state.disk.*, {index: 0 - 1, size: (.input.(state.index) | udf.toNum)}]`,
+    file: rh`ifElse state.file (1 == 2) true`,
+    digit: rh`ifElse state.file (state.digit + 1) state.digit`,
+    index: rh`state.index + 1`,
+  }
+  let func = api.compileC2(createDisk)
+  while (state.index < length)
+    state = func({input, udf, state})
+
+  let state2 = {
+    disk: state.disk,
+    leftindex: 0,
+    index: length - 1
+  }
+  let compact = {
+    disk: rh`ifElse (state2.disk.(state2.index).index != 0 - 1 & state2.disk.(state2.leftindex).index == 0 - 1 & state2.disk.(state2.leftindex).size >= state2.disk.(state2.index).size) 
+      [(state2.disk | udf.splice 0 state2.leftindex).*, state2.disk.(state2.index), {index: 0 - 1, size: state2.disk.(state2.leftindex).size - state2.disk.(state2.index).size}, (state2.disk | udf.splice state2.leftindex + 1 state2.index).*, {index: 0 - 1, size: state2.disk.(state2.index).size}, (state2.disk | udf.slice state2.index + 1).*] state2.disk`,
+    leftindex: rh`ifElse (state2.disk.(state2.index).index == 0 - 1 || (state2.disk.(state2.leftindex).index == 0 - 1 & state2.disk.(state2.leftindex).size >= state2.disk.(state2.index).size) || (state2.index == state2.leftindex)) 1 (state2.leftindex + 1)`,
+    index: rh`ifElse (state2.disk.(state2.index).index == 0 - 1 || (state2.disk.(state2.leftindex).index == 0 - 1 & state2.disk.(state2.leftindex).size >= state2.disk.(state2.index).size) || (state2.index == state2.leftindex)) 
+      (state2.index - 1) state2.index`,
+  }
+  let compact_func = api.compileC2(compact)
+  while (state2.index > 1)
+    state2 = compact_func({udf, state2})
+
+  let state3 = {
+    index: 0,
+    sumindex: 0,
+    sum: 0,
+  }
+  let checksum = {
+    index: rh`state3.index + 1`,
+    sumindex: rh`state3.sumindex + state2.disk.(state3.index).size`,
+    sum: rh`ifElse (state2.disk.(state3.index).index == 0 - 1) state3.sum (state3.sum + state2.disk.(state3.index).index * state2.disk.(state3.index).size * (state3.sumindex * 2 + state2.disk.(state3.index).size - 1) / 2)`,
+  }
+  let checksum_func = api.compileC2(checksum)
+  while (state3.index < state2.disk.length)
+    state3 = checksum_func({udf, state3, state2})
+  expect(state3.sum).toBe(2858)
+})
+
+test("day10-part1", () => {
+  let input =
+`89010123
+78121874
+87430965
+96549874
+45678903
+32019012
+01329801
+10456732`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    toSet: (arr) => arr.filter((value, index, self) =>
+      index === self.findIndex(t => t.x === value.x && t.y === value.y && t.sx === value.sx && t.sy === value.sy)
+    ),
+    ...udf_stdlib,
+  }
+  let filterBy = (gen, p) => x => rh`(udf.filter ${p}).${gen} & ${x}`
+  let delta = [[-1, 0], [0, 1], [1, 0], [0, -1]]
+
+  let lines = rh`.input | udf.split "\\n" | .*line | udf.split ""`
+  let grid = api.array(lines)
+  let isStart = rh`${grid}.*i.*j == "0"`
+  let startPos = rh`{x: (udf.toNum *i), y: (udf.toNum *j), sx: (udf.toNum *i), sy: (udf.toNum *j)} | ${filterBy("*f0", isStart)} | array`
+  let rh_initialState = {
+    grid: grid,
+    positions: startPos,
+    rowlen: rh`(${lines} | count | udf.toNum) - 1`,
+    collen: rh`(${lines}.*0 | count | group *line | .0 | udf.toNum) - 1`,
+  }
+  let func = api.compileC2(rh_initialState)
+  let initialState = func({input, udf})
+
+  let state = {
+    positions: initialState.positions,
+    index: 0,
+  }
+  let newPos = rh`{x: state.positions.*pos.x + delta.*dir.0, y: state.positions.*pos.y + delta.*dir.1, sx: state.positions.*pos.sx, sy: state.positions.*pos.sy} | array`
+  let isValid = rh`${newPos}.*p.x <= initialState.rowlen & ${newPos}.*p.x >= 0 & ${newPos}.*p.y <= initialState.collen & ${newPos}.*p.y >= 0 & (initialState.grid.(${newPos}.*p.x).(${newPos}.*p.y) | udf.toNum) == state.index + 1`
+  let computeGraph = {
+    positions: rh`${newPos}.*p | ${filterBy("*f0", isValid)} | array | udf.toSet`,
+    index: rh`state.index + 1`,
+  }
+  let func2 = api.compileC2(computeGraph)
+  while (state.index < 9)
+    state = func2({udf, state, delta, initialState})
+
+  let query = rh`state.positions.*p.x | count`
+  let func3 = api.compileC2(query)
+  let res = func3({udf, state})
+  expect(res).toBe(36)
+})
+
+test("day10-part2", () => {
+  let input =
+`89010123
+78121874
+87430965
+96549874
+45678903
+32019012
+01329801
+10456732`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    ...udf_stdlib,
+  }
+  let filterBy = (gen, p) => x => rh`(udf.filter ${p}).${gen} & ${x}`
+  let delta = [[-1, 0], [0, 1], [1, 0], [0, -1]]
+
+  let lines = rh`.input | udf.split "\\n" | .*line | udf.split ""`
+  let grid = api.array(lines)
+  let isStart = rh`${grid}.*i.*j == "0"`
+  let startPos = rh`{x: (udf.toNum *i), y: (udf.toNum *j), sx: (udf.toNum *i), sy: (udf.toNum *j)} | ${filterBy("*f0", isStart)} | array`
+  let rh_initialState = {
+    grid: grid,
+    positions: startPos,
+    rowlen: rh`(${lines} | count | udf.toNum) - 1`,
+    collen: rh`(${lines}.*0 | count | group *line | .0 | udf.toNum) - 1`,
+  }
+  let func = api.compileC2(rh_initialState)
+  let initialState = func({input, udf})
+
+  let state = {
+    positions: initialState.positions,
+    index: 0,
+  }
+  let newPos = rh`{x: state.positions.*pos.x + delta.*dir.0, y: state.positions.*pos.y + delta.*dir.1, sx: state.positions.*pos.sx, sy: state.positions.*pos.sy} | array`
+  let isValid = rh`${newPos}.*p.x <= initialState.rowlen & ${newPos}.*p.x >= 0 & ${newPos}.*p.y <= initialState.collen & ${newPos}.*p.y >= 0 & (initialState.grid.(${newPos}.*p.x).(${newPos}.*p.y) | udf.toNum) == state.index + 1`
+  let computeGraph = {
+    positions: rh`${newPos}.*p | ${filterBy("*f0", isValid)} | array`,
+    index: rh`state.index + 1`,
+  }
+  let func2 = api.compileC2(computeGraph)
+  while (state.index < 9)
+    state = func2({udf, state, delta, initialState})
+
+  let query = rh`state.positions.*p.x | count`
+  let func3 = api.compileC2(query)
+  let res = func3({udf, state})
+  expect(res).toBe(81)
+})
+
+test("day11-part1", () => {
+  let input =
+`125 17`
+
+  let udf = {
+    isEvenDigit: (a) => a.toString().length % 2 == 0 ? true : undefined,
+    splitNum1: (a) => Number(a.toString().slice(0, a.toString().length/2)),
+    splitNum2: (a) => Number(a.toString().slice(a.toString().length/2)),
+    ...udf_stdlib,
+  }
+
+  let nums = rh`.input | udf.split " " | .*num | udf.toNum | array`
+  let frequency = rh`{val: ${nums}.*x, count: 1} | array`
+  let compact = rh`{val: ${frequency}.*k.val, count: sum ${frequency}.*k.count} | group ${frequency}.*k.val | .* | array`
+  let func = api.compileC2(compact)
+  let state = func({input, udf})
+
+  let newSeqNotEven = rh`(ifElse state.*c.val == 0 {val: 1, count: state.*c.count} (ifElse (udf.isEvenDigit state.*c.val) {val: 0, count: 0} {val: 2024 * state.*c.val, count: state.*c.count}))`
+  let newSeqEven = rh`ifElse (udf.isEvenDigit state.*c.val) [{val: udf.splitNum1 state.*c.val, count: state.*c.count}, {val: udf.splitNum2 state.*c.val, count: state.*c.count}].* {val: 0, count: 0}`
+  let newSeq = rh`[${newSeqNotEven}, ${newSeqEven}]`
+  let compact2 = rh`{val: ${newSeq}.*kk.val, count: sum ${newSeq}.*kk.count} | group ${newSeq}.*kk.val | .* | array`
+
+  let func1 = api.compileC2(compact2)
+  for (let i = 0; i < 25; i++) {
+    state = func1({udf, state})
+  }
+
+  let query = rh`state.*c.count | sum`
+  let func2 = api.compileC2(query)
+  let res = func2({state, udf})
+  expect(res).toBe(55312)
+})
+
+test("day11-part2", () => {
+  let input =
+`125 17`
+
+  let udf = {
+    isEvenDigit: (a) => a.toString().length % 2 == 0 ? true : undefined,
+    splitNum1: (a) => Number(a.toString().slice(0, a.toString().length/2)),
+    splitNum2: (a) => Number(a.toString().slice(a.toString().length/2)),
+    ...udf_stdlib,
+  }
+
+  let nums = rh`.input | udf.split " " | .*num | udf.toNum | array`
+  let frequency = rh`{val: ${nums}.*x, count: 1} | array`
+  let compact = rh`{val: ${frequency}.*k.val, count: sum ${frequency}.*k.count} | group ${frequency}.*k.val | .* | array`
+  let func = api.compileC2(compact)
+  let state = func({input, udf})
+
+  let newSeqNotEven = rh`(ifElse state.*c.val == 0 {val: 1, count: state.*c.count} (ifElse (udf.isEvenDigit state.*c.val) {val: 0, count: 0} {val: 2024 * state.*c.val, count: state.*c.count}))`
+  let newSeqEven = rh`ifElse (udf.isEvenDigit state.*c.val) [{val: udf.splitNum1 state.*c.val, count: state.*c.count}, {val: udf.splitNum2 state.*c.val, count: state.*c.count}].* {val: 0, count: 0}`
+  let newSeq = rh`[${newSeqNotEven}, ${newSeqEven}]`
+  let compact2 = rh`{val: ${newSeq}.*kk.val, count: sum ${newSeq}.*kk.count} | group ${newSeq}.*kk.val | .* | array`
+
+  let func1 = api.compileC2(compact2)
+  for (let i = 0; i < 75; i++) {
+    state = func1({udf, state})
+  }
+
+  let query = rh`state.*c.count | sum`
+  let func2 = api.compileC2(query)
+  let res = func2({state, udf})
+  expect(res).toBe(65601038650482)
+})
