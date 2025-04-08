@@ -174,6 +174,7 @@ let cgen = {
   inc: (expr) => expr + "++",
 
   binary: (lhs, rhs, op) => `${lhs} ${op} ${rhs}`,
+  ternary: (cond, tVal, fVal) => `${cond} ? ${tVal} : ${fVal}`,
 
   assign: (lhs, rhs) => cgen.binary(lhs, rhs, "="),
 
@@ -225,6 +226,9 @@ let cgen = {
     buf.push(`struct ${structName} {`)
     for (let i in valSchema) {
       let { name, schema } = valSchema[i]
+      if (typing.isObject(schema)) {
+        continue
+      }
       if (name == "_DEFAULT_") name = "value"
       if (typing.isString(schema)) {
         cgen.declareCharPtr(buf)(name + "_str")
@@ -853,21 +857,53 @@ let emitPath = (buf, q) => {
   }
 }
 
-let emitHashMapValueStructInit = (buf, sym, keySchema, valSchema) => {
-  cgen.comment(buf)(`values of ${sym}`)
+let emitHashMapValueInit = (buf, sym, keySchema, valSchema) => {
+  let values = valSchema.some(val => !typing.isObject(val.schema))
+  let buckets = valSchema.some(val => typing.isObject(val.schema))
 
-  if (valSchema.length == 1 && valSchema[0].name == "_DEFAULT_" && typing.isObject(valSchema[0].schema)) {
-    emitHashMapValueInit(buf, sym, keySchema, valSchema)
-    return
+  if (values) {
+    cgen.comment(buf)(`values of ${sym}`)
+    let cType = `struct ${sym}_value`
+    cgen.declarePtr(buf)(cType, `${sym}_values`, cgen.cast(`${cType} *`, cgen.malloc(cType, KEY_SIZE)))
+
+    cgen.declareStruct(prolog0)(`${sym}_value`, valSchema)
   }
 
-  cgen.declareStruct(prolog0)(`${sym}_value`, valSchema)
-
-  let cType = `struct ${sym}_value`
-  cgen.declarePtr(buf)(cType, `${sym}_values`, cgen.cast(`${cType} *`, cgen.malloc(cType, KEY_SIZE)))
+  if (buckets) {
+    emitHashMapValueBucketsInit(buf, sym, keySchema, valSchema)
+  }
 }
 
-let emitHashMapValueInit = (buf, sym, keySchema, valSchema) => {
+let emitHashMapValueBucketsInit = (buf, sym, keySchema, valSchema) => {
+  cgen.comment(buf)(`buckets of ${sym}`)
+
+  for (let i in valSchema) {
+    let { name, schema } = valSchema[i]
+
+    if (name == "_DEFAULT_") name = "data"
+
+    if (typing.isObject(schema)) {
+      // stateful "array" op
+      if (typing.isObject(schema.objValue)) {
+        throw new Error("Not implemented yet")
+      } else if (typing.isString(schema.objValue)) {
+        // arrays for the actual data will have size KEY_SIZE * BUCKET_SIZE
+        cgen.declareCharPtrPtr(buf)(`${sym}_${name}_str`, cgen.cast("char **", cgen.malloc("char *", DATA_SIZE)))
+        cgen.declareIntPtr(buf)(`${sym}_${name}_len`, cgen.cast("int *", cgen.malloc("int", DATA_SIZE)))
+      } else {
+        let cType = convertToCType(schema.objValue)
+        cgen.declarePtr(buf)(cType, `${sym}_${name}`, cgen.cast(`${cType} *`, cgen.malloc(cType, DATA_SIZE)))
+      }
+      cgen.declareInt(buf)(`${sym}_${name}_count`, "0")
+
+      cgen.declareIntPtr(buf)(`${sym}_${name}_buckets`, cgen.cast("int *", cgen.malloc("int", DATA_SIZE)))
+      cgen.declareIntPtr(buf)(`${sym}_${name}_bucket_counts`, cgen.cast("int *", cgen.malloc("int", KEY_SIZE)))
+      // throw new Error("hashMap value object not implemented")
+    }
+  }
+}
+
+let emitHashMapValueInit1 = (buf, sym, keySchema, valSchema) => {
   cgen.comment(buf)(`values of ${sym}`)
 
   for (let i in valSchema) {
@@ -930,7 +966,7 @@ let emitHashMapInit = (buf, sym, keySchema, valSchema) => {
   cgen.comment(buf)(`init hash table entries to -1 for ${sym}`)
   buf.push(`for (int i = 0; i < ${HASH_SIZE}; i++) ${sym}_htable[i] = -1;`)
 
-  emitHashMapValueStructInit(buf, sym, keySchema, valSchema)
+  emitHashMapValueInit(buf, sym, keySchema, valSchema)
   // emitHashMapValueInit(buf, sym, keySchema, valSchema)
 }
 
@@ -1039,13 +1075,13 @@ let getHashMapValueEntry = (buf, sym, pos, keyPos) => {
   if (valSchema.length == 1 && valSchema[0].name == "_DEFAULT_") {
     let { schema } = valSchema[0]
     if (typing.isObject(schema)) {
-      let valArray = typing.isString(schema.objValue) ? { str: `${sym}_values_str`, len: `${sym}_values_len` } : `${sym}_values`
+      let valArray = typing.isString(schema.objValue) ? { str: `${sym}_data_str`, len: `${sym}_data_len` } : `${sym}_data`
       res = {
         schema,
         val: {
-          dataCount: `${sym}_values_count`,
-          bucketCount: `${sym}_values_bucket_counts[${keyPos}]`,
-          buckets: `${sym}_values_buckets`,
+          dataCount: `${sym}_data_count`,
+          bucketCount: `${sym}_data_bucket_counts[${keyPos}]`,
+          buckets: `${sym}_data_buckets`,
           valArray,
         },
         keyPos,
@@ -1090,7 +1126,18 @@ let getHashMapValueEntry = (buf, sym, pos, keyPos) => {
     let { name, schema } = valSchema[i]
 
     if (typing.isObject(schema)) {
-      throw new Error("not supported")
+      let valArray = typing.isString(schema.objValue) ? { str: `${sym}_${name}_str`, len: `${sym}_${name}_len` } : `${sym}_${name}`
+      res.val[name] = {
+        schema,
+        val: {
+          dataCount: `${sym}_${name}_count`,
+          bucketCount: `${sym}_${name}_bucket_counts[${keyPos}]`,
+          buckets: `${sym}_${name}_buckets`,
+          valArray,
+        },
+        keyPos,
+        tag: "hashMapBucket"
+      }
     } else if (typing.isString(schema)) {
       res.val[name] = { schema, val: { str: `${sym}_values[${keyPos}].${name}_str`, len: `${sym}_values[${keyPos}].${name}_len` }, keyPos, tag: "hashMapValue" }
     } else {
@@ -1175,9 +1222,8 @@ let emitHashMapPrint = (buf, sym) => {
   // }
   for (let i in valSchema) {
     let { name, schema } = valSchema[i]
-    if (name == "_DEFAULT_") name = "value"
+    if (name == "_DEFAULT_") name = typing.isObject(schema) ? "data" : "value"
     if (typing.isObject(schema)) {
-      name = "values"
       buf.push(`print("[", 1);`)
       buf.push(`for (int j = 0; j < ${sym}_${name}_bucket_counts[key_pos]; j++) {`)
       buf.push(`int data_pos = ${sym}_${name}_buckets[key_pos * ${BUCKET_SIZE} + j];`)
@@ -1205,47 +1251,73 @@ let emitHashMapPrint = (buf, sym) => {
   buf.push(`}`)
 }
 
-let emitCompareFunc = (buf, name, type, schema, a, b, aVal, bVal) => {
+let emitCompareFunc = (buf, name, type, a, b, valPairs) => {
   buf.push(`int ${name}(${type} *${a}, ${type} *${b}) {`)
-  if (typing.isString(schema)) {
-    buf.push(`return ${cgen.call("compare_str2", aVal.val.str, aVal.val.len, bVal.val.str, bVal.val.len)};`)
-  } else {
-    buf.push(`return ${aVal.val} < ${bVal.val};`)
+  for (let i in valPairs) {
+    let [aVal, bVal] = valPairs[i]
+
+    let schema = aVal.schema
+
+    let tmp = getNewName("tmp_cmp")
+
+    if (typing.isString(schema)) {
+      cgen.declareInt(buf)(tmp, cgen.call("compare_str2", aVal.val.str, aVal.val.len, bVal.val.str, bVal.val.len))
+    } else {
+      cgen.declareInt(buf)(tmp, cgen.minus(aVal.val, bVal.val))
+    }
+
+    if (i == valPairs.length - 1) {
+      cgen.return(buf)(tmp)
+    } else {
+      cgen.if(buf)(cgen.notEqual(tmp, "0"), buf1 => {
+        cgen.return(buf)(tmp)
+      })
+    }
   }
   buf.push(`}`)
 }
 
 let emitSorting = (buf, q) => {
-  if (!(q.arg[0].key == "const" && typeof q.arg[0].op == "string")) {
-    throw new Error("Invalid column for sorting: " + pretty(q.arg[0]))
-  }
 
-  let hashMap = emitPath(buf, q.arg[1])
+
+  let hashMap = emitPath(buf, q.arg[q.arg.length - 1])
   let sym = hashMap.val
   let { keySchema, valSchema } = hashMapEnv[sym]
 
-  let column = q.arg[0].op
-
-  let idx = valSchema.findIndex(val => val.name === column)
-  if (idx === -1) {
-    throw new Error("Unknown column for sorting: " + pretty(q.arg[0]))
-  }
+  let columns = q.arg.slice(0, -1)
 
   let cType = `struct ${sym}_value`
-  let { schema } = valSchema[idx]
-  let a = "a", b = "b"
-  let aVal
-  let bVal
-  if (typing.isString(schema)) {
-    aVal = { schema, val: { str: `${a}->${column}_str`, len: `${a}->${column}_len` } }
-    bVal = { schema, val: { str: `${b}->${column}_str`, len: `${b}->${column}_len` } }
-  } else {
-    aVal = { schema, val: `${a}->${column}` }
-    bVal = { schema, val: `${b}->${column}` }
+
+  let vals = []
+  for (let i in columns) {
+    let column = columns[i].op
+
+    if (!(q.arg[0].key == "const" && typeof q.arg[0].op == "string")) {
+      throw new Error("Invalid column for sorting: " + pretty(q.arg[0]))
+    }
+
+    let idx = valSchema.findIndex(val => val.name === column)
+    if (idx === -1) {
+      throw new Error("Unknown column for sorting: " + pretty(q.arg[0]))
+    }
+
+    let { schema } = valSchema[idx]
+    let a = "a", b = "b"
+    if (typing.isString(schema)) {
+      vals.push([
+        { schema, val: { str: `${a}->${column}_str`, len: `${a}->${column}_len` } },
+        { schema, val: { str: `${b}->${column}_str`, len: `${b}->${column}_len` } }
+      ])
+    } else {
+      vals.push([
+        { schema, val: `${a}->${column}` },
+        { schema, val: `${b}->${column}` }
+      ])
+    }
   }
 
   let compareFunc = getNewName("compare_func")
-  emitCompareFunc(prolog0, compareFunc, cType, schema, "a", "b", aVal, bVal)
+  emitCompareFunc(prolog0, compareFunc, cType, "a", "b", vals)
 
   cgen.stmt(buf)(cgen.call("qsort", `${sym}_values`, `${sym}_key_count`, `sizeof(${cType})`, cgen.cast("__compar_fn_t", compareFunc)))
 }
@@ -1403,7 +1475,8 @@ let collectRelevantStatefulInPath = (q) => {
         let valSchema = [{ name: "_DEFAULT_", schema: q1.schema.type }]
 
         if (!hashMapEnv[tmpSym(q.op)])
-          emitHashMapValueStructInit(prolog1, tmpSym(q.op), keySchema, valSchema)
+          emitHashMapValueInit(prolog1, tmpSym(q.op), keySchema, valSchema)
+        
         // emitHashMapValueInit(prolog1, tmpSym(q.op), keySchema, valSchema)
 
         hashMapEnv[tmpSym(q.op)] = { keySchema, valSchema }
@@ -1728,10 +1801,10 @@ let emitCode = (q, ir) => {
   let epilog = []
   let res
   if (q.key == "pure" && q.op == "sort") {
-    let hashMap = emitPath(epilog, q.arg[1])
+    let hashMap = emitPath(epilog, q.arg[q.arg.length - 1])
     if (!hashMapEnv[hashMap.val]) throw new Error("Can only sort values of a hashmap")
     emitSorting(epilog, q)
-    res = emitPath(epilog, q.arg[1])
+    res = hashMap
   } else {
     res = emitPath(epilog, q)
   }

@@ -107,7 +107,7 @@ beforeAll(async () => {
 test("q1", async () => {
   let cond = rh`${lineitem}.*.l_shipdate <= 19980902`
 
-  let query = rh`{
+  let query1 = rh`{
     l_returnflag: ${lineitem}.*.l_returnflag,
     l_linestatus: ${lineitem}.*.l_linestatus,
     sum_qty: sum (${cond} & ${lineitem}.*.l_quantity),
@@ -120,15 +120,15 @@ test("q1", async () => {
     count_order: count (${cond} & ${lineitem}.*.l_orderkey)
   } | group [${lineitem}.*.l_returnflag, ${lineitem}.*.l_linestatus]`
 
-  // let q = rh`sort ["l_returnflag", "l_linestatus"] ${query}`
+  let query = rh`sort "l_returnflag" "l_linestatus" ${query1}`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q1.c", schema: types.never, enableOptimizations: false })
   let res = await func()
 
-  expect(res).toBe(`N|O|74476040.0000|111701729697.7356|106118230307.6122|110367043872.4921|25.5022|38249.1180|0.0500|2920374|
-R|F|37719753.0000|56568041380.9045|53741292684.6038|55889619119.8297|25.5058|38250.8546|0.0500|1478870|
-A|F|37734107.0000|56586554400.7299|53758257134.8651|55909065222.8256|25.5220|38273.1297|0.0500|1478493|
+  expect(res).toBe(`A|F|37734107.0000|56586554400.7299|53758257134.8651|55909065222.8256|25.5220|38273.1297|0.0500|1478493|
 N|F|991417.0000|1487504710.3800|1413082168.0541|1469649223.1944|25.5165|38284.4678|0.0501|38854|
+N|O|74476040.0000|111701729697.7356|106118230307.6122|110367043872.4921|25.5022|38249.1180|0.0500|2920374|
+R|F|37719753.0000|56568041380.9045|53741292684.6038|55889619119.8297|25.5058|38250.8546|0.0500|1478870|
 `)
 })
 
