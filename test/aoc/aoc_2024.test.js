@@ -160,14 +160,13 @@ test("day2-part2", () => {
     ...udf_stdlib,
     slice: a => array => array.slice(a),
     splice: a => array => array.slice(0, a).concat(array.slice(a+1)),
-    pushBack: (a, b) => [...a, b],
     range: (a,b) => { let res = {}; for (let i = a; i < b; i++) res[i] = true; return res },
   }
 
   let line = rh`.input | udf.split "\\n" | .*line`
   let originalReport = rh`${line} | udf.split " " | .*col | udf.toNum | array`
-  let dampenedReports = rh`${originalReport}.*cols & (${originalReport} | udf.splice (udf.toNum *cols)) | array`
-  let reports = rh`udf.pushBack ${dampenedReports} ${originalReport} | .*report`
+  let dampenedReports = rh`${originalReport}.*cols & (${originalReport} | udf.splice (udf.toNum *cols))`
+  let reports = rh`[${originalReport}, ${dampenedReports}] | .*report`
   let tail = rh`${reports} | udf.slice 1`
   let delta = rh`${tail}.*i - ${reports}.*i`
   let monotonic = sign => rh`all (udf.range 1 4).(${sign} * ${delta})`
@@ -412,4 +411,607 @@ test("day5-part2", () => {
   let func = api.compileC2(query)
   let res = func({input, udf})
   expect(res).toBe(123)
+})
+
+test("day6-part1", () => {
+  let input =
+`....#.....
+.........#
+..........
+..#.......
+.......#..
+..........
+.#..^.....
+........#.
+#.........
+......#...`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    ...udf_stdlib,
+  }
+  let filterBy = (gen, p) => x => rh`(udf.filter ${p}).${gen} & ${x}`
+  let delta = [[-1, 0, 0], [0, 1, 1], [1, 0, 2], [0, -1, 3]]
+
+  let lines = rh`.input | udf.split "\\n" | .*line | udf.split ""`
+  let grid = api.array(lines)
+  let isStart = rh`${grid}.*i.*j == "^"`
+  let startPos = rh`[(udf.toNum *i), (udf.toNum *j), 0] | ${filterBy("*f0", isStart)} | single`
+
+  let initialState = {
+    curr: startPos,
+    grid: grid,
+    isBound: false
+  }
+  let getInitialState = api.compileC2(initialState)
+  let state = getInitialState({input, udf})
+
+  let moveCoord = rh`[state.curr.0 + ${delta}.(state.curr.2).0, state.curr.1 + ${delta}.(state.curr.2).1, ${delta}.(state.curr.2).2]`
+  let turnDir = rh`(state.curr.2 + 1) % 4`
+  let turnCoord = rh`[state.curr.0 + ${delta}.${turnDir}.0, state.curr.1 + ${delta}.${turnDir}.1, ${delta}.${turnDir}.2]`
+  let nextCoord = rh`ifElse (state.grid.(${moveCoord}.0).(${moveCoord}.1) == "#") ${turnCoord} ${moveCoord}`
+  let rowlen = rh`(${lines} | count | udf.toNum) - 1`
+  let collen = rh`(${lines}.*0 | count | group *line | .0 | udf.toNum) - 1`
+  let isBound = rh`${nextCoord}.0 == ${rowlen} || ${nextCoord}.0 == 0 || ${nextCoord}.1 == ${collen} || ${nextCoord}.1 == 0`
+  let query = {
+    curr: nextCoord,
+    grid: rh`(update_inplace state.grid.(${nextCoord}.0) (${nextCoord}.1) "^") & state.grid`,
+    isBound: isBound
+  }
+  let func = api.compileC2(query)
+  while(!state.isBound)
+    state = func({input, udf, state})
+
+  let count = rh`state.grid.*x.*y | ${filterBy("*f1", `state.grid.*x.*y == "^"`)} | count`
+  let func2 = api.compileC2(count)
+  let res = func2({state, udf})
+  expect(res).toBe(41)
+})
+
+test("day6-part2", () => {
+  let input =
+`....#.....
+.........#
+..........
+..#.......
+.......#..
+..........
+.#..^.....
+........#.
+#.........
+......#...`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    ...udf_stdlib,
+  }
+  let filterBy = (gen, p) => x => rh`(udf.filter ${p}).${gen} & ${x}`
+  let delta = [[-1, 0, 0], [0, 1, 1], [1, 0, 2], [0, -1, 3]]
+
+  let lines = rh`.input | udf.split "\\n" | .*line | udf.split ""`
+  let grid = api.array(lines)
+  let isStart = rh`${grid}.*i.*j == "^"`
+  let startPos = rh`[(udf.toNum *i), (udf.toNum *j), 0] | ${filterBy("*f0", isStart)} | single`
+  let isEmpty = rh`${grid}.*i.*j == "."`
+  let emptyPos = rh`[(udf.toNum *i), (udf.toNum *j)] | ${filterBy("*", isEmpty)} | array`
+  let getEmptyPos = api.compileC2(emptyPos)
+  let emptyPoses = getEmptyPos({input, udf})
+  let initialState = {
+    curr: startPos,
+    grid: grid,
+    isBound: false,
+    isLoop: false,
+    steps: 0
+  }
+  let getInitialState = api.compileC2(initialState)
+
+  let res = 0
+  let moveCoord = rh`[state.curr.0 + ${delta}.(state.curr.2).0, state.curr.1 + ${delta}.(state.curr.2).1, ${delta}.(state.curr.2).2]`
+  let turnDir = rh`(state.curr.2 + 1) % 4`
+  let turnCoord = rh`[state.curr.0 + ${delta}.${turnDir}.0, state.curr.1 + ${delta}.${turnDir}.1, ${delta}.${turnDir}.2]`
+  let nextCoord = rh`ifElse (state.grid.(${moveCoord}.0).(${moveCoord}.1) == "#") ${turnCoord} ${moveCoord}`
+  let rowlen = rh`(${lines} | count | udf.toNum) - 1`
+  let collen = rh`(${lines}.*0 | count | group *line | .0 | udf.toNum) - 1`
+  let isBound = rh`${nextCoord}.0 == ${rowlen} || ${nextCoord}.0 == 0 || ${nextCoord}.1 == ${collen} || ${nextCoord}.1 == 0`
+  let isLoop = rh`state.steps > (${rowlen} + 1) * (${collen} + 1)`
+  let query = {
+    curr: nextCoord,
+    grid: rh`(update_inplace state.grid.(${nextCoord}.0) (${nextCoord}.1) "^") & state.grid`,
+    isBound: isBound,
+    isLoop: isLoop,
+    steps: rh`state.steps + 1`
+  }
+  let func = api.compileC2(query)
+
+  emptyPoses.forEach((coord, _) => {
+    let state = getInitialState({input, udf})
+    state.grid[coord[0]][coord[1]] = "#"
+    while(!state.isBound && !state.isLoop)
+      state = func({input, udf, state})
+    if (state.isLoop)
+      res = res + 1
+  })
+  expect(res).toBe(6)
+})
+
+test("day7-part1", () => {
+  let input =
+`190: 10 19
+3267: 81 40 27
+83: 17 5
+156: 15 6
+7290: 6 8 6 15
+161011: 16 10 13
+192: 17 8 14
+21037: 9 7 18 13
+292: 11 6 16 20`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    slice: a => array => array.slice(a),
+    ...udf_stdlib,
+  }
+  let filterBy = (gen, p) => x => rh`(udf.filter ${p}).${gen} & ${x}`
+
+  let line = rh`.input | udf.split "\\n" | .*line`
+  let goal = rh`${line} | udf.split ":" | .0 | udf.toNum | group *line`
+  let nums = rh`${line} | udf.split ":" | .1 | udf.split " " | .*col | udf.toNum | array | udf.slice 1 | group *line`
+  let inputs = {
+    nums: nums,
+    goal: goal
+  }
+  let getInputs = api.compileC2(inputs)
+  let inputState = getInputs({input, udf})
+
+  let initialState = {
+    curr: rh`.elems | udf.slice 1`,
+    evaluates: rh`[.elems[0]]`,
+  }
+  let getInitialState = api.compileC2(initialState)
+
+  let plus = rh`state.evaluates.*e + state.curr.0`
+  let mult = rh`state.evaluates.*e * state.curr.0`
+  let query = {
+    curr: rh`state.curr | udf.slice 1`,
+    evaluates: rh`[${plus}, ${mult}]`,
+  }
+  let func = api.compileC2(query)
+
+  let isGoal = rh`state.evaluates.*e == ${inputState}.goal[.index]`
+  let searchGoal = rh`state.evaluates.*e | ${filterBy("*f1", isGoal)} | single`
+  let goalOrZero = rh`${searchGoal} || 0`
+  let getRowRes = api.compileC2(goalOrZero)
+
+  let res = 0
+  Object.values(inputState.nums).forEach((elems, index) => {
+    let state = getInitialState({input, udf, elems})
+    while (state.curr.length > 0)
+      state = func({input, udf, state})
+    let rowRes = getRowRes({input, udf, state, index})
+    res = res + rowRes
+  })
+  expect(res).toBe(3749)
+})
+
+test("day7-part2", () => {
+  let input =
+`190: 10 19
+3267: 81 40 27
+83: 17 5
+156: 15 6
+7290: 6 8 6 15
+161011: 16 10 13
+192: 17 8 14
+21037: 9 7 18 13
+292: 11 6 16 20`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    slice: a => array => array.slice(a),
+    concateNums: (a, b) => String(a) + String(b),
+    ...udf_stdlib,
+  }
+  let filterBy = (gen, p) => x => rh`(udf.filter ${p}).${gen} & ${x}`
+
+  let line = rh`.input | udf.split "\\n" | .*line`
+  let goal = rh`${line} | udf.split ":" | .0 | udf.toNum | group *line`
+  let nums = rh`${line} | udf.split ":" | .1 | udf.split " " | .*col | udf.toNum | array | udf.slice 1 | group *line`
+  let inputs = {
+    nums: nums,
+    goal: goal
+  }
+  let getInputs = api.compileC2(inputs)
+  let inputState = getInputs({input, udf})
+
+  let initialState = {
+    curr: rh`.elems | udf.slice 1`,
+    evaluates: rh`[.elems[0]]`,
+  }
+  let getInitialState = api.compileC2(initialState)
+
+  let plus = rh`state.evaluates.*e + state.curr.0`
+  let mult = rh`state.evaluates.*e * state.curr.0`
+  let concate = rh`udf.concateNums state.evaluates.*e state.curr.0 | udf.toNum`
+  let query = {
+    curr: rh`state.curr | udf.slice 1`,
+    evaluates: rh`[${plus}, ${mult}, ${concate}]`,
+  }
+  let func = api.compileC2(query)
+
+  let isGoal = rh`state.evaluates.*e == ${inputState}.goal[.index]`
+  let searchGoal = rh`state.evaluates.*e | ${filterBy("*f1", isGoal)} | single`
+  let goalOrZero = rh`${searchGoal} || 0`
+  let getRowRes = api.compileC2(goalOrZero)
+
+  let res = 0
+  Object.values(inputState.nums).forEach((elems, index) => {
+    let state = getInitialState({input, udf, elems})
+    while (state.curr.length > 0)
+      state = func({input, udf, state})
+    let rowRes = getRowRes({input, udf, state, index})
+    res = res + rowRes
+  })
+  expect(res).toBe(11387)
+})
+
+test("day8-part1", () => {
+  let input =
+`............
+........0...
+.....0......
+.......0....
+....0.......
+......A.....
+............
+............
+........A...
+.........A..
+............
+............`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    toSet: (arr) => arr.filter((value, index, self) =>
+      index === self.findIndex(t => t.node1 === value.node1 && t.node2 === value.node2)
+    ),
+    ...udf_stdlib,
+  }
+  let filterBy = (gen, p) => x => rh`(udf.filter ${p}).${gen} & ${x}`
+
+  let lines = rh`.input | udf.split "\\n" | .*line | udf.split ""`
+  let grid = api.array(lines)
+  let isAntennas = rh`${grid}.*i.*j != "."`
+  let allAntennas = rh`[(udf.toNum *i), (udf.toNum *j)] | ${filterBy("*f0", isAntennas)} | array`
+  let allAntennaPair = rh`udf.toNum(*x) < udf.toNum(*y) & {a:${allAntennas}.*x, b:${allAntennas}.*y}`
+  let isPair = rh`${grid}.(${allAntennaPair}.a.0).(${allAntennaPair}.a.1) == ${grid}.(${allAntennaPair}.b.0).(${allAntennaPair}.b.1)`
+  let antennaPairs = rh`${allAntennaPair} | ${filterBy("*f1", isPair)}`
+
+  let isAntinode = rh`any (
+    ((udf.toNum *i1) == (${antennaPairs}.a.0 + ${antennaPairs}.a.0 - ${antennaPairs}.b.0) &
+    (udf.toNum *j1) == (${antennaPairs}.a.1 + ${antennaPairs}.a.1 - ${antennaPairs}.b.1)) ||
+    ((udf.toNum *i1) == (${antennaPairs}.b.0 + ${antennaPairs}.b.0 - ${antennaPairs}.a.0) &
+    (udf.toNum *j1) == (${antennaPairs}.b.1 + ${antennaPairs}.b.1 - ${antennaPairs}.a.1))
+  )`
+  let antinode = rh`${grid}.*i1.*j1 & ([(udf.toNum *i1), (udf.toNum *j1)] | ${filterBy("*", isAntinode)})`
+  let query = rh`${antinode} | count`
+
+  let func = api.compileC2(query)
+  let res = func({input, udf})
+  expect(res).toBe(14)
+})
+
+test("day8-part2", () => {
+  let input =
+`............
+........0...
+.....0......
+.......0....
+....0.......
+......A.....
+............
+............
+........A...
+.........A..
+............
+............`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    ...udf_stdlib,
+  }
+  let filterBy = (gen, p) => x => rh`(udf.filter ${p}).${gen} & ${x}`
+
+  let lines = rh`.input | udf.split "\\n" | .*line | udf.split ""`
+  let grid = api.array(lines)
+  let isAntennas = rh`${grid}.*i.*j != "."`
+  let allAntennas = rh`[(udf.toNum *i), (udf.toNum *j)] | ${filterBy("*f0", isAntennas)} | array`
+  let allAntennaPair = rh`udf.toNum(*x) < udf.toNum(*y) & {a:${allAntennas}.*x, b:${allAntennas}.*y}`
+  let isPair = rh`${grid}.(${allAntennaPair}.a.0).(${allAntennaPair}.a.1) == ${grid}.(${allAntennaPair}.b.0).(${allAntennaPair}.b.1)`
+  let antennaPairs = rh`${allAntennaPair} | ${filterBy("*f1", isPair)}`
+
+  let isAntinode = rh`any (
+   ((udf.toNum *i1) - ${antennaPairs}.a.0) % (${antennaPairs}.a.0 - ${antennaPairs}.b.0) == 0 &
+   ((udf.toNum *j1) - ${antennaPairs}.a.1) == (${antennaPairs}.a.1 - ${antennaPairs}.b.1) * ((udf.toNum *i1) - ${antennaPairs}.a.0) / (${antennaPairs}.a.0 - ${antennaPairs}.b.0)
+  )`
+  let antinode = rh`${grid}.*i1.*j1 & ([(udf.toNum *i1), (udf.toNum *j1)] | ${filterBy("*", isAntinode)})`
+  let query = rh`${antinode} | count`
+  
+  let func = api.compileC2(query)
+  let res = func({input, udf})
+  expect(res).toBe(34)
+})
+
+test("day9-part1", () => {
+  let input = `2333133121414131402`
+
+  let udf = {
+    array: (a, d, file) => file !== undefined ? Array(Number(a)).fill(d) : Array(Number(a)).fill('.'),
+    ...udf_stdlib,
+  }
+
+  let state = {
+    disk: [],
+    file: true,
+    digit: 0,
+    index: 0,
+  }
+  let createDisk = {
+    disk: rh`[state.disk.*, (udf.array .input.(state.index) state.digit state.file).*]`,
+    file: rh`ifElse state.file (1 == 2) true`,
+    digit: rh`ifElse state.file (state.digit + 1) state.digit`,
+    index: rh`state.index + 1`,
+  }
+  let func = api.compileC2(createDisk)
+  while (state.index < input.length)
+    state = func({input, udf, state})
+
+  let res = {
+    disk: state.disk,
+    index: 0,
+    sum: 0,
+    last: state.disk.length - 1,
+  }
+  let compact = {
+    disk: rh`ifElse (res.disk.(res.index) == ".") (update res.disk res.index res.disk.(res.last)) res.disk`,
+    index: rh`ifElse (res.disk.(res.index) == ".") res.index (res.index + 1)`,
+    sum: rh`ifElse (res.disk.(res.index) == ".") res.sum (res.sum + res.disk.(res.index) * res.index)`,
+    last: rh`ifElse (res.disk.(res.index) == ".") (res.last - 1) res.last`,
+  }
+  let compactRec = api.compileC2(compact)
+
+  while (res.index <= res.last)
+    res = compactRec({udf, res})
+  expect(res.sum).toBe(1928)
+})
+
+test("day9-part2", () => {
+  let input = `2333133121414131402`
+
+  let udf = {
+    splice: (a, b) => array => array.slice(a, b),
+    ...udf_stdlib,
+  }
+
+  let rh_length = rh`.input | udf.split "" | .*col | count`
+  let func_length = api.compileC2(rh_length)
+  let length = func_length({input, udf})
+
+  let state = {
+    disk: [],
+    file: true,
+    digit: 0,
+    index: 0,
+  }
+  let createDisk = {
+    disk: rh`ifElse state.file [state.disk.*, {index: state.digit, size: (.input.(state.index) | udf.toNum)}]
+     [state.disk.*, {index: 0 - 1, size: (.input.(state.index) | udf.toNum)}]`,
+    file: rh`ifElse state.file (1 == 2) true`,
+    digit: rh`ifElse state.file (state.digit + 1) state.digit`,
+    index: rh`state.index + 1`,
+  }
+  let func = api.compileC2(createDisk)
+  while (state.index < length)
+    state = func({input, udf, state})
+
+  let state2 = {
+    disk: state.disk,
+    leftindex: 0,
+    index: length - 1
+  }
+  let compact = {
+    disk: rh`ifElse (state2.disk.(state2.index).index != 0 - 1 & state2.disk.(state2.leftindex).index == 0 - 1 & state2.disk.(state2.leftindex).size >= state2.disk.(state2.index).size) 
+      [(state2.disk | udf.splice 0 state2.leftindex).*, state2.disk.(state2.index), {index: 0 - 1, size: state2.disk.(state2.leftindex).size - state2.disk.(state2.index).size}, (state2.disk | udf.splice state2.leftindex + 1 state2.index).*, {index: 0 - 1, size: state2.disk.(state2.index).size}, (state2.disk | udf.slice state2.index + 1).*] state2.disk`,
+    leftindex: rh`ifElse (state2.disk.(state2.index).index == 0 - 1 || (state2.disk.(state2.leftindex).index == 0 - 1 & state2.disk.(state2.leftindex).size >= state2.disk.(state2.index).size) || (state2.index == state2.leftindex)) 1 (state2.leftindex + 1)`,
+    index: rh`ifElse (state2.disk.(state2.index).index == 0 - 1 || (state2.disk.(state2.leftindex).index == 0 - 1 & state2.disk.(state2.leftindex).size >= state2.disk.(state2.index).size) || (state2.index == state2.leftindex)) 
+      (state2.index - 1) state2.index`,
+  }
+  let compact_func = api.compileC2(compact)
+  while (state2.index > 1)
+    state2 = compact_func({udf, state2})
+
+  let state3 = {
+    index: 0,
+    sumindex: 0,
+    sum: 0,
+  }
+  let checksum = {
+    index: rh`state3.index + 1`,
+    sumindex: rh`state3.sumindex + state2.disk.(state3.index).size`,
+    sum: rh`ifElse (state2.disk.(state3.index).index == 0 - 1) state3.sum (state3.sum + state2.disk.(state3.index).index * state2.disk.(state3.index).size * (state3.sumindex * 2 + state2.disk.(state3.index).size - 1) / 2)`,
+  }
+  let checksum_func = api.compileC2(checksum)
+  while (state3.index < state2.disk.length)
+    state3 = checksum_func({udf, state3, state2})
+  expect(state3.sum).toBe(2858)
+})
+
+test("day10-part1", () => {
+  let input =
+`89010123
+78121874
+87430965
+96549874
+45678903
+32019012
+01329801
+10456732`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    toSet: (arr) => arr.filter((value, index, self) =>
+      index === self.findIndex(t => t.x === value.x && t.y === value.y && t.sx === value.sx && t.sy === value.sy)
+    ),
+    ...udf_stdlib,
+  }
+  let filterBy = (gen, p) => x => rh`(udf.filter ${p}).${gen} & ${x}`
+  let delta = [[-1, 0], [0, 1], [1, 0], [0, -1]]
+
+  let lines = rh`.input | udf.split "\\n" | .*line | udf.split ""`
+  let grid = api.array(lines)
+  let isStart = rh`${grid}.*i.*j == "0"`
+  let startPos = rh`{x: (udf.toNum *i), y: (udf.toNum *j), sx: (udf.toNum *i), sy: (udf.toNum *j)} | ${filterBy("*f0", isStart)} | array`
+  let rh_initialState = {
+    grid: grid,
+    positions: startPos,
+    rowlen: rh`(${lines} | count | udf.toNum) - 1`,
+    collen: rh`(${lines}.*0 | count | group *line | .0 | udf.toNum) - 1`,
+  }
+  let func = api.compileC2(rh_initialState)
+  let initialState = func({input, udf})
+
+  let state = {
+    positions: initialState.positions,
+    index: 0,
+  }
+  let newPos = rh`{x: state.positions.*pos.x + delta.*dir.0, y: state.positions.*pos.y + delta.*dir.1, sx: state.positions.*pos.sx, sy: state.positions.*pos.sy} | array`
+  let isValid = rh`${newPos}.*p.x <= initialState.rowlen & ${newPos}.*p.x >= 0 & ${newPos}.*p.y <= initialState.collen & ${newPos}.*p.y >= 0 & (initialState.grid.(${newPos}.*p.x).(${newPos}.*p.y) | udf.toNum) == state.index + 1`
+  let computeGraph = {
+    positions: rh`${newPos}.*p | ${filterBy("*f0", isValid)} | array | udf.toSet`,
+    index: rh`state.index + 1`,
+  }
+  let func2 = api.compileC2(computeGraph)
+  while (state.index < 9)
+    state = func2({udf, state, delta, initialState})
+
+  let query = rh`state.positions.*p.x | count`
+  let func3 = api.compileC2(query)
+  let res = func3({udf, state})
+  expect(res).toBe(36)
+})
+
+test("day10-part2", () => {
+  let input =
+`89010123
+78121874
+87430965
+96549874
+45678903
+32019012
+01329801
+10456732`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    ...udf_stdlib,
+  }
+  let filterBy = (gen, p) => x => rh`(udf.filter ${p}).${gen} & ${x}`
+  let delta = [[-1, 0], [0, 1], [1, 0], [0, -1]]
+
+  let lines = rh`.input | udf.split "\\n" | .*line | udf.split ""`
+  let grid = api.array(lines)
+  let isStart = rh`${grid}.*i.*j == "0"`
+  let startPos = rh`{x: (udf.toNum *i), y: (udf.toNum *j), sx: (udf.toNum *i), sy: (udf.toNum *j)} | ${filterBy("*f0", isStart)} | array`
+  let rh_initialState = {
+    grid: grid,
+    positions: startPos,
+    rowlen: rh`(${lines} | count | udf.toNum) - 1`,
+    collen: rh`(${lines}.*0 | count | group *line | .0 | udf.toNum) - 1`,
+  }
+  let func = api.compileC2(rh_initialState)
+  let initialState = func({input, udf})
+
+  let state = {
+    positions: initialState.positions,
+    index: 0,
+  }
+  let newPos = rh`{x: state.positions.*pos.x + delta.*dir.0, y: state.positions.*pos.y + delta.*dir.1, sx: state.positions.*pos.sx, sy: state.positions.*pos.sy} | array`
+  let isValid = rh`${newPos}.*p.x <= initialState.rowlen & ${newPos}.*p.x >= 0 & ${newPos}.*p.y <= initialState.collen & ${newPos}.*p.y >= 0 & (initialState.grid.(${newPos}.*p.x).(${newPos}.*p.y) | udf.toNum) == state.index + 1`
+  let computeGraph = {
+    positions: rh`${newPos}.*p | ${filterBy("*f0", isValid)} | array`,
+    index: rh`state.index + 1`,
+  }
+  let func2 = api.compileC2(computeGraph)
+  while (state.index < 9)
+    state = func2({udf, state, delta, initialState})
+
+  let query = rh`state.positions.*p.x | count`
+  let func3 = api.compileC2(query)
+  let res = func3({udf, state})
+  expect(res).toBe(81)
+})
+
+test("day11-part1", () => {
+  let input =
+`125 17`
+
+  let udf = {
+    isEvenDigit: (a) => a.toString().length % 2 == 0 ? true : undefined,
+    splitNum1: (a) => Number(a.toString().slice(0, a.toString().length/2)),
+    splitNum2: (a) => Number(a.toString().slice(a.toString().length/2)),
+    ...udf_stdlib,
+  }
+
+  let nums = rh`.input | udf.split " " | .*num | udf.toNum | array`
+  let frequency = rh`{val: ${nums}.*x, count: 1} | array`
+  let compact = rh`{val: ${frequency}.*k.val, count: sum ${frequency}.*k.count} | group ${frequency}.*k.val | .* | array`
+  let func = api.compileC2(compact)
+  let state = func({input, udf})
+
+  let newSeqNotEven = rh`(ifElse state.*c.val == 0 {val: 1, count: state.*c.count} (ifElse (udf.isEvenDigit state.*c.val) {val: 0, count: 0} {val: 2024 * state.*c.val, count: state.*c.count}))`
+  let newSeqEven = rh`ifElse (udf.isEvenDigit state.*c.val) [{val: udf.splitNum1 state.*c.val, count: state.*c.count}, {val: udf.splitNum2 state.*c.val, count: state.*c.count}].* {val: 0, count: 0}`
+  let newSeq = rh`[${newSeqNotEven}, ${newSeqEven}]`
+  let compact2 = rh`{val: ${newSeq}.*kk.val, count: sum ${newSeq}.*kk.count} | group ${newSeq}.*kk.val | .* | array`
+
+  let func1 = api.compileC2(compact2)
+  for (let i = 0; i < 25; i++) {
+    state = func1({udf, state})
+  }
+
+  let query = rh`state.*c.count | sum`
+  let func2 = api.compileC2(query)
+  let res = func2({state, udf})
+  expect(res).toBe(55312)
+})
+
+test("day11-part2", () => {
+  let input =
+`125 17`
+
+  let udf = {
+    isEvenDigit: (a) => a.toString().length % 2 == 0 ? true : undefined,
+    splitNum1: (a) => Number(a.toString().slice(0, a.toString().length/2)),
+    splitNum2: (a) => Number(a.toString().slice(a.toString().length/2)),
+    ...udf_stdlib,
+  }
+
+  let nums = rh`.input | udf.split " " | .*num | udf.toNum | array`
+  let frequency = rh`{val: ${nums}.*x, count: 1} | array`
+  let compact = rh`{val: ${frequency}.*k.val, count: sum ${frequency}.*k.count} | group ${frequency}.*k.val | .* | array`
+  let func = api.compileC2(compact)
+  let state = func({input, udf})
+
+  let newSeqNotEven = rh`(ifElse state.*c.val == 0 {val: 1, count: state.*c.count} (ifElse (udf.isEvenDigit state.*c.val) {val: 0, count: 0} {val: 2024 * state.*c.val, count: state.*c.count}))`
+  let newSeqEven = rh`ifElse (udf.isEvenDigit state.*c.val) [{val: udf.splitNum1 state.*c.val, count: state.*c.count}, {val: udf.splitNum2 state.*c.val, count: state.*c.count}].* {val: 0, count: 0}`
+  let newSeq = rh`[${newSeqNotEven}, ${newSeqEven}]`
+  let compact2 = rh`{val: ${newSeq}.*kk.val, count: sum ${newSeq}.*kk.count} | group ${newSeq}.*kk.val | .* | array`
+
+  let func1 = api.compileC2(compact2)
+  for (let i = 0; i < 75; i++) {
+    state = func1({udf, state})
+  }
+
+  let query = rh`state.*c.count | sum`
+  let func2 = api.compileC2(query)
+  let res = func2({state, udf})
+  expect(res).toBe(65601038650482)
 })
