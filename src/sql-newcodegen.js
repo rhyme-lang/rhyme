@@ -828,8 +828,11 @@ let emitPath = (buf, q) => {
           let { str: str1, len: len1 } = e1.val
           let { str: str2, len: len2 } = e2.val
           let name = getNewName("tmp_cmpstr")
-          cgen.declareInt(buf)(name, cgen.binary(cgen.call("compare_str2", str1, len1, str2, len2), "0", op))
-          return { schema: q.schema, val: name }
+          len1 = `(${len1})`
+          len2 = `(${len2})`
+          cgen.declareInt(buf)(name, cgen.call("strncmp", str1, str2, cgen.ternary(cgen.lt(len1, len2), len1, len2)))
+          cgen.stmt(buf)(cgen.assign(name, cgen.ternary(cgen.equal(name, "0"), cgen.minus(len1, len2), name)))
+          return { schema: q.schema, val: "(" + cgen.binary(name, "0", op) + ")" }
         } else {
           return { schema: q.schema, val: "(" + cgen.binary(e1.val, e2.val, op) + ")" }
         }
@@ -1196,7 +1199,8 @@ let emitCompareFunc = (buf, name, valPairs) => {
     let tmp = getNewName("tmp_cmp")
 
     if (typing.isString(schema)) {
-      cgen.declareInt(buf)(tmp, cgen.call("compare_str2", aVal.val.str, aVal.val.len, bVal.val.str, bVal.val.len))
+      cgen.declareInt(buf)(tmp, cgen.call("strncmp", aVal.val.str, bVal.val.str, cgen.ternary(cgen.lt(aVal.val.len, bVal.val.len), aVal.val.len, bVal.val.len)))
+      cgen.stmt(buf)(cgen.assign(tmp, cgen.ternary(cgen.equal(tmp, "0"), cgen.minus(aVal.val.len, bVal.val.len), tmp)))
     } else {
       cgen.declareInt(buf)(tmp, cgen.minus(aVal.val, bVal.val))
     }
@@ -1387,8 +1391,6 @@ let collectRelevantStatefulInPath = (q) => {
 
         if (!hashMapEnv[tmpSym(q.op)])
           emitHashMapValueInit(prolog1, tmpSym(q.op), keySchema, valSchema)
-        
-        // emitHashMapValueInit(prolog1, tmpSym(q.op), keySchema, valSchema)
 
         hashMapEnv[tmpSym(q.op)] = { keySchema, valSchema }
       }
