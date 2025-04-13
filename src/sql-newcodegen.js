@@ -784,7 +784,21 @@ let emitPath = (buf, q) => {
         bucket = g1
         let dataPos = `${bucket.val.buckets}[${cgen.plus(cgen.mul(bucket.keyPos, BUCKET_SIZE), quoteVar(e2.op))}]`
 
-        if (typing.isString(bucket.schema.objValue)) {
+        if (typing.isObject(bucket.schema.objValue)) {
+          let schema = convertToArrayOfSchema(bucket.schema.objValue)
+          let res = { schema, val: {}, tag: "object" }
+          for (let i in schema) {
+            let { name: name1, schema: schema1 } = schema[i]
+            if (typing.isObject(schema1)) {
+              throw new Error("Not supported")
+            } else if (typing.isString(schema1)) {
+              res.val[name1] = { schema: schema1, val: { str: `${bucket.val.valArray[name1].str}[${dataPos}]`, len: `${bucket.val.valArray[name1].len}[${dataPos}]` } }
+            } else {
+              res.val[name1] = { schema: schema1, val: `${bucket.val.valArray[name1]}[${dataPos}]` }
+            }
+          }
+          return res
+        } else if (typing.isString(bucket.schema.objValue)) {
           return { schema: bucket.schema.objValue, val: { str: `${bucket.val.valArray.str}[${dataPos}]`, len: `${bucket.val.valArray.len}[${dataPos}]` } }
         } else {
           return { schema: bucket.schema.objValue, val: `${bucket.target}[${dataPos}]` }
@@ -841,6 +855,16 @@ let emitPath = (buf, q) => {
       } else {
         return { schema: q.schema, val: "(" + cgen.binary(e1.val, e2.val, op) + ")" }
       }
+    } else if (q.op == "mkTuple") {
+      let schema = convertToArrayOfSchema(q.schema.type)
+      let res = { schema, val: {}, tag: "object" }
+      for (let i = 0; i < q.arg.length; i += 2) {
+        let k = q.arg[i]
+        let v = q.arg[i + 1]
+        let { name } = schema[i / 2]
+        res.val[name] = emitPath(buf, v)
+      }
+      return res
     } else if (q.op == "and") {
       throw new Error("unexpected and op" + pretty(q))
     } else if (q.op == "sort") {
@@ -915,7 +939,21 @@ let emitHashMapValueInit = (buf, sym, keySchema, valSchema) => {
       }
       // stateful "array" op
       if (typing.isObject(schema.objValue)) {
-        throw new Error("Not implemented yet")
+        let objSchema = convertToArrayOfSchema(schema.objValue)
+        for (let j in objSchema) {
+          let { name: name1, schema: schema1 } = objSchema[j]
+
+          if (typing.isObject(schema1)) {
+            throw new Error("Not supported")
+          } else if (typing.isString(schema1)) {
+            // arrays for the actual data will have size KEY_SIZE * BUCKET_SIZE
+            cgen.declareCharPtrPtr(buf)(`${sym}_${name}_${name1}_str`, cgen.cast("char **", cgen.malloc("char *", DATA_SIZE)))
+            cgen.declareIntPtr(buf)(`${sym}_${name}_${name1}_len`, cgen.cast("int *", cgen.malloc("int", DATA_SIZE)))
+          } else {
+            let cType = convertToCType(schema1)
+            cgen.declarePtr(buf)(cType, `${sym}_${name}_${name1}`, cgen.cast(`${cType} *`, cgen.malloc(cType, DATA_SIZE)))
+          }
+        }
       } else if (typing.isString(schema.objValue)) {
         // arrays for the actual data will have size KEY_SIZE * BUCKET_SIZE
         cgen.declareCharPtrPtr(buf)(`${sym}_${name}_str`, cgen.cast("char **", cgen.malloc("char *", DATA_SIZE)))
@@ -1063,29 +1101,6 @@ let getHashMapValueEntry = (buf, sym, pos, keyPos) => {
 
   let res = {}
 
-  if (valSchema.length == 1 && valSchema[0].name == "_DEFAULT_") {
-    let { schema } = valSchema[0]
-    if (typing.isObject(schema)) {
-      let valArray = typing.isString(schema.objValue) ? { str: `${sym}_values_str`, len: `${sym}_values_len` } : `${sym}_values`
-      res = {
-        schema,
-        val: {
-          dataCount: `${sym}_values_count`,
-          bucketCount: `${sym}_values_bucket_counts[${keyPos}]`,
-          buckets: `${sym}_values_buckets`,
-          valArray,
-        },
-        keyPos,
-        tag: "hashMapBucket"
-      }
-    } else if (typing.isString(schema)) {
-      res = { schema, val: { str: `${sym}_values_str[${keyPos}]`, len: `${sym}_values_len[${keyPos}]` }, tag: "hashMapValue" }
-    } else {
-      res = { schema, val: `${sym}_values[${keyPos}]`, tag: "hashMapValue" }
-    }
-    return res
-  }
-
   res.tag = "object"
   res.schema = valSchema
   res.val = {}
@@ -1093,9 +1108,29 @@ let getHashMapValueEntry = (buf, sym, pos, keyPos) => {
   for (let i in valSchema) {
     let { name, schema } = valSchema[i]
 
-    if (typing.isObject(schema)) {
+    if (name == "_DEFAULT_") name = "values"
 
-      let valArray = typing.isString(schema.objValue) ? { str: `${sym}_${name}_str`, len: `${sym}_${name}_len` } : `${sym}_${name}`
+    if (typing.isObject(schema)) {
+      let valArray
+      if (typing.isObject(schema.objValue)) {
+        let objSchema = convertToArrayOfSchema(schema.objValue)
+        valArray = {}
+        for (let j in objSchema) {
+          let { name: name1, schema: schema1 } = objSchema[j]
+
+          if (typing.isObject(schema1)) {
+            throw new Error("Not supported")
+          } else if (typing.isString(schema1)) {
+            valArray[name1] = { str: `${sym}_${name}_${name1}_str`, len: `${sym}_${name}_${name1}_len` }
+          } else {
+            valArray[name1] = `${sym}_${name}_${name1}`
+          }
+        }
+      } else if (typing.isString(schema.objValue)) {
+        valArray = { str: `${sym}_${name}_str`, len: `${sym}_${name}_len` }
+      } else {
+        valArray = `${sym}_${name}`
+      }
       res.val[name] = {
         schema,
         val: {
@@ -1112,6 +1147,10 @@ let getHashMapValueEntry = (buf, sym, pos, keyPos) => {
     } else {
       res.val[name] = { schema, val: `${sym}_${name}[${keyPos}]`, keyPos, tag: "hashMapValue" }
     }
+  }
+
+  if (valSchema.length == 1 && valSchema[0].name == "_DEFAULT_") {
+    return res.val["values"]
   }
 
   return res
@@ -1137,7 +1176,22 @@ let emitHashBucketInsert = (buf, bucket, value) => {
   let idx = cgen.plus(cgen.mul(bucket.keyPos, BUCKET_SIZE), bucketPos)
   cgen.stmt(buf)(cgen.assign(`${bucket.val.buckets}[${idx}]`, dataPos))
 
-  if (typing.isString(bucket.schema.objValue)) {
+  if (typing.isObject(bucket.schema.objValue)) {
+    console.assert(value.tag == "object")
+    for (let key in value.val) {
+      let val = value.val[key]
+      let valArray = bucket.val.valArray[key]
+
+      if (typing.isObject(val.schema)) {
+        throw new Error("Not supported")
+      } else if (typing.isString(val.schema)) {
+        cgen.stmt(buf)(cgen.assign(`${valArray.str}[${dataPos}]`, val.val.str))
+        cgen.stmt(buf)(cgen.assign(`${valArray.len}[${dataPos}]`, val.val.len))
+      } else {
+        cgen.stmt(buf)(cgen.assign(`${valArray}[${dataPos}]`, val.val))
+      }
+    }
+  } else if (typing.isString(bucket.schema.objValue)) {
     cgen.stmt(buf)(cgen.assign(`${bucket.val.valArray.str}[${dataPos}]`, value.val.str))
     cgen.stmt(buf)(cgen.assign(`${bucket.val.valArray.len}[${dataPos}]`, value.val.len))
   } else {
@@ -1166,7 +1220,20 @@ let emitHashMapPrint = (buf, sym) => {
       buf.push(`for (int j = 0; j < ${sym}_${name}_bucket_counts[key_pos]; j++) {`)
       buf.push(`int data_pos = ${sym}_${name}_buckets[key_pos * ${BUCKET_SIZE} + j];`)
 
-      if (typing.isString(schema.objValue)) {
+      if (typing.isObject(schema.objValue)) {
+        let objSchema = convertToArrayOfSchema(schema.objValue)
+        for (let j in objSchema) {
+          let { name: name1, schema: schema1 } = objSchema[j]
+          if (typing.isObject(schema1)) {
+            throw new Error("Not supported")
+          } else if (typing.isString(schema1)) {
+            buf.push(`print(${sym}_${name}_${name1}_str[data_pos], ${sym}_${name}_${name1}_len[data_pos]);`)
+          } else {
+            buf.push(`printf("%${getFormatSpecifier(schema1)}", ${sym}_${name}_${name1}[data_pos]);`)
+          }
+          buf.push(`print("|", 1);`)
+        }
+      } else if (typing.isString(schema.objValue)) {
         buf.push(`print(${sym}_${name}_str[data_pos], ${sym}_${name}_len[data_pos]);`)
       } else {
         buf.push(`printf("%${getFormatSpecifier(schema.objValue)}", ${sym}_${name}[data_pos]);`)

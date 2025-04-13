@@ -164,8 +164,8 @@ test("q4", async () => {
 // })
 
 test("q5", async () => {
-  let regionKeyToName = rh`{r_name: ${region}.*r.r_name} | group ${region}.*r.r_regionkey`
-  let query = rh`print ${regionKeyToName}.(${nation}.*n.n_regionkey).r_name`
+  let regionKeyToName = rh`[{ r_name: ${region}.*r.r_name }] | group ${region}.*r.r_regionkey`
+  let query = rh`[{ r_name: ${regionKeyToName}.(${nation}.*n.n_regionkey).*R.r_name, n_name: ${nation}.*n.n_name }] | group ${nation}.*n.n_nationkey`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q5.c", schema: types.never })
   let res = await func()
