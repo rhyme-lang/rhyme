@@ -17,7 +17,7 @@ const { unique, union } = sets
 const KEY_SIZE = 16777216
 const HASH_SIZE = KEY_SIZE
 
-const BUCKET_SIZE = 4
+const BUCKET_SIZE = 8
 const DATA_SIZE = KEY_SIZE * BUCKET_SIZE
 
 const HASH_MASK = HASH_SIZE - 1
@@ -363,6 +363,7 @@ let validateAndExtractUsedCols = (q) => {
     validateAndExtractUsedCols(q1)
   } else if (q.key == "update") {
     if (q.arg[0].key != "const" || Object.keys(q.arg[0].op).length != 0) {
+      console.log(q)
       throw new Error("cannot extend non-empty objects" + pretty(q))
     }
     if (q.arg[3] == undefined) {
@@ -388,8 +389,6 @@ let validateAndExtractUsedCols = (q) => {
     } else {
       q.arg.map(validateAndExtractUsedCols)
     }
-  } else if (q.key == "pure" && q.op == "mkTuple") {
-    throw new Error("unexpected mkTuple")
   } else if (q.key == "pure" && q.op == "sort") {
     let columns = q.arg.slice(0, -1)
     validateAndExtractUsedCols(q.arg[q.arg.length - 1])
@@ -457,7 +456,7 @@ let hash = (buf, keys, keySchema) => {
       throw new Error("cannot hash key with type " + typing.prettyPrintType(schema))
     }
 
-    cgen.stmt(buf)(cgen.binary(hashed, "41", "*="))
+    cgen.stmt(buf)(cgen.binary(hashed, "8", "<<"))
     cgen.stmt(buf)(cgen.binary(hashed, tmpHash, "+="))
   }
 
@@ -801,7 +800,7 @@ let emitPath = (buf, q) => {
         } else if (typing.isString(bucket.schema.objValue)) {
           return { schema: bucket.schema.objValue, val: { str: `${bucket.val.valArray.str}[${dataPos}]`, len: `${bucket.val.valArray.len}[${dataPos}]` } }
         } else {
-          return { schema: bucket.schema.objValue, val: `${bucket.target}[${dataPos}]` }
+          return { schema: bucket.schema.objValue, val: `${bucket.val.valArray}[${dataPos}]` }
         }
       } else {
         throw new Error("Cannot get var from non-iterable object")
@@ -832,6 +831,18 @@ let emitPath = (buf, q) => {
 
     return v1.val[e2.op]
   } else if (q.key == "pure") {
+    if (q.op == "mkTuple") {
+      let schema = convertToArrayOfSchema(q.schema.type)
+      let res = { schema, val: {}, tag: "object" }
+      for (let i = 0; i < q.arg.length; i += 2) {
+        let k = q.arg[i]
+        let v = q.arg[i + 1]
+        let { name } = schema[i / 2]
+        res.val[name] = emitPath(buf, v)
+      }
+      return res
+    }
+
     let e1 = emitPath(buf, q.arg[0])
     let op = binaryOperators[q.op]
     if (op) {
@@ -855,16 +866,6 @@ let emitPath = (buf, q) => {
       } else {
         return { schema: q.schema, val: "(" + cgen.binary(e1.val, e2.val, op) + ")" }
       }
-    } else if (q.op == "mkTuple") {
-      let schema = convertToArrayOfSchema(q.schema.type)
-      let res = { schema, val: {}, tag: "object" }
-      for (let i = 0; i < q.arg.length; i += 2) {
-        let k = q.arg[i]
-        let v = q.arg[i + 1]
-        let { name } = schema[i / 2]
-        res.val[name] = emitPath(buf, v)
-      }
-      return res
     } else if (q.op == "and") {
       throw new Error("unexpected and op" + pretty(q))
     } else if (q.op == "sort") {
@@ -1033,7 +1034,7 @@ let emitHashLookUpOrUpdate = (buf, sym, keys, update) => {
     cgen.stmt(buf1)(cgen.assign(keyPos, `${sym}_key_count`))
     cgen.stmt(buf1)(cgen.inc(`${sym}_key_count`))
     cgen.if(buf1)(cgen.equal(`${sym}_key_count`, HASH_SIZE), (buf2) => {
-      cgen.printErr(buf2)(`"hashmap size reached its full capacity"`)
+      cgen.printErr(buf2)(`"hashmap size reached its full capacity\\n"`)
       cgen.return(buf2)("1")
     })
     cgen.stmt(buf1)(cgen.assign(`${sym}_htable[${pos}]`, keyPos))
@@ -1069,7 +1070,7 @@ let emitHashLookUpAndUpdate = (buf, sym, keys, update, checkExistance) => {
       cgen.stmt(buf1)(cgen.assign(keyPos, `${sym}_key_count`))
       cgen.stmt(buf1)(cgen.inc(`${sym}_key_count`))
       cgen.if(buf1)(cgen.equal(`${sym}_key_count`, HASH_SIZE), (buf2) => {
-        cgen.printErr(buf2)(`"hashmap size reached its full capacity"`)
+        cgen.printErr(buf2)(`"hashmap size reached its full capacity\\n"`)
         cgen.return(buf2)("1")
       })
       cgen.stmt(buf1)(cgen.assign(`${sym}_htable[${pos}]`, keyPos))
@@ -1163,14 +1164,19 @@ let emitHashUpdate = (buf, sym, pos, keyPos, update) => {
 }
 
 let emitHashBucketInsert = (buf, bucket, value) => {
+  cgen.if(buf)(cgen.equal(bucket.val.bucketCount, BUCKET_SIZE), (buf2) => {
+    cgen.printErr(buf2)(`"hashmap bucket size reached its full capacity\\n"`)
+    cgen.return(buf2)("1")
+  })
+
   let dataPos = getNewName("data_pos")
   cgen.declareInt(buf)(dataPos, bucket.val.dataCount)
 
   cgen.stmt(buf)(cgen.inc(bucket.val.dataCount))
 
   let bucketPos = getNewName("bucket_pos")
+  
   cgen.declareInt(buf)(bucketPos, bucket.val.bucketCount)
-
   cgen.stmt(buf)(cgen.assign(bucket.val.bucketCount, cgen.plus(bucketPos, "1")))
 
   let idx = cgen.plus(cgen.mul(bucket.keyPos, BUCKET_SIZE), bucketPos)
