@@ -397,12 +397,18 @@ let validateAndExtractUsedCols = (q) => {
       throw new Error("Cannot sort non-hashmap value: " + pretty(hashmap))
     }
     sortedCols[tmpSym(q.arg[q.arg.length - 1].op)] ??= {}
-    for (let column of columns) {
+    for (let i = 0; i < columns.length; i += 2) {
+      let column = columns[i]
+      let order = columns[i + 1]
+
+      sortedCols[tmpSym(q.arg[q.arg.length - 1].op)][column.op] = true
+  
       if (!(column.key == "const" && typeof column.op == "string")) {
         throw new Error("Invalid column for sorting: " + pretty(column))
       }
-
-      sortedCols[tmpSym(hashmap.op)][column.op] = true
+      if (!(order.key == "const" && typeof order.op == "number" && (order.op == 0 || order.op == 1))) {
+        throw new Error("Invalid order for sorting: " + pretty(order))
+      }
     }
 
   } else if (q.arg) {
@@ -1262,10 +1268,14 @@ let emitHashMapPrint = (buf, sym) => {
   buf.push(`}`)
 }
 
-let emitCompareFunc = (buf, name, valPairs) => {
+let emitCompareFunc = (buf, name, valPairs, orders) => {
   buf.push(`int ${name}(int *key_pos1, int *key_pos2) {`)
   for (let i in valPairs) {
     let [aVal, bVal] = valPairs[i]
+    let order = orders[i]
+    if (order == 1) {
+      [aVal, bVal] = [bVal, aVal]
+    }
 
     let schema = aVal.schema
 
@@ -1299,23 +1309,22 @@ let emitSorting = (buf, q) => {
   let cType = `struct ${sym}_value`
 
   let vals = []
+  let orders = []
   let hashMapEntry1 = getHashMapValueEntry([], sym, undefined, "*key_pos1")
   let hashMapEntry2 = getHashMapValueEntry([], sym, undefined, "*key_pos2")
-  for (let i in columns) {
-    let column = columns[i].op
-
-    if (!(q.arg[0].key == "const" && typeof q.arg[0].op == "string")) {
-      throw new Error("Invalid column for sorting: " + pretty(q.arg[0]))
-    }
+  for (let i = 0; i < columns.length; i += 2) {
+    let column = columns[i]
+    let order = columns[i + 1]
 
     vals.push([
-      hashMapEntry1.val[column],
-      hashMapEntry2.val[column]
+      hashMapEntry1.val[column.op],
+      hashMapEntry2.val[column.op]
     ])
+    orders.push(order.op)
   }
 
   let compareFunc = getNewName("compare_func")
-  emitCompareFunc(prolog0, compareFunc, vals)
+  emitCompareFunc(prolog0, compareFunc, vals, orders)
 
   cgen.declareIntPtr(buf)(sym, cgen.cast("int *", cgen.malloc("int", `${sym}_key_count`)))
   cgen.stmt(buf)(`for (int i = 0; i < ${sym}_key_count; i++) ${sym}[i] = i`)
