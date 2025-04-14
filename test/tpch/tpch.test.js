@@ -48,13 +48,6 @@ let nationSchema = typing.objBuilder()
     n_comment: types.string,
   })).build()
 
-let regionSchema = typing.objBuilder()
-  .add(typing.createKey(types.u32), typing.createSimpleObject({
-    r_regionkey: types.i32,
-    r_name: types.string,
-    r_comment: types.string,
-  })).build()
-
 let ordersSchema = typing.objBuilder()
   .add(typing.createKey(types.u32), typing.createSimpleObject({
     o_orderkey: types.i32,
@@ -68,17 +61,37 @@ let ordersSchema = typing.objBuilder()
     o_comment: types.string,
   })).build()
 
+let regionSchema = typing.objBuilder()
+  .add(typing.createKey(types.u32), typing.createSimpleObject({
+    r_regionkey: types.i32,
+    r_name: types.string,
+    r_comment: types.string,
+  })).build()
+
+let supplierSchema = typing.objBuilder()
+  .add(typing.createKey(types.u32), typing.createSimpleObject({
+    s_suppkey: types.i32,
+    s_name: types.string,
+    s_address: types.string,
+    s_nationkey: types.i32,
+    s_phone: types.string,
+    s_acctbal: types.f64,
+    s_comment: types.string,
+  })).build()
+
 let customerFile = `"${dataDir}/customer.tbl"`
 let lineitemFile = `"${dataDir}/lineitem.tbl"`
 let nationFile = `"${dataDir}/nation.tbl"`
-let regionFile = `"${dataDir}/region.tbl"`
 let ordersFile = `"${dataDir}/orders.tbl"`
+let regionFile = `"${dataDir}/region.tbl"`
+let supplierFile = `"${dataDir}/supplier.tbl"`
 
 let customer = rh`loadTBL ${customerFile} ${customerSchema}`
 let lineitem = rh`loadTBL ${lineitemFile} ${lineitemSchema}`
 let nation = rh`loadTBL ${nationFile} ${nationSchema}`
-let region = rh`loadTBL ${regionFile} ${regionSchema}`
 let orders = rh`loadTBL ${ordersFile} ${ordersSchema}`
+let region = rh`loadTBL ${regionFile} ${regionSchema}`
+let supplier = rh`loadTBL ${supplierFile} ${supplierSchema}`
 
 let sh = (cmd) => {
   return new Promise((resolve, reject) => {
@@ -164,10 +177,43 @@ test("q4", async () => {
 // })
 
 test("q5", async () => {
-  let regionKeyToName = rh`[{ r_name: ${region}.*r.r_name }] | group ${region}.*r.r_regionkey`
-  let query = rh`[{ r_name: ${regionKeyToName}.(${nation}.*n.n_regionkey).*R.r_name, n_name: ${nation}.*n.n_name }] | group ${nation}.*n.n_nationkey`
+  let region1 = rh`[${region}.*r1.r_name == "ASIA" & ${region}.*r1.r_regionkey] | group ${region}.*r1.r_regionkey`
+  let nation1 = rh`[{ r: ${region1}.(${nation}.*n1.n_regionkey).*r2, n_nationkey: ${nation}.*n1.n_nationkey, n_name: ${nation}.*n1.n_name }] | group ${nation}.*n1.n_nationkey`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q5.c", schema: types.never })
+  let customer1 = rh`[
+    {
+      n_nationkey: ${nation1}.(${customer}.*c1.c_nationkey).*n2.n_nationkey,
+      n_name: ${nation1}.(${customer}.*c1.c_nationkey).*n2.n_name,
+      c_custkey: ${customer}.*c1.c_custkey,
+      c_nationkey: ${customer}.*c1.c_nationkey
+    }
+  ] | group ${customer}.*c1.c_custkey`
+
+  let orders1 = rh`[
+    (19940101 <= ${orders}.*o1.o_orderdate && ${orders}.*o1.o_orderdate < 19950101) & {
+      n_nationkey: ${customer1}.(${orders}.*o1.o_custkey).*c2.n_nationkey,
+      n_name: ${customer1}.(${orders}.*o1.o_custkey).*c2.n_name,
+      c_nationkey: ${customer1}.(${orders}.*o1.o_custkey).*c2.c_nationkey,
+      o_orderkey: ${orders}.*o1.o_orderkey
+    }
+  ] | group ${orders}.*o1.o_orderkey`
+
+  let supplier1 = rh`[
+    {
+      s_suppkey: ${supplier}.*s1.s_suppkey,
+      s_nationkey: ${supplier}.*s1.s_nationkey
+    }
+  ] | group ${supplier}.*s1.s_suppkey`
+
+  let cond = rh`${orders1}.(${lineitem}.*l1.l_orderkey).*o2.n_nationkey == ${supplier1}.(${lineitem}.*l1.l_suppkey).*s2.s_nationkey`
+  let lineitem1 = rh`{
+    n_name: (${cond} & ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.n_name),
+    revenue: sum (${cond} & (${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount)))
+  } | group ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.n_name`
+
+  let query = rh`sort "revenue" ${lineitem1}`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q5.c", schema: types.never, enableOptimizations: false })
   let res = await func()
 
   console.log(res)
