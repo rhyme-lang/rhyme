@@ -1002,7 +1002,7 @@ let compile = (q,userSettings={}) => {
 
   if (settings.backend == "c-sql-new") {
     let ir = {filters, assignments, vars, order, pseudo}
-    return generateCSqlNew(q, ir, settings.outDir, settings.outFile)
+    return generateCSqlNew(q, ir, settings)
   }
 
   let code = emitCode(q,order)
