@@ -1015,3 +1015,252 @@ test("day11-part2", () => {
   let res = func2({state, udf})
   expect(res).toBe(65601038650482)
 })
+
+test("day12-part1", () => {
+  let input =
+`RRRRIICCFF
+RRRRIICCCF
+VVRRRCCFFF
+VVRCCCJFFF
+VVVVCJJCFE
+VVIVCCJJEE
+VVIIICJJEE
+MIIIIIJJEE
+MIIISIJEEE
+MMMISSJEEE`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    toSet: (arr) => arr.filter((value, index, self) =>
+      index === self.findIndex(t => t.x === value.x && t.y === value.y && t.sx === value.sx && t.sy === value.sy)
+    ),
+    ...udf_stdlib,
+  }
+  let filterBy = (gen, p) => x => rh`(udf.filter ${p}).${gen} & ${x}`
+  let delta = [[-1, 0], [0, 1], [1, 0], [0, -1]]
+
+  let lines = rh`.input | udf.split "\\n" | .*line | udf.split ""`
+  let grid = api.array(lines)
+  let parseInput = {
+    rowlen: rh`(${lines} | count | udf.toNum)`,
+    collen: rh`(${lines}.*0 | count | group *line | .0 | udf.toNum)`,
+    cell: rh`${grid}.*i.*j & {x: (udf.toNum *i), y: (udf.toNum *j)} | array`,
+    grid: grid,
+  }
+  let func = api.compileC2(parseInput)
+  let initialState = func({input, udf})
+
+  let state = {
+    region: [initialState.cell[0]],
+    contour: [initialState.cell[0]],
+    cell: initialState.cell,
+    price: 0,
+    symbol: initialState.grid[0][0],
+  }
+  let bfs = rh`{x: state.contour.*contour.x + delta.*dir.0, y: state.contour.*contour.y + delta.*dir.1} | array | udf.toSet`
+  let isValid = rh`${bfs}.*p.x < initialState.rowlen & ${bfs}.*p.x >= 0 & ${bfs}.*p.y < initialState.collen & ${bfs}.*p.y >= 0 & (initialState.grid.(${bfs}.*p.x).(${bfs}.*p.y) == state.symbol)`
+  let cells = rh`${bfs}.*p | ${filterBy("*", isValid)} | array`
+  let notvisited = rh`ifElse (any (${cells}.*cell.x == state.region.*regioncell.x & ${cells}.*cell.y == state.region.*regioncell.y)) 1 == 0 true`
+  let newCells = rh`${cells}.*cell | ${filterBy("*", notvisited)} | array`
+  let removeVisit = rh`ifElse (any (state.cell.*crv.x == state.contour.*ct.x & state.cell.*crv.y == state.contour.*ct.y)) 1 == 0 true`
+
+  let regionFilled = rh`(state.contour.* | count) == 0`
+  let newRegion = rh`ifElse ${regionFilled} [state.cell.0] [state.region.*, ${newCells}.*]`
+  let area = rh`state.region.* | count`
+  let neighbors = rh`{x: state.region.*region.x + delta.*dir.0, y: state.region.*region.y + delta.*dir.1} | array`
+  let notInRegion = rh`${neighbors}.*n.x >= initialState.rowlen || ${neighbors}.*n.x < 0 || ${neighbors}.*n.y >= initialState.collen || ${neighbors}.*n.y < 0 || initialState.grid.(${neighbors}.*n.x).(${neighbors}.*n.y) != state.symbol`
+  let perimeter = rh`${neighbors}.*n | ${filterBy("*", notInRegion)} | count`
+
+  let fill = {
+    region: rh`${newRegion}`,
+    contour: rh`ifElse ${regionFilled} [state.cell.0] ${newCells}`,
+    cell: rh`state.cell.*crv | ${filterBy("*", removeVisit)} | array`,
+    price: rh`ifElse ${regionFilled} state.price + ${area} * ${perimeter} state.price`,
+    symbol: rh`ifElse ${regionFilled} initialState.grid.(state.cell.0.x).(state.cell.0.y) state.symbol`,
+  }
+  let func1 = api.compileC2(fill)
+  while (state.region.length != 0)
+    state = func1({state, udf, delta, initialState})  
+  expect(state.price).toBe(1930)
+})
+
+test("day12-part2", () => {
+  let input =
+`RRRRIICCFF
+RRRRIICCCF
+VVRRRCCFFF
+VVRCCCJFFF
+VVVVCJJCFE
+VVIVCCJJEE
+VVIIICJJEE
+MIIIIIJJEE
+MIIISIJEEE
+MMMISSJEEE`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    toSet: (arr) => arr.filter((value, index, self) =>
+      index === self.findIndex(t => t.x === value.x && t.y === value.y && t.sx === value.sx && t.sy === value.sy)
+    ),
+    ...udf_stdlib,
+  }
+  let filterBy = (gen, p) => x => rh`(udf.filter ${p}).${gen} & ${x}`
+  let delta = [[-1, 0], [0, 1], [1, 0], [0, -1]]
+  let delta2 = [[-1, 0], [0, 1], [1, 0], [0, -1], [-1, -1], [1, 1], [-1, 1], [1, -1]]
+
+  let lines = rh`.input | udf.split "\\n" | .*line | udf.split ""`
+  let grid = api.array(lines)
+  let parseInput = {
+    rowlen: rh`(${lines} | count | udf.toNum)`,
+    collen: rh`(${lines}.*0 | count | group *line | .0 | udf.toNum)`,
+    cell: rh`${grid}.*i.*j & {x: (udf.toNum *i), y: (udf.toNum *j)} | array`,
+    grid: grid,
+  }
+  let func = api.compileC2(parseInput)
+  let initialState = func({input, udf})
+
+  let state = {
+    region: [initialState.cell[0]],
+    contour: [initialState.cell[0]],
+    cell: initialState.cell,
+    price: 0,
+    symbol: initialState.grid[0][0],
+  }
+  let bfs = rh`{x: state.contour.*contour.x + delta.*dir.0, y: state.contour.*contour.y + delta.*dir.1} | array | udf.toSet`
+  let isValid = rh`${bfs}.*p.x < initialState.rowlen & ${bfs}.*p.x >= 0 & ${bfs}.*p.y < initialState.collen & ${bfs}.*p.y >= 0 & (initialState.grid.(${bfs}.*p.x).(${bfs}.*p.y) == state.symbol)`
+  let cells = rh`${bfs}.*p | ${filterBy("*", isValid)} | array`
+  let notvisited = rh`ifElse (any (${cells}.*cell.x == state.region.*regioncell.x & ${cells}.*cell.y == state.region.*regioncell.y)) 1 == 0 true`
+  let newCells = rh`${cells}.*cell | ${filterBy("*", notvisited)} | array`
+  let removeVisit = rh`ifElse (any (state.cell.*crv.x == state.contour.*ct.x & state.cell.*crv.y == state.contour.*ct.y)) 1 == 0 true`
+
+  let regionFilled = rh`(state.contour.* | count) == 0`
+  let newRegion = rh`ifElse ${regionFilled} [state.cell.0] [state.region.*, ${newCells}.*]`
+  let area = rh`state.region.* | count`
+
+  let doublegrid = rh`[{x: state.region.*region.x * 2, y: state.region.*region.y * 2},
+                       {x: state.region.*region.x * 2 + 1, y: state.region.*region.y * 2},
+                       {x: state.region.*region.x * 2, y: state.region.*region.y * 2 + 1},
+                       {x: state.region.*region.x * 2 + 1, y: state.region.*region.y * 2 + 1}
+                      ].* | array`
+  let neighbors = rh`{x: ${doublegrid}.*dg.x + delta2.*dir2.0, y: ${doublegrid}.*dg.y + delta2.*dir2.1}`
+  let inRegion = rh`initialState.grid.(ifElse (${neighbors}.x % 2 == 0) ${neighbors}.x / 2 (${neighbors}.x - 1) / 2).(ifElse (${neighbors}.y % 2 == 0) ${neighbors}.y / 2 (${neighbors}.y - 1) / 2) == state.symbol`
+  let filterNeighbors = rh`${neighbors} | ${filterBy("*", inRegion)}`
+  let neighborCount = rh`count ${filterNeighbors} | group *dg | .* | array`
+  let is347 = rh`${neighborCount}.*nc == 3 || ${neighborCount}.*nc == 4 || ${neighborCount}.*nc == 7`
+  let perimeter = rh`${neighborCount}.*nc | ${filterBy("*", is347)} | count`
+
+  let fill = {
+    test: rh`${perimeter}`,
+    test2: rh`${neighborCount}`,
+    region: rh`${newRegion}`,
+    contour: rh`ifElse ${regionFilled} [state.cell.0] ${newCells}`,
+    cell: rh`state.cell.*crv | ${filterBy("*", removeVisit)} | array`,
+    price: rh`ifElse ${regionFilled} state.price + ${area} * ${perimeter} state.price`,
+    symbol: rh`ifElse ${regionFilled} initialState.grid.(state.cell.0.x).(state.cell.0.y) state.symbol`,
+  }
+  let func1 = api.compileC2(fill, null)
+  while (state.region.length != 0)
+    state = func1({state, udf, delta, delta2, initialState})  
+  expect(state.price).toBe(1206)
+})
+
+test("day13-part1", () => {
+  let input =
+`Button A: X+94, Y+34
+Button B: X+22, Y+67
+Prize: X=8400, Y=5400
+
+Button A: X+26, Y+66
+Button B: X+67, Y+21
+Prize: X=12748, Y=12176
+
+Button A: X+17, Y+86
+Button B: X+84, Y+37
+Prize: X=7870, Y=6450
+
+Button A: X+69, Y+23
+Button B: X+27, Y+71
+Prize: X=18641, Y=10279`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    splice: array => array.slice(0, -1),
+    ...udf_stdlib,
+  }
+  let filterBy = (gen, p) => x => rh`(udf.filter ${p}).${gen} & ${x}`
+
+  let machine = rh`.input | udf.split "\\n\\n" | .*machine`
+  let line = rh`${machine} | udf.split "\\n" | .*line`
+  let word = rh`${line} | udf.split " " | .*word`
+  let number = rh`${word} | udf.slice 2 | group *word | group *line | group *machine`
+  let createobject = rh`{ax: (udf.splice ${number}.*num.0.2 | udf.toNum), ay: (${number}.*num.0.3 | udf.toNum), bx: (udf.splice ${number}.*num.1.2 | udf.toNum), by: (${number}.*num.1.3 | udf.toNum), px: (udf.splice ${number}.*num.2.1 | udf.toNum), py: (${number}.*num.2.2 | udf.toNum)} | array`
+
+  let func = api.compileC2(createobject)
+  let machineData = func({input, udf})
+
+  let state = {
+    token: Array(machineData.length).fill(1000),
+    indexa: 0,
+    indexb: 0,
+  }
+  let isValid = rh`(machineData.*m.ax * state.indexa + machineData.*m.bx * state.indexb == machineData.*m.px)
+                 & (machineData.*m.ay * state.indexa + machineData.*m.by * state.indexb == machineData.*m.py)`
+  let isLess = rh`state.indexa * 3 + state.indexb < state.token.*m`
+  let solve = {
+    token: rh`(ifElse (${isValid} & ${isLess}) (state.indexa * 3 + state.indexb) state.token.*m) | array`,
+    indexa: rh`ifElse state.indexb == 100 state.indexa + 1 state.indexa`,
+    indexb: rh`ifElse state.indexb == 100 0 state.indexb + 1`,
+  }
+  let func1 = api.compileC2(solve)
+  while (!(state.indexa == 100 && state.indexb == 100))
+    state = func1({state, udf, machineData})
+  let sum = rh`state.token.*t | ${filterBy("*", rh`state.token.*t != 1000`)} | sum`
+  let func2 = api.compileC2(sum)
+  let res = func2({state, udf})
+  expect(res).toBe(480)
+})
+
+test("day13-part2", () => {
+  let input =
+`Button A: X+94, Y+34
+Button B: X+22, Y+67
+Prize: X=8400, Y=5400
+
+Button A: X+26, Y+66
+Button B: X+67, Y+21
+Prize: X=12748, Y=12176
+
+Button A: X+17, Y+86
+Button B: X+84, Y+37
+Prize: X=7870, Y=6450
+
+Button A: X+69, Y+23
+Button B: X+27, Y+71
+Prize: X=18641, Y=10279`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    splice: array => array.slice(0, -1),
+    ...udf_stdlib,
+  }
+  let filterBy = (gen, p) => x => rh`(udf.filter ${p}).${gen} & ${x}`
+
+  let machine = rh`.input | udf.split "\\n\\n" | .*machine`
+  let line = rh`${machine} | udf.split "\\n" | .*line`
+  let word = rh`${line} | udf.split " " | .*word`
+  let number = rh`${word} | udf.slice 2 | group *word | group *line | group *machine`
+  let createobject = rh`{ax: (udf.splice ${number}.*num.0.2 | udf.toNum), ay: (${number}.*num.0.3 | udf.toNum), bx: (udf.splice ${number}.*num.1.2 | udf.toNum), by: (${number}.*num.1.3 | udf.toNum), px: (udf.splice ${number}.*num.2.1 | udf.toNum) + 10000000000000, py: (${number}.*num.2.2 | udf.toNum) + 10000000000000} | array`
+
+  let bnumerator = rh`${createobject}.*m.px * ${createobject}.*m.ay - ${createobject}.*m.py * ${createobject}.*m.ax`
+  let bdenominator = rh`${createobject}.*m.bx * ${createobject}.*m.ay - ${createobject}.*m.by * ${createobject}.*m.ax`
+  let b = rh`ifElse (${bdenominator} == 0 || ${bnumerator} % ${bdenominator} != 0) 0 (${bnumerator} / ${bdenominator})`
+  let anumerator = rh`${createobject}.*m.px - ${b} * ${createobject}.*m.bx`
+  let a = rh`ifElse (${createobject}.*m.ax == 0 || ${anumerator} % ${createobject}.*m.ax != 0) 0 (${anumerator} / ${createobject}.*m.ax)`
+
+  let isValid = rh`${bdenominator} != 0 & ${bnumerator} % ${bdenominator} == 0 & ${createobject}.*m.ax != 0 & ${anumerator} % ${createobject}.*m.ax == 0`
+  let token = rh`ifElse ${isValid} (${a} * 3 + ${b}) 0`
+  let query = rh`sum ${token}`
+  let func = api.compileC2(query, null)
+  let res = func({input, udf})
+  expect(res).toBe(875318608908)
+})
