@@ -135,13 +135,52 @@ test("q1", async () => {
 
   let query = rh`sort "l_returnflag" 0 "l_linestatus" 0 ${query1}`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q1.c", schema: types.never, enableOptimizations: false })
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q1", schema: types.never, enableOptimizations: false })
   let res = await func()
 
   expect(res).toBe(`A|F|37734107.0000|56586554400.7299|53758257134.8651|55909065222.8256|25.5220|38273.1297|0.0500|1478493|
 N|F|991417.0000|1487504710.3800|1413082168.0541|1469649223.1944|25.5165|38284.4678|0.0501|38854|
 N|O|74476040.0000|111701729697.7356|106118230307.6122|110367043872.4921|25.5022|38249.1180|0.0500|2920374|
 R|F|37719753.0000|56568041380.9045|53741292684.6038|55889619119.8297|25.5058|38250.8546|0.0500|1478870|
+`)
+})
+
+test("q3", async () => {
+  let customer1 = rh`[${customer}.*c1.c_mktsegment == "BUILDING" & ${customer}.*c1.c_custkey] | group ${customer}.*c1.c_custkey`
+
+  let orders1 = rh`[
+    ${orders}.*o1.o_orderdate < 19950315 & {
+      c: ${customer1}.(${orders}.*o1.o_custkey).*c2,
+      o_orderkey: ${orders}.*o1.o_orderkey,
+      o_custkey: ${orders}.*o1.o_custkey,
+      o_orderdate: ${orders}.*o1.o_orderdate,
+      o_shippriority: ${orders}.*o1.o_shippriority
+    }
+  ] | group ${orders}.*o1.o_orderkey`
+
+  let cond = rh`${lineitem}.*l1.l_shipdate > 19950315`
+  let lineitem1 = rh`{
+    l_orderkey: (${cond} & ${lineitem}.*l1.l_orderkey),
+    revenue: sum (${cond} & (${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount))),
+    o_orderdate: (${cond} & ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.o_orderdate),
+    o_shippriority: (${cond} & ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.o_shippriority)
+  } | group [${lineitem}.*l1.l_orderkey, ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.o_orderdate, ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.o_shippriority]`
+
+  let query = rh`sort "revenue" 1 "o_orderdate" 0 ${lineitem1}`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q3", schema: types.never, enableOptimizations: false, limit: 10 })
+  let res = await func()
+
+  expect(res).toBe(`2456423|406181.0111|1995-03-05|0|
+3459808|405838.6989|1995-03-04|0|
+492164|390324.0610|1995-02-19|0|
+1188320|384537.9359|1995-03-09|0|
+2435712|378673.0558|1995-02-26|0|
+4878020|378376.7952|1995-03-12|0|
+5521732|375153.9215|1995-03-13|0|
+2628192|373133.3094|1995-02-22|0|
+993600|371407.4595|1995-03-05|0|
+2300070|367371.1452|1995-03-13|0|
 `)
 })
 
@@ -157,7 +196,7 @@ test("q4", async () => {
   } | group ${orders}.*.o_orderpriority`
   let query = rh`sort "o_orderpriority" 0 ${countL}`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q4.c", schema: types.never, enableOptimizations: false })
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q4", schema: types.never, enableOptimizations: false })
   let res = await func()
 
   expect(res).toBe(`1-URGENT|10594|
@@ -167,14 +206,6 @@ test("q4", async () => {
 5-LOW|10487|
 `)
 })
-
-// test("q5-js", () => {
-//   let regionKeyToName = rh`[region.*r.r_name == "ASIA" & region.*r.r_name] | group region.*r.r_regionkey`
-//   let query = rh`[{r_name: ${regionKeyToName}.(nation.*n.n_regionkey).*R, n_name: nation.*n.n_name}] | group nation.*n.n_nationkey`
-
-//   let func = compile(query, { newCodegen: true })
-//   // console.log(func.explain.code)
-// })
 
 test("q5", async () => {
   let region1 = rh`[${region}.*r1.r_name == "ASIA" & ${region}.*r1.r_regionkey] | group ${region}.*r1.r_regionkey`
@@ -206,7 +237,7 @@ test("q5", async () => {
 
   let query = rh`sort "revenue" 1 ${lineitem1}`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q5.c", schema: types.never, enableOptimizations: false })
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q5", schema: types.never, enableOptimizations: false })
   let res = await func()
 
   expect(res).toBe(`INDONESIA|55502041.1697|
@@ -226,7 +257,7 @@ test("q6", async () => {
 
   let query = rh`sum (${cond}) & (${lineitem}.*.l_extendedprice * ${lineitem}.*.l_discount)`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q6.c", schema: types.never })
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q6", schema: types.never })
   let res = await func()
 
   expect(res).toBe("123141078.2283\n")

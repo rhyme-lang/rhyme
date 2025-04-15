@@ -115,3 +115,11 @@ void print(const char *str, int len) {
         i++;
     }
 }
+
+void print_date(int date) {
+    int year = date / 10000;          // Extract the year
+    int month = (date / 100) % 100;  // Extract the month
+    int day = date % 100;            // Extract the day
+
+    printf("%04d-%02d-%02d", year, month, day); // Print in yyyy-mm-dd format
+}

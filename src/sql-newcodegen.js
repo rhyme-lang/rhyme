@@ -126,6 +126,7 @@ let ctypeMap = {
   i64: "int64_t",
   f32: "float",
   f64: "double",
+  date: "int32_t",
 }
 
 let formatSpecifierMap = {
@@ -143,6 +144,7 @@ let formatSpecifierMap = {
   i64: "ld",
   f32: ".3f",
   f64: ".4lf",
+  date: "d"
 }
 
 let convertToCType = (type) => {
@@ -402,7 +404,7 @@ let validateAndExtractUsedCols = (q) => {
       let order = columns[i + 1]
 
       sortedCols[tmpSym(q.arg[q.arg.length - 1].op)][column.op] = true
-  
+
       if (!(column.key == "const" && typeof column.op == "string")) {
         throw new Error("Invalid column for sorting: " + pretty(column))
       }
@@ -456,7 +458,7 @@ let hash = (buf, keys, keySchema) => {
 
     if (typing.isString(schema)) {
       cgen.declareULong(buf)(tmpHash, cgen.call("hash", key.val.str, key.val.len))
-    } else if (typing.isInteger(schema)) {
+    } else if (typing.isInteger(schema) || schema.typeSym == typeSyms.date) {
       cgen.declareULong(buf)(tmpHash, cgen.cast("unsigned long", key.val))
     } else {
       throw new Error("cannot hash key with type " + typing.prettyPrintType(schema))
@@ -495,10 +497,11 @@ let emitHashLookUp = (buf, sym, keys) => {
       let { str, len } = key.val
       let comparison = cgen.notEqual(cgen.call("compare_str2", keyStr, keyLen, str, len), "0")
       compareKeys = compareKeys ? cgen.or(compareKeys, comparison) : comparison
-    } else if (typing.isInteger(schema)) {
+    } else {
       let comparison = cgen.notEqual(`${sym}_keys${i}[${keyPos}]`, key.val)
       compareKeys = compareKeys ? cgen.or(compareKeys, comparison) : comparison
     }
+
   }
 
   cgen.while(buf)(
@@ -601,7 +604,7 @@ let scanDate = (buf, mappedFile, cursor, size, delim, name) => {
     `${mappedFile}[${cursor} + 8]`,
     `${mappedFile}[${cursor} + 9]`,
   ]
-  cgen.declareVar(buf)("int", name,
+  cgen.declareVar(buf)("int32_t", name,
     `(((((((${digits[0]} * 10 + ${digits[1]}) * 10 + ${digits[2]}) * 10 + ${digits[3]}) * 10 + ${digits[5]}) * 10 + ${digits[6]}) * 10 + ${digits[8]}) * 10 + ${digits[9]}) - 533333328`
   )
   cgen.stmt(buf)(cgen.binary(cursor, "11", "+="))
@@ -817,8 +820,8 @@ let emitPath = (buf, q) => {
       let sym = tmpSym(e1.op)
       let key = emitPath(buf, e2)
       let [pos, keyPos] = emitHashLookUp(buf, sym, [key])
-      let { valSchema } = hashMapEnv[sym]
-      if (valSchema.length > 1) {
+      let { keySchema, valSchema } = hashMapEnv[sym]
+      if (keySchema.length > 1) {
         throw new Error("not supported for now")
       }
       let value = getHashMapValueEntry(buf, sym, pos, keyPos)
@@ -1181,7 +1184,7 @@ let emitHashBucketInsert = (buf, bucket, value) => {
   cgen.stmt(buf)(cgen.inc(bucket.val.dataCount))
 
   let bucketPos = getNewName("bucket_pos")
-  
+
   cgen.declareInt(buf)(bucketPos, bucket.val.bucketCount)
   cgen.stmt(buf)(cgen.assign(bucket.val.bucketCount, cgen.plus(bucketPos, "1")))
 
@@ -1212,13 +1215,14 @@ let emitHashBucketInsert = (buf, bucket, value) => {
 }
 
 // Emit code that prints the keys and values in a hashmap.
-let emitHashMapPrint = (buf, sym) => {
+let emitHashMapPrint = (buf, sym, limit) => {
   let { keySchema, valSchema } = hashMapEnv[sym]
+  limit = limit || `${sym}_key_count`
   if (sortedCols[sym]) {
-    buf.push(`for (int i = 0; i < ${sym}_key_count; i++) {`)
+    buf.push(`for (int i = 0; i < ${limit}; i++) {`)
     buf.push(`int key_pos = ${sym}[i];`)
   } else {
-    buf.push(`for (int key_pos = 0; key_pos < ${sym}_key_count; key_pos++) {`)
+    buf.push(`for (int key_pos = 0; key_pos < ${limit}; key_pos++) {`)
   }
   // buf.push(`// print key`)
 
@@ -1247,6 +1251,8 @@ let emitHashMapPrint = (buf, sym) => {
         }
       } else if (typing.isString(schema.objValue)) {
         buf.push(`print(${sym}_${name}_str[data_pos], ${sym}_${name}_len[data_pos]);`)
+      } else if (schema.objValue.typeSym == typeSyms.date) {
+        buf.push(`print_date(${sym}_${name}[data_pos]);`)
       } else {
         buf.push(`printf("%${getFormatSpecifier(schema.objValue)}", ${sym}_${name}[data_pos]);`)
       }
@@ -1258,6 +1264,8 @@ let emitHashMapPrint = (buf, sym) => {
       buf.push(`print("]", 1);`)
     } else if (typing.isString(schema)) {
       buf.push(`print(${sym}_${name}_str[key_pos], ${sym}_${name}_len[key_pos]);`)
+    } else if (schema.typeSym == typeSyms.date) {
+      buf.push(`print_date(${sym}_${name}[key_pos]);`)
     } else {
       buf.push(`printf("%${getFormatSpecifier(schema)}", ${sym}_${name}[key_pos]);`)
     }
@@ -1556,7 +1564,7 @@ let collectHashMaps = () => {
 }
 
 
-let emitCode = (q, ir) => {
+let emitCode = (q, ir, settings) => {
   filters = ir.filters
   assignments = ir.assignments
 
@@ -1807,7 +1815,7 @@ let emitCode = (q, ir) => {
   if (q.schema.type.typeSym !== typeSyms.never) {
     if (hashMapEnv[res.val]) {
       cgen.comment(epilog)("print hashmap")
-      emitHashMapPrint(epilog, res.val)
+      emitHashMapPrint(epilog, res.val, settings.limit)
     } else if (typing.isString(q.schema.type)) {
       cgen.stmt(epilog)(cgen.call("println1", res.val.str, res.val.len))
     } else {
@@ -1832,7 +1840,8 @@ let emitCode = (q, ir) => {
   return generate(newCodegenIR, "c-sql")
 }
 
-let generateCSqlNew = (q, ir, outDir, outFile) => {
+let generateCSqlNew = (q, ir, settings) => {
+  let { outDir, outFile } = settings
   const fs = require('fs').promises
   const os = require('child_process')
   // const path = require('path')
@@ -1858,9 +1867,9 @@ let generateCSqlNew = (q, ir, outDir, outFile) => {
     })
   }
 
-  let cFile = joinPaths(outDir, outFile)
-  let out = joinPaths(outDir, "tmp")
-  let codeNew = emitCode(q, ir)
+  let cFile = joinPaths(outDir, outFile + ".c")
+  let out = joinPaths(outDir, outFile)
+  let codeNew = emitCode(q, ir, settings)
 
   let cFlags = "-Icgen-sql -O3"
 
