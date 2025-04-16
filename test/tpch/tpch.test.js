@@ -189,7 +189,6 @@ test("q4", async () => {
 
   let cond = rh`19930701 <= ${orders}.*.o_orderdate && ${orders}.*.o_orderdate < 19931001`
 
-  // TODO: sort the result by o_orderpriority
   let countL = rh`{
     o_orderpriority: ${orders}.*.o_orderpriority,
     order_count: count ((${cond} && ${countR}.(${orders}.*.o_orderkey) > 0) & ${orders}.*.o_orderkey)
@@ -209,7 +208,13 @@ test("q4", async () => {
 
 test("q5", async () => {
   let region1 = rh`[${region}.*r1.r_name == "ASIA" & ${region}.*r1.r_regionkey] | group ${region}.*r1.r_regionkey`
-  let nation1 = rh`[{ r: ${region1}.(${nation}.*n1.n_regionkey).*r2, n_nationkey: ${nation}.*n1.n_nationkey, n_name: ${nation}.*n1.n_name }] | group ${nation}.*n1.n_nationkey`
+  let nation1 = rh`[
+    {
+      r: ${region1}.(${nation}.*n1.n_regionkey).*r2,
+      n_nationkey: ${nation}.*n1.n_nationkey,
+      n_name: ${nation}.*n1.n_name
+    }
+  ] | group ${nation}.*n1.n_nationkey`
 
   let customer1 = rh`[
     {
