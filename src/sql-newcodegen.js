@@ -458,7 +458,7 @@ let hash = (buf, keys, keySchema) => {
 
     if (typing.isString(schema)) {
       cgen.declareULong(buf)(tmpHash, cgen.call("hash", key.val.str, key.val.len))
-    } else if (typing.isInteger(schema) || schema.typeSym == typeSyms.date) {
+    } else if (typing.isNumber(schema) || schema.typeSym == typeSyms.date) {
       cgen.declareULong(buf)(tmpHash, cgen.cast("unsigned long", key.val))
     } else {
       throw new Error("cannot hash key with type " + typing.prettyPrintType(schema))
