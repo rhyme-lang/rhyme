@@ -268,6 +268,18 @@ test("q6", async () => {
   expect(res).toBe("123141078.2283\n")
 })
 
+test("q7", async () => {
+  let query = rh`[{
+    n_name: ${nation}.*n1.n_name,
+    n_nationkey: ${nation}.*n1.n_nationkey
+  }]`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q7", schema: types.never })
+  let res = await func()
+
+  console.log(res)
+})
+
 test("q10", async () => {
   let nation1 = rh`[${nation}.*n1.n_name] | group ${nation}.*n1.n_nationkey`
   let orders1 = rh`[(${orders}.*o1.o_orderdate >= 19931001 && ${orders}.*o1.o_orderdate < 19940101) & ${orders}.*o1.o_orderkey] | group ${orders}.*o1.o_custkey`

@@ -562,4 +562,40 @@ test("plainSumTBLTest", async () => {
   expect(res).toBe("60\n")
 })
 
+test("arrayProjectionSingleTest", async () => {
+  let csv = rh`loadTBL "./cgen-sql/data.tbl" ${dataSchema}`
+
+  let query = rh`[${csv}.*.value]`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "arrayProjectionSingleTest", schema: types.never })
+
+  let res = await func()
+  expect(res).toBe("[10, 20, 30]\n")
+})
+
+test("arrayProjectionSingleStringTest", async () => {
+  let csv = rh`loadTBL "./cgen-sql/data.tbl" ${dataSchema}`
+
+  let query = rh`[${csv}.*.key]`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "arrayProjectionSingleStringTest", schema: types.never })
+
+  let res = await func()
+  expect(res).toBe("[A, B, A]\n")
+})
+
+test("arrayProjectionMultipleTest", async () => {
+  let csv = rh`loadTBL "./cgen-sql/data.tbl" ${dataSchema}`
+
+  let query = rh`[{ value: ${csv}.*.value, key: ${csv}.*.key }]`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "arrayProjectionMultipleTest", schema: types.never })
+
+  let res = await func()
+  expect(res).toBe(`10|A|
+20|B|
+30|A|
+`)
+})
+
 /**/

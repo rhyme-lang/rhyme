@@ -8,6 +8,7 @@ const { unique, union } = sets
 // C value representation:
 // Primitive value: { schema, val }
 // String: { schema, val: { str, len } }
+// Array: { schema, val: { dataCount, arr }, tag: "array" }
 // HashMap value (can be either primitive or string): { schema, val, tag: "hashMapValue" }
 // HashMap bucket: { schema, val: { dataCount, bucketCount, buckets, valArray, valSchema }, tag: "hashMapBucket" }
 // Object: { schema: [...], val: { <key>: <val>, ... }, tag: "object" }
@@ -22,6 +23,8 @@ const DATA_SIZE = KEY_SIZE * BUCKET_SIZE
 
 const HASH_MASK = HASH_SIZE - 1
 
+const ARRAY_SIZE = 256
+
 let filters
 let assignments
 let inputFilesEnv
@@ -30,6 +33,7 @@ let sortedCols
 let mksetVarEnv
 let mksetVarDeps
 let hashMapEnv
+let arrayEnv
 
 let assignmentStms
 let generatorStms
@@ -365,7 +369,6 @@ let validateAndExtractUsedCols = (q) => {
     validateAndExtractUsedCols(q1)
   } else if (q.key == "update") {
     if (q.arg[0].key != "const" || Object.keys(q.arg[0].op).length != 0) {
-      console.log(q)
       throw new Error("cannot extend non-empty objects" + pretty(q))
     }
     if (q.arg[3] == undefined) {
@@ -889,6 +892,110 @@ let emitPath = (buf, q) => {
   }
 }
 
+let emitArrayInit = (buf, sym, valSchema) => {
+  cgen.comment(buf)(`init array for ${sym}`)
+
+  if (typing.isObject(valSchema)) {
+    let objSchema = convertToArrayOfSchema(valSchema)
+
+    for (let j in objSchema) {
+      let { name, schema } = objSchema[j]
+
+      if (typing.isObject(schema)) {
+        throw new Error("Not supported")
+      } else if (typing.isString(schema)) {
+        // arrays for the actual data will have size KEY_SIZE * BUCKET_SIZE
+        cgen.declareCharPtrPtr(buf)(`${sym}_${name}_str`, cgen.cast("char **", cgen.malloc("char *", ARRAY_SIZE)))
+        cgen.declareIntPtr(buf)(`${sym}_${name}_len`, cgen.cast("int *", cgen.malloc("int", ARRAY_SIZE)))
+      } else {
+        let cType = convertToCType(schema)
+        cgen.declarePtr(buf)(cType, `${sym}_${name}`, cgen.cast(`${cType} *`, cgen.malloc(cType, ARRAY_SIZE)))
+      }
+    }
+  } else if (typing.isString(valSchema)) {
+    cgen.declareCharPtrPtr(buf)(`${sym}_str`, cgen.cast("char **", cgen.malloc("char *", ARRAY_SIZE)))
+    cgen.declareIntPtr(buf)(`${sym}_len`, cgen.cast("int *", cgen.malloc("int", ARRAY_SIZE)))
+  } else {
+    // let convertToCType report "type not supported" errors
+    let cType = convertToCType(valSchema)
+    cgen.declarePtr(buf)(cType, sym, cgen.cast(`${cType} *`, cgen.malloc(cType, ARRAY_SIZE)))
+  }
+
+  cgen.declareInt(buf)(`${sym}_count`)
+}
+
+let emitArrayPrint = (buf, sym, limit) => {
+  let { valSchema } = arrayEnv[sym]
+  limit = limit || `${sym}_count`
+
+  if (!typing.isObject(valSchema)) buf.push(`print("[", 1);`)
+  buf.push(`for (int data_pos = 0; data_pos < ${limit}; data_pos++) {`)
+  if (typing.isObject(valSchema)) {
+    let objSchema = convertToArrayOfSchema(valSchema)
+    for (let j in objSchema) {
+      let { name, schema } = objSchema[j]
+      if (typing.isObject(schema)) {
+        throw new Error("Not supported")
+      } else if (typing.isString(schema)) {
+        buf.push(`print(${sym}_${name}_str[data_pos], ${sym}_${name}_len[data_pos]);`)
+      } else {
+        buf.push(`printf("%${getFormatSpecifier(schema)}", ${sym}_${name}[data_pos]);`)
+      }
+      buf.push(`print("|", 1);`)
+    }
+  } else if (typing.isString(valSchema)) {
+    buf.push(`print(${sym}_str[data_pos], ${sym}_len[data_pos]);`)
+  } else if (valSchema.typeSym == typeSyms.date) {
+    buf.push(`print_date(${sym}[data_pos]);`)
+  } else {
+    buf.push(`printf("%${getFormatSpecifier(valSchema)}", ${sym}[data_pos]);`)
+  }
+
+  if (typing.isObject(valSchema)) {
+    buf.push(`print("\\n", 1);`)
+  } else {
+    buf.push(`if (data_pos != ${limit} - 1) {`)
+    buf.push(`print(", ", 2);`)
+    buf.push(`}`)
+  }
+  buf.push(`}`)
+  if (!typing.isObject(valSchema)) {
+    buf.push(`print("]\\n", 2);`)
+  }
+}
+
+let emitArrayInsert = (buf, array, value) => {
+  cgen.if(buf)(cgen.equal(array.val.dataCount, ARRAY_SIZE), (buf2) => {
+    cgen.printErr(buf2)(`"array size reached its full capacity\\n"`)
+    cgen.return(buf2)("1")
+  })
+
+  let dataPos = array.val.dataCount
+  if (typing.isObject(array.schema.objValue)) {
+    console.assert(value.tag == "object")
+    for (let key in value.val) {
+      let val = value.val[key]
+      let valArray = array.val.arr[key]
+
+      if (typing.isObject(val.schema)) {
+        throw new Error("Not supported")
+      } else if (typing.isString(val.schema)) {
+        cgen.stmt(buf)(cgen.assign(`${valArray.str}[${dataPos}]`, val.val.str))
+        cgen.stmt(buf)(cgen.assign(`${valArray.len}[${dataPos}]`, val.val.len))
+      } else {
+        cgen.stmt(buf)(cgen.assign(`${valArray}[${dataPos}]`, val.val))
+      }
+    }
+  } else if (typing.isString(array.schema.objValue)) {
+    cgen.stmt(buf)(cgen.assign(`${array.val.arr.str}[${dataPos}]`, value.val.str))
+    cgen.stmt(buf)(cgen.assign(`${array.val.arr.len}[${dataPos}]`, value.val.len))
+  } else {
+    cgen.stmt(buf)(cgen.assign(`${array.val.arr}[${dataPos}]`, value.val))
+  }
+
+  cgen.stmt(buf)(cgen.binary(array.val.dataCount, "1", "+="))
+}
+
 let emitHashMapValueInit1 = (buf, sym, keySchema, valSchema) => {
   let values = valSchema.some(val => !typing.isObject(val.schema))
   let buckets = valSchema.some(val => typing.isObject(val.schema))
@@ -1352,6 +1459,7 @@ let reset = () => {
   usedCols = {}
   sortedCols = {}
   hashMapEnv = {}
+  arrayEnv = {}
   mksetVarEnv = {}
   mksetVarDeps = {}
   inputFilesEnv = {}
@@ -1379,8 +1487,13 @@ let emitStatefulInit = (buf, q, lhs) => {
   } else if (q.op == "max") {
     cgen.stmt(buf)(cgen.assign(lhs.val, "INT_MIN"))
   } else if (q.op == "array") {
-    // lhs passed will be the bucket info object
-    cgen.stmt(buf)(cgen.assign(lhs.val.bucketCount, "0"))
+    if (lhs.tag == "hashMapBucket") {
+      // lhs passed will be the bucket object
+      cgen.stmt(buf)(cgen.assign(lhs.val.bucketCount, "0"))
+    } else {
+      // lhs passed will be the array object
+      cgen.stmt(buf)(cgen.assign(lhs.val.dataCount, "0"))
+    }
   } else {
     throw new Error("stateful op not supported: " + pretty(q))
   }
@@ -1411,7 +1524,14 @@ let emitStatefulUpdate = (buf, q, lhs) => {
     }
   } else if (q.op == "array") {
     // lhs passed will be the bucket info object
-    emitHashBucketInsert(buf, lhs, rhs)
+    if (lhs.tag == "hashMapBucket") {
+      // lhs passed will be the bucket object
+      emitHashBucketInsert(buf, lhs, rhs)
+    } else {
+      // lhs passed will be the array object
+      emitArrayInsert(buf, lhs, rhs)
+    }
+
   } else if (q.op == "print") {
     if (typing.isString(e.schema.type)) {
       let { str, len } = rhs.val
@@ -1428,14 +1548,45 @@ let emitStatefulInPath = (q, sym) => {
   if (q.fre.length > 0) throw new Error("unexpected number of free variables for stateful op in path: " + pretty(v))
 
   let fv = trans(q.fre)
+  let lhs
+
+  if (q.op == "array") {
+    let arr
+    if (typing.isObject(arrayEnv[sym].valSchema)) {
+      arr = {}
+      objSchema = convertToArrayOfSchema(arrayEnv[sym].valSchema)
+      for (let j in objSchema) {
+        let { name, schema } = objSchema[j]
+
+        if (typing.isObject(schema)) {
+          throw new Error("Not supported")
+        } else if (typing.isString(schema)) {
+          arr[name] = { str: `${sym}_${name}_str`, len: `${sym}_${name}_len` }
+        } else {
+          arr[name] = `${sym}_${name}`
+        }
+      }
+    } else if (typing.isString(arrayEnv[sym].valSchema)) {
+      arr = { str: `${sym}_str`, len: `${sym}_len` }
+    } else {
+      arr = sym
+    }
+
+    lhs = {
+      schema: q.schema.type, val: { arr, dataCount: `${sym}_count` }, tag: "array"
+    }
+  } else if (typing.isString(q.schema)) {
+    lhs = { schema: q.schema, val: { str: `${sym}_count`, len: `${sym}_len` } }
+  } else {
+    lhs = { schema: q.schema, val: sym }
+  }
 
   // Get the lhs of the assignment and emit the code for the stateful op
   if (initRequired[q.op]) {
     let buf = []
-    cgen.comment(buf)("init " + sym + (q.fre.length > 0 ? "[" + q.fre[0] + "]" : "") + " = " + pretty(q))
+    cgen.comment(buf)("init " + sym + " = " + pretty(q))
 
-    cgen.declareVar(buf)(convertToCType(q.schema.type), sym)
-    emitStatefulInit(buf, q, { schema: q.schema, val: sym })
+    emitStatefulInit(buf, q, lhs)
     // init
     assign(buf, sym, fv, [])
   }
@@ -1444,17 +1595,17 @@ let emitStatefulInPath = (q, sym) => {
 
   // update
   let buf = []
-  cgen.comment(buf)("update " + sym + (q.fre.length > 0 ? "[" + q.fre[0] + "]" : "") + " = " + pretty(q))
+  cgen.comment(buf)("update " + sym + " = " + pretty(q))
 
   let e = q.arg[0]
   if (e.key == "pure" && e.op == "and") {
     let cond = emitPath(buf, e.arg[0])
 
     cgen.if(buf)(cond.val, buf1 => {
-      emitStatefulUpdate(buf1, q, { schema: q.schema, val: sym })
+      emitStatefulUpdate(buf1, q, lhs)
     })
   } else {
-    emitStatefulUpdate(buf, q, { schema: q.schema, val: sym })
+    emitStatefulUpdate(buf, q, lhs)
   }
   assign(buf, sym, fv, deps)
 
@@ -1496,9 +1647,9 @@ let collectHashMaps = () => {
   // Iterate through all update ops to group stateful ops together
   for (let i in assignments) {
     let q = assignments[i]
+    let sym = tmpSym(i)
 
     if (q.key != "update") continue
-    let sym = tmpSym(i)
 
     let k = q.arg[1]
     let v = q.arg[2]
@@ -1580,6 +1731,19 @@ let emitCode = (q, ir, settings) => {
   let t0 = emitGetTime(prolog1)
 
   collectHashMaps()
+
+  for (let i in assignments) {
+    let q = assignments[i]
+    if (q.key == "update" || assignmentToSym[i]) continue
+    if (q.op == "print") continue
+    let sym = tmpSym(i)
+    if (q.op == "array") {
+      emitArrayInit(prolog1, sym, q.schema.type.objValue)
+      arrayEnv[sym] = { valSchema: q.schema.type.objValue }
+    } else {
+      cgen.declareVar(prolog1)(convertToCType(q.schema.type), sym)
+    }
+  }
 
   // Declare loop counter vars
   // for (let v in ir.vars) {
@@ -1816,6 +1980,9 @@ let emitCode = (q, ir, settings) => {
     if (hashMapEnv[res.val]) {
       cgen.comment(epilog)("print hashmap")
       emitHashMapPrint(epilog, res.val, settings.limit)
+    } else if (arrayEnv[res.val]) {
+      cgen.comment(epilog)("print array")
+      emitArrayPrint(epilog, res.val, settings.limit)
     } else if (typing.isString(q.schema.type)) {
       cgen.stmt(epilog)(cgen.call("println1", res.val.str, res.val.len))
     } else {
