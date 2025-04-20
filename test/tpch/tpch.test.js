@@ -269,10 +269,45 @@ test("q6", async () => {
 })
 
 test("q7", async () => {
-  let query = rh`[{
-    n_name: ${nation}.*n1.n_name,
-    n_nationkey: ${nation}.*n1.n_nationkey
-  }]`
+  let cond1 = rh`${nation}.*n1.n_name == "FRANCE" && ${nation}.*n2.n_name == "GERMANY" || ${nation}.*n1.n_name == "GERMANY" && ${nation}.*n2.n_name == "FRANCE"`
+  let nation1 = rh`[${cond1} & {
+    supp_nation: ${nation}.*n1.n_name,
+    cust_nation: ${nation}.*n2.n_name,
+    n1key: ${nation}.*n1.n_nationkey
+  }] | group ${nation}.*n2.n_nationkey`
+
+  let customer1 = rh`[{
+    supp_nation: ${nation1}.(${customer}.*c1.c_nationkey).*n3.supp_nation,
+    cust_nation: ${nation1}.(${customer}.*c1.c_nationkey).*n3.cust_nation,
+    n1key: ${nation1}.(${customer}.*c1.c_nationkey).*n3.n1key,
+    c_custkey: ${customer}.*c1.c_custkey
+  }] | group ${customer}.*c1.c_custkey`
+
+  let orders1 = rh`[{
+    supp_nation: ${customer1}.(${orders}.*o1.o_custkey).*c2.supp_nation,
+    cust_nation: ${customer1}.(${orders}.*o1.o_custkey).*c2.cust_nation,
+    n1key: ${customer1}.(${orders}.*o1.o_custkey).*c2.n1key,
+    o_orderkey: ${orders}.*o1.o_orderkey
+  }] | group ${orders}.*o1.o_orderkey`
+
+  let supplier1 = rh`[
+    ${supplier}.*s1.s_nationkey
+  ] | group ${supplier}.*s1.s_suppkey`
+
+  let cond2 = rh`${lineitem}.*l1.l_shipdate >= 19950101 && ${lineitem}.*l1.l_shipdate <= 19961231 && ${supplier1}.(${lineitem}.*l1.l_suppkey).*s2 == ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.n1key`
+
+  let lineitem1 = rh`{
+    supp_nation: ${cond2} & ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.supp_nation,
+    cust_nation: ${cond2} & ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.cust_nation,
+    l_year: ${cond2} & (year ${lineitem}.*l1.l_shipdate),
+    revenue: sum (${cond2} & (${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount)))
+  } | group [
+    ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.supp_nation,
+    ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.cust_nation,
+    (year ${lineitem}.*l1.l_shipdate)
+  ]`
+
+  let query = rh`sort "supp_nation" 0 "cust_nation" 0 "l_year" 0 ${lineitem1}`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q7", schema: types.never })
   let res = await func()

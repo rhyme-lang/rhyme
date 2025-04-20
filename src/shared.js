@@ -53,6 +53,8 @@ ops.pure.singleton = true
 ops.pure.vars = true
 ops.pure.ifElse = true
 
+ops.pure.year = true
+
 ops.pure.sort = true
 
 // stateful operations

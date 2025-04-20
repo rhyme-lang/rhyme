@@ -291,7 +291,8 @@ let binaryOperators = {
   div: "/",
   mod: "%",
 
-  andAlso: "&&"
+  andAlso: "&&",
+  orElse: "||"
 }
 
 // C Value builders
@@ -873,8 +874,8 @@ let emitPath = (buf, q) => {
         } else {
           return { schema: q.schema, val: "(" + cgen.binary(e1.val, e2.val, op) + ")" }
         }
-      } else if (q.op == "fdiv") {
-        return { schema: q.schema, val: "(" + cgen.binary(cgen.cast("double", e1.val), cgen.cast("double", e2.val), op) + ")" }
+        // } else if (q.op == "fdiv") {
+        //   return { schema: q.schema, val: "(" + cgen.binary(cgen.cast("double", e1.val), cgen.cast("double", e2.val), op) + ")" }
       } else {
         return { schema: q.schema, val: "(" + cgen.binary(e1.val, e2.val, op) + ")" }
       }
@@ -884,6 +885,9 @@ let emitPath = (buf, q) => {
       throw new Error("unexpected sort op" + pretty(q))
     } else if (q.op.startsWith("convert_")) {
       return { schema: q.schema, val: cgen.cast(ctypeMap[q.op.substring("convert_".length)], e1.val) }
+    } else if (q.op == "year") {
+      // return { schema: q.schema, val: "(" + cgen.mul("(" + cgen.div(e1.val, "10000") + ")", "10000") + ")" }
+      return { schema: q.schema, val: "(" + cgen.div(e1.val, "10000") + ")" }
     } else {
       throw new Error("pure operation not supported: " + pretty(q))
     }

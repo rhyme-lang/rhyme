@@ -155,11 +155,12 @@ exports.parserImpl = (strings, holes) => {
     let start = pos
     while (input[pos] == ' ' || input[pos] == '\n') ++pos
     let commentStart = pos
-    if (input[pos] == '/' && input[pos+1] == '/') {
-      pos += 2
-      while (input[pos] && input[pos] != '\n') ++pos
-      //if (input[pos] == '\n') ++pos
-    } else if (input[pos] == '#') {
+    // if (input[pos] == '/' && input[pos+1] == '/') {
+    //   pos += 2
+    //   while (input[pos] && input[pos] != '\n') ++pos
+    //   //if (input[pos] == '\n') ++pos
+    // } else
+    if (input[pos] == '#') {
       pos += 1
       while (input[pos] && input[pos] != '\n') ++pos
       //if (input[pos] == '\n') ++pos

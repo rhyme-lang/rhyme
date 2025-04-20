@@ -1030,7 +1030,13 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
             let {type: t3, props: p3} = argTups[2];
             return {type: createUnion(t2, t3), props: union(p2, p3)};
         } else if (q.op == "sort") {
-            return argTups[1]
+            return argTups[argTups.length - 1];
+        } else if (q.op == "year") {
+            // arg has to be of type date
+            let {type: t1, props: p1} = argTups[0];
+            if (t1.typeSym != typeSyms.date)
+                throw new Error("Unable to perform year operation on non-date type: " + prettyPrintType(t1) + "\nReceived from query: " + pretty(q.arg[0]));
+            return argTups[0]
         }
         throw new Error("Pure operation not implemented: " + q.op);
     } else if (q.key === "hint") {
@@ -1610,8 +1616,13 @@ let convertAST = (schema, q, completedMap, dontConvertVar = false) => {
             q.arg = q.arg.map($convertAST);
             return q;
         } else if (q.op === "ifElse") {
+            q.arg = q.arg.map($convertAST);
             return q;
         } else if (q.op === "sort") {
+            q.arg = q.arg.map($convertAST);
+            return q;
+        } else if (q.op === "year") {
+            q.arg = q.arg.map($convertAST);
             return q;
         }
         throw new Error("Pure operation not implemented: " + q.op);
