@@ -874,8 +874,8 @@ let emitPath = (buf, q) => {
         } else {
           return { schema: q.schema, val: "(" + cgen.binary(e1.val, e2.val, op) + ")" }
         }
-        // } else if (q.op == "fdiv") {
-        //   return { schema: q.schema, val: "(" + cgen.binary(cgen.cast("double", e1.val), cgen.cast("double", e2.val), op) + ")" }
+      } else if (q.op == "fdiv") {
+        return { schema: q.schema, val: "(" + cgen.binary(cgen.cast("double", e1.val), cgen.cast("double", e2.val), op) + ")" }
       } else {
         return { schema: q.schema, val: "(" + cgen.binary(e1.val, e2.val, op) + ")" }
       }
@@ -1831,7 +1831,7 @@ let emitCode = (q, ir, settings) => {
     let init = []
 
     cgen.comment(init)("init and update " + sym + " = " + pretty(assignments[i]))
-    let shouldInit = updateOps[i].some(j => initRequired[assignments[j].op]) || updateOpsExtra[i].some(j => initRequired[assignments[j].op])
+    let shouldInit = updateOps[i].some(j => initRequired[assignments[j].op] && assignments[j].mode !== "maybe") || updateOpsExtra[i].some(j => initRequired[assignments[j].op])
 
     // currentGroupKey = { var: k, pos, keyPos }
 

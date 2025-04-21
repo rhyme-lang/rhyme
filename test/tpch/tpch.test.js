@@ -279,15 +279,13 @@ test("q7", async () => {
   let customer1 = rh`[{
     supp_nation: ${nation1}.(${customer}.*c1.c_nationkey).*n3.supp_nation,
     cust_nation: ${nation1}.(${customer}.*c1.c_nationkey).*n3.cust_nation,
-    n1key: ${nation1}.(${customer}.*c1.c_nationkey).*n3.n1key,
-    c_custkey: ${customer}.*c1.c_custkey
+    n1key: ${nation1}.(${customer}.*c1.c_nationkey).*n3.n1key
   }] | group ${customer}.*c1.c_custkey`
 
   let orders1 = rh`[{
     supp_nation: ${customer1}.(${orders}.*o1.o_custkey).*c2.supp_nation,
     cust_nation: ${customer1}.(${orders}.*o1.o_custkey).*c2.cust_nation,
-    n1key: ${customer1}.(${orders}.*o1.o_custkey).*c2.n1key,
-    o_orderkey: ${orders}.*o1.o_orderkey
+    n1key: ${customer1}.(${orders}.*o1.o_custkey).*c2.n1key
   }] | group ${orders}.*o1.o_orderkey`
 
   let supplier1 = rh`[
@@ -300,11 +298,11 @@ test("q7", async () => {
     supp_nation: ${cond2} & ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.supp_nation,
     cust_nation: ${cond2} & ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.cust_nation,
     l_year: ${cond2} & (year ${lineitem}.*l1.l_shipdate),
-    revenue: sum (${cond2} & (${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount)))
+    revenue: sum? (${cond2} & (${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount)))
   } | group [
     ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.supp_nation,
     ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.cust_nation,
-    (year ${lineitem}.*l1.l_shipdate)
+    year ${lineitem}.*l1.l_shipdate
   ]`
 
   let query = rh`sort "supp_nation" 0 "cust_nation" 0 "l_year" 0 ${lineitem1}`
@@ -312,7 +310,11 @@ test("q7", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q7", schema: types.never })
   let res = await func()
 
-  console.log(res)
+  expect(res).toBe(`FRANCE|GERMANY|1995|54639732.7336|
+FRANCE|GERMANY|1996|54633083.3076|
+GERMANY|FRANCE|1995|52531746.6697|
+GERMANY|FRANCE|1996|52520549.0224|
+`)
 })
 
 test("q10", async () => {
