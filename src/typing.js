@@ -628,7 +628,7 @@ let isKey = (type) => {
         return isKey(type.intersectSet[0]);
     if (type.typeSym === typeSyms.dynkey)
         return isKey(type.keySupertype);
-    return isUnknown(type) || isNumber(type) || isString(type);
+    return isUnknown(type) || isNumber(type) || isString(type) || type.typeSym == typeSyms.date;
 }
 typing.isKey = isKey;
 

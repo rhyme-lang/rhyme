@@ -377,9 +377,9 @@ let validateAndExtractUsedCols = (q) => {
     }
     let [_e1, _e2, e3, e4] = q.arg
 
-    if (!typing.isString(e4.arg[0].arg[0].schema.type) && !typing.isInteger(e4.arg[0].arg[0].schema.type)) {
-      throw new Error(`value of type ${typing.prettyPrintTuple(e4.arg[0].arg[0].schema)} not allowed for mkset`)
-    }
+    // if (!typing.isString(e4.arg[0].arg[0].schema.type) && !typing.isInteger(e4.arg[0].arg[0].schema.type)) {
+    //   throw new Error(`value of type ${typing.prettyPrintTuple(e4.arg[0].arg[0].schema)} not allowed for mkset`)
+    // }
 
     // value
     if (e3.key == "pure" && e3.op == "mkTuple") {

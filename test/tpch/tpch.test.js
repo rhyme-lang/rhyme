@@ -61,6 +61,28 @@ let ordersSchema = typing.objBuilder()
     o_comment: types.string,
   })).build()
 
+let partSchema = typing.objBuilder()
+  .add(typing.createKey(types.u32), typing.createSimpleObject({
+    p_partkey: types.i32,
+    p_name: types.string,
+    p_mfgr: types.string,
+    p_brand: types.string,
+    p_type: types.string,
+    p_size: types.i32,
+    p_container: types.string,
+    p_retailprice: types.f64,
+    p_comment: types.string,
+  })).build()
+
+let partsuppSchema = typing.objBuilder()
+  .add(typing.createKey(types.u32), typing.createSimpleObject({
+    ps_partkey: types.i32,
+    ps_suppkey: types.i32,
+    ps_availqty: types.i32,
+    ps_supplycost: types.f64,
+    ps_comment: types.string,
+  })).build()
+
 let regionSchema = typing.objBuilder()
   .add(typing.createKey(types.u32), typing.createSimpleObject({
     r_regionkey: types.i32,
@@ -83,6 +105,8 @@ let customerFile = `"${dataDir}/customer.tbl"`
 let lineitemFile = `"${dataDir}/lineitem.tbl"`
 let nationFile = `"${dataDir}/nation.tbl"`
 let ordersFile = `"${dataDir}/orders.tbl"`
+let partFile = `"${dataDir}/part.tbl"`
+let partsuppFile = `"${dataDir}/partsupp.tbl"`
 let regionFile = `"${dataDir}/region.tbl"`
 let supplierFile = `"${dataDir}/supplier.tbl"`
 
@@ -90,6 +114,8 @@ let customer = rh`loadTBL ${customerFile} ${customerSchema}`
 let lineitem = rh`loadTBL ${lineitemFile} ${lineitemSchema}`
 let nation = rh`loadTBL ${nationFile} ${nationSchema}`
 let orders = rh`loadTBL ${ordersFile} ${ordersSchema}`
+let part = rh`loadTBL ${partFile} ${partSchema}`
+let partsupp = rh`loadTBL ${partsuppFile} ${partsuppSchema}`
 let region = rh`loadTBL ${regionFile} ${regionSchema}`
 let supplier = rh`loadTBL ${supplierFile} ${supplierSchema}`
 
@@ -316,6 +342,64 @@ GERMANY|FRANCE|1995|52531746.6697|
 GERMANY|FRANCE|1996|52520549.0224|
 `)
 })
+
+test("q8", async () => {
+  let region1 = rh`[${region}.*r1.r_name == "AMERICA" & ${region}.*r1.r_regionkey] | group ${region}.*r1.r_regionkey`
+  let nation1 = rh`[{
+    r: ${region1}.(${nation}.*n1.n_regionkey).*r2,
+    n_nationkey: ${nation}.*n1.n_nationkey
+  }] | group ${nation}.*n1.n_nationkey`
+
+  let part1 = rh`[${part}.*p1.p_type == "ECONOMY ANODIZED STEEL" & ${part}.*p1.p_partkey] | group ${part}.*p1.p_partkey`
+
+  let lineitem1 = rh`[{
+    p_partkey: ${part1}.(${lineitem}.*l1.l_partkey).*p2,
+    l_orderkey: ${lineitem}.*l1.l_orderkey,
+    l_suppkey: ${lineitem}.*l1.l_suppkey,
+    l_extendedprice: ${lineitem}.*l1.l_extendedprice,
+    l_discount: ${lineitem}.*l1.l_discount
+  }] | group ${lineitem}.*l1.l_orderkey`
+
+  let orders1 = rh`[${orders}.*o1.o_orderdate >= 19950101 && ${orders}.*o1.o_orderdate <= 19961231 & {
+    l_suppkey: ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.l_suppkey,
+    l_extendedprice: ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.l_extendedprice,
+    l_discount: ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.l_discount,
+    o_custkey: ${orders}.*o1.o_custkey,
+    o_orderdate: ${orders}.*o1.o_orderdate
+  }] | group ${orders}.*o1.o_custkey`
+
+  let customer1 = rh`[{
+    l_suppkey: ${orders1}.(${customer}.*c1.c_custkey).*o2.l_suppkey,
+    l_extendedprice: ${orders1}.(${customer}.*c1.c_custkey).*o2.l_extendedprice,
+    l_discount: ${orders1}.(${customer}.*c1.c_custkey).*o2.l_discount,
+    o_orderdate: ${orders1}.(${customer}.*c1.c_custkey).*o2.o_orderdate,
+    n_nationkey: ${nation1}.(${customer}.*c1.c_nationkey).*n3.n_nationkey
+  }] | group ${orders1}.(${customer}.*c1.c_custkey).*o2.l_suppkey`
+
+  let nation2 = rh`[{
+    n_nationkey: ${nation}.*n2.n_nationkey,
+    n_name: ${nation}.*n2.n_name
+  }] | group ${nation}.*n2.n_nationkey`
+
+  let sumTotal = rh`sum (${customer1}.(${supplier}.*s1.s_suppkey).*c2.l_extendedprice * (1 - ${customer1}.(${supplier}.*s1.s_suppkey).*c2.l_discount))`
+  
+  let cond = rh`${nation2}.(${supplier}.*s1.s_nationkey).*n4.n_name == "BRAZIL"`
+  let sumBrazil = rh`sum (${cond} & ${customer1}.(${supplier}.*s1.s_suppkey).*c2.l_extendedprice * (1 - ${customer1}.(${supplier}.*s1.s_suppkey).*c2.l_discount))`
+
+  let supplier1 = rh`{
+    year: (year ${customer1}.(${supplier}.*s1.s_suppkey).*c2.o_orderdate),
+    mkt_share: (${sumBrazil} / ${sumTotal})
+  } | group (year ${customer1}.(${supplier}.*s1.s_suppkey).*c2.o_orderdate)`
+
+  let query = rh`sort "year" 0 ${supplier1}`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q8", schema: types.never })
+  let res = await func()
+
+  expect(res).toBe(`1995|0.0344|
+1996|0.0415|
+`)
+}, 10 * 1000)
 
 test("q10", async () => {
   let nation1 = rh`[${nation}.*n1.n_name] | group ${nation}.*n1.n_nationkey`
