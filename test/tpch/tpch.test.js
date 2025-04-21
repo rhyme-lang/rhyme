@@ -474,3 +474,34 @@ test("q11", async () => {
 
   expect(res).toBe(answer)
 })
+
+test("q12", async () => {
+  let orders1 = rh`[
+    ${orders}.*o1.o_orderpriority
+  ] | group ${orders}.*o1.o_orderkey`
+
+  let cond1 = rh`${lineitem}.*l1.l_shipmode == "MAIL" || ${lineitem}.*l1.l_shipmode == "SHIP"`
+  let cond2 = rh`${lineitem}.*l1.l_commitdate < ${lineitem}.*l1.l_receiptdate`
+  let cond3 = rh`${lineitem}.*l1.l_shipdate < ${lineitem}.*l1.l_commitdate`
+  let cond4 = rh`${lineitem}.*l1.l_receiptdate >= 19940101 && ${lineitem}.*l1.l_receiptdate < 19950101`
+
+  let cond = rh`${cond1} && ${cond2} && ${cond3} && ${cond4}`
+
+  let cond5 = rh`${orders1}.(${lineitem}.*l1.l_orderkey).*o2 == "1-URGENT" || ${orders1}.(${lineitem}.*l1.l_orderkey).*o2 == "2-HIGH"`
+  let cond6 = rh`${orders1}.(${lineitem}.*l1.l_orderkey).*o2 != "1-URGENT" && ${orders1}.(${lineitem}.*l1.l_orderkey).*o2 != "2-HIGH"`
+
+  let lineitem1 = rh`{
+    l_shipmode: (${cond} & ${lineitem}.*l1.l_shipmode),
+    high_line_count: count? ((${cond} && ${cond5}) & ${lineitem}.*l1.l_comment),
+    low_line_count: count? ((${cond} && ${cond6}) & ${lineitem}.*l1.l_comment)
+  } | group ${lineitem}.*l1.l_shipmode`
+
+  let query = rh`sort "l_shipmode" 0 ${lineitem1}`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q12", schema: types.never, enableOptimizations: false })
+  let res = await func()
+
+  expect(res).toBe(`MAIL|6202|9324|
+SHIP|6200|9262|
+`)
+})
