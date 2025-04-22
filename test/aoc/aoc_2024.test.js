@@ -1264,3 +1264,181 @@ Prize: X=18641, Y=10279`
   let res = func({input, udf})
   expect(res).toBe(875318608908)
 })
+
+test("day14-part1", () => {
+  let input =
+`p=0,4 v=3,-3
+p=6,3 v=-1,-3
+p=10,3 v=-1,2
+p=2,0 v=2,-1
+p=0,0 v=1,3
+p=3,0 v=-2,-2
+p=7,6 v=-1,-3
+p=3,0 v=-1,-2
+p=9,3 v=2,3
+p=7,3 v=-1,2
+p=2,4 v=2,-3
+p=9,5 v=-3,-3`
+  let wide = 11
+  let tall = 7
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    splice: array => array.slice(0, -1),
+    ...udf_stdlib,
+  }
+  let filterBy = (gen, p) => x => rh`(udf.filter ${p}).${gen} & ${x}`
+
+  let line = rh`.input | udf.split "\\n" | .*line`
+  let robot = rh`${line} | udf.split " " | .*robot`
+  let pairs = rh`${robot} | udf.slice 2 | udf.split "," | .*nums | udf.toNum | group *nums | group *robot | group *line`
+  let location = rh`{x: ((${pairs}.*pair.0.0 + 100 * ${pairs}.*pair.1.0) % .wide + .wide) % .wide,
+                     y: ((${pairs}.*pair.0.1 + 100 * ${pairs}.*pair.1.1) % .tall + .tall) % .tall} | array`
+  let inbound0 = rh`${location}.*l.x < (.wide - 1) / 2 & ${location}.*l.y < (.tall - 1) / 2`
+  let quadrant0 = rh`${location}.*l |  ${filterBy("*", inbound0)} | count`
+  let inbound1 = rh`${location}.*l.x < (.wide - 1) / 2 & ${location}.*l.y > (.tall - 1) / 2`
+  let quadrant1 = rh`${location}.*l |  ${filterBy("*", inbound1)} | count`
+  let inbound2 = rh`${location}.*l.x > (.wide - 1) / 2 & ${location}.*l.y < (.tall - 1) / 2`
+  let quadrant2 = rh`${location}.*l |  ${filterBy("*", inbound2)} | count`
+  let inbound3 = rh`${location}.*l.x > (.wide - 1) / 2 & ${location}.*l.y > (.tall - 1) / 2`
+  let quadrant3 = rh`${location}.*l |  ${filterBy("*", inbound3)} | count`
+  let query = rh`${quadrant0} * ${quadrant1} * ${quadrant2} * ${quadrant3}`
+
+  let func = api.compileC2(query)
+  let res = func({input, wide, tall, udf})
+  expect(res).toBe(12)
+})
+
+test("day14-part2", () => {
+  let input =
+`p=0,4 v=3,-3
+p=6,3 v=-1,-3
+p=10,3 v=-1,2
+p=2,0 v=2,-1
+p=0,0 v=1,3
+p=3,0 v=-2,-2
+p=7,6 v=-1,-3
+p=3,0 v=-1,-2
+p=9,3 v=2,3
+p=7,3 v=-1,2
+p=2,4 v=2,-3
+p=9,5 v=-3,-3`
+  let wide = 11
+  let tall = 7
+  let wlength = 3
+  let tlength = 2
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    splice: array => array.slice(0, -1),
+    toSet: (arr) => arr.filter((value, index, self) =>
+      index === self.findIndex(t => t.x === value.x && t.y === value.y && t.sx === value.sx && t.sy === value.sy)
+    ),
+    ...udf_stdlib,
+  }
+  let filterBy = (gen, p) => x => rh`(udf.filter ${p}).${gen} & ${x}`
+
+  let line = rh`.input | udf.split "\\n" | .*line`
+  let robot = rh`${line} | udf.split " " | .*robot`
+  let pairs = rh`${robot} | udf.slice 2 | udf.split "," | .*nums | udf.toNum | group *nums | group *robot | group *line`
+  let func = api.compileC2(pairs)
+  let initialState = func({input, udf})
+
+  let state = {
+    index: 0,
+    isTree: undefined,
+  }
+  let location = rh`{x: ((initialState.*pair.0.0 + state.index * initialState.*pair.1.0) % .wide + .wide) % .wide,
+                y: ((initialState.*pair.0.1 + state.index * initialState.*pair.1.1) % .tall + .tall) % .tall} | array | udf.toSet`
+  let inRangeX = rh`${location}.*l2.y == ${location}.*l.y & ${location}.*l2.x >= ${location}.*l.x & ${location}.*l2.x < ${location}.*l.x + .wlength`
+  let linelengthX = rh`(${location}.*l & (${location}.*l2 | ${filterBy("*", inRangeX)} | count)) | array`
+  let countlineX = rh`${linelengthX}.*length | ${filterBy("*", rh`${linelengthX}.*length == .wlength`)} | count`
+
+  let inRangeY = rh`${location}.*ly2.x == ${location}.*ly.x & ${location}.*ly2.y >= ${location}.*ly.y & ${location}.*ly2.y < ${location}.*ly.y + .tlength`
+  let linelengthY = rh`(${location}.*ly & (${location}.*ly2 | ${filterBy("*", inRangeY)} | count)) | array`
+  let countlineY = rh`${linelengthY}.*lengthy | ${filterBy("*", rh`${linelengthY}.*lengthy == .tlength`)} | count`
+  let iterate = {
+    index: rh`state.index + 1`,
+    isTree: rh`${countlineX} >= 2 & ${countlineY} >= 2`,
+  }
+  let func1 = api.compileC2(iterate)
+  while (state.index <= wide * tall && state.isTree == undefined)
+    state = func1({udf, state, initialState, wide, tall, wlength, tlength})
+  expect(state.index - 1).toBe(6)
+})
+
+test("day15-part1", () => {
+  let input =
+`########
+#..O.O.#
+##@.O..#
+#...O..#
+#.#.O..#
+#...O..#
+#......#
+########
+
+<^^>>>vv<v>>v<<`
+
+  let udf = {
+    filter: c => c ? { [c]: true } : {},
+    ...udf_stdlib,
+  }
+  let filterBy = (gen, p) => x => rh`(udf.filter ${p}).${gen} & ${x}`
+  let delta = [[0, -1, "<"], [1, 0, "v"], [0, 1, ">"], [-1, 0, "^"]]
+
+  let splitInput = rh`.input | udf.split "\\n\\n"`
+  let lines = rh`${splitInput}.0 | udf.split "\\n" | .*line | udf.split ""`
+  let grid = api.array(lines)
+  let isStart = rh`${grid}.*i.*j == "@"`
+  let isBox = rh`${grid}.*i.*j == "O"`
+  let isWall = rh`${grid}.*i.*j == "#"`
+  let initialState = {
+    startPos: rh`{x:(udf.toNum *i), y:(udf.toNum *j)} | ${filterBy("*", isStart)} | single`,
+    boxesPos: rh`{x:(udf.toNum *i), y:(udf.toNum *j)} | ${filterBy("*", isBox)} | array`,
+    walls: rh`{x:(udf.toNum *i), y:(udf.toNum *j)} | ${filterBy("*", isWall)} | array`,
+    rowlen: rh`(${lines} | count | udf.toNum)`,
+    collen: rh`(${lines}.*0 | count | group *line | .0 | udf.toNum)`,
+    moves: rh`${splitInput}.1 | udf.split "\\n" | .*mline | udf.split "" | .*col | array`
+  }
+  let getInputPos = api.compileC2(initialState)
+  let inputPoses = getInputPos({input, udf})
+  let state = {
+    curr: inputPoses.startPos,
+    boxesPos: inputPoses.boxesPos,
+    index: 0,
+  }
+  let dir = rh`delta.*d | ${filterBy("*", rh`inputPoses.moves.(state.index) == delta.*d.2`)} | single`
+  let newPos = rh`{x: state.curr.x + ${dir}.0, y: state.curr.y + ${dir}.1}`
+  let inBound = rh`(${newPos}.x >= 0 & ${newPos}.x < inputPoses.rowlen & ${newPos}.y >= 0 & ${newPos}.y < inputPoses.collen)`
+  let notBox = rh`(state.boxesPos.*b | ${filterBy("*", rh`${newPos}.x == state.boxesPos.*b.x & ${newPos}.y == state.boxesPos.*b.y`)} | count) == 0`
+  let notWall = rh`(inputPoses.walls.*w | ${filterBy("*", rh`${newPos}.x == inputPoses.walls.*w.x & ${newPos}.y == inputPoses.walls.*w.y`)} | count) == 0`
+  let inDir = rh`ifElse (${dir}.0 == 0) (state.boxesPos.*boxes.x == state.curr.x & (state.boxesPos.*boxes.y * ${dir}.1 > state.curr.y * ${dir}.1))
+                                        (state.boxesPos.*boxes.y == state.curr.y & (state.boxesPos.*boxes.x * ${dir}.0 > state.curr.x * ${dir}.0))`
+  let boxInDir = rh`state.boxesPos.*boxes | ${filterBy("*", inDir)} | array`
+  let isBetween = rh`ifElse (${dir}.0 == 0) (${boxInDir}.*boxInDir2.y * ${dir}.1 <= ${boxInDir}.*boxInDir.y * ${dir}.1)
+                                        (${boxInDir}.*boxInDir2.x * ${dir}.0 <= ${boxInDir}.*boxInDir.x * ${dir}.0)`
+  let countBoxInBetween = rh`${boxInDir}.*boxInDir & (${boxInDir}.*boxInDir2 | ${filterBy("*", isBetween)} | count) | array`
+
+  let isConsecutive = rh`${countBoxInBetween}.*boxInDir3 == (ifElse (${dir}.0 == 0) (${boxInDir}.*boxInDir3.y * ${dir}.1 - state.curr.y * ${dir}.1)
+                                                                                    (${boxInDir}.*boxInDir3.x * ${dir}.0 - state.curr.x * ${dir}.0))`
+  let consecutive = rh`${boxInDir}.*boxInDir3 | ${filterBy("*", isConsecutive)} | count`
+  let endPos = rh`ifElse (${dir}.0 == 0) ({x: state.curr.x, y: state.curr.y + ${dir}.1 * (${consecutive} + 1)})
+                                              ({x: state.curr.x + ${dir}.0 * (${consecutive} + 1), y: state.curr.y})`
+  let endPosIsnotWall = rh`(inputPoses.walls.*wall | ${filterBy("*", rh`${endPos}.x == inputPoses.walls.*wall.x & ${endPos}.y == inputPoses.walls.*wall.y`)} | count) == 0`
+  let endPosInBound = rh`(${endPos}.x >= 0 & ${endPos}.x < inputPoses.rowlen & ${endPos}.y >= 0 & ${endPos}.y < inputPoses.collen)`
+  let newBoxesPos = rh`state.boxesPos.*boxpos | ${filterBy("*", rh`state.boxesPos.*boxpos.x != ${newPos}.x || state.boxesPos.*boxpos.y != ${newPos}.y`)}`
+  let step = {
+    curr: rh`ifElse (${inBound} & ${notBox} & ${notWall}) ${newPos} (ifElse (${consecutive} > 0 & ${endPosIsnotWall} & ${endPosInBound}) ${newPos} state.curr)`,
+    boxesPos: rh`ifElse (${inBound} & ${notBox} & ${notWall}) state.boxesPos (ifElse (${consecutive} > 0 & ${endPosIsnotWall} & ${endPosInBound}) [${newBoxesPos},${endPos}] state.boxesPos)`,
+    index: rh`state.index + 1`,
+  }
+  let func = api.compileC2(step, null)
+  while (state.index < inputPoses.moves.length)
+    state = func({udf, state, delta, inputPoses})
+
+  let query = rh`state.boxesPos.*box.x * 100 + state.boxesPos.*box.y | sum`
+  let func2 = api.compileC2(query)
+  let res = func2({udf, state})
+  expect(res).toBe(2028)
+})
