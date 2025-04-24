@@ -1041,7 +1041,6 @@ let emitHashMapValueBucketsInit = (buf, sym, keySchema, valSchema) => {
 
       cgen.declareIntPtr(buf)(`${sym}_${name}_buckets`, cgen.cast("int *", cgen.malloc("int", DATA_SIZE)))
       cgen.declareIntPtr(buf)(`${sym}_${name}_bucket_counts`, cgen.cast("int *", cgen.malloc("int", KEY_SIZE)))
-      // throw new Error("hashMap value object not implemented")
     }
   }
 }
@@ -1136,10 +1135,9 @@ let emitHashMapInit = (buf, sym, keySchema, valSchema) => {
 
   // init htable entries to -1
   cgen.comment(buf)(`init hash table entries to -1 for ${sym}`)
-  buf.push(`for (int i = 0; i < ${HASH_SIZE}; i++) ${sym}_htable[i] = -1;`)
+  cgen.stmt(buf)(cgen.call("memset", `${sym}_htable`, "-1", `sizeof(int) * ${HASH_SIZE}`))
 
   emitHashMapValueInit(buf, sym, keySchema, valSchema)
-  // emitHashMapValueInit(buf, sym, keySchema, valSchema)
 }
 
 // Emit the code that performs a lookup of the key in the hashmap, then
@@ -1814,7 +1812,6 @@ let emitCode = (q, ir, settings) => {
       loopInfo[v1][pretty(g1)] = bucket
       let getLoopTxtFunc = getHashBucketLoopTxt(f, bucket, data)
       addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
-      // throw new Error("not implemented: " + pretty(f))
     }
   }
 
