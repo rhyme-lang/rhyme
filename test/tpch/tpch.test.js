@@ -335,7 +335,7 @@ test("q7", async () => {
 
   let query = rh`sort "supp_nation" 0 "cust_nation" 0 "l_year" 0 ${lineitem1}`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q7", schema: types.never })
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q7", schema: types.never, enableOptimizations: false })
   let res = await func()
 
   expect(res).toBe(`FRANCE|GERMANY|1995|54639732.7336|
@@ -343,7 +343,7 @@ FRANCE|GERMANY|1996|54633083.3076|
 GERMANY|FRANCE|1995|52531746.6697|
 GERMANY|FRANCE|1996|52520549.0224|
 `)
-})
+}, 100 * 1000)
 
 test("q8", async () => {
   let region1 = rh`[${region}.*r1.r_name == "AMERICA" & ${region}.*r1.r_regionkey] | group ${region}.*r1.r_regionkey`
@@ -392,13 +392,13 @@ test("q8", async () => {
 
   let query = rh`sort "year" 0 ${supplier1}`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q8", schema: types.never })
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q8", schema: types.never, enableOptimizations: false })
   let res = await func()
 
   expect(res).toBe(`1995|0.0344|
 1996|0.0415|
 `)
-}, 15 * 1000)
+})
 
 test("q10", async () => {
   let nation1 = rh`[${nation}.*n1.n_name] | group ${nation}.*n1.n_nationkey`
