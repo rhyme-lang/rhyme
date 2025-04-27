@@ -100,20 +100,11 @@ void println(const char *file, int start, int end) {
 }
 
 void println1(const char *str, int len) {
-    int i = 0;
-    while (i < len) {
-        putchar(str[i]);
-        i++;
-    }
-    putchar('\n');
+    printf("%.*s\n", len, str);
 }
 
 void print(const char *str, int len) {
-    int i = 0;
-    while (i < len) {
-        putchar(str[i]);
-        i++;
-    }
+    printf("%.*s", len, str);
 }
 
 void print_date(int date) {

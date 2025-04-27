@@ -9,6 +9,7 @@ const { unique, union } = sets
 // Primitive value: { schema, val }
 // String: { schema, val: { str, len } }
 // Array: { schema, val: { dataCount, arr }, tag: "array" }
+// HashMap: { schema, val, tag: "hashMap" }
 // HashMap value (can be either primitive or string): { schema, val, tag: "hashMapValue" }
 // HashMap bucket: { schema, val: { dataCount, bucketCount, buckets, valArray, valSchema }, tag: "hashMapBucket" }
 // Object: { schema: [...], val: { <key>: <val>, ... }, tag: "object" }
@@ -23,7 +24,7 @@ const DATA_SIZE = KEY_SIZE * BUCKET_SIZE
 
 const HASH_MASK = HASH_SIZE - 1
 
-const ARRAY_SIZE = 256
+const ARRAY_SIZE = 2048
 
 let filters
 let assignments
@@ -370,7 +371,7 @@ let validateAndExtractUsedCols = (q) => {
     validateAndExtractUsedCols(q1)
   } else if (q.key == "update") {
     if (q.arg[0].key != "const" || Object.keys(q.arg[0].op).length != 0) {
-      throw new Error("cannot extend non-empty objects" + pretty(q))
+      throw new Error("cannot extend non-empty objects " + pretty(q))
     }
     if (q.arg[3] == undefined) {
       throw new Error("trivial group op not supported for now: " + pretty(q))
@@ -706,6 +707,25 @@ let getLoopTxt = (f, file, loadInput) => () => {
   }
 }
 
+let getHashMapLoopTxt = (f, sym) => () => {
+  let v = f.arg[1].op
+
+  let initCursor = []
+
+  let info = [`// generator: ${v} <- ${pretty(f.arg[0])}`]
+
+  let loopHeader = []
+
+  loopHeader.push(`for (int ${quoteVar(v)} = 0; ; ${quoteVar(v)}++) {`)
+
+  let boundsChecking = []
+  boundsChecking.push(`if (${quoteVar(v)} >= ${sym}_key_count) break;`)
+
+  return {
+    info, data: [], initCursor, loopHeader, boundsChecking, rowScanning: []
+  }
+}
+
 let getHashBucketLoopTxt = (f, bucket, dataBuf) => () => {
   let v = f.arg[1].op
 
@@ -715,10 +735,13 @@ let getHashBucketLoopTxt = (f, bucket, dataBuf) => () => {
 
   let loopHeader = []
 
-  loopHeader.push(`for (int ${quoteVar(v)} = 0; ${quoteVar(v)} < ${bucket.val.bucketCount}; ${quoteVar(v)}++) {`)
+  loopHeader.push(`for (int ${quoteVar(v)} = 0; ; ${quoteVar(v)}++) {`)
+
+  let boundsChecking = []
+  boundsChecking.push(`if (${quoteVar(v)} >= ${bucket.val.bucketCount}) break;`)
 
   return {
-    info, data: dataBuf, initCursor, loopHeader, boundsChecking: [], rowScanning: []
+    info, data: dataBuf, initCursor, loopHeader, boundsChecking, rowScanning: []
   }
 }
 
@@ -727,6 +750,43 @@ let convertToArrayOfSchema = (schema) => {
     return []
   }
   return [...convertToArrayOfSchema(schema.objParent), { name: schema.objKey, schema: schema.objValue }]
+}
+
+let getTmpVarValue = (q, sym) => {
+  if (q.key == "update") {
+    console.assert(hashMapEnv[sym] !== undefined)
+    return { schema: q.schema, val: sym, tag: "hashMap" }
+  } else if (q.op == "array") {
+    console.assert(arrayEnv[sym] !== undefined)
+    let arr
+    if (typing.isObject(arrayEnv[sym].valSchema)) {
+      arr = {}
+      objSchema = convertToArrayOfSchema(arrayEnv[sym].valSchema)
+      for (let j in objSchema) {
+        let { name, schema } = objSchema[j]
+
+        if (typing.isObject(schema)) {
+          throw new Error("Not supported")
+        } else if (typing.isString(schema)) {
+          arr[name] = { str: `${sym}_${name}_str`, len: `${sym}_${name}_len` }
+        } else {
+          arr[name] = `${sym}_${name}`
+        }
+      }
+    } else if (typing.isString(arrayEnv[sym].valSchema)) {
+      arr = { str: `${sym}_str`, len: `${sym}_len` }
+    } else {
+      arr = sym
+    }
+
+    return {
+      schema: q.schema.type, val: { sym, arr, dataCount: `${sym}_count` }, tag: "array"
+    }
+  } else if (typing.isString(q.schema)) {
+    return { schema: q.schema, val: { str: `${sym}_count`, len: `${sym}_len` } }
+  } else {
+    return { schema: q.schema, val: sym }
+  }
 }
 
 let emitPath = (buf, q) => {
@@ -758,7 +818,7 @@ let emitPath = (buf, q) => {
 
     if (q1.fre.length > 0) {
       console.assert(currentGroupKey.key == q1.fre[0])
-      let value = getHashMapValueEntry(buf, sym, currentGroupKey.pos, currentGroupKey.keyPos)
+      let value = getHashMapValueEntry(sym, currentGroupKey.pos, currentGroupKey.keyPos)
       // must be a simple hash value
       console.assert(value.tag == "hashMapValue")
       return value
@@ -766,7 +826,7 @@ let emitPath = (buf, q) => {
       if (q1.key == "stateful" && !emittedStateful[sym]) {
         emitStatefulInPath(q1, sym)
       }
-      return { schema: q1.schema, val: sym }
+      return getTmpVarValue(q1, sym)
     }
   } else if (q.key == "get") {
     let [e1, e2] = q.arg
@@ -792,6 +852,8 @@ let emitPath = (buf, q) => {
           }
         })
         return { schema, val, tag: "object" }
+      } else if (g1.tag == "hashMap") {
+        return getHashMapValueEntry(g1.val, undefined, quoteVar(e2.op))
       } else if (g1.tag == "hashMapBucket") {
         bucket = g1
         let dataPos = `${bucket.val.buckets}[${cgen.plus(cgen.mul(bucket.keyPos, BUCKET_SIZE), quoteVar(e2.op))}]`
@@ -828,7 +890,7 @@ let emitPath = (buf, q) => {
       if (keySchema.length > 1) {
         throw new Error("not supported for now")
       }
-      let value = getHashMapValueEntry(buf, sym, pos, keyPos)
+      let value = getHashMapValueEntry(sym, pos, keyPos)
       return value
     }
 
@@ -1215,7 +1277,7 @@ let emitHashLookUpAndUpdate = (buf, sym, keys, update, checkExistance) => {
   return [pos, keyPos]
 }
 
-let getHashMapValueEntry = (buf, sym, pos, keyPos) => {
+let getHashMapValueEntry = (sym, pos, keyPos) => {
   let { keySchema, valSchema } = hashMapEnv[sym]
 
   let res = {}
@@ -1276,7 +1338,7 @@ let getHashMapValueEntry = (buf, sym, pos, keyPos) => {
 }
 
 let emitHashUpdate = (buf, sym, pos, keyPos, update) => {
-  let lhs = getHashMapValueEntry(buf, sym, pos, keyPos)
+  let lhs = getHashMapValueEntry(sym, pos, keyPos)
 
   update(buf, lhs, pos, keyPos)
 }
@@ -1427,8 +1489,8 @@ let emitSorting = (buf, q) => {
 
   let vals = []
   let orders = []
-  let hashMapEntry1 = getHashMapValueEntry([], sym, undefined, "*key_pos1")
-  let hashMapEntry2 = getHashMapValueEntry([], sym, undefined, "*key_pos2")
+  let hashMapEntry1 = getHashMapValueEntry(sym, undefined, "*key_pos1")
+  let hashMapEntry2 = getHashMapValueEntry(sym, undefined, "*key_pos2")
   for (let i = 0; i < columns.length; i += 2) {
     let column = columns[i]
     let order = columns[i + 1]
@@ -1550,38 +1612,7 @@ let emitStatefulInPath = (q, sym) => {
   if (q.fre.length > 0) throw new Error("unexpected number of free variables for stateful op in path: " + pretty(v))
 
   let fv = trans(q.fre)
-  let lhs
-
-  if (q.op == "array") {
-    let arr
-    if (typing.isObject(arrayEnv[sym].valSchema)) {
-      arr = {}
-      objSchema = convertToArrayOfSchema(arrayEnv[sym].valSchema)
-      for (let j in objSchema) {
-        let { name, schema } = objSchema[j]
-
-        if (typing.isObject(schema)) {
-          throw new Error("Not supported")
-        } else if (typing.isString(schema)) {
-          arr[name] = { str: `${sym}_${name}_str`, len: `${sym}_${name}_len` }
-        } else {
-          arr[name] = `${sym}_${name}`
-        }
-      }
-    } else if (typing.isString(arrayEnv[sym].valSchema)) {
-      arr = { str: `${sym}_str`, len: `${sym}_len` }
-    } else {
-      arr = sym
-    }
-
-    lhs = {
-      schema: q.schema.type, val: { arr, dataCount: `${sym}_count` }, tag: "array"
-    }
-  } else if (typing.isString(q.schema)) {
-    lhs = { schema: q.schema, val: { str: `${sym}_count`, len: `${sym}_len` } }
-  } else {
-    lhs = { schema: q.schema, val: sym }
-  }
+  let lhs = getTmpVarValue(q, sym)
 
   // Get the lhs of the assignment and emit the code for the stateful op
   if (initRequired[q.op]) {
@@ -1612,6 +1643,8 @@ let emitStatefulInPath = (q, sym) => {
   assign(buf, sym, fv, deps)
 
   emittedStateful[sym] = true
+
+  return lhs
 }
 
 let collectRelevantStatefulInPath = (q) => {
@@ -1666,6 +1699,7 @@ let collectHashMaps = () => {
     }
 
     if (v.fre.length !== 1 || k.op !== v.fre[0]) {
+      console.log(v.fre.length, v.fre)
       throw new Error("unexpected number of free variables for stateful op " + pretty(v))
     }
 
@@ -1802,16 +1836,23 @@ let emitCode = (q, ir, settings) => {
       // let hashed = hash(data, mksetVarEnv[v1].map(e => e.val), mksetVarEnv[v1].map(e => e.schema.type))
       // mksetVarEnv[v1].hash = hash(data, mksetVarEnv[v1].map(e => e.val), mksetVarEnv[v1].map(e => e.schema.type))
       addMkset(f.arg[0], f.arg[1], data)
-    } else if (g1.key == "get") {
+    } else {
       let data = []
-      let bucket = emitPath(data, g1)
-      if (bucket.tag != "hashMapBucket") {
+      let lhs = emitPath(data, g1)
+      loopInfo[v1] ??= {}
+      loopInfo[v1][pretty(g1)] = lhs
+      if (lhs.tag == "array") {
+        throw new Error("Generator from array not implemented yet")
+      } else if (lhs.tag == "hashMap") {
+        let getLoopTxtFunc = getHashMapLoopTxt(f, lhs.val)
+        addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
+        // throw new Error("Generator from hashmap not implemented yet")
+      } else if (lhs.tag == "hashMapBucket") {
+        let getLoopTxtFunc = getHashBucketLoopTxt(f, lhs, data)
+        addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
+      } else {
         throw new Error("Cannot have generator from non-iterable objects")
       }
-      loopInfo[v1] ??= {}
-      loopInfo[v1][pretty(g1)] = bucket
-      let getLoopTxtFunc = getHashBucketLoopTxt(f, bucket, data)
-      addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
     }
   }
 
@@ -1896,7 +1937,7 @@ let emitCode = (q, ir, settings) => {
         let q = assignments[j]
         if (!initRequired[q.op]) continue
         cgen.comment(buf1)("init " + tmpSym(j) + "[" + q.fre[0] + "]" + " = " + pretty(q))
-        let lhs1 = getHashMapValueEntry(buf1, tmpSym(j), pos, keyPos)
+        let lhs1 = getHashMapValueEntry(tmpSym(j), pos, keyPos)
         console.assert(lhs1.tag == "hashMapValue" || lhs1.tag == "hashMapBucket")
         emitStatefulInit(buf1, q, lhs1)
       }
@@ -1915,14 +1956,14 @@ let emitCode = (q, ir, settings) => {
 
         cgen.if(update)(cond.val, buf1 => {
           emitHashUpdate(buf1, sym, pos, keyPos, (buf2, lhs) => {
-            let lhs1 = getHashMapValueEntry(buf2, tmpSym(j), pos, keyPos)
+            let lhs1 = getHashMapValueEntry(tmpSym(j), pos, keyPos)
             console.assert(lhs1.tag == "hashMapValue" || lhs1.tag == "hashMapBucket")
             emitStatefulUpdate(buf2, q, lhs1)
           })
         })
       } else {
         emitHashUpdate(update, sym, pos, keyPos, (buf1, lhs) => {
-          let lhs1 = getHashMapValueEntry(buf1, tmpSym(j), pos, keyPos)
+          let lhs1 = getHashMapValueEntry(tmpSym(j), pos, keyPos)
           console.assert(lhs1.tag == "hashMapValue" || lhs1.tag == "hashMapBucket")
           emitStatefulUpdate(buf1, q, lhs1)
         })
@@ -1978,12 +2019,12 @@ let emitCode = (q, ir, settings) => {
   }
 
   if (q.schema.type.typeSym !== typeSyms.never) {
-    if (hashMapEnv[res.val]) {
+    if (res.tag == "hashMap") {
       cgen.comment(epilog)("print hashmap")
       emitHashMapPrint(epilog, res.val, settings.limit)
-    } else if (arrayEnv[res.val]) {
+    } else if (res.tag == "array") {
       cgen.comment(epilog)("print array")
-      emitArrayPrint(epilog, res.val, settings.limit)
+      emitArrayPrint(epilog, res.val.sym, settings.limit)
     } else if (typing.isString(q.schema.type)) {
       cgen.stmt(epilog)(cgen.call("println1", res.val.str, res.val.len))
     } else {

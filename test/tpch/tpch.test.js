@@ -457,17 +457,20 @@ test("q11", async () => {
   let cond = rh`${supplier1}.(${partsupp}.*ps1.ps_suppkey).*s2.s_suppkey == ${partsupp}.*ps1.ps_suppkey`
   let sum = rh`(sum (${cond} & (${partsupp}.*ps1.ps_supplycost * ${partsupp}.*ps1.ps_availqty))) * 0.0001`
 
-  let partsupp1 = rh`sum (${cond} & (${partsupp}.*ps1.ps_supplycost * ${partsupp}.*ps1.ps_availqty)) | group ${partsupp}.*ps1.ps_partkey`
+  let partsupp1 = rh`{
+    ps_partkey: single ${cond} & ${partsupp}.*ps1.ps_partkey,
+    sum: sum? (${cond} & (${partsupp}.*ps1.ps_supplycost * ${partsupp}.*ps1.ps_availqty))
+  } | group ${partsupp}.*ps1.ps_partkey`
 
-  let cond2 = rh`${partsupp1}.(${partsupp}.*ps2.ps_partkey) > 0.0 && ${partsupp1}.(${partsupp}.*ps2.ps_partkey) > ${sum}`
+  // TODO: change to just an array op and sort
   let partsupp2 = rh`{
-    ps_partkey: ${cond2} & ${partsupp}.*ps2.ps_partkey,
-    value: ${cond2} & ${partsupp1}.(${partsupp}.*ps2.ps_partkey)
-  } | group ${partsupp}.*ps2.ps_partkey`
+    ps_partkey: single ${partsupp1}.*.sum > ${sum} & ${partsupp1}.*.ps_partkey,
+    value: single ${partsupp1}.*.sum > ${sum} & ${partsupp1}.*.sum
+  } | group ${partsupp1}.*.ps_partkey`
 
   let query = rh`sort "value" 1 ${partsupp2}`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q11", schema: types.never })
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q11", schema: types.never, enableOptimizations: false })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q11.out`).toString()
@@ -504,6 +507,35 @@ test("q12", async () => {
   expect(res).toBe(`MAIL|6202|9324|
 SHIP|6200|9262|
 `)
+})
+
+test("q15", async () => {
+  let supplier1 = rh`[{
+    s_name: ${supplier}.*s1.s_name,
+    s_address: ${supplier}.*s1.s_address,
+    s_phone: ${supplier}.*s1.s_phone
+  }] | group ${supplier}.*s1.s_suppkey`
+
+  let cond1 = rh`${lineitem}.*l1.l_shipdate >= 19960101 && ${lineitem}.*l1.l_shipdate < 19960401`
+  let sumMap = rh`{
+    supplier_no: ${cond1} & ${lineitem}.*l1.l_suppkey,
+    total_revenue: sum (${cond1} & (${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount)))
+  } | group ${lineitem}.*l1.l_suppkey`
+
+  let maxRevenue = rh`max ${sumMap}.*max.total_revenue`
+
+  let query = rh`[${sumMap}.*.total_revenue == ${maxRevenue} & {
+    s_suppkey: ${sumMap}.*.supplier_no,
+    s_name: ${supplier1}.(${sumMap}.*.supplier_no).*s2.s_name,
+    s_address: ${supplier1}.(${sumMap}.*.supplier_no).*s2.s_address,
+    s_phone: ${supplier1}.(${sumMap}.*.supplier_no).*s2.s_phone,
+    total_revenue: ${sumMap}.*.total_revenue
+  }]`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q15", schema: types.never, enableOptimizations: false })
+  let res = await func()
+
+  expect(res).toBe(`8449|Supplier#000008449|Wp34zim9qYFbVctdW|20-469-856-8873|1772627.2087|\n`)
 })
 
 test("q17", async () => {
