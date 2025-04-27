@@ -462,11 +462,10 @@ test("q11", async () => {
     sum: sum? (${cond} & (${partsupp}.*ps1.ps_supplycost * ${partsupp}.*ps1.ps_availqty))
   } | group ${partsupp}.*ps1.ps_partkey`
 
-  // TODO: change to just an array op and sort
-  let partsupp2 = rh`{
-    ps_partkey: single ${partsupp1}.*.sum > ${sum} & ${partsupp1}.*.ps_partkey,
-    value: single ${partsupp1}.*.sum > ${sum} & ${partsupp1}.*.sum
-  } | group ${partsupp1}.*.ps_partkey`
+  let partsupp2 = rh`[${partsupp1}.*.sum > ${sum} & {
+    ps_partkey: ${partsupp1}.*.ps_partkey,
+    value: ${partsupp1}.*.sum
+  }]`
 
   let query = rh`sort "value" 1 ${partsupp2}`
 

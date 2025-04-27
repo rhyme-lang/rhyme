@@ -318,9 +318,6 @@ let validateAndExtractUsedCols = (q) => {
     // get from a tmp var
     if (e1.key == "ref") {
       e1 = assignments[e1.op]
-      if (e1.key != "update") {
-        throw new Error("cannot get from a tmp that is not a hashmap: " + pretty(q))
-      }
       validateAndExtractUsedCols(e1)
       validateAndExtractUsedCols(e2)
       return
@@ -329,11 +326,7 @@ let validateAndExtractUsedCols = (q) => {
     if (e1.key == "get" && e2.key == "var") {
       let [e11, e12] = e1.arg
       if (e11.key != "ref") throw new Error("malformed get: " + pretty(q))
-
       e11 = assignments[e11.op]
-      if (e11.key != "update") {
-        throw new Error("cannot get from a tmp that is not a hashmap: " + pretty(q))
-      }
       validateAndExtractUsedCols(e11)
       validateAndExtractUsedCols(e12)
       return
@@ -400,9 +393,7 @@ let validateAndExtractUsedCols = (q) => {
     let columns = q.arg.slice(0, -1)
     validateAndExtractUsedCols(q.arg[q.arg.length - 1])
     let hashmap = q.arg[q.arg.length - 1]
-    if (!(hashmap.key == "ref" && assignments[hashmap.op].key == "update")) {
-      throw new Error("Cannot sort non-hashmap value: " + pretty(hashmap))
-    }
+
     sortedCols[tmpSym(q.arg[q.arg.length - 1].op)] ??= {}
     for (let i = 0; i < columns.length; i += 2) {
       let column = columns[i]
@@ -882,7 +873,9 @@ let emitPath = (buf, q) => {
       }
     }
 
-    if (e1.key == "ref") {
+    let v1 = emitPath(buf, e1)
+
+    if (v1.tag == "hashMap") {
       let sym = tmpSym(e1.op)
       let key = emitPath(buf, e2)
       let [pos, keyPos] = emitHashLookUp(buf, sym, [key])
@@ -894,7 +887,13 @@ let emitPath = (buf, q) => {
       return value
     }
 
-    let v1 = emitPath(buf, e1)
+    if (v1.tag == "array") {
+      if (!(e2.key == "const" && typeof e2.op == "number")) {
+        throw new Error("Cannot get non-constant number idx from arrays")
+      }
+      let idx = e2.op
+      return getArrayValueEntry(v1, idx)
+    }
 
     if (v1.tag != "object") {
       throw new Error("Cannot perform get on non-object values")
@@ -970,12 +969,23 @@ let emitArrayInit = (buf, sym, valSchema) => {
       if (typing.isObject(schema)) {
         throw new Error("Not supported")
       } else if (typing.isString(schema)) {
-        // arrays for the actual data will have size KEY_SIZE * BUCKET_SIZE
-        cgen.declareCharPtrPtr(buf)(`${sym}_${name}_str`, cgen.cast("char **", cgen.malloc("char *", ARRAY_SIZE)))
-        cgen.declareIntPtr(buf)(`${sym}_${name}_len`, cgen.cast("int *", cgen.malloc("int", ARRAY_SIZE)))
+        if (sortedCols[sym]?.[name]) {
+          cgen.declareCharPtrPtr(prolog0)(`${sym}_${name}_str`)
+          cgen.declareIntPtr(prolog0)(`${sym}_${name}_len`)
+          cgen.stmt(buf)(cgen.assign(`${sym}_${name}_str`, cgen.cast("char **", cgen.malloc("char *", ARRAY_SIZE))))
+          cgen.stmt(buf)(cgen.assign(`${sym}_${name}_len`, cgen.cast("int *", cgen.malloc("int", ARRAY_SIZE))))
+        } else {
+          cgen.declareCharPtrPtr(buf)(`${sym}_${name}_str`, cgen.cast("char **", cgen.malloc("char *", ARRAY_SIZE)))
+          cgen.declareIntPtr(buf)(`${sym}_${name}_len`, cgen.cast("int *", cgen.malloc("int", ARRAY_SIZE)))
+        }
       } else {
         let cType = convertToCType(schema)
-        cgen.declarePtr(buf)(cType, `${sym}_${name}`, cgen.cast(`${cType} *`, cgen.malloc(cType, ARRAY_SIZE)))
+        if (sortedCols[sym]?.[name]) {
+          cgen.declarePtr(prolog0)(cType, `${sym}_${name}`)
+          cgen.stmt(buf)(cgen.assign(`${sym}_${name}`, cgen.cast(`${cType} *`, cgen.malloc(cType, ARRAY_SIZE))))
+        } else {
+          cgen.declarePtr(buf)(cType, `${sym}_${name}`, cgen.cast(`${cType} *`, cgen.malloc(cType, ARRAY_SIZE)))
+        }
       }
     }
   } else if (typing.isString(valSchema)) {
@@ -995,7 +1005,14 @@ let emitArrayPrint = (buf, sym, limit) => {
   limit = limit || `${sym}_count`
 
   if (!typing.isObject(valSchema)) buf.push(`print("[", 1);`)
-  buf.push(`for (int data_pos = 0; data_pos < ${limit}; data_pos++) {`)
+
+  if (sortedCols[sym]) {
+    buf.push(`for (int i = 0; i < ${limit}; i++) {`)
+    buf.push(`int data_pos = ${sym}[i];`)
+  } else {
+    buf.push(`for (int data_pos = 0; data_pos < ${limit}; data_pos++) {`)
+  }
+
   if (typing.isObject(valSchema)) {
     let objSchema = convertToArrayOfSchema(valSchema)
     for (let j in objSchema) {
@@ -1060,6 +1077,35 @@ let emitArrayInsert = (buf, array, value) => {
   }
 
   cgen.stmt(buf)(cgen.binary(array.val.dataCount, "1", "+="))
+}
+
+let getArrayValueEntry = (array, idx) => {
+  let { valSchema } = arrayEnv[array.val.sym]
+
+  let res
+
+  if (typing.isObject(valSchema)) {
+    let objSchema = convertToArrayOfSchema(valSchema)
+    let val = {}
+    for (let i in objSchema) {
+      let { name, schema } = objSchema[i]
+      if (typing.isObject(schema)) {
+        throw new Error("Not supported")
+      } else if (typing.isString(schema)) {
+        val[name] = { schema, val: { str: `${array.val.arr[name].str}[${idx}]`, len: `${array.val.arr[name].len}[${idx}]` } }
+      } else {
+        val[name] = { schema, val: `${array.val.arr[name]}[${idx}]` }
+      }
+    }
+    res = { schema: valSchema, val, tag: "object" }
+  } else if (typing.isString(schema)) {
+    res = { schema: valSchema, val: { str: `${array.val.arr.str}[${idx}]`, len: `${array.val.arr.len}[${idx}]` } }
+  } else {
+    res = { schema: valSchema, val: `${array.val.arr}[${idx}]` }
+  }
+
+
+  return res
 }
 
 let emitHashMapValueInit1 = (buf, sym, keySchema, valSchema) => {
@@ -1448,7 +1494,7 @@ let emitHashMapPrint = (buf, sym, limit) => {
 }
 
 let emitCompareFunc = (buf, name, valPairs, orders) => {
-  buf.push(`int ${name}(int *key_pos1, int *key_pos2) {`)
+  buf.push(`int ${name}(int *i, int *j) {`)
   for (let i in valPairs) {
     let [aVal, bVal] = valPairs[i]
     let order = orders[i]
@@ -1471,26 +1517,23 @@ let emitCompareFunc = (buf, name, valPairs, orders) => {
       cgen.return(buf)(tmp)
     } else {
       cgen.if(buf)(cgen.notEqual(tmp, "0"), buf1 => {
-        cgen.return(buf)(tmp)
+        cgen.return(buf1)(tmp)
       })
     }
   }
   buf.push(`}`)
 }
 
-let emitSorting = (buf, q) => {
+let emitHashMapSorting = (buf, q) => {
   let hashMap = emitPath(buf, q.arg[q.arg.length - 1])
   let sym = hashMap.val
-  let { keySchema, valSchema } = hashMapEnv[sym]
 
   let columns = q.arg.slice(0, -1)
 
-  let cType = `struct ${sym}_value`
-
   let vals = []
   let orders = []
-  let hashMapEntry1 = getHashMapValueEntry(sym, undefined, "*key_pos1")
-  let hashMapEntry2 = getHashMapValueEntry(sym, undefined, "*key_pos2")
+  let hashMapEntry1 = getHashMapValueEntry(sym, undefined, "*i")
+  let hashMapEntry2 = getHashMapValueEntry(sym, undefined, "*j")
   for (let i = 0; i < columns.length; i += 2) {
     let column = columns[i]
     let order = columns[i + 1]
@@ -1509,6 +1552,40 @@ let emitSorting = (buf, q) => {
   cgen.stmt(buf)(`for (int i = 0; i < ${sym}_key_count; i++) ${sym}[i] = i`)
 
   cgen.stmt(buf)(cgen.call("qsort", sym, `${sym}_key_count`, "sizeof(int)", cgen.cast("__compar_fn_t", compareFunc)))
+}
+
+let emitArraySorting = (buf, q, array) => {
+  let sym = array.val.sym
+  let valSchema = array.schema.objValue
+
+  let columns = q.arg.slice(0, -1)
+
+  let vals = []
+  let orders = []
+
+  if (!typing.isObject(valSchema)) throw new Error("Cannot sort arrays with non-object elements")
+
+  let arrayEntry1 = getArrayValueEntry(array, "*i")
+  let arrayEntry2 = getArrayValueEntry(array, "*j")
+
+  for (let i = 0; i < columns.length; i += 2) {
+    let column = columns[i]
+    let order = columns[i + 1]
+
+    vals.push([
+      arrayEntry1.val[column.op],
+      arrayEntry2.val[column.op]
+    ])
+    orders.push(order.op)
+  }
+
+  let compareFunc = getNewName("compare_func")
+  emitCompareFunc(prolog0, compareFunc, vals, orders)
+
+  cgen.declareIntPtr(buf)(sym, cgen.cast("int *", cgen.malloc("int", array.val.dataCount)))
+  cgen.stmt(buf)(`for (int i = 0; i < ${array.val.dataCount}; i++) ${sym}[i] = i`)
+
+  cgen.stmt(buf)(cgen.call("qsort", sym, array.val.dataCount, "sizeof(int)", cgen.cast("__compar_fn_t", compareFunc)))
 }
 
 let prolog0
@@ -2010,10 +2087,13 @@ let emitCode = (q, ir, settings) => {
   let epilog = []
   let res
   if (q.key == "pure" && q.op == "sort") {
-    let hashMap = emitPath(epilog, q.arg[q.arg.length - 1])
-    if (!hashMapEnv[hashMap.val]) throw new Error("Can only sort values of a hashmap")
-    emitSorting(epilog, q)
-    res = hashMap
+    res = emitPath(epilog, q.arg[q.arg.length - 1])
+    if (res.tag == "hashMap") {
+      emitHashMapSorting(epilog, q)
+    } else if (res.tag == "array") {
+      emitArraySorting(epilog, q, res)
+    } else throw new Error("Can only sort values of a hashmap")
+
   } else {
     res = emitPath(epilog, q)
   }
