@@ -6,7 +6,7 @@ const os = require('child_process')
 
 // point to the data directory
 let dataDir = "cgen-sql/data/SF1"
-let outDir = "cgen-sql/out-tpch"
+let outDir = "cgen-sql/tpch-out"
 
 let answersDir = "cgen-sql/tpch-answers"
 
@@ -166,11 +166,46 @@ test("q1", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q1", schema: types.never, enableOptimizations: false })
   let res = await func()
 
-  expect(res).toBe(`A|F|37734107.0000|56586554400.7299|53758257134.8651|55909065222.8256|25.5220|38273.1297|0.0500|1478493|
-N|F|991417.0000|1487504710.3800|1413082168.0541|1469649223.1944|25.5165|38284.4678|0.0501|38854|
-N|O|74476040.0000|111701729697.7356|106118230307.6122|110367043872.4921|25.5022|38249.1180|0.0500|2920374|
-R|F|37719753.0000|56568041380.9045|53741292684.6038|55889619119.8297|25.5058|38250.8546|0.0500|1478870|
-`)
+  let answer = fs.readFileSync(`${answersDir}/q1.out`).toString()
+  expect(res).toBe(answer)
+})
+
+test("q1-alt", async () => {
+  let cond = rh`${lineitem}.*.l_shipdate <= 19980902`
+
+  let lineitem1 = rh`{
+    l_returnflag: ${lineitem}.*.l_returnflag,
+    l_linestatus: ${lineitem}.*.l_linestatus,
+    sum_qty: sum (${cond} & ${lineitem}.*.l_quantity),
+    sum_base_price: sum (${cond} & ${lineitem}.*.l_extendedprice),
+    sum_disc_price: sum (${cond} & (${lineitem}.*.l_extendedprice * (1 - ${lineitem}.*.l_discount))),
+    sum_charge: sum (${cond} & (${lineitem}.*.l_extendedprice * (1 - ${lineitem}.*.l_discount) * (1 + ${lineitem}.*.l_tax))),
+    count_l_quantity: count (${cond} & ${lineitem}.*.l_quantity),
+    count_l_extendedprice: count (${cond} & ${lineitem}.*.l_extendedprice),
+    sum_l_discount: sum (${cond} & ${lineitem}.*.l_discount),
+    count_l_discount: count (${cond} & ${lineitem}.*.l_discount),
+    count_order: count (${cond} & ${lineitem}.*.l_orderkey)
+  } | group [${lineitem}.*.l_returnflag, ${lineitem}.*.l_linestatus]`
+
+  let lineitem2  = rh`[{
+    l_returnflag: ${lineitem1}.*.l_returnflag,
+    l_linestatus: ${lineitem1}.*.l_linestatus,
+    sum_qty: ${lineitem1}.*.sum_qty,
+    sum_base_price: ${lineitem1}.*.sum_base_price,
+    sum_disc_price: ${lineitem1}.*.sum_disc_price,
+    sum_charge: ${lineitem1}.*.sum_charge,
+    avg_qty: (${lineitem1}.*.sum_qty) / (${lineitem1}.*.count_l_quantity),
+    avg_price: (${lineitem1}.*.sum_base_price) / (${lineitem1}.*.count_l_extendedprice),
+    avg_disc: (${lineitem1}.*.sum_l_discount) / (${lineitem1}.*.count_l_discount),
+    count_order: ${lineitem1}.*.count_order
+  }]`
+  let query = rh`sort "l_returnflag" 0 "l_linestatus" 0 ${lineitem2}`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q1-alt", schema: types.never, enableOptimizations: false })
+  let res = await func()
+
+  let answer = fs.readFileSync(`${answersDir}/q1.out`).toString()
+  expect(res).toBe(answer)
 })
 
 test("q3", async () => {
@@ -199,17 +234,8 @@ test("q3", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q3", schema: types.never, enableOptimizations: false, limit: 10 })
   let res = await func()
 
-  expect(res).toBe(`2456423|406181.0111|1995-03-05|0|
-3459808|405838.6989|1995-03-04|0|
-492164|390324.0610|1995-02-19|0|
-1188320|384537.9359|1995-03-09|0|
-2435712|378673.0558|1995-02-26|0|
-4878020|378376.7952|1995-03-12|0|
-5521732|375153.9215|1995-03-13|0|
-2628192|373133.3094|1995-02-22|0|
-993600|371407.4595|1995-03-05|0|
-2300070|367371.1452|1995-03-13|0|
-`)
+  let answer = fs.readFileSync(`${answersDir}/q3.out`).toString()
+  expect(res).toBe(answer)
 })
 
 test("q4", async () => {
@@ -226,12 +252,8 @@ test("q4", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q4", schema: types.never, enableOptimizations: false })
   let res = await func()
 
-  expect(res).toBe(`1-URGENT|10594|
-2-HIGH|10476|
-3-MEDIUM|10410|
-4-NOT SPECIFIED|10556|
-5-LOW|10487|
-`)
+  let answer = fs.readFileSync(`${answersDir}/q4.out`).toString()
+  expect(res).toBe(answer)
 })
 
 test("q5", async () => {
@@ -273,12 +295,8 @@ test("q5", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q5", schema: types.never, enableOptimizations: false })
   let res = await func()
 
-  expect(res).toBe(`INDONESIA|55502041.1697|
-VIETNAM|55295086.9967|
-CHINA|53724494.2566|
-INDIA|52035512.0002|
-JAPAN|45410175.6954|
-`)
+  let answer = fs.readFileSync(`${answersDir}/q5.out`).toString()
+  expect(res).toBe(answer)
 })
 
 test("q6", async () => {
@@ -293,7 +311,8 @@ test("q6", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q6", schema: types.never })
   let res = await func()
 
-  expect(res).toBe("123141078.2283\n")
+  let answer = fs.readFileSync(`${answersDir}/q6.out`).toString()
+  expect(res).toBe(answer)
 })
 
 test("q7", async () => {
@@ -338,12 +357,9 @@ test("q7", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q7", schema: types.never, enableOptimizations: false })
   let res = await func()
 
-  expect(res).toBe(`FRANCE|GERMANY|1995|54639732.7336|
-FRANCE|GERMANY|1996|54633083.3076|
-GERMANY|FRANCE|1995|52531746.6697|
-GERMANY|FRANCE|1996|52520549.0224|
-`)
-}, 100 * 1000)
+  let answer = fs.readFileSync(`${answersDir}/q7.out`).toString()
+  expect(res).toBe(answer)
+})
 
 test("q8", async () => {
   let region1 = rh`[${region}.*r1.r_name == "AMERICA" & ${region}.*r1.r_regionkey] | group ${region}.*r1.r_regionkey`
@@ -395,9 +411,8 @@ test("q8", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q8", schema: types.never, enableOptimizations: false })
   let res = await func()
 
-  expect(res).toBe(`1995|0.0344|
-1996|0.0415|
-`)
+  let answer = fs.readFileSync(`${answersDir}/q8.out`).toString()
+  expect(res).toBe(answer)
 })
 
 test("q10", async () => {
@@ -441,7 +456,6 @@ test("q10", async () => {
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q10.out`).toString()
-
   expect(res).toBe(answer)
 })
 
@@ -473,7 +487,6 @@ test("q11", async () => {
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q11.out`).toString()
-
   expect(res).toBe(answer)
 })
 
@@ -503,9 +516,8 @@ test("q12", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q12", schema: types.never, enableOptimizations: false })
   let res = await func()
 
-  expect(res).toBe(`MAIL|6202|9324|
-SHIP|6200|9262|
-`)
+  let answer = fs.readFileSync(`${answersDir}/q12.out`).toString()
+  expect(res).toBe(answer)
 })
 
 test("q15", async () => {
@@ -534,7 +546,8 @@ test("q15", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q15", schema: types.never, enableOptimizations: false })
   let res = await func()
 
-  expect(res).toBe(`8449|Supplier#000008449|Wp34zim9qYFbVctdW|20-469-856-8873|1772627.2087|\n`)
+  let answer = fs.readFileSync(`${answersDir}/q15.out`).toString()
+  expect(res).toBe(answer)
 })
 
 test("q17", async () => {
@@ -550,5 +563,6 @@ test("q17", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q17", schema: types.never })
   let res = await func()
 
-  expect(res).toBe("348406.0543\n")
+  let answer = fs.readFileSync(`${answersDir}/q17.out`).toString()
+  expect(res).toBe(answer)
 })
