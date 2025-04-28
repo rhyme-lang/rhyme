@@ -566,3 +566,51 @@ test("q17", async () => {
   let answer = fs.readFileSync(`${answersDir}/q17.out`).toString()
   expect(res).toBe(answer)
 })
+
+test("q18", async () => {
+  let customer1 = rh`[{
+    c_custkey: ${customer}.*c1.c_custkey,
+    c_name: ${customer}.*c1.c_name
+  }] | group ${customer}.*c1.c_custkey`
+
+  let lineitem1 = rh`{
+    l_orderkey: single ${lineitem}.*l1.l_orderkey,
+    sum: sum ${lineitem}.*l1.l_quantity
+  } | group ${lineitem}.*l1.l_orderkey`
+
+  let lineitem2 = rh`[${lineitem1}.*l2.sum > 300 & {
+    l_orderkey: ${lineitem1}.*l2.l_orderkey,
+    sum: ${lineitem1}.*l2.sum
+  }] | group ${lineitem1}.*l2.l_orderkey`
+
+  let orders1 = rh`[{
+    o_orderkey: ${lineitem2}.(${orders}.*o1.o_orderkey).*l3.l_orderkey,
+    c_custkey: ${customer1}.(${orders}.*o1.o_custkey).*c2.c_custkey,
+    c_name: ${customer1}.(${orders}.*o1.o_custkey).*c2.c_name,
+    o_totalprice: ${orders}.*o1.o_totalprice,
+    o_orderdate: ${orders}.*o1.o_orderdate
+  }] | group ${orders}.*o1.o_orderkey`
+
+  let lineitem3 = rh`{
+    c_name: single ${orders1}.(${lineitem}.*l4.l_orderkey).*o2.c_name,
+    c_custkey: single ${orders1}.(${lineitem}.*l4.l_orderkey).*o2.c_custkey,
+    o_orderkey: single ${orders1}.(${lineitem}.*l4.l_orderkey).*o2.o_orderkey,
+    o_orderdate: single ${orders1}.(${lineitem}.*l4.l_orderkey).*o2.o_orderdate,
+    o_totalprice: single ${orders1}.(${lineitem}.*l4.l_orderkey).*o2.o_totalprice,
+    sum_l_quantity: sum (${lineitem}.*l4.l_quantity)
+  } | group [
+    ${orders1}.(${lineitem}.*l4.l_orderkey).*o2.c_name,
+    ${orders1}.(${lineitem}.*l4.l_orderkey).*o2.c_custkey,
+    ${orders1}.(${lineitem}.*l4.l_orderkey).*o2.o_orderkey,
+    ${orders1}.(${lineitem}.*l4.l_orderkey).*o2.o_orderdate,
+    ${orders1}.(${lineitem}.*l4.l_orderkey).*o2.o_totalprice
+  ]`
+
+  let query = rh`sort "o_totalprice" 1 "o_orderdate" 0 ${lineitem3}`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q18", schema: types.never })
+  let res = await func()
+
+  let answer = fs.readFileSync(`${answersDir}/q18.out`).toString()
+  expect(res).toBe(answer)
+})
