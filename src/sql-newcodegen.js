@@ -296,104 +296,54 @@ let binaryOperators = {
   orElse: "||"
 }
 
-// C Value builders
-let primitive = (val, schema, keyPos) => ({ val, schema, keyPos })
-
-let string = (str, len, schema, keyPos) => ({ val: { str, len }, schema, keyPos })
-
 // Extract all the used columns.
 // e.g. if an integer column is used, it will be extracted
 // while we scan through each row in the csv.
 //
 // This makes sure that if we want to use the variable,
 // it will be available in the scope.
-// String columns are only extracted (copied to a temporary buffer) when a null-terminated string is needed.
-// e.g. the open() system call.
-let validateAndExtractUsedCols = (q) => {
+let extractUsedAndSortedCols = (q) => {
   if (q.key == "get") {
     let [e1, e2] = q.arg
 
-    // check if the get is valid
+    let isCsvColumn = e1.key == "get" && e1.arg[0].key == "loadInput" && e1.arg[1].key == "var" &&
+      e2.key == "const" && typeof e2.op == "string"
 
-    // get from a tmp var
-    if (e1.key == "ref") {
-      e1 = assignments[e1.op]
-      validateAndExtractUsedCols(e1)
-      validateAndExtractUsedCols(e2)
+    if (!isCsvColumn) {
+      extractUsedAndSortedCols(e1)
+      extractUsedAndSortedCols(e2)
       return
-    }
-
-    if (e1.key == "get" && e2.key == "var") {
-      let [e11, e12] = e1.arg
-      if (e11.key != "ref") throw new Error("malformed get: " + pretty(q))
-      e11 = assignments[e11.op]
-      validateAndExtractUsedCols(e11)
-      validateAndExtractUsedCols(e12)
-      return
-    }
-
-    if (!(e1.key == "get" && e2.key == "const")) {
-      throw new Error("malformed get: " + pretty(q))
-    }
-    if (e1.arg[0].key != "loadInput") {
-      validateAndExtractUsedCols(e1)
-      validateAndExtractUsedCols(e2)
-      return
-    }
-    if (typeof e2.op != "string") {
-      throw new Error("column name is not a constant string: " + pretty(e2))
     }
 
     // extract used columns for the filename
-    validateAndExtractUsedCols(e1.arg[0].arg[0])
+    extractUsedAndSortedCols(e1.arg[0].arg[0])
 
     let prefix = pretty(e1) // does this always work?
     usedCols[prefix] ??= {}
-
-    if (typing.isString(q.schema.type)) {
-      usedCols[prefix][e2.op] = true
-      return
-    }
-    if (typing.isNumber(q.schema.type) || q.schema.type.typeSym == typeSyms.date) {
-      usedCols[prefix][e2.op] = true
-    } else {
-      throw new Error("column data type not supported: " + pretty(q) + " has type " + typing.prettyPrintTuple(q.schema))
-    }
+    usedCols[prefix][e2.op] = true
   } else if (q.key == "ref") {
     let q1 = assignments[q.op]
-    validateAndExtractUsedCols(q1)
+    extractUsedAndSortedCols(q1)
   } else if (q.key == "update") {
+    // only allow a single update without
+    // extending result objects of other update ops
     if (q.arg[0].key != "const" || Object.keys(q.arg[0].op).length != 0) {
-      throw new Error("cannot extend non-empty objects " + pretty(q))
+      throw new Error("Cannot extend non-empty objects " + pretty(q))
     }
     if (q.arg[3] == undefined) {
-      throw new Error("trivial group op not supported for now: " + pretty(q))
+      throw new Error("Trivial group op not supported for now: " + pretty(q))
     }
+
     let [_e1, _e2, e3, e4] = q.arg
 
-    // if (!typing.isString(e4.arg[0].arg[0].schema.type) && !typing.isInteger(e4.arg[0].arg[0].schema.type)) {
-    //   throw new Error(`value of type ${typing.prettyPrintTuple(e4.arg[0].arg[0].schema)} not allowed for mkset`)
-    // }
-
-    // value
-    if (e3.key == "pure" && e3.op == "mkTuple") {
-      e3.arg.map(validateAndExtractUsedCols)
-    } else {
-      validateAndExtractUsedCols(e3)
-    }
-    // mkset
-    validateAndExtractUsedCols(e4.arg[0].arg[0])
-  } else if (q.key == "stateful" && q.op == "array") {
-    if (q.arg[0].key == "pure" && q.arg[0].op == "mkTuple") {
-      q.arg[0].arg.map(validateAndExtractUsedCols)
-    } else {
-      q.arg.map(validateAndExtractUsedCols)
-    }
+    extractUsedAndSortedCols(e3)
+    extractUsedAndSortedCols(e4.arg[0].arg[0])
   } else if (q.key == "pure" && q.op == "sort") {
+    // if a column is used for sorting,
+    // we need to define it as a global array
+    // so that it is accessbile to the comparison function
     let columns = q.arg.slice(0, -1)
-    validateAndExtractUsedCols(q.arg[q.arg.length - 1])
-    let hashmap = q.arg[q.arg.length - 1]
-
+    extractUsedAndSortedCols(q.arg[q.arg.length - 1])
     sortedCols[tmpSym(q.arg[q.arg.length - 1].op)] ??= {}
     for (let i = 0; i < columns.length; i += 2) {
       let column = columns[i]
@@ -408,12 +358,12 @@ let validateAndExtractUsedCols = (q) => {
         throw new Error("Invalid order for sorting: " + pretty(order))
       }
     }
-
   } else if (q.arg) {
-    q.arg.map(validateAndExtractUsedCols)
+    q.arg.map(extractUsedAndSortedCols)
   }
 }
 
+// Emit code that gets the current time
 let emitGetTime = (buf) => {
   let timeval = getNewName("timeval")
   cgen.stmt(buf)(`struct timeval ${timeval}`)
@@ -443,6 +393,7 @@ let emitLoadInput = (buf, filename, id) => {
   return { mappedFile, size }
 }
 
+// Calculate the hash value for a set of keys
 let hash = (buf, keys, keySchema) => {
   let hashed = getNewName("hash")
   cgen.declareULong(buf)(hashed, "0")
@@ -457,7 +408,7 @@ let hash = (buf, keys, keySchema) => {
     } else if (typing.isNumber(schema) || schema.typeSym == typeSyms.date) {
       cgen.declareULong(buf)(tmpHash, cgen.cast("unsigned long", key.val))
     } else {
-      throw new Error("cannot hash key with type " + typing.prettyPrintType(schema))
+      throw new Error("Cannot hash key with type " + typing.prettyPrintType(schema))
     }
 
     cgen.stmt(buf)(cgen.binary(hashed, "8", "<<"))
@@ -500,6 +451,7 @@ let emitHashLookUp = (buf, sym, keys) => {
 
   }
 
+  // increment the position until we find a match or an empty slot
   cgen.while(buf)(
     cgen.and(cgen.notEqual(keyPos, "-1"), "(" + compareKeys + ")"),
     buf1 => {
@@ -513,6 +465,7 @@ let emitHashLookUp = (buf, sym, keys) => {
   return [pos, keyPos]
 }
 
+// Skip the column until the delimiter is found
 let scanColumn = (buf, mappedFile, cursor, size, delim) => {
   cgen.while1(buf)(
     cgen.notEqual(`${mappedFile}[${cursor}]`, delim),
@@ -521,6 +474,7 @@ let scanColumn = (buf, mappedFile, cursor, size, delim) => {
   cgen.stmt(buf)(cgen.inc(cursor))
 }
 
+// Scan the column and store the start and end position
 let scanString = (buf, mappedFile, cursor, size, delim, start, end) => {
   cgen.declareInt(buf)(start, cursor)
   cgen.while1(buf)(
@@ -531,6 +485,7 @@ let scanString = (buf, mappedFile, cursor, size, delim, start, end) => {
   cgen.stmt(buf)(cgen.inc(cursor))
 }
 
+// Scan the column and calculate the integer value
 let scanInteger = (buf, mappedFile, cursor, size, delim, name, type) => {
   cgen.declareVar(buf)(convertToCType(type), name, "0")
   cgen.while(buf)(
@@ -544,6 +499,7 @@ let scanInteger = (buf, mappedFile, cursor, size, delim, name, type) => {
   cgen.stmt(buf)(cgen.inc(cursor))
 }
 
+// Scan the column and calculate the decimal value
 let scanDecimal = (buf, mappedFile, cursor, size, delim, name, type) => {
   let number = getNewName("number")
   let scale = getNewName("scale")
@@ -586,6 +542,7 @@ let scanDecimal = (buf, mappedFile, cursor, size, delim, name, type) => {
   cgen.stmt(buf)(cgen.inc(cursor))
 }
 
+// Scan the column and calculate the date value
 let scanDate = (buf, mappedFile, cursor, size, delim, name) => {
   // unrolled loop
   let digits = [
@@ -658,9 +615,9 @@ let emitRowScanning = (f, file, cursor, schema, first = true) => {
   return [...emitRowScanning(f, file, cursor, schema.objParent, false), ...buf]
 }
 
-// Returns a function that will be invoked during the actual code generation
+// The getLoopTxt functions return functions that will be invoked during the actual code generation
 // It requests a new cursor name every time it is invoked
-let getLoopTxt = (f, file, loadInput) => () => {
+let getCSVLoopTxt = (f, file, loadInput) => () => {
   let v = f.arg[1].op
   let { mappedFile, size, format } = inputFilesEnv[file]
 
@@ -743,10 +700,11 @@ let convertToArrayOfSchema = (schema) => {
   return [...convertToArrayOfSchema(schema.objParent), { name: schema.objKey, schema: schema.objValue }]
 }
 
+// Get the value representing the tmp variable with name sym
 let getTmpVarValue = (q, sym) => {
   if (q.key == "update") {
     console.assert(hashMapEnv[sym] !== undefined)
-    return { schema: q.schema, val: sym, tag: "hashMap" }
+    return { schema: q.schema, val: { sym }, tag: "hashMap" }
   } else if (q.op == "array") {
     console.assert(arrayEnv[sym] !== undefined)
     let arr
@@ -780,6 +738,8 @@ let getTmpVarValue = (q, sym) => {
   }
 }
 
+// Generate code for paths
+// returns the value of the path
 let emitPath = (buf, q) => {
   if (q.key == "loadInput") {
     let file = q.arg[0]
@@ -795,25 +755,31 @@ let emitPath = (buf, q) => {
     if (typeof q.op == "number") {
       return { schema: q.schema, val: String(q.op) }
     } else if (typeof q.op == "string") {
+      // const string is represented as a const char pointer
       let name = getNewName("tmp_str")
       cgen.declareConstCharPtr(buf)(name, '"' + q.op + '"')
       return { schema: q.schema, val: { str: name, len: q.op.length } }
     } else {
-      throw new Error("constant not supported: " + pretty(q))
+      throw new Error("Constant not supported: " + pretty(q))
     }
   } else if (q.key == "var") {
-    throw new Error("cannot have stand-alone var")
+    throw new Error("Cannot have stand-alone var")
   } else if (q.key == "ref") {
     let q1 = assignments[q.op]
     let sym = tmpSym(q.op)
 
     if (q1.fre.length > 0) {
+      // For stateful in path with free vars
+      // We need the free var to be the same as the current group key
       console.assert(currentGroupKey.key == q1.fre[0])
+      // We can directly use the pos and keyPos
+      // without doing a hash lookup
       let value = getHashMapValueEntry(sym, currentGroupKey.pos, currentGroupKey.keyPos)
       // must be a simple hash value
       console.assert(value.tag == "hashMapValue")
       return value
     } else {
+      // If no free vars, we need to emit the code
       if (q1.key == "stateful" && !emittedStateful[sym]) {
         emitStatefulInPath(q1, sym)
       }
@@ -830,6 +796,8 @@ let emitPath = (buf, q) => {
       }
 
       if (g1.tag == "inputFile") {
+        // If we are getting a var from a file,
+        // return the object representing a record in the file
         let schema = convertToArrayOfSchema(g1.schema.type.objValue)
         let val = {}
         schema.map(keyVal => {
@@ -844,8 +812,12 @@ let emitPath = (buf, q) => {
         })
         return { schema, val, tag: "object" }
       } else if (g1.tag == "hashMap") {
-        return getHashMapValueEntry(g1.val, undefined, quoteVar(e2.op))
+        // If we are iterating over a hashMap,
+        // get the entry directly using the var
+        return getHashMapValueEntry(g1.val.sym, undefined, quoteVar(e2.op))
       } else if (g1.tag == "hashMapBucket") {
+        // If we are iterating over a hashMap bucket,
+        // get the stored loop info
         bucket = g1
         let dataPos = `${bucket.val.buckets}[${cgen.plus(cgen.mul(bucket.keyPos, BUCKET_SIZE), quoteVar(e2.op))}]`
 
@@ -873,9 +845,11 @@ let emitPath = (buf, q) => {
       }
     }
 
+    // If we are not getting a var, get the lhs first
     let v1 = emitPath(buf, e1)
 
     if (v1.tag == "hashMap") {
+      // HashMap lookup
       let sym = tmpSym(e1.op)
       let key = emitPath(buf, e2)
       let [pos, keyPos] = emitHashLookUp(buf, sym, [key])
@@ -891,10 +865,12 @@ let emitPath = (buf, q) => {
       if (!(e2.key == "const" && typeof e2.op == "number")) {
         throw new Error("Cannot get non-constant number idx from arrays")
       }
+      // Array element access with constant index
       let idx = e2.op
       return getArrayValueEntry(v1, idx)
     }
 
+    // Then it has to be an object
     if (v1.tag != "object") {
       throw new Error("Cannot perform get on non-object values")
     }
@@ -907,7 +883,7 @@ let emitPath = (buf, q) => {
   } else if (q.key == "pure") {
     if (q.op == "mkTuple") {
       let schema = convertToArrayOfSchema(q.schema.type)
-      let res = { schema, val: {}, tag: "object" }
+      let res = { schema: q.schema, val: {}, tag: "object" }
       for (let i = 0; i < q.arg.length; i += 2) {
         let k = q.arg[i]
         let v = q.arg[i + 1]
@@ -941,22 +917,22 @@ let emitPath = (buf, q) => {
         return { schema: q.schema, val: "(" + cgen.binary(e1.val, e2.val, op) + ")" }
       }
     } else if (q.op == "and") {
-      throw new Error("unexpected and op" + pretty(q))
+      throw new Error("Unexpected and op" + pretty(q))
     } else if (q.op == "sort") {
-      throw new Error("unexpected sort op" + pretty(q))
+      throw new Error("Unexpected sort op" + pretty(q))
     } else if (q.op.startsWith("convert_")) {
       return { schema: q.schema, val: cgen.cast(ctypeMap[q.op.substring("convert_".length)], e1.val) }
     } else if (q.op == "year") {
-      // return { schema: q.schema, val: "(" + cgen.mul("(" + cgen.div(e1.val, "10000") + ")", "10000") + ")" }
       return { schema: q.schema, val: "(" + cgen.div(e1.val, "10000") + ")" }
     } else {
-      throw new Error("pure operation not supported: " + pretty(q))
+      throw new Error("Pure operation not supported: " + pretty(q))
     }
   } else {
-    throw new Error("unknown op: " + pretty(q))
+    throw new Error("Unknown op: " + pretty(q))
   }
 }
 
+// Emit code that initializes the array
 let emitArrayInit = (buf, sym, valSchema) => {
   cgen.comment(buf)(`init array for ${sym}`)
 
@@ -1000,6 +976,7 @@ let emitArrayInit = (buf, sym, valSchema) => {
   cgen.declareInt(buf)(`${sym}_count`)
 }
 
+// Emit code that prints the array
 let emitArrayPrint = (buf, sym, limit) => {
   let { valSchema } = arrayEnv[sym]
   limit = limit || `${sym}_count`
@@ -1047,6 +1024,7 @@ let emitArrayPrint = (buf, sym, limit) => {
   }
 }
 
+// Emit code that inserts a value into the array
 let emitArrayInsert = (buf, array, value) => {
   cgen.if(buf)(cgen.equal(array.val.dataCount, ARRAY_SIZE), (buf2) => {
     cgen.printErr(buf2)(`"array size reached its full capacity\\n"`)
@@ -1079,6 +1057,7 @@ let emitArrayInsert = (buf, array, value) => {
   cgen.stmt(buf)(cgen.binary(array.val.dataCount, "1", "+="))
 }
 
+// Get the array element at index idx
 let getArrayValueEntry = (array, idx) => {
   let { valSchema } = arrayEnv[array.val.sym]
 
@@ -1104,55 +1083,10 @@ let getArrayValueEntry = (array, idx) => {
     res = { schema: valSchema, val: `${array.val.arr}[${idx}]` }
   }
 
-
   return res
 }
 
-let emitHashMapValueInit1 = (buf, sym, keySchema, valSchema) => {
-  let values = valSchema.some(val => !typing.isObject(val.schema))
-  let buckets = valSchema.some(val => typing.isObject(val.schema))
-
-  if (values) {
-    cgen.comment(buf)(`values of ${sym}`)
-    let cType = `struct ${sym}_value`
-    cgen.declarePtr(buf)(cType, `${sym}_values`, cgen.cast(`${cType} *`, cgen.malloc(cType, KEY_SIZE)))
-
-    cgen.declareStruct(prolog0)(`${sym}_value`, valSchema)
-  }
-
-  if (buckets) {
-    emitHashMapValueBucketsInit(buf, sym, keySchema, valSchema)
-  }
-}
-
-let emitHashMapValueBucketsInit = (buf, sym, keySchema, valSchema) => {
-  cgen.comment(buf)(`buckets of ${sym}`)
-
-  for (let i in valSchema) {
-    let { name, schema } = valSchema[i]
-
-    if (name == "_DEFAULT_") name = "data"
-
-    if (typing.isObject(schema)) {
-      // stateful "array" op
-      if (typing.isObject(schema.objValue)) {
-        throw new Error("Not implemented yet")
-      } else if (typing.isString(schema.objValue)) {
-        // arrays for the actual data will have size KEY_SIZE * BUCKET_SIZE
-        cgen.declareCharPtrPtr(buf)(`${sym}_${name}_str`, cgen.cast("char **", cgen.malloc("char *", DATA_SIZE)))
-        cgen.declareIntPtr(buf)(`${sym}_${name}_len`, cgen.cast("int *", cgen.malloc("int", DATA_SIZE)))
-      } else {
-        let cType = convertToCType(schema.objValue)
-        cgen.declarePtr(buf)(cType, `${sym}_${name}`, cgen.cast(`${cType} *`, cgen.malloc(cType, DATA_SIZE)))
-      }
-      cgen.declareInt(buf)(`${sym}_${name}_count`, "0")
-
-      cgen.declareIntPtr(buf)(`${sym}_${name}_buckets`, cgen.cast("int *", cgen.malloc("int", DATA_SIZE)))
-      cgen.declareIntPtr(buf)(`${sym}_${name}_bucket_counts`, cgen.cast("int *", cgen.malloc("int", KEY_SIZE)))
-    }
-  }
-}
-
+// Emit the value arrays for a hashMap
 let emitHashMapValueInit = (buf, sym, keySchema, valSchema) => {
   cgen.comment(buf)(`values of ${sym}`)
 
@@ -1218,6 +1152,7 @@ let emitHashMapValueInit = (buf, sym, keySchema, valSchema) => {
   }
 }
 
+// Emit the code that initializes the hashmap
 let emitHashMapInit = (buf, sym, keySchema, valSchema) => {
   cgen.comment(buf)(`init hashmap for ${sym}`)
   // keys
@@ -1287,6 +1222,11 @@ let emitHashLookUpOrUpdate = (buf, sym, keys, update) => {
   return [pos, keyPos]
 }
 
+// Emit the code that performs a lookup of the key in the hashmap, then
+// if the key is found:
+//   updates the value
+// if the key is not found:
+//   inserts a new key into the hashmap and initializes it
 let emitHashLookUpAndUpdate = (buf, sym, keys, update, checkExistance) => {
   let [pos, keyPos] = emitHashLookUp(buf, sym, keys)
   let { keySchema, valSchema } = hashMapEnv[sym]
@@ -1323,6 +1263,7 @@ let emitHashLookUpAndUpdate = (buf, sym, keys, update, checkExistance) => {
   return [pos, keyPos]
 }
 
+// Emit the code that gets the hashMap value for the key at keyPos
 let getHashMapValueEntry = (sym, pos, keyPos) => {
   let { keySchema, valSchema } = hashMapEnv[sym]
 
@@ -1376,6 +1317,8 @@ let getHashMapValueEntry = (sym, pos, keyPos) => {
     }
   }
 
+  // If it is just a single value, don't return the object
+  // but the value directly
   if (valSchema.length == 1 && valSchema[0].name == "_DEFAULT_") {
     return res.val["values"]
   }
@@ -1383,12 +1326,14 @@ let getHashMapValueEntry = (sym, pos, keyPos) => {
   return res
 }
 
+// Emit the code that updates the hashMap value for the key at keyPos
 let emitHashUpdate = (buf, sym, pos, keyPos, update) => {
   let lhs = getHashMapValueEntry(sym, pos, keyPos)
 
   update(buf, lhs, pos, keyPos)
 }
 
+// Emit the code that insertes a value into a hashmap bucket
 let emitHashBucketInsert = (buf, bucket, value) => {
   cgen.if(buf)(cgen.equal(bucket.val.bucketCount, BUCKET_SIZE), (buf2) => {
     cgen.printErr(buf2)(`"hashmap bucket size reached its full capacity\\n"`)
@@ -1493,6 +1438,7 @@ let emitHashMapPrint = (buf, sym, limit) => {
   buf.push(`}`)
 }
 
+// Emit the comapre function for the qsort
 let emitCompareFunc = (buf, name, valPairs, orders) => {
   buf.push(`int ${name}(int *i, int *j) {`)
   for (let i in valPairs) {
@@ -1524,9 +1470,8 @@ let emitCompareFunc = (buf, name, valPairs, orders) => {
   buf.push(`}`)
 }
 
-let emitHashMapSorting = (buf, q) => {
-  let hashMap = emitPath(buf, q.arg[q.arg.length - 1])
-  let sym = hashMap.val
+let emitHashMapSorting = (buf, q, hashMap) => {
+  let sym = hashMap.val.sym
 
   let columns = q.arg.slice(0, -1)
 
@@ -1776,7 +1721,6 @@ let collectHashMaps = () => {
     }
 
     if (v.fre.length !== 1 || k.op !== v.fre[0]) {
-      console.log(v.fre.length, v.fre)
       throw new Error("unexpected number of free variables for stateful op " + pretty(v))
     }
 
@@ -1834,7 +1778,7 @@ let emitCode = (q, ir, settings) => {
 
   reset()
 
-  validateAndExtractUsedCols(q)
+  extractUsedAndSortedCols(q)
   // analyzeDestination(q)
 
   prolog0.push(`#include "rhyme-sql.h"`)
@@ -1896,7 +1840,7 @@ let emitCode = (q, ir, settings) => {
         inputFilesEnv[file] = { mappedFile, size, format: g1.op }
       }
 
-      let getLoopTxtFunc = getLoopTxt(f, file, loadInput)
+      let getLoopTxtFunc = getCSVLoopTxt(f, file, loadInput)
       addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
 
       loopInfo[v1] ??= {}
@@ -1921,7 +1865,7 @@ let emitCode = (q, ir, settings) => {
       if (lhs.tag == "array") {
         throw new Error("Generator from array not implemented yet")
       } else if (lhs.tag == "hashMap") {
-        let getLoopTxtFunc = getHashMapLoopTxt(f, lhs.val)
+        let getLoopTxtFunc = getHashMapLoopTxt(f, lhs.val.sym)
         addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
         // throw new Error("Generator from hashmap not implemented yet")
       } else if (lhs.tag == "hashMapBucket") {
@@ -1947,8 +1891,6 @@ let emitCode = (q, ir, settings) => {
 
     cgen.comment(init)("init and update " + sym + " = " + pretty(assignments[i]))
     let shouldInit = updateOps[i].some(j => initRequired[assignments[j].op] && assignments[j].mode !== "maybe") || updateOpsExtra[i].some(j => initRequired[assignments[j].op])
-
-    // currentGroupKey = { var: k, pos, keyPos }
 
     if (!shouldInit) {
       // let update = []
@@ -2089,7 +2031,7 @@ let emitCode = (q, ir, settings) => {
   if (q.key == "pure" && q.op == "sort") {
     res = emitPath(epilog, q.arg[q.arg.length - 1])
     if (res.tag == "hashMap") {
-      emitHashMapSorting(epilog, q)
+      emitHashMapSorting(epilog, q, res)
     } else if (res.tag == "array") {
       emitArraySorting(epilog, q, res)
     } else throw new Error("Can only sort values of a hashmap")
@@ -2101,7 +2043,7 @@ let emitCode = (q, ir, settings) => {
   if (q.schema.type.typeSym !== typeSyms.never) {
     if (res.tag == "hashMap") {
       cgen.comment(epilog)("print hashmap")
-      emitHashMapPrint(epilog, res.val, settings.limit)
+      emitHashMapPrint(epilog, res.val.sym, settings.limit)
     } else if (res.tag == "array") {
       cgen.comment(epilog)("print array")
       emitArrayPrint(epilog, res.val.sym, settings.limit)
