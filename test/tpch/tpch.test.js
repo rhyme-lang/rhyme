@@ -614,3 +614,52 @@ test("q18", async () => {
   let answer = fs.readFileSync(`${answersDir}/q18.out`).toString()
   expect(res).toBe(answer)
 })
+
+test("q19", async () => {
+  let part1 = rh`[${part}.*p1.p_size >= 1 & {
+    p_partkey: ${part}.*p1.p_partkey,
+    p_brand: ${part}.*p1.p_brand,
+    p_size: ${part}.*p1.p_size,
+    p_container: ${part}.*p1.p_container
+  }] | group ${part}.*p1.p_partkey`
+
+  let condLineitem1  = rh`${lineitem}.*l1.l_shipmode == "AIR" || ${lineitem}.*l1.l_shipmode == "AIR REG"`
+  let condLineitem2 = rh`${lineitem}.*l1.l_shipinstruct == "DELIVER IN PERSON"`
+
+  let condLineitem = rh`${condLineitem1} && ${condLineitem2}`
+
+  let pBrand = rh`${part1}.(${lineitem}.*l1.l_partkey).*p2.p_brand`
+  let pSize = rh`${part1}.(${lineitem}.*l1.l_partkey).*p2.p_size`
+  let pContainer = rh`${part1}.(${lineitem}.*l1.l_partkey).*p2.p_container`
+
+  let condA1 = rh`${pBrand} == "Brand#12"`
+  let condA2 = rh`${pContainer} == "SM CASE" || ${pContainer} == "SM BOX" || ${pContainer} == "SM PACK" || ${pContainer} == "SM PKG"`
+  let condA3 = rh`${lineitem}.*l1.l_quantity >= 1 && ${lineitem}.*l1.l_quantity <= 11`
+  let condA4 = rh`${pSize} <= 5`
+
+  let condA = rh`${condA1} && ${condA2} && ${condA3} && ${condA4}`
+
+  let condB1 = rh`${pBrand} == "Brand#23"`
+  let condB2 = rh`${pContainer} == "MED BAG" || ${pContainer} == "MED BOX" || ${pContainer} == "MED PKG" || ${pContainer} == "MED PACK"`
+  let condB3 = rh`${lineitem}.*l1.l_quantity >= 10 && ${lineitem}.*l1.l_quantity <= 20`
+  let condB4 = rh`${pSize} <= 10`
+
+  let condB = rh`${condB1} && ${condB2} && ${condB3} && ${condB4}`
+
+  let condC1 = rh`${pBrand} == "Brand#34"`
+  let condC2 = rh`${pContainer} == "LG CASE" || ${pContainer} == "LG BOX" || ${pContainer} == "LG PACK" || ${pContainer} == "LG PKG"`
+  let condC3 = rh`${lineitem}.*l1.l_quantity >= 20 && ${lineitem}.*l1.l_quantity <= 30`
+  let condC4 = rh`${pSize} <= 15`
+
+  let condC = rh`${condC1} && ${condC2} && ${condC3} && ${condC4}`
+
+  let cond = rh`${condLineitem} && (${condA} || ${condB} || ${condC})`
+
+  let query = rh`sum (${cond} & (${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount)))`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q19", schema: types.never })
+  let res = await func()
+
+  let answer = fs.readFileSync(`${answersDir}/q19.out`).toString()
+  expect(res).toBe(answer)
+})
