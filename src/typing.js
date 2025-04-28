@@ -1037,6 +1037,15 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
             if (t1.typeSym != typeSyms.date)
                 throw new Error("Unable to perform year operation on non-date type: " + prettyPrintType(t1) + "\nReceived from query: " + pretty(q.arg[0]));
             return argTups[0]
+        } else if (q.op == "substr") {
+            // arg has to be of type date
+            let {type: t1, props: p1} = argTups[0];
+            if (!isString(t1))
+                throw new Error("Unable to perform substr operation on non-string type: " + prettyPrintType(t1) + "\nReceived from query: " + pretty(q.arg[0]));
+            return {
+                type: types.string,
+                props: p1
+            }
         }
         throw new Error("Pure operation not implemented: " + q.op);
     } else if (q.key === "hint") {
@@ -1622,6 +1631,9 @@ let convertAST = (schema, q, completedMap, dontConvertVar = false) => {
             q.arg = q.arg.map($convertAST);
             return q;
         } else if (q.op === "year") {
+            q.arg = q.arg.map($convertAST);
+            return q;
+        } else if (q.op === "substr") {
             q.arg = q.arg.map($convertAST);
             return q;
         }

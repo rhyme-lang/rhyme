@@ -664,7 +664,6 @@ test("q19", async () => {
   expect(res).toBe(answer)
 })
 
-
 test("q21", async () => {
   let nation1 = rh`[${nation}.*n1.n_name == "SAUDI ARABIA" & ${nation}.*n1.n_nationkey] | group ${nation}.*n1.n_nationkey`
   let supplier1 = rh`[{
@@ -687,8 +686,8 @@ test("q21", async () => {
   let condL3 = rh`${lineitem3}.(${orders}.*o1.o_orderkey).*l6 != ${lineitem1}.(${orders}.*o1.o_orderkey).*l4.l_suppkey`
 
   let count = rh`{
-    countL2: count ((${orders}.*o1.o_orderstatus == "F" && ${condL2}) & ${orders}.*o1.o_orderkey),
-    countL3: count ((${orders}.*o1.o_orderstatus == "F" && ${condL3}) & ${orders}.*o1.o_orderkey)
+    countL2: count ((${orders}.*o1.o_orderstatus == "F" && ${condL2}) & ${orders}.*o1),
+    countL3: count ((${orders}.*o1.o_orderstatus == "F" && ${condL3}) & ${orders}.*o1)
   } | group ${orders}.*o1.o_orderkey`
 
   let cond = rh`${count}.(${orders}.*o2.o_orderkey).countL2 != 0 && ${count}.(${orders}.*o2.o_orderkey).countL3 == 0`
@@ -703,5 +702,39 @@ test("q21", async () => {
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q21.out`).toString()
+  expect(res).toBe(answer)
+})
+
+test("q22", async () => {
+  let cond1 = rh`${customer}.*c1.c_acctbal > 0`
+  let cond2 = rh`(substr ${customer}.*c1.c_phone 0 2) == "13" || (substr ${customer}.*c1.c_phone 0 2) == "31" ||
+                 (substr ${customer}.*c1.c_phone 0 2) == "23" || (substr ${customer}.*c1.c_phone 0 2) == "29" ||
+                 (substr ${customer}.*c1.c_phone 0 2) == "30" || (substr ${customer}.*c1.c_phone 0 2) == "18" ||
+                 (substr ${customer}.*c1.c_phone 0 2) == "17"`
+
+  let cond3 = rh`${cond1} && ${cond2}`
+  let customer1 = rh`(sum (${cond3} & ${customer}.*c1.c_acctbal)) / (count (${cond3} & ${customer}.*c1.c_acctbal))`
+
+  let orders1 = rh`count ${orders}.*o1 | group ${orders}.*o1.o_custkey`
+
+  let cond4 = rh`${customer}.*c2.c_acctbal > ${customer1}`
+  let cond5 = rh`(substr ${customer}.*c2.c_phone 0 2) == "13" || (substr ${customer}.*c2.c_phone 0 2) == "31" ||
+                 (substr ${customer}.*c2.c_phone 0 2) == "23" || (substr ${customer}.*c2.c_phone 0 2) == "29" ||
+                 (substr ${customer}.*c2.c_phone 0 2) == "30" || (substr ${customer}.*c2.c_phone 0 2) == "18" ||
+                 (substr ${customer}.*c2.c_phone 0 2) == "17"`
+
+  let cond6 = rh`${orders1}.(${customer}.*c2.c_custkey) == 0 && ${cond4} && ${cond5}`
+  let customer2 = rh`{
+    cntrycode: single (${cond6} & (substr ${customer}.*c2.c_phone 0 2)),
+    count_order: count? (${cond6} & ${customer}.*c2),
+    totalacctbal: sum? (${cond6} & ${customer}.*c2.c_acctbal)
+  } | group (substr ${customer}.*c2.c_phone 0 2)`
+
+  let query = rh`sort "cntrycode" 0 ${customer2}`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q22", schema: types.never, enableOptimizations: false })
+  let res = await func()
+
+  let answer = fs.readFileSync(`${answersDir}/q22.out`).toString()
   expect(res).toBe(answer)
 })

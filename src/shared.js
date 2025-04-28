@@ -57,6 +57,8 @@ ops.pure.year = true
 
 ops.pure.sort = true
 
+ops.pure.substr = true
+
 // stateful operations
 
 ops.stateful.sum = true

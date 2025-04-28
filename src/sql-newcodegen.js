@@ -924,6 +924,13 @@ let emitPath = (buf, q) => {
       return { schema: q.schema, val: cgen.cast(ctypeMap[q.op.substring("convert_".length)], e1.val) }
     } else if (q.op == "year") {
       return { schema: q.schema, val: "(" + cgen.div(e1.val, "10000") + ")" }
+    } else if (q.op == "substr") {
+      console.assert(typing.isString(e1.schema))
+      let e2 = emitPath(buf, q.arg[1])
+      let e3 = emitPath(buf, q.arg[2])
+      let str = cgen.plus(e1.val.str, e2.val)
+      let len = cgen.minus(e3.val, e2.val)
+      return { schema: typeSyms.string, val: { str, len } }
     } else {
       throw new Error("Pure operation not supported: " + pretty(q))
     }
@@ -1621,7 +1628,7 @@ let emitStatefulUpdate = (buf, q, lhs) => {
   } else if (q.op == "print") {
     if (typing.isString(e.schema.type)) {
       let { str, len } = rhs.val
-      cgen.stmt(buf)(cgen.call("println1", str, len))
+      cgen.stmt(buf)(cgen.call("printf", `"%.*s\\n"`,len, str))
     } else {
       cgen.stmt(buf)(cgen.call("printf", `"%${getFormatSpecifier(q.arg[0].schema.type)}\\n"`, rhs.val))
     }
@@ -2048,7 +2055,7 @@ let emitCode = (q, ir, settings) => {
       cgen.comment(epilog)("print array")
       emitArrayPrint(epilog, res.val.sym, settings.limit)
     } else if (typing.isString(q.schema.type)) {
-      cgen.stmt(epilog)(cgen.call("println1", res.val.str, res.val.len))
+      cgen.stmt(epilog)(cgen.call("printf", `"%.*s\\n"`, res.val.len, res.val.str))
     } else {
       cgen.stmt(epilog)(cgen.call("printf", `"%${getFormatSpecifier(q.schema.type)}\\n"`, res.val))
     }
