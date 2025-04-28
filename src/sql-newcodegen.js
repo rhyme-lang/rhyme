@@ -1676,7 +1676,7 @@ let collectRelevantStatefulInPath = (q) => {
       return
     }
     if (q1.key == "stateful") {
-      if (q1.fre.length > 1) throw new Error("unexpected number of free variables for stateful op " + pretty(v))
+      if (q1.fre.length > 1) throw new Error("unexpected number of free variables for stateful op " + pretty(q1) + " fre: " + q1.fre)
 
       if (q1.fre.length != 0) {
         console.assert(currentGroupKey.key.op === q1.fre[0])

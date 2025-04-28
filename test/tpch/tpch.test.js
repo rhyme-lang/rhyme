@@ -452,7 +452,7 @@ test("q10", async () => {
 
   let query = rh`sort "revenue" 1 ${lineitem1}`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q10", schema: types.never, limit: 20 })
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q10", schema: types.never, enableOptimizations: false, limit: 20  })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q10.out`).toString()
@@ -560,7 +560,7 @@ test("q17", async () => {
   let cond = rh`${part1}.(${lineitem}.*l2.l_partkey).*p2 == ${lineitem}.*l2.l_partkey && ${lineitem}.*l2.l_quantity < ${avgMap}.(${lineitem}.*l2.l_partkey)`
   let query = rh`(sum (${cond} & ${lineitem}.*l2.l_extendedprice)) / 7.0`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q17", schema: types.never })
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q17", schema: types.never, enableOptimizations: false })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q17.out`).toString()
@@ -608,7 +608,7 @@ test("q18", async () => {
 
   let query = rh`sort "o_totalprice" 1 "o_orderdate" 0 ${lineitem3}`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q18", schema: types.never })
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q18", schema: types.never, enableOptimizations: false })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q18.out`).toString()
@@ -657,9 +657,51 @@ test("q19", async () => {
 
   let query = rh`sum (${cond} & (${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount)))`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q19", schema: types.never })
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q19", schema: types.never, enableOptimizations: false })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q19.out`).toString()
+  expect(res).toBe(answer)
+})
+
+
+test("q21", async () => {
+  let nation1 = rh`[${nation}.*n1.n_name == "SAUDI ARABIA" & ${nation}.*n1.n_nationkey] | group ${nation}.*n1.n_nationkey`
+  let supplier1 = rh`[{
+    n_nationkey: ${nation1}.(${supplier}.*s1.s_nationkey).*n2,
+    s_name: ${supplier}.*s1.s_name
+  }] | group ${supplier}.*s1.s_suppkey`
+
+  let cond1 = rh`${lineitem}.*l1.l_receiptdate > ${lineitem}.*l1.l_commitdate`
+  let lineitem1 = rh`[${cond1} & {
+    s_name: ${supplier1}.(${lineitem}.*l1.l_suppkey).*s2.s_name,
+    l_suppkey: ${lineitem}.*l1.l_suppkey
+  }] | group ${lineitem}.*l1.l_orderkey`
+
+  let lineitem2 = rh`[${lineitem}.*l2.l_suppkey] | group ${lineitem}.*l2.l_orderkey`
+
+  let cond2 = rh`${lineitem}.*l3.l_receiptdate > ${lineitem}.*l3.l_commitdate`
+  let lineitem3 = rh`[${cond2} & ${lineitem}.*l3.l_suppkey] | group ${lineitem}.*l3.l_orderkey`
+  
+  let condL2 = rh`${lineitem2}.(${orders}.*o1.o_orderkey).*l5 != ${lineitem1}.(${orders}.*o1.o_orderkey).*l4.l_suppkey`
+  let condL3 = rh`${lineitem3}.(${orders}.*o1.o_orderkey).*l6 != ${lineitem1}.(${orders}.*o1.o_orderkey).*l4.l_suppkey`
+
+  let count = rh`{
+    countL2: count ((${orders}.*o1.o_orderstatus == "F" && ${condL2}) & ${orders}.*o1.o_orderkey),
+    countL3: count ((${orders}.*o1.o_orderstatus == "F" && ${condL3}) & ${orders}.*o1.o_orderkey)
+  } | group ${orders}.*o1.o_orderkey`
+
+  let cond = rh`${count}.(${orders}.*o2.o_orderkey).countL2 != 0 && ${count}.(${orders}.*o2.o_orderkey).countL3 == 0`
+  let orders2 = rh`{
+    s_name: single ((${orders}.*o2.o_orderstatus == "F" && ${cond}) & ${lineitem1}.(${orders}.*o2.o_orderkey).*l7.s_name),
+    numwait: count ((${orders}.*o2.o_orderstatus == "F" && ${cond}) & ${orders}.*o2.o_orderkey)
+  } | group ${lineitem1}.(${orders}.*o2.o_orderkey).*l7.s_name`
+
+  let query = rh`sort "numwait" 1 "s_name" 0 ${orders2}`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q21", schema: types.never, enableOptimizations: false, limit: 100 })
+  let res = await func()
+
+  let answer = fs.readFileSync(`${answersDir}/q21.out`).toString()
   expect(res).toBe(answer)
 })
