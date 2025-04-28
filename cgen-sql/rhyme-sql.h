@@ -6,6 +6,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <sys/time.h>
+#include <string.h>
 
 int fsize(int fd) {
     struct stat stat;
@@ -98,18 +100,23 @@ void println(const char *file, int start, int end) {
 }
 
 void println1(const char *str, int len) {
-    int i = 0;
-    while (i < len) {
-        putchar(str[i]);
-        i++;
-    }
-    putchar('\n');
+    printf("%.*s\n", len, str);
 }
 
 void print(const char *str, int len) {
-    int i = 0;
-    while (i < len) {
-        putchar(str[i]);
-        i++;
+    printf("%.*s", len, str);
+}
+
+void print_date(int date) {
+    int year = date / 10000;          // Extract the year
+
+    if (year == 0) {
+        printf("%d", date);
+        return;
     }
+
+    int month = (date / 100) % 100;  // Extract the month
+    int day = date % 100;            // Extract the day
+
+    printf("%04d-%02d-%02d", year, month, day); // Print in yyyy-mm-dd format
 }

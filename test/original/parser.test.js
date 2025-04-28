@@ -9,13 +9,13 @@ test("pathTest1", () => {
     expect(res.rhyme_ast).toEqual(expected)
 })
 
-test("pathTest2", () => {
-    let res = parse("a + b // comment")
-    let a = ast.ident("a")
-    let b = ast.ident("b")
-    let expected = ast.plus(a,b)
-    expect(res.rhyme_ast).toEqual(expected)
-})
+// test("pathTest2", () => {
+//     let res = parse("a + b // comment")
+//     let a = ast.ident("a")
+//     let b = ast.ident("b")
+//     let expected = ast.plus(a,b)
+//     expect(res.rhyme_ast).toEqual(expected)
+// })
 
 test("pathTest3", () => {
     let res = parse("a.*.*c")

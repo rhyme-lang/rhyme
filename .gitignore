@@ -7,7 +7,8 @@ cgen/test.c
 cgen/test.cpp
 cgen/test.out
 
-cgen-sql/out*
+cgen-sql/out
+cgen-sql/tpch-out
 cgen-sql/data
 
 .vscode
