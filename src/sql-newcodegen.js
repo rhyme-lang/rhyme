@@ -181,21 +181,21 @@ let cgen = {
 
   inc: (expr) => expr + "++",
 
-  binary: (lhs, rhs, op) => `${lhs} ${op} ${rhs}`,
-  ternary: (cond, tVal, fVal) => `${cond} ? ${tVal} : ${fVal}`,
+  binary: (lhs, rhs, op) => `(${lhs} ${op} ${rhs})`,
+  ternary: (cond, tVal, fVal) => `(${cond} ? ${tVal} : ${fVal})`,
 
-  assign: (lhs, rhs) => cgen.binary(lhs, rhs, "="),
+  assign: (lhs, rhs) => `${lhs} = ${rhs}`,
 
-  plus: (lhs, rhs) => cgen.binary(lhs, rhs, "+"),
-  minus: (lhs, rhs) => cgen.binary(lhs, rhs, "-"),
+  add: (lhs, rhs) => cgen.binary(lhs, rhs, "+"),
+  sub: (lhs, rhs) => cgen.binary(lhs, rhs, "-"),
 
   mul: (lhs, rhs) => cgen.binary(lhs, rhs, "*"),
   div: (lhs, rhs) => cgen.binary(lhs, rhs, "/"),
 
   and: (lhs, rhs) => cgen.binary(lhs, rhs, "&&"),
   or: (lhs, rhs) => cgen.binary(lhs, rhs, "||"),
-  equal: (lhs, rhs) => cgen.binary(lhs, rhs, "=="),
-  notEqual: (lhs, rhs) => cgen.binary(lhs, rhs, "!="),
+  eq: (lhs, rhs) => cgen.binary(lhs, rhs, "=="),
+  ne: (lhs, rhs) => cgen.binary(lhs, rhs, "!="),
 
   lt: (lhs, rhs) => cgen.binary(lhs, rhs, "<"),
   gt: (lhs, rhs) => cgen.binary(lhs, rhs, ">"),
@@ -371,7 +371,7 @@ let emitGetTime = (buf) => {
   cgen.stmt(buf)(cgen.call("gettimeofday", `&${timeval}`, "NULL"))
 
   let time = getNewName("t")
-  cgen.declareLong(buf)(time, cgen.plus(cgen.mul(`${timeval}.tv_sec`, "1000000L"), `${timeval}.tv_usec`))
+  cgen.declareLong(buf)(time, cgen.add(cgen.mul(`${timeval}.tv_sec`, "1000000L"), `${timeval}.tv_usec`))
 
   return time
 }
@@ -442,10 +442,10 @@ let emitHashLookUp = (buf, sym, keys) => {
       let keyLen = `${sym}_keys_len${i}[${keyPos}]`
 
       let { str, len } = key.val
-      let comparison = cgen.notEqual(cgen.call("compare_str2", keyStr, keyLen, str, len), "0")
+      let comparison = cgen.ne(cgen.call("compare_str2", keyStr, keyLen, str, len), "0")
       compareKeys = compareKeys ? cgen.or(compareKeys, comparison) : comparison
     } else {
-      let comparison = cgen.notEqual(`${sym}_keys${i}[${keyPos}]`, key.val)
+      let comparison = cgen.ne(`${sym}_keys${i}[${keyPos}]`, key.val)
       compareKeys = compareKeys ? cgen.or(compareKeys, comparison) : comparison
     }
 
@@ -453,9 +453,9 @@ let emitHashLookUp = (buf, sym, keys) => {
 
   // increment the position until we find a match or an empty slot
   cgen.while(buf)(
-    cgen.and(cgen.notEqual(keyPos, "-1"), "(" + compareKeys + ")"),
+    cgen.and(cgen.ne(keyPos, "-1"), "(" + compareKeys + ")"),
     buf1 => {
-      cgen.stmt(buf1)(cgen.assign(pos, cgen.binary("(" + cgen.plus(pos, "1") + ")", HASH_MASK, "&")))
+      cgen.stmt(buf1)(cgen.assign(pos, cgen.binary("(" + cgen.add(pos, "1") + ")", HASH_MASK, "&")))
     }
   )
 
@@ -468,7 +468,7 @@ let emitHashLookUp = (buf, sym, keys) => {
 // Skip the column until the delimiter is found
 let scanColumn = (buf, mappedFile, cursor, size, delim) => {
   cgen.while1(buf)(
-    cgen.notEqual(`${mappedFile}[${cursor}]`, delim),
+    cgen.ne(`${mappedFile}[${cursor}]`, delim),
     cgen.inc(cursor)
   )
   cgen.stmt(buf)(cgen.inc(cursor))
@@ -478,7 +478,7 @@ let scanColumn = (buf, mappedFile, cursor, size, delim) => {
 let scanString = (buf, mappedFile, cursor, size, delim, start, end) => {
   cgen.declareInt(buf)(start, cursor)
   cgen.while1(buf)(
-    cgen.notEqual(`${mappedFile}[${cursor}]`, delim),
+    cgen.ne(`${mappedFile}[${cursor}]`, delim),
     cgen.inc(cursor)
   )
   cgen.declareInt(buf)(end, cursor)
@@ -488,15 +488,24 @@ let scanString = (buf, mappedFile, cursor, size, delim, start, end) => {
 // Scan the column and calculate the integer value
 let scanInteger = (buf, mappedFile, cursor, size, delim, name, type) => {
   cgen.declareVar(buf)(convertToCType(type), name, "0")
+  let negative = getNewName("tmp_negative")
+  cgen.declareVar(buf)(convertToCType(type), negative, "0")
+  cgen.if(buf)(cgen.eq(`${mappedFile}[${cursor}]`, `'-'`), buf1 => {
+    cgen.stmt(buf1)(cgen.assign(negative, "1"))
+    cgen.stmt(buf1)(cgen.inc(cursor))
+  })
   cgen.while(buf)(
-    cgen.notEqual(`${mappedFile}[${cursor}]`, delim),
+    cgen.ne(`${mappedFile}[${cursor}]`, delim),
     buf1 => {
       cgen.comment(buf1)("extract integer")
-      cgen.stmt(buf1)(cgen.assign(name, cgen.plus(cgen.mul(name, "10"), cgen.minus(`${mappedFile}[${cursor}]`, "'0'"), "+")))
+      cgen.stmt(buf1)(cgen.assign(name, cgen.add(cgen.mul(name, "10"), cgen.sub(`${mappedFile}[${cursor}]`, "'0'"), "+")))
       cgen.stmt(buf1)(cgen.inc(cursor))
     }
   )
   cgen.stmt(buf)(cgen.inc(cursor))
+  cgen.if(buf)(negative, buf1 => {
+    cgen.stmt(buf1)(cgen.assign(name, "-" + name))
+  })
 }
 
 // Scan the column and calculate the decimal value
@@ -507,29 +516,36 @@ let scanDecimal = (buf, mappedFile, cursor, size, delim, name, type) => {
   cgen.declareLong(buf)(number, "0")
   cgen.declareLong(buf)(scale, "1")
 
+  let negative = getNewName("tmp_negative")
+  cgen.declareVar(buf)(convertToCType(type), negative, "0")
+  cgen.if(buf)(cgen.eq(`${mappedFile}[${cursor}]`, `'-'`), buf1 => {
+    cgen.stmt(buf1)(cgen.assign(negative, "1"))
+    cgen.stmt(buf1)(cgen.inc(cursor))
+  })
+
   // calculate integer part
   cgen.while(buf)(
     cgen.and(
-      cgen.notEqual(`${mappedFile}[${cursor}]`, "'.'"),
-      cgen.notEqual(`${mappedFile}[${cursor}]`, delim),
+      cgen.ne(`${mappedFile}[${cursor}]`, "'.'"),
+      cgen.ne(`${mappedFile}[${cursor}]`, delim),
     ),
     buf1 => {
       cgen.comment(buf1)("extract integer part")
-      cgen.stmt(buf1)(cgen.assign(number, cgen.plus(cgen.mul(number, "10"), cgen.minus(`${mappedFile}[${cursor}]`, "'0'"), "+")))
+      cgen.stmt(buf1)(cgen.assign(number, cgen.add(cgen.mul(number, "10"), cgen.sub(`${mappedFile}[${cursor}]`, "'0'"), "+")))
       cgen.stmt(buf1)(cgen.inc(cursor))
     }
   )
 
   // check if we have a dot after integer part
   cgen.if(buf)(
-    cgen.equal(`${mappedFile}[${cursor}]`, "'.'"),
+    cgen.eq(`${mappedFile}[${cursor}]`, "'.'"),
     buf1 => {
       cgen.stmt(buf1)(cgen.inc(cursor))
       cgen.while(buf1)(
-        cgen.notEqual(`${mappedFile}[${cursor}]`, delim),
+        cgen.ne(`${mappedFile}[${cursor}]`, delim),
         buf2 => {
           cgen.comment(buf2)("extract fractional part")
-          cgen.stmt(buf1)(cgen.assign(number, cgen.plus(cgen.mul(number, "10"), cgen.minus(`${mappedFile}[${cursor}]`, "'0'"), "+")))
+          cgen.stmt(buf1)(cgen.assign(number, cgen.add(cgen.mul(number, "10"), cgen.sub(`${mappedFile}[${cursor}]`, "'0'"), "+")))
           cgen.stmt(buf1)(cgen.assign(scale, cgen.mul(scale, "10")))
           cgen.stmt(buf2)(cgen.inc(cursor))
         }
@@ -540,6 +556,10 @@ let scanDecimal = (buf, mappedFile, cursor, size, delim, name, type) => {
     cgen.div(cgen.cast("double", number), scale)
   )
   cgen.stmt(buf)(cgen.inc(cursor))
+
+  cgen.if(buf)(negative, buf1 => {
+    cgen.stmt(buf1)(cgen.assign(name, "-" + name))
+  })
 }
 
 // Scan the column and calculate the date value
@@ -633,7 +653,7 @@ let getCSVLoopTxt = (f, file, loadInput) => () => {
     cgen.while(initCursor)(
       cgen.and(
         cgen.lt(cursor, size),
-        cgen.notEqual(`${mappedFile}[${cursor}]`, "'\\n'")
+        cgen.ne(`${mappedFile}[${cursor}]`, "'\\n'")
       ),
       buf1 => cgen.stmt(buf1)(cgen.inc(cursor))
     )
@@ -738,6 +758,61 @@ let getTmpVarValue = (q, sym) => {
   }
 }
 
+let emitWildcardStrSearch = (buf, str, currIdx, parts, partIdx, strictStart, strictEnd, name) => {
+  if (partIdx == parts.length) {
+    cgen.stmt(buf)(cgen.assign(name, "1"))
+    return
+  }
+  let tmp = getNewName("tmp_strstr")
+  cgen.declareInt(buf)(tmp, cgen.call("strnstr_idx", cgen.add(str.val.str, currIdx), cgen.sub(str.val.len, currIdx), "\"" + parts[partIdx] + "\"", parts[partIdx].length))
+
+  let notFound = cgen.eq(tmp, "-1")
+
+  let checkStart
+  if (partIdx == 0 && strictStart) {
+    checkStart = cgen.eq(tmp, "0")
+  } else {
+    checkStart = cgen.ge(tmp, "0")
+  }
+
+
+  let checkEnd
+  if (partIdx == parts.length - 1 && strictEnd) {
+    checkEnd = cgen.eq(cgen.add(tmp, parts[partIdx].length), cgen.sub(str.val.len, currIdx))
+  } else {
+    checkEnd = cgen.le(cgen.add(tmp, parts[partIdx].length), cgen.sub(str.val.len, currIdx))
+  }
+
+  currIdx = cgen.add(tmp, parts[partIdx].length)
+
+  cgen.if(buf)(cgen.and(checkStart, checkEnd), buf1 => {
+    emitWildcardStrSearch(buf1, str, currIdx, parts, partIdx + 1, strictStart, strictEnd, name)
+  }, buf2 => {
+    cgen.stmt(buf2)(cgen.assign(name, "0"))
+  })
+}
+
+// Only works for regex that have .*
+let emitWildcardMatch = (buf, str, regex, name) => {
+  // get the constant parts
+  let parts = regex.split(".*")
+  cgen.declareInt(buf)(name)
+
+  let strictStart = true
+  let strictEnd = true
+
+  if (parts[0] === "") {
+    parts = parts.slice(1)
+    strictStart = false
+  }
+  if (parts[parts.length - 1] === "") {
+    parts = parts.slice(0, -1)
+    strictEnd = false
+  }
+
+  emitWildcardStrSearch(buf, str, "0", parts, 0, strictStart, strictEnd, name)
+}
+
 // Generate code for paths
 // returns the value of the path
 let emitPath = (buf, q) => {
@@ -805,7 +880,7 @@ let emitPath = (buf, q) => {
           if (typing.isString(keyVal.schema)) {
             let start = valName + "_start"
             let end = valName + "_end"
-            val[keyVal.name] = { schema: keyVal.schema, val: { str: cgen.plus(g1.val.mappedFile, start), len: cgen.minus(end, start) } }
+            val[keyVal.name] = { schema: keyVal.schema, val: { str: cgen.add(g1.val.mappedFile, start), len: cgen.sub(end, start) } }
           } else {
             val[keyVal.name] = { schema: keyVal.schema, val: valName }
           }
@@ -819,7 +894,7 @@ let emitPath = (buf, q) => {
         // If we are iterating over a hashMap bucket,
         // get the stored loop info
         bucket = g1
-        let dataPos = `${bucket.val.buckets}[${cgen.plus(cgen.mul(bucket.keyPos, BUCKET_SIZE), quoteVar(e2.op))}]`
+        let dataPos = `${bucket.val.buckets}[${cgen.add(cgen.mul(bucket.keyPos, BUCKET_SIZE), quoteVar(e2.op))}]`
 
         if (typing.isObject(bucket.schema.objValue)) {
           let schema = convertToArrayOfSchema(bucket.schema.objValue)
@@ -903,18 +978,16 @@ let emitPath = (buf, q) => {
           let { str: str1, len: len1 } = e1.val
           let { str: str2, len: len2 } = e2.val
           let name = getNewName("tmp_cmpstr")
-          len1 = `(${len1})`
-          len2 = `(${len2})`
           cgen.declareInt(buf)(name, cgen.call("strncmp", str1, str2, cgen.ternary(cgen.lt(len1, len2), len1, len2)))
-          cgen.stmt(buf)(cgen.assign(name, cgen.ternary(cgen.equal(name, "0"), cgen.minus(len1, len2), name)))
-          return { schema: q.schema, val: "(" + cgen.binary(name, "0", op) + ")" }
+          cgen.stmt(buf)(cgen.assign(name, cgen.ternary(cgen.eq(name, "0"), cgen.sub(len1, len2), name)))
+          return { schema: q.schema, val: cgen.binary(name, "0", op) }
         } else {
-          return { schema: q.schema, val: "(" + cgen.binary(e1.val, e2.val, op) + ")" }
+          return { schema: q.schema, val: cgen.binary(e1.val, e2.val, op) }
         }
       } else if (q.op == "fdiv") {
-        return { schema: q.schema, val: "(" + cgen.binary(cgen.cast("double", e1.val), cgen.cast("double", e2.val), op) + ")" }
+        return { schema: q.schema, val: cgen.binary(cgen.cast("double", e1.val), cgen.cast("double", e2.val), op) }
       } else {
-        return { schema: q.schema, val: "(" + cgen.binary(e1.val, e2.val, op) + ")" }
+        return { schema: q.schema, val: cgen.binary(e1.val, e2.val, op) }
       }
     } else if (q.op == "and") {
       throw new Error("Unexpected and op" + pretty(q))
@@ -923,14 +996,24 @@ let emitPath = (buf, q) => {
     } else if (q.op.startsWith("convert_")) {
       return { schema: q.schema, val: cgen.cast(ctypeMap[q.op.substring("convert_".length)], e1.val) }
     } else if (q.op == "year") {
-      return { schema: q.schema, val: "(" + cgen.div(e1.val, "10000") + ")" }
+      return { schema: q.schema, val: cgen.div(e1.val, "10000") }
     } else if (q.op == "substr") {
       console.assert(typing.isString(e1.schema))
       let e2 = emitPath(buf, q.arg[1])
       let e3 = emitPath(buf, q.arg[2])
-      let str = cgen.plus(e1.val.str, e2.val)
-      let len = cgen.minus(e3.val, e2.val)
+      let str = cgen.add(e1.val.str, e2.val)
+      let len = cgen.sub(e3.val, e2.val)
       return { schema: typeSyms.string, val: { str, len } }
+    } else if (q.op == "like") {
+      console.assert(typing.isString(e1.schema))
+      if (q.arg[1].key != "const" || typeof q.arg[1].key != "string") {
+        throw new Error("Only support constant string regex")
+      }
+
+      let name = getNewName("tmp_like")
+      emitWildcardMatch(buf, e1, q.arg[1].op, name)
+
+      return { schema: q.schema, val: name }
     } else {
       throw new Error("Pure operation not supported: " + pretty(q))
     }
@@ -1033,7 +1116,7 @@ let emitArrayPrint = (buf, sym, limit) => {
 
 // Emit code that inserts a value into the array
 let emitArrayInsert = (buf, array, value) => {
-  cgen.if(buf)(cgen.equal(array.val.dataCount, ARRAY_SIZE), (buf2) => {
+  cgen.if(buf)(cgen.eq(array.val.dataCount, ARRAY_SIZE), (buf2) => {
     cgen.printErr(buf2)(`"array size reached its full capacity\\n"`)
     cgen.return(buf2)("1")
   })
@@ -1198,10 +1281,10 @@ let emitHashMapInit = (buf, sym, keySchema, valSchema) => {
 let emitHashLookUpOrUpdate = (buf, sym, keys, update) => {
   let [pos, keyPos] = emitHashLookUp(buf, sym, keys)
 
-  cgen.if(buf)(cgen.equal(keyPos, "-1"), buf1 => {
+  cgen.if(buf)(cgen.eq(keyPos, "-1"), buf1 => {
     cgen.stmt(buf1)(cgen.assign(keyPos, `${sym}_key_count`))
     cgen.stmt(buf1)(cgen.inc(`${sym}_key_count`))
-    cgen.if(buf1)(cgen.equal(`${sym}_key_count`, HASH_SIZE), (buf2) => {
+    cgen.if(buf1)(cgen.eq(`${sym}_key_count`, HASH_SIZE), (buf2) => {
       cgen.printErr(buf2)(`"hashmap size reached its full capacity\\n"`)
       cgen.return(buf2)("1")
     })
@@ -1239,10 +1322,10 @@ let emitHashLookUpAndUpdate = (buf, sym, keys, update, checkExistance) => {
   let { keySchema, valSchema } = hashMapEnv[sym]
 
   if (checkExistance) {
-    cgen.if(buf)(cgen.equal(keyPos, "-1"), buf1 => {
+    cgen.if(buf)(cgen.eq(keyPos, "-1"), buf1 => {
       cgen.stmt(buf1)(cgen.assign(keyPos, `${sym}_key_count`))
       cgen.stmt(buf1)(cgen.inc(`${sym}_key_count`))
-      cgen.if(buf1)(cgen.equal(`${sym}_key_count`, HASH_SIZE), (buf2) => {
+      cgen.if(buf1)(cgen.eq(`${sym}_key_count`, HASH_SIZE), (buf2) => {
         cgen.printErr(buf2)(`"hashmap size reached its full capacity\\n"`)
         cgen.return(buf2)("1")
       })
@@ -1342,7 +1425,7 @@ let emitHashUpdate = (buf, sym, pos, keyPos, update) => {
 
 // Emit the code that insertes a value into a hashmap bucket
 let emitHashBucketInsert = (buf, bucket, value) => {
-  cgen.if(buf)(cgen.equal(bucket.val.bucketCount, BUCKET_SIZE), (buf2) => {
+  cgen.if(buf)(cgen.eq(bucket.val.bucketCount, BUCKET_SIZE), (buf2) => {
     cgen.printErr(buf2)(`"hashmap bucket size reached its full capacity\\n"`)
     cgen.return(buf2)("1")
   })
@@ -1355,9 +1438,9 @@ let emitHashBucketInsert = (buf, bucket, value) => {
   let bucketPos = getNewName("bucket_pos")
 
   cgen.declareInt(buf)(bucketPos, bucket.val.bucketCount)
-  cgen.stmt(buf)(cgen.assign(bucket.val.bucketCount, cgen.plus(bucketPos, "1")))
+  cgen.stmt(buf)(cgen.assign(bucket.val.bucketCount, cgen.add(bucketPos, "1")))
 
-  let idx = cgen.plus(cgen.mul(bucket.keyPos, BUCKET_SIZE), bucketPos)
+  let idx = cgen.add(cgen.mul(bucket.keyPos, BUCKET_SIZE), bucketPos)
   cgen.stmt(buf)(cgen.assign(`${bucket.val.buckets}[${idx}]`, dataPos))
 
   if (typing.isObject(bucket.schema.objValue)) {
@@ -1461,15 +1544,15 @@ let emitCompareFunc = (buf, name, valPairs, orders) => {
 
     if (typing.isString(schema)) {
       cgen.declareInt(buf)(tmp, cgen.call("strncmp", aVal.val.str, bVal.val.str, cgen.ternary(cgen.lt(aVal.val.len, bVal.val.len), aVal.val.len, bVal.val.len)))
-      cgen.stmt(buf)(cgen.assign(tmp, cgen.ternary(cgen.equal(tmp, "0"), cgen.minus(aVal.val.len, bVal.val.len), tmp)))
+      cgen.stmt(buf)(cgen.assign(tmp, cgen.ternary(cgen.eq(tmp, "0"), cgen.sub(aVal.val.len, bVal.val.len), tmp)))
     } else {
-      cgen.declareInt(buf)(tmp, cgen.minus(aVal.val, bVal.val))
+      cgen.declareInt(buf)(tmp, cgen.ternary(cgen.lt(aVal.val, bVal.val), "-1", cgen.ternary(cgen.gt(aVal.val, bVal.val), "1", "0")))
     }
 
     if (i == valPairs.length - 1) {
       cgen.return(buf)(tmp)
     } else {
-      cgen.if(buf)(cgen.notEqual(tmp, "0"), buf1 => {
+      cgen.if(buf)(cgen.ne(tmp, "0"), buf1 => {
         cgen.return(buf1)(tmp)
       })
     }
@@ -1628,7 +1711,7 @@ let emitStatefulUpdate = (buf, q, lhs) => {
   } else if (q.op == "print") {
     if (typing.isString(e.schema.type)) {
       let { str, len } = rhs.val
-      cgen.stmt(buf)(cgen.call("printf", `"%.*s\\n"`,len, str))
+      cgen.stmt(buf)(cgen.call("printf", `"%.*s\\n"`, len, str))
     } else {
       cgen.stmt(buf)(cgen.call("printf", `"%${getFormatSpecifier(q.arg[0].schema.type)}\\n"`, rhs.val))
     }
@@ -2063,7 +2146,7 @@ let emitCode = (q, ir, settings) => {
 
   let t2 = emitGetTime(epilog)
 
-  cgen.printErr(epilog)(`"Timing:\\n\\tInitializaton:\\t%ld μs\\n\\tRuntime:\\t%ld μs\\n\\tTotal:\\t\\t%ld μs\\n"`, cgen.minus(t1, t0), cgen.minus(t2, t1), cgen.minus(t2, t0))
+  cgen.printErr(epilog)(`"Timing:\\n\\tInitializaton:\\t%ld μs\\n\\tRuntime:\\t%ld μs\\n\\tTotal:\\t\\t%ld μs\\n"`, cgen.sub(t1, t0), cgen.sub(t2, t1), cgen.sub(t2, t0))
 
   cgen.return(epilog)("0")
   epilog.push("}")

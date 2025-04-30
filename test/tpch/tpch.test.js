@@ -208,6 +208,55 @@ test("q1-alt", async () => {
   expect(res).toBe(answer)
 })
 
+test("q2", async () => {
+  let region1 = rh`[${region}.*r1.r_name == "EUROPE" & ${region}.*r1.r_regionkey] | group ${region}.*r1.r_regionkey`
+
+  let nation1 = rh`[{
+    r_regionkey: ${region1}.(${nation}.*n1.n_regionkey).*r2,
+    n_nationkey: ${nation}.*n1.n_nationkey,
+    n_name: ${nation}.*n1.n_name
+  }] | group ${nation}.*n1.n_nationkey`
+
+  let supplier1 = rh`[{
+    n_name: ${nation1}.(${supplier}.*s1.s_nationkey).*n2.n_name,
+    s_suppkey: ${supplier}.*s1.s_suppkey,
+    s_name: ${supplier}.*s1.s_name,
+    s_address: ${supplier}.*s1.s_address,
+    s_phone: ${supplier}.*s1.s_phone,
+    s_acctbal: ${supplier}.*s1.s_acctbal,
+    s_comment: ${supplier}.*s1.s_comment
+  }] | group ${supplier}.*s1.s_suppkey`
+
+  let joinCond = rh`${supplier1}.(${partsupp}.*ps1.ps_suppkey).*s2.s_suppkey == ${partsupp}.*ps1.ps_suppkey`
+  let partsupp1 = rh`min (${joinCond} & ${partsupp}.*ps1.ps_supplycost) | group ${partsupp}.*ps1.ps_partkey`
+
+  let part1 = rh`[${part}.*p1.p_size == 15 && (like ${part}.*p1.p_type ".*BRASS") & {
+    p_partkey: ${part}.*p1.p_partkey,
+    p_mfgr: ${part}.*p1.p_mfgr,
+    min_cost: ${partsupp1}.(${part}.*p1.p_partkey)
+  }] | group ${part}.*p1.p_partkey`
+
+  let joinCond2 = rh`${part1}.(${partsupp}.*ps2.ps_partkey).*p2.min_cost == ${partsupp}.*ps2.ps_supplycost`
+  let partsupp2 = rh`[${joinCond2} & {
+    s_acctbal: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).*s3.s_acctbal,
+    s_name: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).*s3.s_name,
+    n_name: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).*s3.n_name,
+    p_partkey: ${partsupp}.*ps2.ps_partkey,
+    p_mfgr: ${part1}.(${partsupp}.*ps2.ps_partkey).*p2.p_mfgr,
+    s_address: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).*s3.s_address,
+    s_phone: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).*s3.s_phone,
+    s_comment: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).*s3.s_comment
+  }]`
+
+  let query = rh`sort "s_acctbal" 1 "n_name" 0 "s_name" 0 "p_partkey" 0 ${partsupp2}`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q2", schema: types.never, enableOptimizations: false, limit: 100 })
+  let res = await func()
+
+  let answer = fs.readFileSync(`${answersDir}/q2.out`).toString()
+  expect(res).toBe(answer)
+})
+
 test("q3", async () => {
   let customer1 = rh`[${customer}.*c1.c_mktsegment == "BUILDING" & ${customer}.*c1.c_custkey] | group ${customer}.*c1.c_custkey`
 

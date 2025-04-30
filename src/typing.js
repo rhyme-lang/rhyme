@@ -1040,11 +1040,34 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
         } else if (q.op == "substr") {
             // arg has to be of type date
             let {type: t1, props: p1} = argTups[0];
+            let {type: t2, props: p2} = argTups[1];
+            let {type: t3, props: p3} = argTups[2];
             if (!isString(t1))
                 throw new Error("Unable to perform substr operation on non-string type: " + prettyPrintType(t1) + "\nReceived from query: " + pretty(q.arg[0]));
+
+            if (!isInteger(t2))
+                throw new Error("Unable to perform substr operation on non-integer indices: " + prettyPrintType(t2) + "\nReceived from query: " + pretty(q.arg[1]));
+
+            if (!isInteger(t3))
+                throw new Error("Unable to perform substr operation on non-integer indices: " + prettyPrintType(t3) + "\nReceived from query: " + pretty(q.arg[2]));
+
             return {
                 type: types.string,
                 props: p1
+            }
+        } else if (q.op == "like") {
+            // arg has to be of type date
+            let {type: t1, props: p1} = argTups[0];
+            let {type: t2, props: p2} = argTups[1];
+            if (!isString(t1))
+                throw new Error("Unable to perform substr operation on non-string type: " + prettyPrintType(t1) + "\nReceived from query: " + pretty(q.arg[0]));
+
+            if (!isString(t2))
+                throw new Error("Unable to perform substr operation on non-string regex: " + prettyPrintType(t2) + "\nReceived from query: " + pretty(q.arg[1]));
+
+            return {
+                type: types.boolean,
+                props: union(p1, nothingSet)
             }
         }
         throw new Error("Pure operation not implemented: " + q.op);
