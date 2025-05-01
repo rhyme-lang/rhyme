@@ -464,6 +464,52 @@ test("q8", async () => {
   expect(res).toBe(answer)
 })
 
+test("q9", async () => {
+  let nation1 = rh`[${nation}.*n1.n_name] | group ${nation}.*n1.n_nationkey`
+
+  let supplier1 = rh`[{
+    s_suppkey: ${supplier}.*s1.s_suppkey,
+    n_name: ${nation1}.(${supplier}.*s1.s_nationkey).*n2
+  }] | group ${supplier}.*s1.s_suppkey`
+
+  let part1 = rh`[(like ${part}.*p1.p_name ".*green.*") & ${part}.*p1.p_partkey] | group ${part}.*p1.p_partkey`
+
+  let partsupp1 = rh`[{
+    p_partkey: ${part1}.(${partsupp}.*ps1.ps_partkey).*p2,
+    s_suppkey: ${supplier1}.(${partsupp}.*ps1.ps_suppkey).*s2.s_suppkey,
+    n_name: ${supplier1}.(${partsupp}.*ps1.ps_suppkey).*s2.n_name,
+    ps_supplycost: ${partsupp}.*ps1.ps_supplycost
+  }] | group ${partsupp}.*ps1.ps_partkey`
+
+  let joinCond = rh`${partsupp1}.(${lineitem}.*l1.l_partkey).*ps2.s_suppkey == ${lineitem}.*l1.l_suppkey`
+  let lineitem1 = rh`[${joinCond} & {
+    nation: ${partsupp1}.(${lineitem}.*l1.l_partkey).*ps2.n_name,
+    ps_supplycost: ${partsupp1}.(${lineitem}.*l1.l_partkey).*ps2.ps_supplycost,
+    l_orderkey: ${lineitem}.*l1.l_orderkey,
+    l_quantity: ${lineitem}.*l1.l_quantity,
+    l_extendedprice: ${lineitem}.*l1.l_extendedprice,
+    l_discount: ${lineitem}.*l1.l_discount
+  }] | group ${lineitem}.*l1.l_orderkey`
+
+  let amount = rh`${lineitem1}.(${orders}.*o1.o_orderkey).*l2.l_extendedprice * (1 - ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.l_discount) - ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.ps_supplycost * ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.l_quantity`
+  let orders1 = rh`{
+    nation: single ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.nation,
+    o_year: (year ${orders}.*o1.o_orderdate),
+    sum_profit: sum ${amount}
+  } | group [
+    ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.nation,
+    (year ${orders}.*o1.o_orderdate)
+  ]`
+
+  let query = rh`sort "nation" 0 "o_year" 1 ${orders1}`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q9", schema: types.never, enableOptimizations: false })
+  let res = await func()
+
+  let answer = fs.readFileSync(`${answersDir}/q9.out`).toString()
+  expect(res).toBe(answer)
+})
+
 test("q10", async () => {
   let nation1 = rh`[${nation}.*n1.n_name] | group ${nation}.*n1.n_nationkey`
   let orders1 = rh`[(${orders}.*o1.o_orderdate >= 19931001 && ${orders}.*o1.o_orderdate < 19940101) & ${orders}.*o1.o_orderkey] | group ${orders}.*o1.o_custkey`
