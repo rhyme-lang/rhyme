@@ -616,15 +616,26 @@ test("q12", async () => {
 })
 
 test("q13", async () => {
-  let query = rh`1`
+  let cond = rh`(like ${orders}.*o1.o_comment ".*special.*requests.*") == 0`
+  let orders1 = rh`[${cond} & ${orders}.*o1.o_orderkey] | group ${orders}.*o1.o_custkey`
+
+  let customer1 = rh`{
+    c_custkey: single ${customer}.*c1.c_custkey,
+    c_count: count ${orders1}.(${customer}.*c1.c_custkey).*o2
+  } | group ${customer}.*c1.c_custkey`
+
+  let customer2 = rh`{
+    c_count: single ${customer1}.*c2.c_count,
+    custdist: count ${customer1}.*c2
+  } | group ${customer1}.*c2.c_count`
+
+  let query = rh`sort ${customer2} "custdist" 1 "c_count" 1`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q13", schema: types.never, enableOptimizations: false })
   let res = await func()
 
-  console.log(res)
-
-  // let answer = fs.readFileSync(`${answersDir}/q13.out`).toString()
-  // expect(res).toBe(answer)
+  let answer = fs.readFileSync(`${answersDir}/q13.out`).toString()
+  expect(res).toBe(answer)
 })
 
 test("q15", async () => {

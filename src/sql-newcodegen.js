@@ -19,7 +19,7 @@ const { unique, union } = sets
 const KEY_SIZE = 16777216
 const HASH_SIZE = KEY_SIZE
 
-const BUCKET_SIZE = 8
+const BUCKET_SIZE = 64
 const DATA_SIZE = KEY_SIZE * BUCKET_SIZE
 
 const HASH_MASK = HASH_SIZE - 1
@@ -703,9 +703,10 @@ let getHashBucketLoopTxt = (f, bucket, dataBuf) => () => {
 
   let loopHeader = []
 
-  loopHeader.push(`for (int ${quoteVar(v)} = 0; ; ${quoteVar(v)}++) {`)
+  loopHeader.push(`if (${bucket.keyPos} != -1) for (int ${quoteVar(v)} = 0; ; ${quoteVar(v)}++) {`)
 
   let boundsChecking = []
+
   boundsChecking.push(`if (${quoteVar(v)} >= ${bucket.val.bucketCount}) break;`)
 
   return {
