@@ -638,6 +638,28 @@ test("q13", async () => {
   expect(res).toBe(answer)
 })
 
+test("q14", async () => {
+  let cond1 = rh`${lineitem}.*l1.l_shipdate >= 19950901 && ${lineitem}.*l1.l_shipdate < 19951001`
+  let lineitem1 = rh`[${cond1} & {
+    l_extendedprice: ${lineitem}.*l1.l_extendedprice,
+    l_discount: ${lineitem}.*l1.l_discount
+  }] | group ${lineitem}.*l1.l_partkey`
+
+  let cond2 = rh`like ${part}.*p1.p_type "PROMO.*"`
+
+  let revenue = rh`${lineitem1}.(${part}.*p1.p_partkey).*l2.l_extendedprice * (1 - ${lineitem1}.(${part}.*p1.p_partkey).*l2.l_discount)`
+  let sum1 = rh`sum (${cond2} & ${revenue})`
+  let sum2 = rh`sum (${revenue})`
+
+  let query = rh`100 * ${sum1} / ${sum2}`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q14", schema: types.never, enableOptimizations: false })
+  let res = await func()
+
+  let answer = fs.readFileSync(`${answersDir}/q14.out`).toString()
+  expect(res).toBe(answer)
+})
+
 test("q15", async () => {
   let supplier1 = rh`[{
     s_name: ${supplier}.*s1.s_name,
