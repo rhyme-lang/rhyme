@@ -1030,7 +1030,7 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
             let {type: t3, props: p3} = argTups[2];
             return {type: createUnion(t2, t3), props: union(p2, p3)};
         } else if (q.op == "sort") {
-            return argTups[argTups.length - 1];
+            return argTups[0];
         } else if (q.op == "year") {
             // arg has to be of type date
             let {type: t1, props: p1} = argTups[0];

@@ -161,7 +161,7 @@ test("q1", async () => {
     count_order: count (${cond} & ${lineitem}.*.l_orderkey)
   } | group [${lineitem}.*.l_returnflag, ${lineitem}.*.l_linestatus]`
 
-  let query = rh`sort "l_returnflag" 0 "l_linestatus" 0 ${query1}`
+  let query = rh`sort ${query1} "l_returnflag" 0 "l_linestatus" 0`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q1", schema: types.never, enableOptimizations: false })
   let res = await func()
@@ -199,7 +199,7 @@ test("q1-alt", async () => {
     avg_disc: (${lineitem1}.*.sum_l_discount) / (${lineitem1}.*.count_l_discount),
     count_order: ${lineitem1}.*.count_order
   }]`
-  let query = rh`sort "l_returnflag" 0 "l_linestatus" 0 ${lineitem2}`
+  let query = rh`sort ${lineitem2} "l_returnflag" 0 "l_linestatus" 0`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q1-alt", schema: types.never, enableOptimizations: false })
   let res = await func()
@@ -248,7 +248,7 @@ test("q2", async () => {
     s_comment: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).*s3.s_comment
   }]`
 
-  let query = rh`sort "s_acctbal" 1 "n_name" 0 "s_name" 0 "p_partkey" 0 ${partsupp2}`
+  let query = rh`sort ${partsupp2} "s_acctbal" 1 "n_name" 0 "s_name" 0 "p_partkey" 0`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q2", schema: types.never, enableOptimizations: false, limit: 100 })
   let res = await func()
@@ -278,7 +278,7 @@ test("q3", async () => {
     o_shippriority: (${cond} & ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.o_shippriority)
   } | group [${lineitem}.*l1.l_orderkey, ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.o_orderdate, ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.o_shippriority]`
 
-  let query = rh`sort "revenue" 1 "o_orderdate" 0 ${lineitem1}`
+  let query = rh`sort ${lineitem1} "revenue" 1 "o_orderdate" 0`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q3", schema: types.never, enableOptimizations: false, limit: 10 })
   let res = await func()
@@ -296,7 +296,7 @@ test("q4", async () => {
     o_orderpriority: ${orders}.*.o_orderpriority,
     order_count: count ((${cond} && ${countR}.(${orders}.*.o_orderkey) > 0) & ${orders}.*.o_orderkey)
   } | group ${orders}.*.o_orderpriority`
-  let query = rh`sort "o_orderpriority" 0 ${countL}`
+  let query = rh`sort ${countL} "o_orderpriority" 0`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q4", schema: types.never, enableOptimizations: false })
   let res = await func()
@@ -339,7 +339,7 @@ test("q5", async () => {
     revenue: sum (${cond} & (${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount)))
   } | group ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.n_name`
 
-  let query = rh`sort "revenue" 1 ${lineitem1}`
+  let query = rh`sort ${lineitem1} "revenue" 1`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q5", schema: types.never, enableOptimizations: false })
   let res = await func()
@@ -401,7 +401,7 @@ test("q7", async () => {
     year ${lineitem}.*l1.l_shipdate
   ]`
 
-  let query = rh`sort "supp_nation" 0 "cust_nation" 0 "l_year" 0 ${lineitem1}`
+  let query = rh`sort ${lineitem1} "supp_nation" 0 "cust_nation" 0 "l_year" 0`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q7", schema: types.never, enableOptimizations: false })
   let res = await func()
@@ -455,7 +455,7 @@ test("q8", async () => {
     mkt_share: (${sumBrazil} / ${sumTotal})
   } | group (year ${customer1}.(${supplier}.*s1.s_suppkey).*c2.o_orderdate)`
 
-  let query = rh`sort "year" 0 ${supplier1}`
+  let query = rh`sort ${supplier1} "year" 0`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q8", schema: types.never, enableOptimizations: false })
   let res = await func()
@@ -501,7 +501,7 @@ test("q9", async () => {
     (year ${orders}.*o1.o_orderdate)
   ]`
 
-  let query = rh`sort "nation" 0 "o_year" 1 ${orders1}`
+  let query = rh`sort ${orders1} "nation" 0 "o_year" 1`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q9", schema: types.never, enableOptimizations: false })
   let res = await func()
@@ -545,7 +545,7 @@ test("q10", async () => {
     ${customer1}.(${lineitem}.*l1.l_orderkey).*c2.c_comment
   ]`
 
-  let query = rh`sort "revenue" 1 ${lineitem1}`
+  let query = rh`sort ${lineitem1} "revenue" 1`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q10", schema: types.never, enableOptimizations: false, limit: 20  })
   let res = await func()
@@ -576,7 +576,7 @@ test("q11", async () => {
     value: ${partsupp1}.*.sum
   }]`
 
-  let query = rh`sort "value" 1 ${partsupp2}`
+  let query = rh`sort ${partsupp2} "value" 1`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q11", schema: types.never, enableOptimizations: false })
   let res = await func()
@@ -602,17 +602,29 @@ test("q12", async () => {
 
   let lineitem1 = rh`{
     l_shipmode: (${cond} & ${lineitem}.*l1.l_shipmode),
-    high_line_count: count? ((${cond} && ${cond5}) & ${lineitem}.*l1.l_comment),
-    low_line_count: count? ((${cond} && ${cond6}) & ${lineitem}.*l1.l_comment)
+    high_line_count: count? ((${cond} && ${cond5}) & ${lineitem}.*l1),
+    low_line_count: count? ((${cond} && ${cond6}) & ${lineitem}.*l1)
   } | group ${lineitem}.*l1.l_shipmode`
 
-  let query = rh`sort "l_shipmode" 0 ${lineitem1}`
+  let query = rh`sort ${lineitem1} "l_shipmode" 0`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q12", schema: types.never, enableOptimizations: false })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q12.out`).toString()
   expect(res).toBe(answer)
+})
+
+test("q13", async () => {
+  let query = rh`1`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q13", schema: types.never, enableOptimizations: false })
+  let res = await func()
+
+  console.log(res)
+
+  // let answer = fs.readFileSync(`${answersDir}/q13.out`).toString()
+  // expect(res).toBe(answer)
 })
 
 test("q15", async () => {
@@ -701,7 +713,7 @@ test("q18", async () => {
     ${orders1}.(${lineitem}.*l4.l_orderkey).*o2.o_totalprice
   ]`
 
-  let query = rh`sort "o_totalprice" 1 "o_orderdate" 0 ${lineitem3}`
+  let query = rh`sort ${lineitem3} "o_totalprice" 1 "o_orderdate" 0`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q18", schema: types.never, enableOptimizations: false })
   let res = await func()
@@ -791,7 +803,7 @@ test("q21", async () => {
     numwait: count ((${orders}.*o2.o_orderstatus == "F" && ${cond}) & ${orders}.*o2.o_orderkey)
   } | group ${lineitem1}.(${orders}.*o2.o_orderkey).*l7.s_name`
 
-  let query = rh`sort "numwait" 1 "s_name" 0 ${orders2}`
+  let query = rh`sort ${orders2} "numwait" 1 "s_name" 0`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q21", schema: types.never, enableOptimizations: false, limit: 100 })
   let res = await func()
@@ -825,7 +837,7 @@ test("q22", async () => {
     totalacctbal: sum? (${cond6} & ${customer}.*c2.c_acctbal)
   } | group (substr ${customer}.*c2.c_phone 0 2)`
 
-  let query = rh`sort "cntrycode" 0 ${customer2}`
+  let query = rh`sort ${customer2} "cntrycode" 0`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q22", schema: types.never, enableOptimizations: false })
   let res = await func()

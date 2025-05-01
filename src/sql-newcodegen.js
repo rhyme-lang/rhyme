@@ -342,14 +342,14 @@ let extractUsedAndSortedCols = (q) => {
     // if a column is used for sorting,
     // we need to define it as a global array
     // so that it is accessbile to the comparison function
-    let columns = q.arg.slice(0, -1)
-    extractUsedAndSortedCols(q.arg[q.arg.length - 1])
-    sortedCols[tmpSym(q.arg[q.arg.length - 1].op)] ??= {}
+    let columns = q.arg.slice(1)
+    extractUsedAndSortedCols(q.arg[0])
+    sortedCols[tmpSym(q.arg[0].op)] ??= {}
     for (let i = 0; i < columns.length; i += 2) {
       let column = columns[i]
       let order = columns[i + 1]
 
-      sortedCols[tmpSym(q.arg[q.arg.length - 1].op)][column.op] = true
+      sortedCols[tmpSym(q.arg[0].op)][column.op] = true
 
       if (!(column.key == "const" && typeof column.op == "string")) {
         throw new Error("Invalid column for sorting: " + pretty(column))
@@ -1563,7 +1563,7 @@ let emitCompareFunc = (buf, name, valPairs, orders) => {
 let emitHashMapSorting = (buf, q, hashMap) => {
   let sym = hashMap.val.sym
 
-  let columns = q.arg.slice(0, -1)
+  let columns = q.arg.slice(1)
 
   let vals = []
   let orders = []
@@ -1593,7 +1593,7 @@ let emitArraySorting = (buf, q, array) => {
   let sym = array.val.sym
   let valSchema = array.schema.objValue
 
-  let columns = q.arg.slice(0, -1)
+  let columns = q.arg.slice(1)
 
   let vals = []
   let orders = []
@@ -2119,7 +2119,7 @@ let emitCode = (q, ir, settings) => {
   let epilog = []
   let res
   if (q.key == "pure" && q.op == "sort") {
-    res = emitPath(epilog, q.arg[q.arg.length - 1])
+    res = emitPath(epilog, q.arg[0])
     if (res.tag == "hashMap") {
       emitHashMapSorting(epilog, q, res)
     } else if (res.tag == "array") {
