@@ -690,6 +690,49 @@ test("q15", async () => {
   expect(res).toBe(answer)
 })
 
+test("q16", async () => {
+  let supplier1 = rh`count ((like ${supplier}.*s1.s_comment ".*Customer.*Complaints.*") & ${supplier}.*s1) | group ${supplier}.*s1.s_suppkey`
+
+  let partsupp1 = rh`[${supplier1}.(${partsupp}.*ps1.ps_suppkey) == 0 & ${partsupp}.*ps1.ps_suppkey] | group ${partsupp}.*ps1.ps_partkey`
+
+  let cond1 = rh`${part}.*p1.p_brand != "Brand#45" && (like ${part}.*p1.p_type "MEDIUM POLISHED.*") == 0`
+  let cond2 = rh`${part}.*p1.p_size == 42 || ${part}.*p1.p_size == 14 || ${part}.*p1.p_size == 23 || ${part}.*p1.p_size == 45 ||
+                 ${part}.*p1.p_size == 19 || ${part}.*p1.p_size == 3 || ${part}.*p1.p_size == 36 || ${part}.*p1.p_size == 9`
+
+  let cond = rh`${cond1} && ${cond2}`
+  
+  let part1 = rh`{
+    p_brand: single (${cond} & ${part}.*p1.p_brand),
+    p_type: single (${cond} & ${part}.*p1.p_type),
+    p_size: single (${cond} & ${part}.*p1.p_size),
+    ps_suppkey: single (${cond} & ${partsupp1}.(${part}.*p1.p_partkey).*ps2)
+  } | group [
+    ${part}.*p1.p_brand,
+    ${part}.*p1.p_type,
+    ${part}.*p1.p_size,
+    ${partsupp1}.(${part}.*p1.p_partkey).*ps2
+  ]`
+
+  let part2 = rh`{
+    p_brand: single ${part1}.*p2.p_brand,
+    p_type: single ${part1}.*p2.p_type,
+    p_size: single ${part1}.*p2.p_size,
+    supplier_cnt: count ${part1}.*p2.ps_suppkey
+  } | group [
+    ${part1}.*p2.p_brand,
+    ${part1}.*p2.p_type,
+    ${part1}.*p2.p_size
+  ]`
+
+  let query = rh`sort ${part2} "supplier_cnt" 1 "p_brand" 0 "p_type" 0 "p_size" 0`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q16", schema: types.never, enableOptimizations: false })
+  let res = await func()
+
+  let answer = fs.readFileSync(`${answersDir}/q16.out`).toString()
+  expect(res).toBe(answer)
+})
+
 test("q17", async () => {
   let part1 = rh`[
     (${part}.*p1.p_brand == "Brand#23" && ${part}.*p1.p_container == "MED BOX") & ${part}.*p1.p_partkey
