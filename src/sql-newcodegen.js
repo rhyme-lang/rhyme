@@ -411,7 +411,7 @@ let hash = (buf, keys, keySchema) => {
       throw new Error("Cannot hash key with type " + typing.prettyPrintType(schema))
     }
 
-    cgen.stmt(buf)(cgen.binary(hashed, "8", "<<"))
+    cgen.stmt(buf)(cgen.binary(hashed, "8", "<<="))
     cgen.stmt(buf)(cgen.binary(hashed, tmpHash, "+="))
   }
 

@@ -847,6 +847,44 @@ test("q19", async () => {
   expect(res).toBe(answer)
 })
 
+test("q20", async () => {
+  let nation1 = rh`[${nation}.*n1.n_name == "CANADA" & ${nation}.*n1.n_nationkey] | group ${nation}.*n1.n_nationkey`
+
+  let part1 = rh`count ((like ${part}.*p1.p_name "forest.*") & ${part}.*p1) | group ${part}.*p1.p_partkey`
+  let partsupp1 = rh`[${part1}.(${partsupp}.*ps1.ps_partkey) > 0 & {
+    ps_partkey: ${partsupp}.*ps1.ps_partkey,
+    ps_suppkey: ${partsupp}.*ps1.ps_suppkey,
+    ps_availqty: ${partsupp}.*ps1.ps_availqty
+  }] | group ${partsupp}.*ps1.ps_partkey`
+
+  let cond1 = rh`${lineitem}.*l1.l_shipdate >= 19940101 && ${lineitem}.*l1.l_shipdate < 19950101`
+  let lineitem1 = rh`{
+    l_partkey: single (${cond1} & ${lineitem}.*l1.l_partkey),
+    l_suppkey: single (${cond1} & ${lineitem}.*l1.l_suppkey),
+    sum: sum? (${cond1} & ${lineitem}.*l1.l_quantity)
+  } | group [${lineitem}.*l1.l_partkey, ${lineitem}.*l1.l_suppkey]`
+
+  let cond2 = rh`${partsupp1}.(${lineitem1}.*l2.l_partkey).*ps2.ps_suppkey == ${lineitem1}.*l2.l_suppkey`
+  let cond3 = rh`${partsupp1}.(${lineitem1}.*l2.l_partkey).*ps2.ps_availqty > 0.5 * ${lineitem1}.*l2.sum`
+  let lineitem2 = rh`count ((${cond2} && ${cond3}) & ${lineitem1}.*l2) | group ${partsupp1}.(${lineitem1}.*l2.l_partkey).*ps2.ps_suppkey`
+
+  let cond4 = rh`${nation1}.(${supplier}.*s1.s_nationkey).*n2 == ${supplier}.*s1.s_nationkey`
+  let cond5 = rh`${lineitem2}.(${supplier}.*s1.s_suppkey) > 0`
+
+  let supplier1 = rh`{
+    s_name: ((${cond4} && ${cond5}) & ${supplier}.*s1.s_name),
+    s_address: ((${cond4} && ${cond5}) & ${supplier}.*s1.s_address)
+  } | group [${supplier}.*s1.s_name, ${supplier}.*s1.s_address]`
+  
+  let query = rh`sort ${supplier1} "s_name" 0`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q20", schema: types.never, enableOptimizations: false })
+  let res = await func()
+
+  let answer = fs.readFileSync(`${answersDir}/q20.out`).toString()
+  expect(res).toBe(answer)
+})
+
 test("q21", async () => {
   let nation1 = rh`[${nation}.*n1.n_name == "SAUDI ARABIA" & ${nation}.*n1.n_nationkey] | group ${nation}.*n1.n_nationkey`
   let supplier1 = rh`[{
