@@ -15,6 +15,9 @@ const { unique, union } = sets
 // Object: { schema: [...], val: { <key>: <val>, ... }, tag: "object" }
 // File input: { schema, val: mappedFile, tag: "inputFile" }
 // C values will have a keyPos property if it is a result from hash lookup
+//
+// C values could have the optional "cond" property
+// The value is not valid (evaluates to undefined) if cond is true
 
 const KEY_SIZE = 16777216
 const HASH_SIZE = KEY_SIZE
@@ -396,8 +399,20 @@ let emitLoadInput = (buf, filename, id) => {
 // Calculate the hash value for a set of keys
 let hash = (buf, keys, keySchema) => {
   let hashed = getNewName("hash")
-  cgen.declareULong(buf)(hashed, "0")
 
+  if (keys.length == 1) {
+    let schema = keys[0].schema.type || keys[0].schema
+    if (typing.isString(schema)) {
+      cgen.declareULong(buf)(hashed, cgen.call("hash", keys[0].val.str, keys[0].val.len))
+    } else if (typing.isNumber(schema) || schema.typeSym == typeSyms.date) {
+      cgen.declareULong(buf)(hashed, cgen.cast("unsigned long", keys[0].val))
+    } else {
+      throw new Error("Cannot hash key with type " + typing.prettyPrintType(schema))
+    }
+    return hashed
+  }
+
+  cgen.declareULong(buf)(hashed, "0")
   for (let i in keys) {
     let key = keys[i]
     let schema = keySchema[i]
@@ -411,8 +426,8 @@ let hash = (buf, keys, keySchema) => {
       throw new Error("Cannot hash key with type " + typing.prettyPrintType(schema))
     }
 
-    cgen.stmt(buf)(cgen.binary(hashed, "8", "<<="))
-    cgen.stmt(buf)(cgen.binary(hashed, tmpHash, "+="))
+    cgen.stmt(buf)(cgen.assign(hashed, cgen.binary(hashed, "8", "<<")))
+    cgen.stmt(buf)(cgen.assign(hashed, cgen.binary(hashed, tmpHash, "+=")))
   }
 
   return hashed
@@ -580,7 +595,7 @@ let scanDate = (buf, mappedFile, cursor, size, delim, name) => {
   cgen.declareVar(buf)("int32_t", name,
     `(((((((${digits[0]} * 10 + ${digits[1]}) * 10 + ${digits[2]}) * 10 + ${digits[3]}) * 10 + ${digits[5]}) * 10 + ${digits[6]}) * 10 + ${digits[8]}) * 10 + ${digits[9]}) - 533333328`
   )
-  cgen.stmt(buf)(cgen.binary(cursor, "11", "+="))
+  cgen.stmt(buf)(cgen.assign(cursor, cgen.binary(cursor, "11", "+")))
 }
 
 // Emit code that scans through each row in the CSV file.
@@ -624,7 +639,7 @@ let emitRowScanning = (f, file, cursor, schema, first = true) => {
       scanString(buf, mappedFile, cursor, size, delim, start, end)
     }
   } else if (type.typeSym == typeSyms.date) {
-    cgen.stmt(buf)(cgen.binary(cursor, "11", "+="))
+    cgen.stmt(buf)(cgen.assign(cursor, cgen.binary(cursor, "11", "+")))
   } else {
     scanColumn(buf, mappedFile, cursor, size, delim)
   }
@@ -703,7 +718,7 @@ let getHashBucketLoopTxt = (f, bucket, dataBuf) => () => {
 
   let loopHeader = []
 
-  loopHeader.push(`if (${bucket.keyPos} != -1) for (int ${quoteVar(v)} = 0; ; ${quoteVar(v)}++) {`)
+  loopHeader.push(`if (!${bucket.cond}) for (int ${quoteVar(v)} = 0; ; ${quoteVar(v)}++) {`)
 
   let boundsChecking = []
 
@@ -894,6 +909,8 @@ let emitPath = (buf, q) => {
       } else if (g1.tag == "hashMapBucket") {
         // If we are iterating over a hashMap bucket,
         // get the stored loop info
+        // We don't need to check existance of the bucket here
+        // since it is checked before the loop executes
         bucket = g1
         let dataPos = `${bucket.val.buckets}[${cgen.add(cgen.mul(bucket.keyPos, BUCKET_SIZE), quoteVar(e2.op))}]`
 
@@ -933,17 +950,20 @@ let emitPath = (buf, q) => {
       if (keySchema.length > 1) {
         throw new Error("not supported for now")
       }
+      // The value is undefined if keyPos == -1
+      // emitPath will not handle undefined values
+      // It is up to the top-level caller of emitPath how undefined is handled
       let value = getHashMapValueEntry(sym, pos, keyPos)
+      value.cond = cgen.eq(keyPos, "-1")
       return value
     }
 
     if (v1.tag == "array") {
-      if (!(e2.key == "const" && typeof e2.op == "number")) {
-        throw new Error("Cannot get non-constant number idx from arrays")
-      }
-      // Array element access with constant index
-      let idx = e2.op
-      return getArrayValueEntry(v1, idx)
+      // Array element access
+      let idx = emitPath(buf, e2)
+      let res = getArrayValueEntry(v1, idx.val)
+      res.cond = idx.cond
+      return
     }
 
     // Then it has to be an object
@@ -955,7 +975,7 @@ let emitPath = (buf, q) => {
       throw new Error("Cannot get non-constant string field from objects")
     }
 
-    return v1.val[e2.op]
+    return { ...v1.val[e2.op], cond: v1.cond }
   } else if (q.key == "pure") {
     if (q.op == "mkTuple") {
       let schema = convertToArrayOfSchema(q.schema.type)
@@ -971,6 +991,7 @@ let emitPath = (buf, q) => {
 
     let e1 = emitPath(buf, q.arg[0])
     let op = binaryOperators[q.op]
+    let res
     if (op) {
       // binary op
       let e2 = emitPath(buf, q.arg[1])
@@ -981,30 +1002,38 @@ let emitPath = (buf, q) => {
           let name = getNewName("tmp_cmpstr")
           cgen.declareInt(buf)(name, cgen.call("strncmp", str1, str2, cgen.ternary(cgen.lt(len1, len2), len1, len2)))
           cgen.stmt(buf)(cgen.assign(name, cgen.ternary(cgen.eq(name, "0"), cgen.sub(len1, len2), name)))
-          return { schema: q.schema, val: cgen.binary(name, "0", op) }
+          res = { schema: q.schema, val: cgen.binary(name, "0", op) }
         } else {
-          return { schema: q.schema, val: cgen.binary(e1.val, e2.val, op) }
+          res = { schema: q.schema, val: cgen.binary(e1.val, e2.val, op) }
         }
       } else if (q.op == "fdiv") {
-        return { schema: q.schema, val: cgen.binary(cgen.cast("double", e1.val), cgen.cast("double", e2.val), op) }
+        res = { schema: q.schema, val: cgen.binary(cgen.cast("double", e1.val), cgen.cast("double", e2.val), op) }
       } else {
-        return { schema: q.schema, val: cgen.binary(e1.val, e2.val, op) }
+        res = { schema: q.schema, val: cgen.binary(e1.val, e2.val, op) }
       }
+      if (e1.cond && e2.cond) {
+        res.cond = cgen.and(e1.cond, e2.cond)
+      } else if (e1.cond) {
+        res.cond = e1.cond
+      } else {
+        res.cond = e2.cond
+      }
+      return res
     } else if (q.op == "and") {
       throw new Error("Unexpected and op" + pretty(q))
     } else if (q.op == "sort") {
       throw new Error("Unexpected sort op" + pretty(q))
     } else if (q.op.startsWith("convert_")) {
-      return { schema: q.schema, val: cgen.cast(ctypeMap[q.op.substring("convert_".length)], e1.val) }
+      return { schema: q.schema, val: cgen.cast(ctypeMap[q.op.substring("convert_".length)], e1.val), cond: e1.cond }
     } else if (q.op == "year") {
-      return { schema: q.schema, val: cgen.div(e1.val, "10000") }
+      return { schema: q.schema, val: cgen.div(e1.val, "10000"), cond: e1.cond }
     } else if (q.op == "substr") {
       console.assert(typing.isString(e1.schema))
       let e2 = emitPath(buf, q.arg[1])
       let e3 = emitPath(buf, q.arg[2])
       let str = cgen.add(e1.val.str, e2.val)
       let len = cgen.sub(e3.val, e2.val)
-      return { schema: typeSyms.string, val: { str, len } }
+      return { schema: typeSyms.string, val: { str, len }, cond: e1.cond }
     } else if (q.op == "like") {
       console.assert(typing.isString(e1.schema))
       if (q.arg[1].key != "const" || typeof q.arg[1].key != "string") {
@@ -1014,7 +1043,14 @@ let emitPath = (buf, q) => {
       let name = getNewName("tmp_like")
       emitWildcardMatch(buf, e1, q.arg[1].op, name)
 
-      return { schema: q.schema, val: name }
+      return { schema: q.schema, val: name, cond: e1.cond }
+    } else if (q.op == "isUndef") {
+      if (e1.cond) {
+        return { schema: q.schema, val: e1.cond }
+      } else {
+        // Cannot be undefined, return the value
+        return e1
+      }
     } else {
       throw new Error("Pure operation not supported: " + pretty(q))
     }
@@ -1145,7 +1181,7 @@ let emitArrayInsert = (buf, array, value) => {
     cgen.stmt(buf)(cgen.assign(`${array.val.arr}[${dataPos}]`, value.val))
   }
 
-  cgen.stmt(buf)(cgen.binary(array.val.dataCount, "1", "+="))
+  cgen.stmt(buf)(cgen.assign(array.val.dataCount, cgen.binary(array.val.dataCount, "1", "+")))
 }
 
 // Get the array element at index idx
@@ -1280,15 +1316,15 @@ let emitHashMapInit = (buf, sym, keySchema, valSchema) => {
 // if the key is not found:
 //   inserts a new key into the hashmap and initializes it
 let emitHashLookUpOrUpdate = (buf, sym, keys, update) => {
+  cgen.if(buf)(cgen.eq(`${sym}_key_count`, HASH_SIZE), buf1 => {
+    cgen.printErr(buf1)(`"hashmap size reached its full capacity\\n"`)
+    cgen.return(buf1)("1")
+  })
   let [pos, keyPos] = emitHashLookUp(buf, sym, keys)
 
   cgen.if(buf)(cgen.eq(keyPos, "-1"), buf1 => {
     cgen.stmt(buf1)(cgen.assign(keyPos, `${sym}_key_count`))
     cgen.stmt(buf1)(cgen.inc(`${sym}_key_count`))
-    cgen.if(buf1)(cgen.eq(`${sym}_key_count`, HASH_SIZE), (buf2) => {
-      cgen.printErr(buf2)(`"hashmap size reached its full capacity\\n"`)
-      cgen.return(buf2)("1")
-    })
     cgen.stmt(buf1)(cgen.assign(`${sym}_htable[${pos}]`, keyPos))
     let { keySchema, valSchema } = hashMapEnv[sym]
 
@@ -1319,6 +1355,11 @@ let emitHashLookUpOrUpdate = (buf, sym, keys, update) => {
 // if the key is not found:
 //   inserts a new key into the hashmap and initializes it
 let emitHashLookUpAndUpdate = (buf, sym, keys, update, checkExistance) => {
+  cgen.if(buf)(cgen.eq(`${sym}_key_count`, HASH_SIZE), buf1 => {
+    cgen.printErr(buf1)(`"hashmap size reached its full capacity\\n"`)
+    cgen.return(buf1)("1")
+  })
+
   let [pos, keyPos] = emitHashLookUp(buf, sym, keys)
   let { keySchema, valSchema } = hashMapEnv[sym]
 
@@ -1326,10 +1367,6 @@ let emitHashLookUpAndUpdate = (buf, sym, keys, update, checkExistance) => {
     cgen.if(buf)(cgen.eq(keyPos, "-1"), buf1 => {
       cgen.stmt(buf1)(cgen.assign(keyPos, `${sym}_key_count`))
       cgen.stmt(buf1)(cgen.inc(`${sym}_key_count`))
-      cgen.if(buf1)(cgen.eq(`${sym}_key_count`, HASH_SIZE), (buf2) => {
-        cgen.printErr(buf2)(`"hashmap size reached its full capacity\\n"`)
-        cgen.return(buf2)("1")
-      })
       cgen.stmt(buf1)(cgen.assign(`${sym}_htable[${pos}]`, keyPos))
 
       for (let i in keys) {
@@ -1363,6 +1400,7 @@ let getHashMapValueEntry = (sym, pos, keyPos) => {
   res.tag = "object"
   res.schema = valSchema
   res.val = {}
+  res.keyPos = keyPos
 
   for (let i in valSchema) {
     let { name, schema } = valSchema[i]
@@ -1676,22 +1714,19 @@ let emitStatefulInit = (buf, q, lhs) => {
   }
 }
 
-let emitStatefulUpdate = (buf, q, lhs) => {
-  let e = q.arg[0]
-  if (e.key == "pure" && e.op == "and") e = e.arg[1]
-  let rhs = emitPath(buf, e)
+let emitStatefulUpdate1 = (buf, q, lhs, rhs) => {
   if (q.op == "sum") {
-    cgen.stmt(buf)(cgen.binary(lhs.val, rhs.val, "+="))
+    cgen.stmt(buf)(cgen.assign(lhs.val, cgen.binary(lhs.val, rhs.val, "+")))
   } else if (q.op == "count") {
-    cgen.stmt(buf)(cgen.binary(lhs.val, "1", "+="))
+    cgen.stmt(buf)(cgen.assign(lhs.val, cgen.binary(lhs.val, "1", "+")))
   } else if (q.op == "product") {
-    cgen.stmt(buf)(cgen.binary(lhs.val, rhs.val, "*="))
+    cgen.stmt(buf)(cgen.assign(lhs.val, cgen.binary(lhs.val, rhs.val, "*")))
   } else if (q.op == "min") {
     cgen.stmt(buf)(`${lhs.val} = ${rhs.val} < ${lhs.val} ? ${rhs.val} : ${lhs.val}`)
   } else if (q.op == "max") {
     cgen.stmt(buf)(`${lhs.val} = ${rhs.val} > ${lhs.val} ? ${rhs.val} : ${lhs.val}`)
   } else if (q.op == "single") {
-    if (typing.isString(e.schema.type)) {
+    if (typing.isString(q.arg[0].schema.type)) {
       let { str: lhsStr, len: lhsLen } = lhs.val
       let { str: rhsStr, len: rhsLen } = rhs.val
       cgen.stmt(buf)(cgen.assign(lhsStr, rhsStr))
@@ -1710,7 +1745,7 @@ let emitStatefulUpdate = (buf, q, lhs) => {
     }
 
   } else if (q.op == "print") {
-    if (typing.isString(e.schema.type)) {
+    if (typing.isString(q.arg[0].schema.type)) {
       let { str, len } = rhs.val
       cgen.stmt(buf)(cgen.call("printf", `"%.*s\\n"`, len, str))
     } else {
@@ -1718,6 +1753,32 @@ let emitStatefulUpdate = (buf, q, lhs) => {
     }
   } else {
     throw new Error("stateful op not supported: " + pretty(q))
+  }
+}
+
+let emitStatefulUpdate = (buf, q, lhs) => {
+  let e = q.arg[0]
+  if (e.key == "pure" && e.op == "and") e = e.arg[1]
+  let rhs = emitPath(buf, e)
+  if (rhs.cond) {
+    cgen.if(buf)("!" + rhs.cond, buf1 => {
+      emitStatefulUpdate1(buf1, q, lhs, rhs)
+    })
+  } else {
+    emitStatefulUpdate1(buf, q, lhs, rhs)
+  }
+}
+
+// Extract the top-level condition for stateful operations
+let emitStatefulUpdateOptCond = (buf, q, update) => {
+  let e = q.arg[0]
+  if (e.key == "pure" && e.op == "and") {
+    let cond = emitPath(buf, e.arg[0])
+    if (cond.cond) cond.val = cgen.and("!" + cond.cond, cond.val)
+
+    cgen.if(buf)(cond.val, update)
+  } else {
+    update(buf)
   }
 }
 
@@ -1743,16 +1804,9 @@ let emitStatefulInPath = (q, sym) => {
   let buf = []
   cgen.comment(buf)("update " + sym + " = " + pretty(q))
 
-  let e = q.arg[0]
-  if (e.key == "pure" && e.op == "and") {
-    let cond = emitPath(buf, e.arg[0])
-
-    cgen.if(buf)(cond.val, buf1 => {
-      emitStatefulUpdate(buf1, q, lhs)
-    })
-  } else {
-    emitStatefulUpdate(buf, q, lhs)
-  }
+  emitStatefulUpdateOptCond(buf, q, buf1 => {
+    emitStatefulUpdate(buf1, q, lhs)
+  })
   assign(buf, sym, fv, deps)
 
   emittedStateful[sym] = true
@@ -1921,6 +1975,12 @@ let emitCode = (q, ir, settings) => {
         let filename = emitPath(buf, g1.arg[0])
         let filenameStr
         if (!isConstStr) {
+          if (filename.cond) {
+            cgen.if(buf)(cond, buf1 => {
+              cgen.printErr(buf1)("Attempting to open a file with undefined filename")
+              cgen.return(buf1, "1")
+            })
+          }
           filenameStr = getNewName("tmp_filename")
           cgen.declareCharArr(buf)(filenameStr, `${filename.val.len} + 1`)
           cgen.stmt(buf)(cgen.call("extract_str1", filename.val.str, filename.val.len, filenameStr))
@@ -1972,6 +2032,7 @@ let emitCode = (q, ir, settings) => {
   for (let i in updateOps) {
     let k = assignments[i].arg[1].op
 
+    // TODO: should add if check to see if the keys are undefined
     let keys = k.startsWith("K") ? mksetVarEnv[k] : [k]
 
     let sym = tmpSym(i)
@@ -1981,37 +2042,19 @@ let emitCode = (q, ir, settings) => {
     let init = []
 
     cgen.comment(init)("init and update " + sym + " = " + pretty(assignments[i]))
-    let shouldInit = updateOps[i].some(j => initRequired[assignments[j].op] && assignments[j].mode !== "maybe") || updateOpsExtra[i].some(j => initRequired[assignments[j].op])
+    let shouldInit = updateOps[i].some(j => initRequired[assignments[j].op] && assignments[j].mode !== "maybe") ||
+      updateOpsExtra[i].some(j => initRequired[assignments[j].op] && assignments[j].mode !== "maybe")
 
     if (!shouldInit) {
-      // let update = []
-
       for (let j of updateOps[i]) {
         let q = assignments[j]
-        let e = q.arg[0]
         let buf = []
         let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
-        if (e.key == "pure" && e.op == "and") {
-          let cond = emitPath(buf, e.arg[0])
-          cgen.if(buf)(cond.val, (buf1) => {
-            emitHashLookUpAndUpdate(buf1, sym, keys, (buf2, lhs, pos, keyPos) => {
-              currentGroupKey = { key: k, pos, keyPos }
-              cgen.comment(buf2)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
 
-              if (q.extraGroupPath) {
-                console.assert(lhs.tag == "object")
-                lhs = lhs.val[q.extraGroupPath[0]]
-              } else {
-                console.assert(lhs.tag == "hashMapValue" || lhs.tag == "hashMapBucket")
-              }
-
-              emitStatefulUpdate(buf2, q, lhs, sym)
-            }, true)
-          })
-        } else {
-          emitHashLookUpAndUpdate(buf, sym, keys, (buf1, lhs, pos, keyPos) => {
+        emitStatefulUpdateOptCond(buf, q, buf1 => {
+          emitHashLookUpAndUpdate(buf1, sym, keys, (buf2, lhs, pos, keyPos) => {
             currentGroupKey = { key: k, pos, keyPos }
-            cgen.comment(buf1)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
+            cgen.comment(buf2)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
 
             if (q.extraGroupPath) {
               console.assert(lhs.tag == "object")
@@ -2020,9 +2063,9 @@ let emitCode = (q, ir, settings) => {
               console.assert(lhs.tag == "hashMapValue" || lhs.tag == "hashMapBucket")
             }
 
-            emitStatefulUpdate(buf1, q, lhs, sym)
+            emitStatefulUpdate(buf2, q, lhs, sym)
           }, true)
-        }
+        })
         assign(buf, sym, fv, deps)
       }
       // extra not supported yet
@@ -2060,24 +2103,15 @@ let emitCode = (q, ir, settings) => {
       let q = assignments[j]
       cgen.comment(update)("update " + tmpSym(j) + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
       let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
-      let e = q.arg[0]
-      if (e.key == "pure" && e.op == "and") {
-        let cond = emitPath(update, e.arg[0])
 
-        cgen.if(update)(cond.val, buf1 => {
-          emitHashUpdate(buf1, sym, pos, keyPos, (buf2, lhs) => {
-            let lhs1 = getHashMapValueEntry(tmpSym(j), pos, keyPos)
-            console.assert(lhs1.tag == "hashMapValue" || lhs1.tag == "hashMapBucket")
-            emitStatefulUpdate(buf2, q, lhs1)
-          })
-        })
-      } else {
-        emitHashUpdate(update, sym, pos, keyPos, (buf1, lhs) => {
+      emitStatefulUpdateOptCond(update, q, buf1 => {
+        emitHashUpdate(buf1, sym, pos, keyPos, (buf2, lhs) => {
           let lhs1 = getHashMapValueEntry(tmpSym(j), pos, keyPos)
           console.assert(lhs1.tag == "hashMapValue" || lhs1.tag == "hashMapBucket")
-          emitStatefulUpdate(buf1, q, lhs1)
+          emitStatefulUpdate(buf2, q, lhs1)
         })
-      }
+      })
+
       assign(update, sym, fv, deps)
     }
     for (let j of updateOps[i]) {
@@ -2085,32 +2119,19 @@ let emitCode = (q, ir, settings) => {
       let q = assignments[j]
       cgen.comment(update)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
       let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
-      let e = q.arg[0]
-      if (e.key == "pure" && e.op == "and") {
-        let cond = emitPath(update, e.arg[0])
 
-        cgen.if(update)(cond.val, buf1 => {
-          emitHashUpdate(buf1, sym, pos, keyPos, (buf2, lhs) => {
-            if (q.extraGroupPath) {
-              console.assert(lhs.tag == "object")
-              lhs = lhs.val[q.extraGroupPath[0]]
-            } else {
-              console.assert(lhs.tag == "hashMapValue" || lhs.tag == "hashMapBucket")
-            }
-            emitStatefulUpdate(buf2, q, lhs)
-          })
-        })
-      } else {
-        emitHashUpdate(update, sym, pos, keyPos, (buf1, lhs) => {
+      emitStatefulUpdateOptCond(update, q, buf1 => {
+        emitHashUpdate(buf1, sym, pos, keyPos, (buf2, lhs) => {
           if (q.extraGroupPath) {
             console.assert(lhs.tag == "object")
             lhs = lhs.val[q.extraGroupPath[0]]
           } else {
             console.assert(lhs.tag == "hashMapValue" || lhs.tag == "hashMapBucket")
           }
-          emitStatefulUpdate(buf1, q, lhs)
+          emitStatefulUpdate(buf2, q, lhs)
         })
-      }
+      })
+
       assign(update, sym, fv, deps)
     }
   }
@@ -2129,6 +2150,12 @@ let emitCode = (q, ir, settings) => {
 
   } else {
     res = emitPath(epilog, q)
+    if (res.cond) {
+      cgen.if(epilog)(res.cond, buf1 => {
+        cgen.stmt(buf1)(cgen.call("printf", `"undefined\\n"`))
+        cgen.return(epilog)("0")
+      })
+    }
   }
 
   if (q.schema.type.typeSym !== typeSyms.never) {

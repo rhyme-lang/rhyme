@@ -246,10 +246,10 @@ exports.generate = (ir, backend = "js") => {
     if (str.indexOf("}") == 0) indent--
     code.push("".padEnd(indent * 4, ' ') + str)
     //console.log("".padEnd(indent * 4, ' ') + str + "\n")
-    if  (str.indexOf("{") > 0) {
+    if  (str.indexOf("{") >= 0) {
       let l_num = (str.match(/{/g)||[]).length
       let r_num = (str.match(/}/g)||[]).length
-      if (l_num >= r_num) indent++
+      if (l_num > r_num) indent++
       if (l_num < r_num) indent--
     }
   }

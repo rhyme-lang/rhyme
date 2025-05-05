@@ -1069,6 +1069,9 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
                 type: types.boolean,
                 props: union(p1, nothingSet)
             }
+        } else if (q.op == "isUndef") {
+            let {type: t1, props: p1} = argTups[0];
+            return {type: types.boolean, props: union(p1, nothingSet)};
         }
         throw new Error("Pure operation not implemented: " + q.op);
     } else if (q.key === "hint") {
@@ -1634,11 +1637,14 @@ let convertAST = (schema, q, completedMap, dontConvertVar = false) => {
                 q.arg = q.arg.map($convertAST);
                 return q;
             } else if (q.op == "and") {
+                q.arg = q.arg.map($convertAST);
                 return q;
             } else if (q.op == "andAlso") {
+                q.arg = q.arg.map($convertAST);
                 return q;
             } else if (q.op == "orElse") {
-              return q;
+                q.arg = q.arg.map($convertAST);
+                return q;
             }
             throw new Error("Pure operation not implemented: " + q.op);
         } else if (q.op == "mkTuple") {
@@ -1657,6 +1663,15 @@ let convertAST = (schema, q, completedMap, dontConvertVar = false) => {
             q.arg = q.arg.map($convertAST);
             return q;
         } else if (q.op === "substr") {
+            q.arg = q.arg.map($convertAST);
+            return q;
+        } else if (q.op === "isUndef") {
+            q.arg = q.arg.map($convertAST);
+            return q;
+        } else if (q.op === "like") {
+            q.arg = q.arg.map($convertAST);
+            return q;
+        } else if (q.op == "singleton") {
             q.arg = q.arg.map($convertAST);
             return q;
         }

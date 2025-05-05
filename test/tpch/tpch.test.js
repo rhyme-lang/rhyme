@@ -944,7 +944,7 @@ test("q22", async () => {
                  (substr ${customer}.*c2.c_phone 0 2) == "30" || (substr ${customer}.*c2.c_phone 0 2) == "18" ||
                  (substr ${customer}.*c2.c_phone 0 2) == "17"`
 
-  let cond6 = rh`${orders1}.(${customer}.*c2.c_custkey) == 0 && ${cond4} && ${cond5}`
+  let cond6 = rh`(isUndef ${orders1}.(${customer}.*c2.c_custkey)) && ${cond4} && ${cond5}`
   let customer2 = rh`{
     cntrycode: single (${cond6} & (substr ${customer}.*c2.c_phone 0 2)),
     count_order: count? (${cond6} & ${customer}.*c2),
