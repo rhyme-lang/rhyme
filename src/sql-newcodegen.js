@@ -1315,78 +1315,26 @@ let emitHashMapInit = (buf, sym, keySchema, valSchema) => {
 //   does nothing
 // if the key is not found:
 //   inserts a new key into the hashmap and initializes it
-let emitHashLookUpOrUpdate = (buf, sym, keys, update) => {
-  cgen.if(buf)(cgen.eq(`${sym}_key_count`, HASH_SIZE), buf1 => {
-    cgen.printErr(buf1)(`"hashmap size reached its full capacity\\n"`)
-    cgen.return(buf1)("1")
-  })
-  let [pos, keyPos] = emitHashLookUp(buf, sym, keys)
-
-  cgen.if(buf)(cgen.eq(keyPos, "-1"), buf1 => {
-    cgen.stmt(buf1)(cgen.assign(keyPos, `${sym}_key_count`))
-    cgen.stmt(buf1)(cgen.inc(`${sym}_key_count`))
-    cgen.stmt(buf1)(cgen.assign(`${sym}_htable[${pos}]`, keyPos))
-    let { keySchema, valSchema } = hashMapEnv[sym]
-
-    for (let i in keys) {
-      let key = keys[i]
-      let schema = keySchema[i]
-
-      if (typing.isString(schema)) {
-        let keyStr = `${sym}_keys_str${i}[${keyPos}]`
-        let keyLen = `${sym}_keys_len${i}[${keyPos}]`
-
-        cgen.stmt(buf1)(cgen.assign(keyStr, key.val.str))
-        cgen.stmt(buf1)(cgen.assign(keyLen, key.val.len))
-      } else {
-        cgen.stmt(buf1)(cgen.assign(`${sym}_keys${i}[${keyPos}]`, key.val))
-      }
-    }
-
-    emitHashUpdate(buf, sym, pos, keyPos, update)
-  })
-
-  return [pos, keyPos]
-}
+let emitHashLookUpOrUpdate = (buf, sym, keys, update) =>
+  emitHashLookUpAndUpdateCust(buf, sym, keys, update, () => { }, true)
 
 // Emit the code that performs a lookup of the key in the hashmap, then
 // if the key is found:
 //   updates the value
 // if the key is not found:
 //   inserts a new key into the hashmap and initializes it
-let emitHashLookUpAndUpdate = (buf, sym, keys, update, checkExistance) => {
+let emitHashLookUpAndUpdate = (buf, sym, keys, update, checkExistance) =>
+  emitHashLookUpAndUpdateCust(buf, sym, keys, () => { }, update, checkExistance)
+
+let emitHashLookUpAndUpdateCust = (buf, sym, keys, update1, update2, checkExistance) => {
   cgen.if(buf)(cgen.eq(`${sym}_key_count`, HASH_SIZE), buf1 => {
     cgen.printErr(buf1)(`"hashmap size reached its full capacity\\n"`)
     cgen.return(buf1)("1")
   })
 
   let [pos, keyPos] = emitHashLookUp(buf, sym, keys)
-  let { keySchema, valSchema } = hashMapEnv[sym]
 
-  if (checkExistance) {
-    cgen.if(buf)(cgen.eq(keyPos, "-1"), buf1 => {
-      cgen.stmt(buf1)(cgen.assign(keyPos, `${sym}_key_count`))
-      cgen.stmt(buf1)(cgen.inc(`${sym}_key_count`))
-      cgen.stmt(buf1)(cgen.assign(`${sym}_htable[${pos}]`, keyPos))
-
-      for (let i in keys) {
-        let key = keys[i]
-        let schema = keySchema[i]
-
-        if (typing.isString(schema)) {
-          let keyStr = `${sym}_keys_str${i}[${keyPos}]`
-          let keyLen = `${sym}_keys_len${i}[${keyPos}]`
-
-          cgen.stmt(buf1)(cgen.assign(keyStr, key.val.str))
-          cgen.stmt(buf1)(cgen.assign(keyLen, key.val.len))
-        } else {
-          cgen.stmt(buf1)(cgen.assign(`${sym}_keys${i}[${keyPos}]`, key.val))
-        }
-      }
-    })
-  }
-
-  emitHashUpdate(buf, sym, pos, keyPos, update)
+  emitHashMapUpdate(buf, sym, keys, pos, keyPos, update1, update2, checkExistance)
 
   return [pos, keyPos]
 }
@@ -1456,10 +1404,36 @@ let getHashMapValueEntry = (sym, pos, keyPos) => {
 }
 
 // Emit the code that updates the hashMap value for the key at keyPos
-let emitHashUpdate = (buf, sym, pos, keyPos, update) => {
+// it will initialize the key if it is not there when checkExistance is set to true
+let emitHashMapUpdate = (buf, sym, keys, pos, keyPos, update1, update2, checkExistance) => {
+  let { keySchema, valSchema } = hashMapEnv[sym]
   let lhs = getHashMapValueEntry(sym, pos, keyPos)
 
-  update(buf, lhs, pos, keyPos)
+  if (checkExistance) {
+    cgen.if(buf)(cgen.eq(keyPos, "-1"), buf1 => {
+      cgen.stmt(buf1)(cgen.assign(keyPos, `${sym}_key_count`))
+      cgen.stmt(buf1)(cgen.inc(`${sym}_key_count`))
+      cgen.stmt(buf1)(cgen.assign(`${sym}_htable[${pos}]`, keyPos))
+
+      for (let i in keys) {
+        let key = keys[i]
+        let schema = keySchema[i]
+
+        if (typing.isString(schema)) {
+          let keyStr = `${sym}_keys_str${i}[${keyPos}]`
+          let keyLen = `${sym}_keys_len${i}[${keyPos}]`
+
+          cgen.stmt(buf1)(cgen.assign(keyStr, key.val.str))
+          cgen.stmt(buf1)(cgen.assign(keyLen, key.val.len))
+        } else {
+          cgen.stmt(buf1)(cgen.assign(`${sym}_keys${i}[${keyPos}]`, key.val))
+        }
+      }
+      update1(buf1, lhs, pos, keyPos)
+    })
+  }
+
+  update2(buf, lhs, pos, keyPos)
 }
 
 // Emit the code that insertes a value into a hashmap bucket
@@ -2046,13 +2020,30 @@ let emitCode = (q, ir, settings) => {
       updateOpsExtra[i].some(j => initRequired[assignments[j].op] && assignments[j].mode !== "maybe")
 
     if (!shouldInit) {
+      let lookup = []
+      let [pos, keyPos] = emitHashLookUp(lookup, sym, keys)
+      assign(lookup, sym, fv, [])
       for (let j of updateOps[i]) {
         let q = assignments[j]
         let buf = []
         let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
 
+        let update1 = () => { }
+        if (q.mode === "maybe") {
+          // We still need to initialize it to some value if it is in maybe mode
+          update1 = (buf2, lhs) => {
+            cgen.comment(buf2)("init " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
+            if (q.extraGroupPath) {
+              console.assert(lhs.tag == "object")
+              lhs = lhs.val[q.extraGroupPath[0]]
+            } else {
+              console.assert(lhs.tag == "hashMapValue" || lhs.tag == "hashMapBucket")
+            }
+            emitStatefulInit(buf2, q, lhs)
+          }
+        }
         emitStatefulUpdateOptCond(buf, q, buf1 => {
-          emitHashLookUpAndUpdate(buf1, sym, keys, (buf2, lhs, pos, keyPos) => {
+          emitHashMapUpdate(buf1, sym, keys, pos, keyPos, update1, (buf2, lhs) => {
             currentGroupKey = { key: k, pos, keyPos }
             cgen.comment(buf2)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
 
@@ -2105,11 +2096,11 @@ let emitCode = (q, ir, settings) => {
       let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
 
       emitStatefulUpdateOptCond(update, q, buf1 => {
-        emitHashUpdate(buf1, sym, pos, keyPos, (buf2, lhs) => {
+        emitHashMapUpdate(buf1, sym, keys, pos, keyPos, () => { }, (buf2, lhs) => {
           let lhs1 = getHashMapValueEntry(tmpSym(j), pos, keyPos)
           console.assert(lhs1.tag == "hashMapValue" || lhs1.tag == "hashMapBucket")
           emitStatefulUpdate(buf2, q, lhs1)
-        })
+        }, false)
       })
 
       assign(update, sym, fv, deps)
@@ -2121,7 +2112,7 @@ let emitCode = (q, ir, settings) => {
       let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
 
       emitStatefulUpdateOptCond(update, q, buf1 => {
-        emitHashUpdate(buf1, sym, pos, keyPos, (buf2, lhs) => {
+        emitHashMapUpdate(buf1, sym, keys, pos, keyPos, () => { }, (buf2, lhs) => {
           if (q.extraGroupPath) {
             console.assert(lhs.tag == "object")
             lhs = lhs.val[q.extraGroupPath[0]]
@@ -2129,7 +2120,7 @@ let emitCode = (q, ir, settings) => {
             console.assert(lhs.tag == "hashMapValue" || lhs.tag == "hashMapBucket")
           }
           emitStatefulUpdate(buf2, q, lhs)
-        })
+        }, false)
       })
 
       assign(update, sym, fv, deps)
