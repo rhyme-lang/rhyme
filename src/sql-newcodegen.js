@@ -962,8 +962,9 @@ let emitPath = (buf, q) => {
       // Array element access
       let idx = emitPath(buf, e2)
       let res = getArrayValueEntry(v1, idx.val)
-      res.cond = idx.cond
-      return
+      res.cond = cgen.ge(idx.val, v1.val.dataCount)
+      if (idx.cond) res.cond = cgen.and(idx.cond, res.cond)
+      return res
     }
 
     // Then it has to be an object

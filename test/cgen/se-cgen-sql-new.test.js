@@ -613,4 +613,15 @@ test("arrayProjectionMultipleTest", async () => {
 `)
 })
 
+test("arrayAccessUndefTest", async () => {
+  let csv = rh`loadTBL "./cgen-sql/data.tbl" ${dataSchema}`
+
+  let query = rh`[{ value: ${csv}.*.value, key: ${csv}.*.key }].(1 + 10).key`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "arrayProjectionMultipleTest", schema: types.never })
+
+  let res = await func()
+  expect(res).toBe("undefined\n")
+})
+
 /**/
