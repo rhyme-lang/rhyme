@@ -2042,10 +2042,10 @@ let emitCode = (q, ir, settings) => {
             emitStatefulInit(buf2, q, lhs)
           }
         }
+        cgen.comment(buf)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
         emitStatefulUpdateOptCond(buf, q, buf1 => {
           emitHashMapUpdate(buf1, sym, keys, pos, keyPos, update1, (buf2, lhs) => {
             currentGroupKey = { key: k, pos, keyPos }
-            cgen.comment(buf2)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
 
             if (q.extraGroupPath) {
               console.assert(lhs.tag == "object")
