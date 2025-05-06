@@ -738,12 +738,35 @@ test("q17", async () => {
     (${part}.*p1.p_brand == "Brand#23" && ${part}.*p1.p_container == "MED BOX") & ${part}.*p1.p_partkey
   ] | group ${part}.*p1.p_partkey`
 
-  let avgMap = rh`0.2 * sum(${lineitem}.*l1.l_quantity) / count(${lineitem}.*l1.l_quantity) | group ${lineitem}.*l1.l_partkey`
+  let avgMap1 = rh`{
+    l_partkey: single ${lineitem}.*l1.l_partkey,
+    sum: sum (${lineitem}.*l1.l_quantity),
+    count: count (${lineitem}.*l1.l_quantity)
+  } | group ${lineitem}.*l1.l_partkey`
+
+  let avgMap = rh`0.2 * ${avgMap1}.*.sum / ${avgMap1}.*.count | group ${avgMap1}.*.l_partkey`
 
   let cond = rh`${part1}.(${lineitem}.*l2.l_partkey).*p2 == ${lineitem}.*l2.l_partkey && ${lineitem}.*l2.l_quantity < ${avgMap}.(${lineitem}.*l2.l_partkey)`
   let query = rh`(sum (${cond} & ${lineitem}.*l2.l_extendedprice)) / 7.0`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q17", schema: types.never, enableOptimizations: false })
+  let res = await func()
+
+  let answer = fs.readFileSync(`${answersDir}/q17.out`).toString()
+  expect(res).toBe(answer)
+})
+
+test("q17-alt", async () => {
+  let part1 = rh`[
+    (${part}.*p1.p_brand == "Brand#23" && ${part}.*p1.p_container == "MED BOX") & ${part}.*p1.p_partkey
+  ] | group ${part}.*p1.p_partkey`
+
+  let avgMap = rh`0.2 * sum(${lineitem}.*l1.l_quantity) / count(${lineitem}.*l1.l_quantity) | group ${lineitem}.*l1.l_partkey`
+
+  let cond = rh`${part1}.(${lineitem}.*l2.l_partkey).*p2 == ${lineitem}.*l2.l_partkey && ${lineitem}.*l2.l_quantity < ${avgMap}.(${lineitem}.*l2.l_partkey)`
+  let query = rh`(sum (${cond} & ${lineitem}.*l2.l_extendedprice)) / 7.0`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q17-alt", schema: types.never, enableOptimizations: false })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q17.out`).toString()

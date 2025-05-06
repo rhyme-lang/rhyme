@@ -53,6 +53,8 @@ let updateOpsExtra
 
 let loopInfo
 
+let constStrs
+
 // generator ir api: mirroring necessary bits from ir.js
 let expr = (txt, ...args) => ({ txt, deps: args })
 
@@ -847,8 +849,12 @@ let emitPath = (buf, q) => {
       return { schema: q.schema, val: String(q.op) }
     } else if (typeof q.op == "string") {
       // const string is represented as a const char pointer
+      if (constStrs[q.op]) {
+        return { schema: q.schema, val: { str: constStrs[q.op], len: q.op.length } }
+      }
       let name = getNewName("tmp_str")
-      cgen.declareConstCharPtr(buf)(name, '"' + q.op + '"')
+      cgen.declareConstCharPtr(prolog1)(name, '"' + q.op + '"')
+      constStrs[q.op] = name
       return { schema: q.schema, val: { str: name, len: q.op.length } }
     } else {
       throw new Error("Constant not supported: " + pretty(q))
@@ -1000,9 +1006,25 @@ let emitPath = (buf, q) => {
         if (typing.isString(q.arg[0].schema.type) && typing.isString(q.arg[1].schema.type)) {
           let { str: str1, len: len1 } = e1.val
           let { str: str2, len: len2 } = e2.val
+
           let name = getNewName("tmp_cmpstr")
+          // let curr = getNewName("tmp_cursor")
+          // let minLen = getNewName("min_len")
+
           cgen.declareInt(buf)(name, cgen.call("strncmp", str1, str2, cgen.ternary(cgen.lt(len1, len2), len1, len2)))
+          // cgen.declareInt(buf)(name, "0")
+          // cgen.declareInt(buf)(curr, "0")
+          // cgen.declareInt(buf)(minLen, cgen.ternary(cgen.lt(len1, len2), len1, len2))
+
+          // buf.push(`while (${curr} < ${minLen}) {`)
+          // cgen.if(buf)(cgen.ne(`${str1}[${curr}]`, `${str2}[${curr}]`), buf1 => {
+          //   cgen.stmt(buf1)(cgen.assign(name, cgen.sub(`${str1}[${curr}]`, `${str2}[${curr}]`)))
+          //   cgen.break(buf)()
+          // })
+          // cgen.stmt(buf)(cgen.inc(curr))
+          // buf.push(`}`)
           cgen.stmt(buf)(cgen.assign(name, cgen.ternary(cgen.eq(name, "0"), cgen.sub(len1, len2), name)))
+
           res = { schema: q.schema, val: cgen.binary(name, "0", op) }
         } else {
           res = { schema: q.schema, val: cgen.binary(e1.val, e2.val, op) }
@@ -1665,6 +1687,8 @@ let reset = () => {
   prolog1 = []
 
   loopInfo = {}
+
+  constStrs = {}
 }
 
 let emitStatefulInit = (buf, q, lhs) => {
