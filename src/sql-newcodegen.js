@@ -532,7 +532,7 @@ let scanDecimal = (buf, mappedFile, cursor, size, delim, name, type) => {
   cgen.declareLong(buf)(scale, "1")
 
   let negative = getNewName("tmp_negative")
-  cgen.declareVar(buf)(convertToCType(type), negative, "0")
+  cgen.declareInt(buf)(negative, "0")
   cgen.if(buf)(cgen.eq(`${mappedFile}[${cursor}]`, `'-'`), buf1 => {
     cgen.stmt(buf1)(cgen.assign(negative, "1"))
     cgen.stmt(buf1)(cgen.inc(cursor))

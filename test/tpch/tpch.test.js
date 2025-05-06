@@ -145,7 +145,7 @@ beforeAll(async () => {
   }
 })
 
-test("q1", async () => {
+test("q1-alt", async () => {
   let cond = rh`${lineitem}.*.l_shipdate <= 19980902`
 
   let query1 = rh`{
@@ -163,14 +163,14 @@ test("q1", async () => {
 
   let query = rh`sort ${query1} "l_returnflag" 0 "l_linestatus" 0`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q1", schema: types.never, enableOptimizations: false })
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q1-alt", schema: types.never, enableOptimizations: false })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q1.out`).toString()
   expect(res).toBe(answer)
 })
 
-test("q1-alt", async () => {
+test("q1", async () => {
   let cond = rh`${lineitem}.*.l_shipdate <= 19980902`
 
   let lineitem1 = rh`{
@@ -201,7 +201,7 @@ test("q1-alt", async () => {
   }]`
   let query = rh`sort ${lineitem2} "l_returnflag" 0 "l_linestatus" 0`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q1-alt", schema: types.never, enableOptimizations: false })
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q1", schema: types.never, enableOptimizations: false })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q1.out`).toString()
