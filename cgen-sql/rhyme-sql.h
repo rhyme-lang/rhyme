@@ -120,3 +120,37 @@ void print_date(int date) {
 
     printf("%04d-%02d-%02d", year, month, day); // Print in yyyy-mm-dd format
 }
+
+char *strnstr(const char *s, const char *find, size_t slen) {
+	char c, sc;
+	size_t len;
+
+	if ((c = *find++) != '\0') {
+		len = strlen(find);
+		do {
+			do {
+				if (slen-- < 1 || (sc = *s++) == '\0')
+					return (NULL);
+			} while (sc != c);
+			if (len > slen)
+				return (NULL);
+		} while (strncmp(s, find, len) != 0);
+		s--;
+	}
+	return ((char *)s);
+}
+
+int strnstr_idx(const char *s, size_t slen, const char *find, size_t flen) {
+    char c;
+    size_t len;
+    int init_length = slen;
+    c = *find++;
+    flen--;
+    do {
+        do {
+            if (slen-- < flen)
+                return -1;
+        } while (*s++ != c);
+    } while (strncmp(s, find, flen) != 0);
+    return (init_length - slen - 1);
+}

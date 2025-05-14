@@ -145,7 +145,7 @@ beforeAll(async () => {
   }
 })
 
-test("q1", async () => {
+test("q1-alt", async () => {
   let cond = rh`${lineitem}.*.l_shipdate <= 19980902`
 
   let query1 = rh`{
@@ -161,16 +161,16 @@ test("q1", async () => {
     count_order: count (${cond} & ${lineitem}.*.l_orderkey)
   } | group [${lineitem}.*.l_returnflag, ${lineitem}.*.l_linestatus]`
 
-  let query = rh`sort "l_returnflag" 0 "l_linestatus" 0 ${query1}`
+  let query = rh`sort ${query1} "l_returnflag" 0 "l_linestatus" 0`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q1", schema: types.never, enableOptimizations: false })
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q1-alt", schema: types.never, enableOptimizations: false })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q1.out`).toString()
   expect(res).toBe(answer)
 })
 
-test("q1-alt", async () => {
+test("q1", async () => {
   let cond = rh`${lineitem}.*.l_shipdate <= 19980902`
 
   let lineitem1 = rh`{
@@ -199,12 +199,61 @@ test("q1-alt", async () => {
     avg_disc: (${lineitem1}.*.sum_l_discount) / (${lineitem1}.*.count_l_discount),
     count_order: ${lineitem1}.*.count_order
   }]`
-  let query = rh`sort "l_returnflag" 0 "l_linestatus" 0 ${lineitem2}`
+  let query = rh`sort ${lineitem2} "l_returnflag" 0 "l_linestatus" 0`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q1-alt", schema: types.never, enableOptimizations: false })
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q1", schema: types.never, enableOptimizations: false })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q1.out`).toString()
+  expect(res).toBe(answer)
+})
+
+test("q2", async () => {
+  let region1 = rh`[${region}.*r1.r_name == "EUROPE" & ${region}.*r1.r_regionkey] | group ${region}.*r1.r_regionkey`
+
+  let nation1 = rh`[{
+    r_regionkey: ${region1}.(${nation}.*n1.n_regionkey).*r2,
+    n_nationkey: ${nation}.*n1.n_nationkey,
+    n_name: ${nation}.*n1.n_name
+  }] | group ${nation}.*n1.n_nationkey`
+
+  let supplier1 = rh`[{
+    n_name: ${nation1}.(${supplier}.*s1.s_nationkey).*n2.n_name,
+    s_suppkey: ${supplier}.*s1.s_suppkey,
+    s_name: ${supplier}.*s1.s_name,
+    s_address: ${supplier}.*s1.s_address,
+    s_phone: ${supplier}.*s1.s_phone,
+    s_acctbal: ${supplier}.*s1.s_acctbal,
+    s_comment: ${supplier}.*s1.s_comment
+  }] | group ${supplier}.*s1.s_suppkey`
+
+  let joinCond = rh`${supplier1}.(${partsupp}.*ps1.ps_suppkey).*s2.s_suppkey == ${partsupp}.*ps1.ps_suppkey`
+  let partsupp1 = rh`min (${joinCond} & ${partsupp}.*ps1.ps_supplycost) | group ${partsupp}.*ps1.ps_partkey`
+
+  let part1 = rh`[${part}.*p1.p_size == 15 && (like ${part}.*p1.p_type ".*BRASS") & {
+    p_partkey: ${part}.*p1.p_partkey,
+    p_mfgr: ${part}.*p1.p_mfgr,
+    min_cost: ${partsupp1}.(${part}.*p1.p_partkey)
+  }] | group ${part}.*p1.p_partkey`
+
+  let joinCond2 = rh`${part1}.(${partsupp}.*ps2.ps_partkey).*p2.min_cost == ${partsupp}.*ps2.ps_supplycost`
+  let partsupp2 = rh`[${joinCond2} & {
+    s_acctbal: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).*s3.s_acctbal,
+    s_name: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).*s3.s_name,
+    n_name: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).*s3.n_name,
+    p_partkey: ${partsupp}.*ps2.ps_partkey,
+    p_mfgr: ${part1}.(${partsupp}.*ps2.ps_partkey).*p2.p_mfgr,
+    s_address: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).*s3.s_address,
+    s_phone: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).*s3.s_phone,
+    s_comment: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).*s3.s_comment
+  }]`
+
+  let query = rh`sort ${partsupp2} "s_acctbal" 1 "n_name" 0 "s_name" 0 "p_partkey" 0`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q2", schema: types.never, enableOptimizations: false, limit: 100 })
+  let res = await func()
+
+  let answer = fs.readFileSync(`${answersDir}/q2.out`).toString()
   expect(res).toBe(answer)
 })
 
@@ -229,7 +278,7 @@ test("q3", async () => {
     o_shippriority: (${cond} & ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.o_shippriority)
   } | group [${lineitem}.*l1.l_orderkey, ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.o_orderdate, ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.o_shippriority]`
 
-  let query = rh`sort "revenue" 1 "o_orderdate" 0 ${lineitem1}`
+  let query = rh`sort ${lineitem1} "revenue" 1 "o_orderdate" 0`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q3", schema: types.never, enableOptimizations: false, limit: 10 })
   let res = await func()
@@ -247,7 +296,7 @@ test("q4", async () => {
     o_orderpriority: ${orders}.*.o_orderpriority,
     order_count: count ((${cond} && ${countR}.(${orders}.*.o_orderkey) > 0) & ${orders}.*.o_orderkey)
   } | group ${orders}.*.o_orderpriority`
-  let query = rh`sort "o_orderpriority" 0 ${countL}`
+  let query = rh`sort ${countL} "o_orderpriority" 0`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q4", schema: types.never, enableOptimizations: false })
   let res = await func()
@@ -290,7 +339,7 @@ test("q5", async () => {
     revenue: sum (${cond} & (${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount)))
   } | group ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.n_name`
 
-  let query = rh`sort "revenue" 1 ${lineitem1}`
+  let query = rh`sort ${lineitem1} "revenue" 1`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q5", schema: types.never, enableOptimizations: false })
   let res = await func()
@@ -352,7 +401,7 @@ test("q7", async () => {
     year ${lineitem}.*l1.l_shipdate
   ]`
 
-  let query = rh`sort "supp_nation" 0 "cust_nation" 0 "l_year" 0 ${lineitem1}`
+  let query = rh`sort ${lineitem1} "supp_nation" 0 "cust_nation" 0 "l_year" 0`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q7", schema: types.never, enableOptimizations: false })
   let res = await func()
@@ -406,12 +455,58 @@ test("q8", async () => {
     mkt_share: (${sumBrazil} / ${sumTotal})
   } | group (year ${customer1}.(${supplier}.*s1.s_suppkey).*c2.o_orderdate)`
 
-  let query = rh`sort "year" 0 ${supplier1}`
+  let query = rh`sort ${supplier1} "year" 0`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q8", schema: types.never, enableOptimizations: false })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q8.out`).toString()
+  expect(res).toBe(answer)
+})
+
+test("q9", async () => {
+  let nation1 = rh`[${nation}.*n1.n_name] | group ${nation}.*n1.n_nationkey`
+
+  let supplier1 = rh`[{
+    s_suppkey: ${supplier}.*s1.s_suppkey,
+    n_name: ${nation1}.(${supplier}.*s1.s_nationkey).*n2
+  }] | group ${supplier}.*s1.s_suppkey`
+
+  let part1 = rh`[(like ${part}.*p1.p_name ".*green.*") & ${part}.*p1.p_partkey] | group ${part}.*p1.p_partkey`
+
+  let partsupp1 = rh`[{
+    p_partkey: ${part1}.(${partsupp}.*ps1.ps_partkey).*p2,
+    s_suppkey: ${supplier1}.(${partsupp}.*ps1.ps_suppkey).*s2.s_suppkey,
+    n_name: ${supplier1}.(${partsupp}.*ps1.ps_suppkey).*s2.n_name,
+    ps_supplycost: ${partsupp}.*ps1.ps_supplycost
+  }] | group ${partsupp}.*ps1.ps_partkey`
+
+  let joinCond = rh`${partsupp1}.(${lineitem}.*l1.l_partkey).*ps2.s_suppkey == ${lineitem}.*l1.l_suppkey`
+  let lineitem1 = rh`[${joinCond} & {
+    nation: ${partsupp1}.(${lineitem}.*l1.l_partkey).*ps2.n_name,
+    ps_supplycost: ${partsupp1}.(${lineitem}.*l1.l_partkey).*ps2.ps_supplycost,
+    l_orderkey: ${lineitem}.*l1.l_orderkey,
+    l_quantity: ${lineitem}.*l1.l_quantity,
+    l_extendedprice: ${lineitem}.*l1.l_extendedprice,
+    l_discount: ${lineitem}.*l1.l_discount
+  }] | group ${lineitem}.*l1.l_orderkey`
+
+  let amount = rh`${lineitem1}.(${orders}.*o1.o_orderkey).*l2.l_extendedprice * (1 - ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.l_discount) - ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.ps_supplycost * ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.l_quantity`
+  let orders1 = rh`{
+    nation: single ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.nation,
+    o_year: (year ${orders}.*o1.o_orderdate),
+    sum_profit: sum ${amount}
+  } | group [
+    ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.nation,
+    (year ${orders}.*o1.o_orderdate)
+  ]`
+
+  let query = rh`sort ${orders1} "nation" 0 "o_year" 1`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q9", schema: types.never, enableOptimizations: false })
+  let res = await func()
+
+  let answer = fs.readFileSync(`${answersDir}/q9.out`).toString()
   expect(res).toBe(answer)
 })
 
@@ -450,7 +545,7 @@ test("q10", async () => {
     ${customer1}.(${lineitem}.*l1.l_orderkey).*c2.c_comment
   ]`
 
-  let query = rh`sort "revenue" 1 ${lineitem1}`
+  let query = rh`sort ${lineitem1} "revenue" 1`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q10", schema: types.never, enableOptimizations: false, limit: 20  })
   let res = await func()
@@ -481,7 +576,7 @@ test("q11", async () => {
     value: ${partsupp1}.*.sum
   }]`
 
-  let query = rh`sort "value" 1 ${partsupp2}`
+  let query = rh`sort ${partsupp2} "value" 1`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q11", schema: types.never, enableOptimizations: false })
   let res = await func()
@@ -507,16 +602,61 @@ test("q12", async () => {
 
   let lineitem1 = rh`{
     l_shipmode: (${cond} & ${lineitem}.*l1.l_shipmode),
-    high_line_count: count? ((${cond} && ${cond5}) & ${lineitem}.*l1.l_comment),
-    low_line_count: count? ((${cond} && ${cond6}) & ${lineitem}.*l1.l_comment)
+    high_line_count: count? ((${cond} && ${cond5}) & ${lineitem}.*l1),
+    low_line_count: count? ((${cond} && ${cond6}) & ${lineitem}.*l1)
   } | group ${lineitem}.*l1.l_shipmode`
 
-  let query = rh`sort "l_shipmode" 0 ${lineitem1}`
+  let query = rh`sort ${lineitem1} "l_shipmode" 0`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q12", schema: types.never, enableOptimizations: false })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q12.out`).toString()
+  expect(res).toBe(answer)
+})
+
+test("q13", async () => {
+  let cond = rh`(like ${orders}.*o1.o_comment ".*special.*requests.*") == 0`
+  let orders1 = rh`[${cond} & ${orders}.*o1.o_orderkey] | group ${orders}.*o1.o_custkey`
+
+  let customer1 = rh`{
+    c_custkey: single ${customer}.*c1.c_custkey,
+    c_count: count ${orders1}.(${customer}.*c1.c_custkey).*o2
+  } | group ${customer}.*c1.c_custkey`
+
+  let customer2 = rh`{
+    c_count: single ${customer1}.*c2.c_count,
+    custdist: count ${customer1}.*c2
+  } | group ${customer1}.*c2.c_count`
+
+  let query = rh`sort ${customer2} "custdist" 1 "c_count" 1`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q13", schema: types.never, enableOptimizations: false })
+  let res = await func()
+
+  let answer = fs.readFileSync(`${answersDir}/q13.out`).toString()
+  expect(res).toBe(answer)
+})
+
+test("q14", async () => {
+  let cond1 = rh`${lineitem}.*l1.l_shipdate >= 19950901 && ${lineitem}.*l1.l_shipdate < 19951001`
+  let lineitem1 = rh`[${cond1} & {
+    l_extendedprice: ${lineitem}.*l1.l_extendedprice,
+    l_discount: ${lineitem}.*l1.l_discount
+  }] | group ${lineitem}.*l1.l_partkey`
+
+  let cond2 = rh`like ${part}.*p1.p_type "PROMO.*"`
+
+  let revenue = rh`${lineitem1}.(${part}.*p1.p_partkey).*l2.l_extendedprice * (1 - ${lineitem1}.(${part}.*p1.p_partkey).*l2.l_discount)`
+  let sum1 = rh`sum (${cond2} & ${revenue})`
+  let sum2 = rh`sum (${revenue})`
+
+  let query = rh`100 * ${sum1} / ${sum2}`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q14", schema: types.never, enableOptimizations: false })
+  let res = await func()
+
+  let answer = fs.readFileSync(`${answersDir}/q14.out`).toString()
   expect(res).toBe(answer)
 })
 
@@ -550,7 +690,73 @@ test("q15", async () => {
   expect(res).toBe(answer)
 })
 
+test("q16", async () => {
+  let supplier1 = rh`count ((like ${supplier}.*s1.s_comment ".*Customer.*Complaints.*") & ${supplier}.*s1) | group ${supplier}.*s1.s_suppkey`
+
+  let partsupp1 = rh`[${supplier1}.(${partsupp}.*ps1.ps_suppkey) == 0 & ${partsupp}.*ps1.ps_suppkey] | group ${partsupp}.*ps1.ps_partkey`
+
+  let cond1 = rh`${part}.*p1.p_brand != "Brand#45" && (like ${part}.*p1.p_type "MEDIUM POLISHED.*") == 0`
+  let cond2 = rh`${part}.*p1.p_size == 42 || ${part}.*p1.p_size == 14 || ${part}.*p1.p_size == 23 || ${part}.*p1.p_size == 45 ||
+                 ${part}.*p1.p_size == 19 || ${part}.*p1.p_size == 3 || ${part}.*p1.p_size == 36 || ${part}.*p1.p_size == 9`
+
+  let cond = rh`${cond1} && ${cond2}`
+  
+  let part1 = rh`{
+    p_brand: single (${cond} & ${part}.*p1.p_brand),
+    p_type: single (${cond} & ${part}.*p1.p_type),
+    p_size: single (${cond} & ${part}.*p1.p_size),
+    ps_suppkey: single (${cond} & ${partsupp1}.(${part}.*p1.p_partkey).*ps2)
+  } | group [
+    ${part}.*p1.p_brand,
+    ${part}.*p1.p_type,
+    ${part}.*p1.p_size,
+    ${partsupp1}.(${part}.*p1.p_partkey).*ps2
+  ]`
+
+  let part2 = rh`{
+    p_brand: single ${part1}.*p2.p_brand,
+    p_type: single ${part1}.*p2.p_type,
+    p_size: single ${part1}.*p2.p_size,
+    supplier_cnt: count ${part1}.*p2.ps_suppkey
+  } | group [
+    ${part1}.*p2.p_brand,
+    ${part1}.*p2.p_type,
+    ${part1}.*p2.p_size
+  ]`
+
+  let query = rh`sort ${part2} "supplier_cnt" 1 "p_brand" 0 "p_type" 0 "p_size" 0`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q16", schema: types.never, enableOptimizations: false })
+  let res = await func()
+
+  let answer = fs.readFileSync(`${answersDir}/q16.out`).toString()
+  expect(res).toBe(answer)
+})
+
 test("q17", async () => {
+  let part1 = rh`[
+    (${part}.*p1.p_brand == "Brand#23" && ${part}.*p1.p_container == "MED BOX") & ${part}.*p1.p_partkey
+  ] | group ${part}.*p1.p_partkey`
+
+  let avgMap1 = rh`{
+    l_partkey: single ${lineitem}.*l1.l_partkey,
+    sum: sum (${lineitem}.*l1.l_quantity),
+    count: count (${lineitem}.*l1.l_quantity)
+  } | group ${lineitem}.*l1.l_partkey`
+
+  let avgMap = rh`0.2 * ${avgMap1}.*.sum / ${avgMap1}.*.count | group ${avgMap1}.*.l_partkey`
+
+  let cond = rh`${part1}.(${lineitem}.*l2.l_partkey).*p2 == ${lineitem}.*l2.l_partkey && ${lineitem}.*l2.l_quantity < ${avgMap}.(${lineitem}.*l2.l_partkey)`
+  let query = rh`(sum (${cond} & ${lineitem}.*l2.l_extendedprice)) / 7.0`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q17", schema: types.never, enableOptimizations: false })
+  let res = await func()
+
+  let answer = fs.readFileSync(`${answersDir}/q17.out`).toString()
+  expect(res).toBe(answer)
+})
+
+test("q17-alt", async () => {
   let part1 = rh`[
     (${part}.*p1.p_brand == "Brand#23" && ${part}.*p1.p_container == "MED BOX") & ${part}.*p1.p_partkey
   ] | group ${part}.*p1.p_partkey`
@@ -560,7 +766,7 @@ test("q17", async () => {
   let cond = rh`${part1}.(${lineitem}.*l2.l_partkey).*p2 == ${lineitem}.*l2.l_partkey && ${lineitem}.*l2.l_quantity < ${avgMap}.(${lineitem}.*l2.l_partkey)`
   let query = rh`(sum (${cond} & ${lineitem}.*l2.l_extendedprice)) / 7.0`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q17", schema: types.never, enableOptimizations: false })
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q17-alt", schema: types.never, enableOptimizations: false })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q17.out`).toString()
@@ -606,7 +812,7 @@ test("q18", async () => {
     ${orders1}.(${lineitem}.*l4.l_orderkey).*o2.o_totalprice
   ]`
 
-  let query = rh`sort "o_totalprice" 1 "o_orderdate" 0 ${lineitem3}`
+  let query = rh`sort ${lineitem3} "o_totalprice" 1 "o_orderdate" 0`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q18", schema: types.never, enableOptimizations: false })
   let res = await func()
@@ -664,6 +870,44 @@ test("q19", async () => {
   expect(res).toBe(answer)
 })
 
+test("q20", async () => {
+  let nation1 = rh`[${nation}.*n1.n_name == "CANADA" & ${nation}.*n1.n_nationkey] | group ${nation}.*n1.n_nationkey`
+
+  let part1 = rh`count ((like ${part}.*p1.p_name "forest.*") & ${part}.*p1) | group ${part}.*p1.p_partkey`
+  let partsupp1 = rh`[${part1}.(${partsupp}.*ps1.ps_partkey) > 0 & {
+    ps_partkey: ${partsupp}.*ps1.ps_partkey,
+    ps_suppkey: ${partsupp}.*ps1.ps_suppkey,
+    ps_availqty: ${partsupp}.*ps1.ps_availqty
+  }] | group ${partsupp}.*ps1.ps_partkey`
+
+  let cond1 = rh`${lineitem}.*l1.l_shipdate >= 19940101 && ${lineitem}.*l1.l_shipdate < 19950101`
+  let lineitem1 = rh`{
+    l_partkey: single (${cond1} & ${lineitem}.*l1.l_partkey),
+    l_suppkey: single (${cond1} & ${lineitem}.*l1.l_suppkey),
+    sum: sum? (${cond1} & ${lineitem}.*l1.l_quantity)
+  } | group [${lineitem}.*l1.l_partkey, ${lineitem}.*l1.l_suppkey]`
+
+  let cond2 = rh`${partsupp1}.(${lineitem1}.*l2.l_partkey).*ps2.ps_suppkey == ${lineitem1}.*l2.l_suppkey`
+  let cond3 = rh`${partsupp1}.(${lineitem1}.*l2.l_partkey).*ps2.ps_availqty > 0.5 * ${lineitem1}.*l2.sum`
+  let lineitem2 = rh`count ((${cond2} && ${cond3}) & ${lineitem1}.*l2) | group ${partsupp1}.(${lineitem1}.*l2.l_partkey).*ps2.ps_suppkey`
+
+  let cond4 = rh`${nation1}.(${supplier}.*s1.s_nationkey).*n2 == ${supplier}.*s1.s_nationkey`
+  let cond5 = rh`${lineitem2}.(${supplier}.*s1.s_suppkey) > 0`
+
+  let supplier1 = rh`{
+    s_name: ((${cond4} && ${cond5}) & ${supplier}.*s1.s_name),
+    s_address: ((${cond4} && ${cond5}) & ${supplier}.*s1.s_address)
+  } | group [${supplier}.*s1.s_name, ${supplier}.*s1.s_address]`
+  
+  let query = rh`sort ${supplier1} "s_name" 0`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q20", schema: types.never, enableOptimizations: false })
+  let res = await func()
+
+  let answer = fs.readFileSync(`${answersDir}/q20.out`).toString()
+  expect(res).toBe(answer)
+})
+
 test("q21", async () => {
   let nation1 = rh`[${nation}.*n1.n_name == "SAUDI ARABIA" & ${nation}.*n1.n_nationkey] | group ${nation}.*n1.n_nationkey`
   let supplier1 = rh`[{
@@ -696,7 +940,7 @@ test("q21", async () => {
     numwait: count ((${orders}.*o2.o_orderstatus == "F" && ${cond}) & ${orders}.*o2.o_orderkey)
   } | group ${lineitem1}.(${orders}.*o2.o_orderkey).*l7.s_name`
 
-  let query = rh`sort "numwait" 1 "s_name" 0 ${orders2}`
+  let query = rh`sort ${orders2} "numwait" 1 "s_name" 0`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q21", schema: types.never, enableOptimizations: false, limit: 100 })
   let res = await func()
@@ -723,14 +967,14 @@ test("q22", async () => {
                  (substr ${customer}.*c2.c_phone 0 2) == "30" || (substr ${customer}.*c2.c_phone 0 2) == "18" ||
                  (substr ${customer}.*c2.c_phone 0 2) == "17"`
 
-  let cond6 = rh`${orders1}.(${customer}.*c2.c_custkey) == 0 && ${cond4} && ${cond5}`
+  let cond6 = rh`(isUndef ${orders1}.(${customer}.*c2.c_custkey)) && ${cond4} && ${cond5}`
   let customer2 = rh`{
     cntrycode: single (${cond6} & (substr ${customer}.*c2.c_phone 0 2)),
     count_order: count? (${cond6} & ${customer}.*c2),
     totalacctbal: sum? (${cond6} & ${customer}.*c2.c_acctbal)
   } | group (substr ${customer}.*c2.c_phone 0 2)`
 
-  let query = rh`sort "cntrycode" 0 ${customer2}`
+  let query = rh`sort ${customer2} "cntrycode" 0`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q22", schema: types.never, enableOptimizations: false })
   let res = await func()

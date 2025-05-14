@@ -15,11 +15,14 @@ const { unique, union } = sets
 // Object: { schema: [...], val: { <key>: <val>, ... }, tag: "object" }
 // File input: { schema, val: mappedFile, tag: "inputFile" }
 // C values will have a keyPos property if it is a result from hash lookup
+//
+// C values could have the optional "cond" property
+// The value is not valid (evaluates to undefined) if cond is true
 
 const KEY_SIZE = 16777216
 const HASH_SIZE = KEY_SIZE
 
-const BUCKET_SIZE = 8
+const BUCKET_SIZE = 64
 const DATA_SIZE = KEY_SIZE * BUCKET_SIZE
 
 const HASH_MASK = HASH_SIZE - 1
@@ -49,6 +52,8 @@ let updateOps
 let updateOpsExtra
 
 let loopInfo
+
+let constStrs
 
 // generator ir api: mirroring necessary bits from ir.js
 let expr = (txt, ...args) => ({ txt, deps: args })
@@ -181,21 +186,21 @@ let cgen = {
 
   inc: (expr) => expr + "++",
 
-  binary: (lhs, rhs, op) => `${lhs} ${op} ${rhs}`,
-  ternary: (cond, tVal, fVal) => `${cond} ? ${tVal} : ${fVal}`,
+  binary: (lhs, rhs, op) => `(${lhs} ${op} ${rhs})`,
+  ternary: (cond, tVal, fVal) => `(${cond} ? ${tVal} : ${fVal})`,
 
-  assign: (lhs, rhs) => cgen.binary(lhs, rhs, "="),
+  assign: (lhs, rhs) => `${lhs} = ${rhs}`,
 
-  plus: (lhs, rhs) => cgen.binary(lhs, rhs, "+"),
-  minus: (lhs, rhs) => cgen.binary(lhs, rhs, "-"),
+  add: (lhs, rhs) => cgen.binary(lhs, rhs, "+"),
+  sub: (lhs, rhs) => cgen.binary(lhs, rhs, "-"),
 
   mul: (lhs, rhs) => cgen.binary(lhs, rhs, "*"),
   div: (lhs, rhs) => cgen.binary(lhs, rhs, "/"),
 
   and: (lhs, rhs) => cgen.binary(lhs, rhs, "&&"),
   or: (lhs, rhs) => cgen.binary(lhs, rhs, "||"),
-  equal: (lhs, rhs) => cgen.binary(lhs, rhs, "=="),
-  notEqual: (lhs, rhs) => cgen.binary(lhs, rhs, "!="),
+  eq: (lhs, rhs) => cgen.binary(lhs, rhs, "=="),
+  ne: (lhs, rhs) => cgen.binary(lhs, rhs, "!="),
 
   lt: (lhs, rhs) => cgen.binary(lhs, rhs, "<"),
   gt: (lhs, rhs) => cgen.binary(lhs, rhs, ">"),
@@ -342,14 +347,14 @@ let extractUsedAndSortedCols = (q) => {
     // if a column is used for sorting,
     // we need to define it as a global array
     // so that it is accessbile to the comparison function
-    let columns = q.arg.slice(0, -1)
-    extractUsedAndSortedCols(q.arg[q.arg.length - 1])
-    sortedCols[tmpSym(q.arg[q.arg.length - 1].op)] ??= {}
+    let columns = q.arg.slice(1)
+    extractUsedAndSortedCols(q.arg[0])
+    sortedCols[tmpSym(q.arg[0].op)] ??= {}
     for (let i = 0; i < columns.length; i += 2) {
       let column = columns[i]
       let order = columns[i + 1]
 
-      sortedCols[tmpSym(q.arg[q.arg.length - 1].op)][column.op] = true
+      sortedCols[tmpSym(q.arg[0].op)][column.op] = true
 
       if (!(column.key == "const" && typeof column.op == "string")) {
         throw new Error("Invalid column for sorting: " + pretty(column))
@@ -371,7 +376,7 @@ let emitGetTime = (buf) => {
   cgen.stmt(buf)(cgen.call("gettimeofday", `&${timeval}`, "NULL"))
 
   let time = getNewName("t")
-  cgen.declareLong(buf)(time, cgen.plus(cgen.mul(`${timeval}.tv_sec`, "1000000L"), `${timeval}.tv_usec`))
+  cgen.declareLong(buf)(time, cgen.add(cgen.mul(`${timeval}.tv_sec`, "1000000L"), `${timeval}.tv_usec`))
 
   return time
 }
@@ -396,8 +401,20 @@ let emitLoadInput = (buf, filename, id) => {
 // Calculate the hash value for a set of keys
 let hash = (buf, keys, keySchema) => {
   let hashed = getNewName("hash")
-  cgen.declareULong(buf)(hashed, "0")
 
+  if (keys.length == 1) {
+    let schema = keys[0].schema.type || keys[0].schema
+    if (typing.isString(schema)) {
+      cgen.declareULong(buf)(hashed, cgen.call("hash", keys[0].val.str, keys[0].val.len))
+    } else if (typing.isNumber(schema) || schema.typeSym == typeSyms.date) {
+      cgen.declareULong(buf)(hashed, cgen.cast("unsigned long", keys[0].val))
+    } else {
+      throw new Error("Cannot hash key with type " + typing.prettyPrintType(schema))
+    }
+    return hashed
+  }
+
+  cgen.declareULong(buf)(hashed, "0")
   for (let i in keys) {
     let key = keys[i]
     let schema = keySchema[i]
@@ -411,8 +428,8 @@ let hash = (buf, keys, keySchema) => {
       throw new Error("Cannot hash key with type " + typing.prettyPrintType(schema))
     }
 
-    cgen.stmt(buf)(cgen.binary(hashed, "8", "<<"))
-    cgen.stmt(buf)(cgen.binary(hashed, tmpHash, "+="))
+    cgen.stmt(buf)(cgen.assign(hashed, cgen.binary(hashed, "8", "<<")))
+    cgen.stmt(buf)(cgen.assign(hashed, cgen.binary(hashed, tmpHash, "+=")))
   }
 
   return hashed
@@ -442,10 +459,10 @@ let emitHashLookUp = (buf, sym, keys) => {
       let keyLen = `${sym}_keys_len${i}[${keyPos}]`
 
       let { str, len } = key.val
-      let comparison = cgen.notEqual(cgen.call("compare_str2", keyStr, keyLen, str, len), "0")
+      let comparison = cgen.ne(cgen.call("compare_str2", keyStr, keyLen, str, len), "0")
       compareKeys = compareKeys ? cgen.or(compareKeys, comparison) : comparison
     } else {
-      let comparison = cgen.notEqual(`${sym}_keys${i}[${keyPos}]`, key.val)
+      let comparison = cgen.ne(`${sym}_keys${i}[${keyPos}]`, key.val)
       compareKeys = compareKeys ? cgen.or(compareKeys, comparison) : comparison
     }
 
@@ -453,9 +470,9 @@ let emitHashLookUp = (buf, sym, keys) => {
 
   // increment the position until we find a match or an empty slot
   cgen.while(buf)(
-    cgen.and(cgen.notEqual(keyPos, "-1"), "(" + compareKeys + ")"),
+    cgen.and(cgen.ne(keyPos, "-1"), "(" + compareKeys + ")"),
     buf1 => {
-      cgen.stmt(buf1)(cgen.assign(pos, cgen.binary("(" + cgen.plus(pos, "1") + ")", HASH_MASK, "&")))
+      cgen.stmt(buf1)(cgen.assign(pos, cgen.binary("(" + cgen.add(pos, "1") + ")", HASH_MASK, "&")))
     }
   )
 
@@ -468,7 +485,7 @@ let emitHashLookUp = (buf, sym, keys) => {
 // Skip the column until the delimiter is found
 let scanColumn = (buf, mappedFile, cursor, size, delim) => {
   cgen.while1(buf)(
-    cgen.notEqual(`${mappedFile}[${cursor}]`, delim),
+    cgen.ne(`${mappedFile}[${cursor}]`, delim),
     cgen.inc(cursor)
   )
   cgen.stmt(buf)(cgen.inc(cursor))
@@ -478,7 +495,7 @@ let scanColumn = (buf, mappedFile, cursor, size, delim) => {
 let scanString = (buf, mappedFile, cursor, size, delim, start, end) => {
   cgen.declareInt(buf)(start, cursor)
   cgen.while1(buf)(
-    cgen.notEqual(`${mappedFile}[${cursor}]`, delim),
+    cgen.ne(`${mappedFile}[${cursor}]`, delim),
     cgen.inc(cursor)
   )
   cgen.declareInt(buf)(end, cursor)
@@ -488,15 +505,24 @@ let scanString = (buf, mappedFile, cursor, size, delim, start, end) => {
 // Scan the column and calculate the integer value
 let scanInteger = (buf, mappedFile, cursor, size, delim, name, type) => {
   cgen.declareVar(buf)(convertToCType(type), name, "0")
+  let negative = getNewName("tmp_negative")
+  cgen.declareVar(buf)(convertToCType(type), negative, "0")
+  cgen.if(buf)(cgen.eq(`${mappedFile}[${cursor}]`, `'-'`), buf1 => {
+    cgen.stmt(buf1)(cgen.assign(negative, "1"))
+    cgen.stmt(buf1)(cgen.inc(cursor))
+  })
   cgen.while(buf)(
-    cgen.notEqual(`${mappedFile}[${cursor}]`, delim),
+    cgen.ne(`${mappedFile}[${cursor}]`, delim),
     buf1 => {
       cgen.comment(buf1)("extract integer")
-      cgen.stmt(buf1)(cgen.assign(name, cgen.plus(cgen.mul(name, "10"), cgen.minus(`${mappedFile}[${cursor}]`, "'0'"), "+")))
+      cgen.stmt(buf1)(cgen.assign(name, cgen.add(cgen.mul(name, "10"), cgen.sub(`${mappedFile}[${cursor}]`, "'0'"), "+")))
       cgen.stmt(buf1)(cgen.inc(cursor))
     }
   )
   cgen.stmt(buf)(cgen.inc(cursor))
+  cgen.if(buf)(negative, buf1 => {
+    cgen.stmt(buf1)(cgen.assign(name, "-" + name))
+  })
 }
 
 // Scan the column and calculate the decimal value
@@ -507,29 +533,36 @@ let scanDecimal = (buf, mappedFile, cursor, size, delim, name, type) => {
   cgen.declareLong(buf)(number, "0")
   cgen.declareLong(buf)(scale, "1")
 
+  let negative = getNewName("tmp_negative")
+  cgen.declareInt(buf)(negative, "0")
+  cgen.if(buf)(cgen.eq(`${mappedFile}[${cursor}]`, `'-'`), buf1 => {
+    cgen.stmt(buf1)(cgen.assign(negative, "1"))
+    cgen.stmt(buf1)(cgen.inc(cursor))
+  })
+
   // calculate integer part
   cgen.while(buf)(
     cgen.and(
-      cgen.notEqual(`${mappedFile}[${cursor}]`, "'.'"),
-      cgen.notEqual(`${mappedFile}[${cursor}]`, delim),
+      cgen.ne(`${mappedFile}[${cursor}]`, "'.'"),
+      cgen.ne(`${mappedFile}[${cursor}]`, delim),
     ),
     buf1 => {
       cgen.comment(buf1)("extract integer part")
-      cgen.stmt(buf1)(cgen.assign(number, cgen.plus(cgen.mul(number, "10"), cgen.minus(`${mappedFile}[${cursor}]`, "'0'"), "+")))
+      cgen.stmt(buf1)(cgen.assign(number, cgen.add(cgen.mul(number, "10"), cgen.sub(`${mappedFile}[${cursor}]`, "'0'"), "+")))
       cgen.stmt(buf1)(cgen.inc(cursor))
     }
   )
 
   // check if we have a dot after integer part
   cgen.if(buf)(
-    cgen.equal(`${mappedFile}[${cursor}]`, "'.'"),
+    cgen.eq(`${mappedFile}[${cursor}]`, "'.'"),
     buf1 => {
       cgen.stmt(buf1)(cgen.inc(cursor))
       cgen.while(buf1)(
-        cgen.notEqual(`${mappedFile}[${cursor}]`, delim),
+        cgen.ne(`${mappedFile}[${cursor}]`, delim),
         buf2 => {
           cgen.comment(buf2)("extract fractional part")
-          cgen.stmt(buf1)(cgen.assign(number, cgen.plus(cgen.mul(number, "10"), cgen.minus(`${mappedFile}[${cursor}]`, "'0'"), "+")))
+          cgen.stmt(buf1)(cgen.assign(number, cgen.add(cgen.mul(number, "10"), cgen.sub(`${mappedFile}[${cursor}]`, "'0'"), "+")))
           cgen.stmt(buf1)(cgen.assign(scale, cgen.mul(scale, "10")))
           cgen.stmt(buf2)(cgen.inc(cursor))
         }
@@ -540,6 +573,10 @@ let scanDecimal = (buf, mappedFile, cursor, size, delim, name, type) => {
     cgen.div(cgen.cast("double", number), scale)
   )
   cgen.stmt(buf)(cgen.inc(cursor))
+
+  cgen.if(buf)(negative, buf1 => {
+    cgen.stmt(buf1)(cgen.assign(name, "-" + name))
+  })
 }
 
 // Scan the column and calculate the date value
@@ -560,7 +597,7 @@ let scanDate = (buf, mappedFile, cursor, size, delim, name) => {
   cgen.declareVar(buf)("int32_t", name,
     `(((((((${digits[0]} * 10 + ${digits[1]}) * 10 + ${digits[2]}) * 10 + ${digits[3]}) * 10 + ${digits[5]}) * 10 + ${digits[6]}) * 10 + ${digits[8]}) * 10 + ${digits[9]}) - 533333328`
   )
-  cgen.stmt(buf)(cgen.binary(cursor, "11", "+="))
+  cgen.stmt(buf)(cgen.assign(cursor, cgen.binary(cursor, "11", "+")))
 }
 
 // Emit code that scans through each row in the CSV file.
@@ -604,7 +641,7 @@ let emitRowScanning = (f, file, cursor, schema, first = true) => {
       scanString(buf, mappedFile, cursor, size, delim, start, end)
     }
   } else if (type.typeSym == typeSyms.date) {
-    cgen.stmt(buf)(cgen.binary(cursor, "11", "+="))
+    cgen.stmt(buf)(cgen.assign(cursor, cgen.binary(cursor, "11", "+")))
   } else {
     scanColumn(buf, mappedFile, cursor, size, delim)
   }
@@ -633,7 +670,7 @@ let getCSVLoopTxt = (f, file, loadInput) => () => {
     cgen.while(initCursor)(
       cgen.and(
         cgen.lt(cursor, size),
-        cgen.notEqual(`${mappedFile}[${cursor}]`, "'\\n'")
+        cgen.ne(`${mappedFile}[${cursor}]`, "'\\n'")
       ),
       buf1 => cgen.stmt(buf1)(cgen.inc(cursor))
     )
@@ -683,9 +720,10 @@ let getHashBucketLoopTxt = (f, bucket, dataBuf) => () => {
 
   let loopHeader = []
 
-  loopHeader.push(`for (int ${quoteVar(v)} = 0; ; ${quoteVar(v)}++) {`)
+  loopHeader.push(`if (!${bucket.cond}) for (int ${quoteVar(v)} = 0; ; ${quoteVar(v)}++) {`)
 
   let boundsChecking = []
+
   boundsChecking.push(`if (${quoteVar(v)} >= ${bucket.val.bucketCount}) break;`)
 
   return {
@@ -738,6 +776,61 @@ let getTmpVarValue = (q, sym) => {
   }
 }
 
+let emitWildcardStrSearch = (buf, str, currIdx, parts, partIdx, strictStart, strictEnd, name) => {
+  if (partIdx == parts.length) {
+    cgen.stmt(buf)(cgen.assign(name, "1"))
+    return
+  }
+  let tmp = getNewName("tmp_strstr")
+  cgen.declareInt(buf)(tmp, cgen.call("strnstr_idx", cgen.add(str.val.str, currIdx), cgen.sub(str.val.len, currIdx), "\"" + parts[partIdx] + "\"", parts[partIdx].length))
+
+  let notFound = cgen.eq(tmp, "-1")
+
+  let checkStart
+  if (partIdx == 0 && strictStart) {
+    checkStart = cgen.eq(tmp, "0")
+  } else {
+    checkStart = cgen.ge(tmp, "0")
+  }
+
+
+  let checkEnd
+  if (partIdx == parts.length - 1 && strictEnd) {
+    checkEnd = cgen.eq(cgen.add(tmp, parts[partIdx].length), cgen.sub(str.val.len, currIdx))
+  } else {
+    checkEnd = cgen.le(cgen.add(tmp, parts[partIdx].length), cgen.sub(str.val.len, currIdx))
+  }
+
+  currIdx = cgen.add(tmp, parts[partIdx].length)
+
+  cgen.if(buf)(cgen.and(checkStart, checkEnd), buf1 => {
+    emitWildcardStrSearch(buf1, str, currIdx, parts, partIdx + 1, strictStart, strictEnd, name)
+  }, buf2 => {
+    cgen.stmt(buf2)(cgen.assign(name, "0"))
+  })
+}
+
+// Only works for regex that have .*
+let emitWildcardMatch = (buf, str, regex, name) => {
+  // get the constant parts
+  let parts = regex.split(".*")
+  cgen.declareInt(buf)(name)
+
+  let strictStart = true
+  let strictEnd = true
+
+  if (parts[0] === "") {
+    parts = parts.slice(1)
+    strictStart = false
+  }
+  if (parts[parts.length - 1] === "") {
+    parts = parts.slice(0, -1)
+    strictEnd = false
+  }
+
+  emitWildcardStrSearch(buf, str, "0", parts, 0, strictStart, strictEnd, name)
+}
+
 // Generate code for paths
 // returns the value of the path
 let emitPath = (buf, q) => {
@@ -756,8 +849,12 @@ let emitPath = (buf, q) => {
       return { schema: q.schema, val: String(q.op) }
     } else if (typeof q.op == "string") {
       // const string is represented as a const char pointer
+      if (constStrs[q.op]) {
+        return { schema: q.schema, val: { str: constStrs[q.op], len: q.op.length } }
+      }
       let name = getNewName("tmp_str")
-      cgen.declareConstCharPtr(buf)(name, '"' + q.op + '"')
+      cgen.declareConstCharPtr(prolog1)(name, '"' + q.op + '"')
+      constStrs[q.op] = name
       return { schema: q.schema, val: { str: name, len: q.op.length } }
     } else {
       throw new Error("Constant not supported: " + pretty(q))
@@ -805,7 +902,7 @@ let emitPath = (buf, q) => {
           if (typing.isString(keyVal.schema)) {
             let start = valName + "_start"
             let end = valName + "_end"
-            val[keyVal.name] = { schema: keyVal.schema, val: { str: cgen.plus(g1.val.mappedFile, start), len: cgen.minus(end, start) } }
+            val[keyVal.name] = { schema: keyVal.schema, val: { str: cgen.add(g1.val.mappedFile, start), len: cgen.sub(end, start) } }
           } else {
             val[keyVal.name] = { schema: keyVal.schema, val: valName }
           }
@@ -818,8 +915,10 @@ let emitPath = (buf, q) => {
       } else if (g1.tag == "hashMapBucket") {
         // If we are iterating over a hashMap bucket,
         // get the stored loop info
+        // We don't need to check existance of the bucket here
+        // since it is checked before the loop executes
         bucket = g1
-        let dataPos = `${bucket.val.buckets}[${cgen.plus(cgen.mul(bucket.keyPos, BUCKET_SIZE), quoteVar(e2.op))}]`
+        let dataPos = `${bucket.val.buckets}[${cgen.add(cgen.mul(bucket.keyPos, BUCKET_SIZE), quoteVar(e2.op))}]`
 
         if (typing.isObject(bucket.schema.objValue)) {
           let schema = convertToArrayOfSchema(bucket.schema.objValue)
@@ -857,17 +956,21 @@ let emitPath = (buf, q) => {
       if (keySchema.length > 1) {
         throw new Error("not supported for now")
       }
+      // The value is undefined if keyPos == -1
+      // emitPath will not handle undefined values
+      // It is up to the top-level caller of emitPath how undefined is handled
       let value = getHashMapValueEntry(sym, pos, keyPos)
+      value.cond = cgen.eq(keyPos, "-1")
       return value
     }
 
     if (v1.tag == "array") {
-      if (!(e2.key == "const" && typeof e2.op == "number")) {
-        throw new Error("Cannot get non-constant number idx from arrays")
-      }
-      // Array element access with constant index
-      let idx = e2.op
-      return getArrayValueEntry(v1, idx)
+      // Array element access
+      let idx = emitPath(buf, e2)
+      let res = getArrayValueEntry(v1, idx.val)
+      res.cond = cgen.ge(idx.val, v1.val.dataCount)
+      if (idx.cond) res.cond = cgen.and(idx.cond, res.cond)
+      return res
     }
 
     // Then it has to be an object
@@ -879,7 +982,7 @@ let emitPath = (buf, q) => {
       throw new Error("Cannot get non-constant string field from objects")
     }
 
-    return v1.val[e2.op]
+    return { ...v1.val[e2.op], cond: v1.cond }
   } else if (q.key == "pure") {
     if (q.op == "mkTuple") {
       let schema = convertToArrayOfSchema(q.schema.type)
@@ -895,6 +998,7 @@ let emitPath = (buf, q) => {
 
     let e1 = emitPath(buf, q.arg[0])
     let op = binaryOperators[q.op]
+    let res
     if (op) {
       // binary op
       let e2 = emitPath(buf, q.arg[1])
@@ -902,35 +1006,74 @@ let emitPath = (buf, q) => {
         if (typing.isString(q.arg[0].schema.type) && typing.isString(q.arg[1].schema.type)) {
           let { str: str1, len: len1 } = e1.val
           let { str: str2, len: len2 } = e2.val
+
           let name = getNewName("tmp_cmpstr")
-          len1 = `(${len1})`
-          len2 = `(${len2})`
+          // let curr = getNewName("tmp_cursor")
+          // let minLen = getNewName("min_len")
+
           cgen.declareInt(buf)(name, cgen.call("strncmp", str1, str2, cgen.ternary(cgen.lt(len1, len2), len1, len2)))
-          cgen.stmt(buf)(cgen.assign(name, cgen.ternary(cgen.equal(name, "0"), cgen.minus(len1, len2), name)))
-          return { schema: q.schema, val: "(" + cgen.binary(name, "0", op) + ")" }
+          // cgen.declareInt(buf)(name, "0")
+          // cgen.declareInt(buf)(curr, "0")
+          // cgen.declareInt(buf)(minLen, cgen.ternary(cgen.lt(len1, len2), len1, len2))
+
+          // buf.push(`while (${curr} < ${minLen}) {`)
+          // cgen.if(buf)(cgen.ne(`${str1}[${curr}]`, `${str2}[${curr}]`), buf1 => {
+          //   cgen.stmt(buf1)(cgen.assign(name, cgen.sub(`${str1}[${curr}]`, `${str2}[${curr}]`)))
+          //   cgen.break(buf)()
+          // })
+          // cgen.stmt(buf)(cgen.inc(curr))
+          // buf.push(`}`)
+          cgen.stmt(buf)(cgen.assign(name, cgen.ternary(cgen.eq(name, "0"), cgen.sub(len1, len2), name)))
+
+          res = { schema: q.schema, val: cgen.binary(name, "0", op) }
         } else {
-          return { schema: q.schema, val: "(" + cgen.binary(e1.val, e2.val, op) + ")" }
+          res = { schema: q.schema, val: cgen.binary(e1.val, e2.val, op) }
         }
       } else if (q.op == "fdiv") {
-        return { schema: q.schema, val: "(" + cgen.binary(cgen.cast("double", e1.val), cgen.cast("double", e2.val), op) + ")" }
+        res = { schema: q.schema, val: cgen.binary(cgen.cast("double", e1.val), cgen.cast("double", e2.val), op) }
       } else {
-        return { schema: q.schema, val: "(" + cgen.binary(e1.val, e2.val, op) + ")" }
+        res = { schema: q.schema, val: cgen.binary(e1.val, e2.val, op) }
       }
+      if (e1.cond && e2.cond) {
+        res.cond = cgen.and(e1.cond, e2.cond)
+      } else if (e1.cond) {
+        res.cond = e1.cond
+      } else {
+        res.cond = e2.cond
+      }
+      return res
     } else if (q.op == "and") {
       throw new Error("Unexpected and op" + pretty(q))
     } else if (q.op == "sort") {
       throw new Error("Unexpected sort op" + pretty(q))
     } else if (q.op.startsWith("convert_")) {
-      return { schema: q.schema, val: cgen.cast(ctypeMap[q.op.substring("convert_".length)], e1.val) }
+      return { schema: q.schema, val: cgen.cast(ctypeMap[q.op.substring("convert_".length)], e1.val), cond: e1.cond }
     } else if (q.op == "year") {
-      return { schema: q.schema, val: "(" + cgen.div(e1.val, "10000") + ")" }
+      return { schema: q.schema, val: cgen.div(e1.val, "10000"), cond: e1.cond }
     } else if (q.op == "substr") {
       console.assert(typing.isString(e1.schema))
       let e2 = emitPath(buf, q.arg[1])
       let e3 = emitPath(buf, q.arg[2])
-      let str = cgen.plus(e1.val.str, e2.val)
-      let len = cgen.minus(e3.val, e2.val)
-      return { schema: typeSyms.string, val: { str, len } }
+      let str = cgen.add(e1.val.str, e2.val)
+      let len = cgen.sub(e3.val, e2.val)
+      return { schema: typeSyms.string, val: { str, len }, cond: e1.cond }
+    } else if (q.op == "like") {
+      console.assert(typing.isString(e1.schema))
+      if (q.arg[1].key != "const" || typeof q.arg[1].key != "string") {
+        throw new Error("Only support constant string regex")
+      }
+
+      let name = getNewName("tmp_like")
+      emitWildcardMatch(buf, e1, q.arg[1].op, name)
+
+      return { schema: q.schema, val: name, cond: e1.cond }
+    } else if (q.op == "isUndef") {
+      if (e1.cond) {
+        return { schema: q.schema, val: e1.cond }
+      } else {
+        // Cannot be undefined, return the value
+        return e1
+      }
     } else {
       throw new Error("Pure operation not supported: " + pretty(q))
     }
@@ -1033,7 +1176,7 @@ let emitArrayPrint = (buf, sym, limit) => {
 
 // Emit code that inserts a value into the array
 let emitArrayInsert = (buf, array, value) => {
-  cgen.if(buf)(cgen.equal(array.val.dataCount, ARRAY_SIZE), (buf2) => {
+  cgen.if(buf)(cgen.eq(array.val.dataCount, ARRAY_SIZE), (buf2) => {
     cgen.printErr(buf2)(`"array size reached its full capacity\\n"`)
     cgen.return(buf2)("1")
   })
@@ -1061,7 +1204,7 @@ let emitArrayInsert = (buf, array, value) => {
     cgen.stmt(buf)(cgen.assign(`${array.val.arr}[${dataPos}]`, value.val))
   }
 
-  cgen.stmt(buf)(cgen.binary(array.val.dataCount, "1", "+="))
+  cgen.stmt(buf)(cgen.assign(array.val.dataCount, cgen.binary(array.val.dataCount, "1", "+")))
 }
 
 // Get the array element at index idx
@@ -1195,77 +1338,26 @@ let emitHashMapInit = (buf, sym, keySchema, valSchema) => {
 //   does nothing
 // if the key is not found:
 //   inserts a new key into the hashmap and initializes it
-let emitHashLookUpOrUpdate = (buf, sym, keys, update) => {
-  let [pos, keyPos] = emitHashLookUp(buf, sym, keys)
-
-  cgen.if(buf)(cgen.equal(keyPos, "-1"), buf1 => {
-    cgen.stmt(buf1)(cgen.assign(keyPos, `${sym}_key_count`))
-    cgen.stmt(buf1)(cgen.inc(`${sym}_key_count`))
-    cgen.if(buf1)(cgen.equal(`${sym}_key_count`, HASH_SIZE), (buf2) => {
-      cgen.printErr(buf2)(`"hashmap size reached its full capacity\\n"`)
-      cgen.return(buf2)("1")
-    })
-    cgen.stmt(buf1)(cgen.assign(`${sym}_htable[${pos}]`, keyPos))
-    let { keySchema, valSchema } = hashMapEnv[sym]
-
-    for (let i in keys) {
-      let key = keys[i]
-      let schema = keySchema[i]
-
-      if (typing.isString(schema)) {
-        let keyStr = `${sym}_keys_str${i}[${keyPos}]`
-        let keyLen = `${sym}_keys_len${i}[${keyPos}]`
-
-        cgen.stmt(buf1)(cgen.assign(keyStr, key.val.str))
-        cgen.stmt(buf1)(cgen.assign(keyLen, key.val.len))
-      } else {
-        cgen.stmt(buf1)(cgen.assign(`${sym}_keys${i}[${keyPos}]`, key.val))
-      }
-    }
-
-    emitHashUpdate(buf, sym, pos, keyPos, update)
-  })
-
-  return [pos, keyPos]
-}
+let emitHashLookUpOrUpdate = (buf, sym, keys, update) =>
+  emitHashLookUpAndUpdateCust(buf, sym, keys, update, () => { }, true)
 
 // Emit the code that performs a lookup of the key in the hashmap, then
 // if the key is found:
 //   updates the value
 // if the key is not found:
 //   inserts a new key into the hashmap and initializes it
-let emitHashLookUpAndUpdate = (buf, sym, keys, update, checkExistance) => {
+let emitHashLookUpAndUpdate = (buf, sym, keys, update, checkExistance) =>
+  emitHashLookUpAndUpdateCust(buf, sym, keys, () => { }, update, checkExistance)
+
+let emitHashLookUpAndUpdateCust = (buf, sym, keys, update1, update2, checkExistance) => {
+  cgen.if(buf)(cgen.eq(`${sym}_key_count`, HASH_SIZE), buf1 => {
+    cgen.printErr(buf1)(`"hashmap size reached its full capacity\\n"`)
+    cgen.return(buf1)("1")
+  })
+
   let [pos, keyPos] = emitHashLookUp(buf, sym, keys)
-  let { keySchema, valSchema } = hashMapEnv[sym]
 
-  if (checkExistance) {
-    cgen.if(buf)(cgen.equal(keyPos, "-1"), buf1 => {
-      cgen.stmt(buf1)(cgen.assign(keyPos, `${sym}_key_count`))
-      cgen.stmt(buf1)(cgen.inc(`${sym}_key_count`))
-      cgen.if(buf1)(cgen.equal(`${sym}_key_count`, HASH_SIZE), (buf2) => {
-        cgen.printErr(buf2)(`"hashmap size reached its full capacity\\n"`)
-        cgen.return(buf2)("1")
-      })
-      cgen.stmt(buf1)(cgen.assign(`${sym}_htable[${pos}]`, keyPos))
-
-      for (let i in keys) {
-        let key = keys[i]
-        let schema = keySchema[i]
-
-        if (typing.isString(schema)) {
-          let keyStr = `${sym}_keys_str${i}[${keyPos}]`
-          let keyLen = `${sym}_keys_len${i}[${keyPos}]`
-
-          cgen.stmt(buf1)(cgen.assign(keyStr, key.val.str))
-          cgen.stmt(buf1)(cgen.assign(keyLen, key.val.len))
-        } else {
-          cgen.stmt(buf1)(cgen.assign(`${sym}_keys${i}[${keyPos}]`, key.val))
-        }
-      }
-    })
-  }
-
-  emitHashUpdate(buf, sym, pos, keyPos, update)
+  emitHashMapUpdate(buf, sym, keys, pos, keyPos, update1, update2, checkExistance)
 
   return [pos, keyPos]
 }
@@ -1279,6 +1371,7 @@ let getHashMapValueEntry = (sym, pos, keyPos) => {
   res.tag = "object"
   res.schema = valSchema
   res.val = {}
+  res.keyPos = keyPos
 
   for (let i in valSchema) {
     let { name, schema } = valSchema[i]
@@ -1334,15 +1427,41 @@ let getHashMapValueEntry = (sym, pos, keyPos) => {
 }
 
 // Emit the code that updates the hashMap value for the key at keyPos
-let emitHashUpdate = (buf, sym, pos, keyPos, update) => {
+// it will initialize the key if it is not there when checkExistance is set to true
+let emitHashMapUpdate = (buf, sym, keys, pos, keyPos, update1, update2, checkExistance) => {
+  let { keySchema, valSchema } = hashMapEnv[sym]
   let lhs = getHashMapValueEntry(sym, pos, keyPos)
 
-  update(buf, lhs, pos, keyPos)
+  if (checkExistance) {
+    cgen.if(buf)(cgen.eq(keyPos, "-1"), buf1 => {
+      cgen.stmt(buf1)(cgen.assign(keyPos, `${sym}_key_count`))
+      cgen.stmt(buf1)(cgen.inc(`${sym}_key_count`))
+      cgen.stmt(buf1)(cgen.assign(`${sym}_htable[${pos}]`, keyPos))
+
+      for (let i in keys) {
+        let key = keys[i]
+        let schema = keySchema[i]
+
+        if (typing.isString(schema)) {
+          let keyStr = `${sym}_keys_str${i}[${keyPos}]`
+          let keyLen = `${sym}_keys_len${i}[${keyPos}]`
+
+          cgen.stmt(buf1)(cgen.assign(keyStr, key.val.str))
+          cgen.stmt(buf1)(cgen.assign(keyLen, key.val.len))
+        } else {
+          cgen.stmt(buf1)(cgen.assign(`${sym}_keys${i}[${keyPos}]`, key.val))
+        }
+      }
+      update1(buf1, lhs, pos, keyPos)
+    })
+  }
+
+  update2(buf, lhs, pos, keyPos)
 }
 
 // Emit the code that insertes a value into a hashmap bucket
 let emitHashBucketInsert = (buf, bucket, value) => {
-  cgen.if(buf)(cgen.equal(bucket.val.bucketCount, BUCKET_SIZE), (buf2) => {
+  cgen.if(buf)(cgen.eq(bucket.val.bucketCount, BUCKET_SIZE), (buf2) => {
     cgen.printErr(buf2)(`"hashmap bucket size reached its full capacity\\n"`)
     cgen.return(buf2)("1")
   })
@@ -1355,9 +1474,9 @@ let emitHashBucketInsert = (buf, bucket, value) => {
   let bucketPos = getNewName("bucket_pos")
 
   cgen.declareInt(buf)(bucketPos, bucket.val.bucketCount)
-  cgen.stmt(buf)(cgen.assign(bucket.val.bucketCount, cgen.plus(bucketPos, "1")))
+  cgen.stmt(buf)(cgen.assign(bucket.val.bucketCount, cgen.add(bucketPos, "1")))
 
-  let idx = cgen.plus(cgen.mul(bucket.keyPos, BUCKET_SIZE), bucketPos)
+  let idx = cgen.add(cgen.mul(bucket.keyPos, BUCKET_SIZE), bucketPos)
   cgen.stmt(buf)(cgen.assign(`${bucket.val.buckets}[${idx}]`, dataPos))
 
   if (typing.isObject(bucket.schema.objValue)) {
@@ -1461,15 +1580,15 @@ let emitCompareFunc = (buf, name, valPairs, orders) => {
 
     if (typing.isString(schema)) {
       cgen.declareInt(buf)(tmp, cgen.call("strncmp", aVal.val.str, bVal.val.str, cgen.ternary(cgen.lt(aVal.val.len, bVal.val.len), aVal.val.len, bVal.val.len)))
-      cgen.stmt(buf)(cgen.assign(tmp, cgen.ternary(cgen.equal(tmp, "0"), cgen.minus(aVal.val.len, bVal.val.len), tmp)))
+      cgen.stmt(buf)(cgen.assign(tmp, cgen.ternary(cgen.eq(tmp, "0"), cgen.sub(aVal.val.len, bVal.val.len), tmp)))
     } else {
-      cgen.declareInt(buf)(tmp, cgen.minus(aVal.val, bVal.val))
+      cgen.declareInt(buf)(tmp, cgen.ternary(cgen.lt(aVal.val, bVal.val), "-1", cgen.ternary(cgen.gt(aVal.val, bVal.val), "1", "0")))
     }
 
     if (i == valPairs.length - 1) {
       cgen.return(buf)(tmp)
     } else {
-      cgen.if(buf)(cgen.notEqual(tmp, "0"), buf1 => {
+      cgen.if(buf)(cgen.ne(tmp, "0"), buf1 => {
         cgen.return(buf1)(tmp)
       })
     }
@@ -1480,7 +1599,7 @@ let emitCompareFunc = (buf, name, valPairs, orders) => {
 let emitHashMapSorting = (buf, q, hashMap) => {
   let sym = hashMap.val.sym
 
-  let columns = q.arg.slice(0, -1)
+  let columns = q.arg.slice(1)
 
   let vals = []
   let orders = []
@@ -1510,7 +1629,7 @@ let emitArraySorting = (buf, q, array) => {
   let sym = array.val.sym
   let valSchema = array.schema.objValue
 
-  let columns = q.arg.slice(0, -1)
+  let columns = q.arg.slice(1)
 
   let vals = []
   let orders = []
@@ -1568,6 +1687,8 @@ let reset = () => {
   prolog1 = []
 
   loopInfo = {}
+
+  constStrs = {}
 }
 
 let emitStatefulInit = (buf, q, lhs) => {
@@ -1592,22 +1713,19 @@ let emitStatefulInit = (buf, q, lhs) => {
   }
 }
 
-let emitStatefulUpdate = (buf, q, lhs) => {
-  let e = q.arg[0]
-  if (e.key == "pure" && e.op == "and") e = e.arg[1]
-  let rhs = emitPath(buf, e)
+let emitStatefulUpdate1 = (buf, q, lhs, rhs) => {
   if (q.op == "sum") {
-    cgen.stmt(buf)(cgen.binary(lhs.val, rhs.val, "+="))
+    cgen.stmt(buf)(cgen.assign(lhs.val, cgen.binary(lhs.val, rhs.val, "+")))
   } else if (q.op == "count") {
-    cgen.stmt(buf)(cgen.binary(lhs.val, "1", "+="))
+    cgen.stmt(buf)(cgen.assign(lhs.val, cgen.binary(lhs.val, "1", "+")))
   } else if (q.op == "product") {
-    cgen.stmt(buf)(cgen.binary(lhs.val, rhs.val, "*="))
+    cgen.stmt(buf)(cgen.assign(lhs.val, cgen.binary(lhs.val, rhs.val, "*")))
   } else if (q.op == "min") {
     cgen.stmt(buf)(`${lhs.val} = ${rhs.val} < ${lhs.val} ? ${rhs.val} : ${lhs.val}`)
   } else if (q.op == "max") {
     cgen.stmt(buf)(`${lhs.val} = ${rhs.val} > ${lhs.val} ? ${rhs.val} : ${lhs.val}`)
   } else if (q.op == "single") {
-    if (typing.isString(e.schema.type)) {
+    if (typing.isString(q.arg[0].schema.type)) {
       let { str: lhsStr, len: lhsLen } = lhs.val
       let { str: rhsStr, len: rhsLen } = rhs.val
       cgen.stmt(buf)(cgen.assign(lhsStr, rhsStr))
@@ -1626,14 +1744,40 @@ let emitStatefulUpdate = (buf, q, lhs) => {
     }
 
   } else if (q.op == "print") {
-    if (typing.isString(e.schema.type)) {
+    if (typing.isString(q.arg[0].schema.type)) {
       let { str, len } = rhs.val
-      cgen.stmt(buf)(cgen.call("printf", `"%.*s\\n"`,len, str))
+      cgen.stmt(buf)(cgen.call("printf", `"%.*s\\n"`, len, str))
     } else {
       cgen.stmt(buf)(cgen.call("printf", `"%${getFormatSpecifier(q.arg[0].schema.type)}\\n"`, rhs.val))
     }
   } else {
     throw new Error("stateful op not supported: " + pretty(q))
+  }
+}
+
+let emitStatefulUpdate = (buf, q, lhs) => {
+  let e = q.arg[0]
+  if (e.key == "pure" && e.op == "and") e = e.arg[1]
+  let rhs = emitPath(buf, e)
+  if (rhs.cond) {
+    cgen.if(buf)("!" + rhs.cond, buf1 => {
+      emitStatefulUpdate1(buf1, q, lhs, rhs)
+    })
+  } else {
+    emitStatefulUpdate1(buf, q, lhs, rhs)
+  }
+}
+
+// Extract the top-level condition for stateful operations
+let emitStatefulUpdateOptCond = (buf, q, update) => {
+  let e = q.arg[0]
+  if (e.key == "pure" && e.op == "and") {
+    let cond = emitPath(buf, e.arg[0])
+    if (cond.cond) cond.val = cgen.and("!" + cond.cond, cond.val)
+
+    cgen.if(buf)(cond.val, update)
+  } else {
+    update(buf)
   }
 }
 
@@ -1659,16 +1803,9 @@ let emitStatefulInPath = (q, sym) => {
   let buf = []
   cgen.comment(buf)("update " + sym + " = " + pretty(q))
 
-  let e = q.arg[0]
-  if (e.key == "pure" && e.op == "and") {
-    let cond = emitPath(buf, e.arg[0])
-
-    cgen.if(buf)(cond.val, buf1 => {
-      emitStatefulUpdate(buf1, q, lhs)
-    })
-  } else {
-    emitStatefulUpdate(buf, q, lhs)
-  }
+  emitStatefulUpdateOptCond(buf, q, buf1 => {
+    emitStatefulUpdate(buf1, q, lhs)
+  })
   assign(buf, sym, fv, deps)
 
   emittedStateful[sym] = true
@@ -1837,6 +1974,12 @@ let emitCode = (q, ir, settings) => {
         let filename = emitPath(buf, g1.arg[0])
         let filenameStr
         if (!isConstStr) {
+          if (filename.cond) {
+            cgen.if(buf)(cond, buf1 => {
+              cgen.printErr(buf1)("Attempting to open a file with undefined filename")
+              cgen.return(buf1, "1")
+            })
+          }
           filenameStr = getNewName("tmp_filename")
           cgen.declareCharArr(buf)(filenameStr, `${filename.val.len} + 1`)
           cgen.stmt(buf)(cgen.call("extract_str1", filename.val.str, filename.val.len, filenameStr))
@@ -1888,6 +2031,7 @@ let emitCode = (q, ir, settings) => {
   for (let i in updateOps) {
     let k = assignments[i].arg[1].op
 
+    // TODO: should add if check to see if the keys are undefined
     let keys = k.startsWith("K") ? mksetVarEnv[k] : [k]
 
     let sym = tmpSym(i)
@@ -1897,37 +2041,36 @@ let emitCode = (q, ir, settings) => {
     let init = []
 
     cgen.comment(init)("init and update " + sym + " = " + pretty(assignments[i]))
-    let shouldInit = updateOps[i].some(j => initRequired[assignments[j].op] && assignments[j].mode !== "maybe") || updateOpsExtra[i].some(j => initRequired[assignments[j].op])
+    let shouldInit = updateOps[i].some(j => initRequired[assignments[j].op] && assignments[j].mode !== "maybe") ||
+      updateOpsExtra[i].some(j => initRequired[assignments[j].op] && assignments[j].mode !== "maybe")
 
     if (!shouldInit) {
-      // let update = []
-
+      let lookup = []
+      let [pos, keyPos] = emitHashLookUp(lookup, sym, keys)
+      assign(lookup, sym, fv, [])
       for (let j of updateOps[i]) {
         let q = assignments[j]
-        let e = q.arg[0]
         let buf = []
         let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
-        if (e.key == "pure" && e.op == "and") {
-          let cond = emitPath(buf, e.arg[0])
-          cgen.if(buf)(cond.val, (buf1) => {
-            emitHashLookUpAndUpdate(buf1, sym, keys, (buf2, lhs, pos, keyPos) => {
-              currentGroupKey = { key: k, pos, keyPos }
-              cgen.comment(buf2)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
 
-              if (q.extraGroupPath) {
-                console.assert(lhs.tag == "object")
-                lhs = lhs.val[q.extraGroupPath[0]]
-              } else {
-                console.assert(lhs.tag == "hashMapValue" || lhs.tag == "hashMapBucket")
-              }
-
-              emitStatefulUpdate(buf2, q, lhs, sym)
-            }, true)
-          })
-        } else {
-          emitHashLookUpAndUpdate(buf, sym, keys, (buf1, lhs, pos, keyPos) => {
+        let update1 = () => { }
+        if (q.mode === "maybe") {
+          // We still need to initialize it to some value if it is in maybe mode
+          update1 = (buf2, lhs) => {
+            cgen.comment(buf2)("init " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
+            if (q.extraGroupPath) {
+              console.assert(lhs.tag == "object")
+              lhs = lhs.val[q.extraGroupPath[0]]
+            } else {
+              console.assert(lhs.tag == "hashMapValue" || lhs.tag == "hashMapBucket")
+            }
+            emitStatefulInit(buf2, q, lhs)
+          }
+        }
+        cgen.comment(buf)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
+        emitStatefulUpdateOptCond(buf, q, buf1 => {
+          emitHashMapUpdate(buf1, sym, keys, pos, keyPos, update1, (buf2, lhs) => {
             currentGroupKey = { key: k, pos, keyPos }
-            cgen.comment(buf1)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
 
             if (q.extraGroupPath) {
               console.assert(lhs.tag == "object")
@@ -1936,9 +2079,9 @@ let emitCode = (q, ir, settings) => {
               console.assert(lhs.tag == "hashMapValue" || lhs.tag == "hashMapBucket")
             }
 
-            emitStatefulUpdate(buf1, q, lhs, sym)
+            emitStatefulUpdate(buf2, q, lhs, sym)
           }, true)
-        }
+        })
         assign(buf, sym, fv, deps)
       }
       // extra not supported yet
@@ -1976,24 +2119,15 @@ let emitCode = (q, ir, settings) => {
       let q = assignments[j]
       cgen.comment(update)("update " + tmpSym(j) + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
       let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
-      let e = q.arg[0]
-      if (e.key == "pure" && e.op == "and") {
-        let cond = emitPath(update, e.arg[0])
 
-        cgen.if(update)(cond.val, buf1 => {
-          emitHashUpdate(buf1, sym, pos, keyPos, (buf2, lhs) => {
-            let lhs1 = getHashMapValueEntry(tmpSym(j), pos, keyPos)
-            console.assert(lhs1.tag == "hashMapValue" || lhs1.tag == "hashMapBucket")
-            emitStatefulUpdate(buf2, q, lhs1)
-          })
-        })
-      } else {
-        emitHashUpdate(update, sym, pos, keyPos, (buf1, lhs) => {
+      emitStatefulUpdateOptCond(update, q, buf1 => {
+        emitHashMapUpdate(buf1, sym, keys, pos, keyPos, () => { }, (buf2, lhs) => {
           let lhs1 = getHashMapValueEntry(tmpSym(j), pos, keyPos)
           console.assert(lhs1.tag == "hashMapValue" || lhs1.tag == "hashMapBucket")
-          emitStatefulUpdate(buf1, q, lhs1)
-        })
-      }
+          emitStatefulUpdate(buf2, q, lhs1)
+        }, false)
+      })
+
       assign(update, sym, fv, deps)
     }
     for (let j of updateOps[i]) {
@@ -2001,32 +2135,19 @@ let emitCode = (q, ir, settings) => {
       let q = assignments[j]
       cgen.comment(update)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
       let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
-      let e = q.arg[0]
-      if (e.key == "pure" && e.op == "and") {
-        let cond = emitPath(update, e.arg[0])
 
-        cgen.if(update)(cond.val, buf1 => {
-          emitHashUpdate(buf1, sym, pos, keyPos, (buf2, lhs) => {
-            if (q.extraGroupPath) {
-              console.assert(lhs.tag == "object")
-              lhs = lhs.val[q.extraGroupPath[0]]
-            } else {
-              console.assert(lhs.tag == "hashMapValue" || lhs.tag == "hashMapBucket")
-            }
-            emitStatefulUpdate(buf2, q, lhs)
-          })
-        })
-      } else {
-        emitHashUpdate(update, sym, pos, keyPos, (buf1, lhs) => {
+      emitStatefulUpdateOptCond(update, q, buf1 => {
+        emitHashMapUpdate(buf1, sym, keys, pos, keyPos, () => { }, (buf2, lhs) => {
           if (q.extraGroupPath) {
             console.assert(lhs.tag == "object")
             lhs = lhs.val[q.extraGroupPath[0]]
           } else {
             console.assert(lhs.tag == "hashMapValue" || lhs.tag == "hashMapBucket")
           }
-          emitStatefulUpdate(buf1, q, lhs)
-        })
-      }
+          emitStatefulUpdate(buf2, q, lhs)
+        }, false)
+      })
+
       assign(update, sym, fv, deps)
     }
   }
@@ -2036,7 +2157,7 @@ let emitCode = (q, ir, settings) => {
   let epilog = []
   let res
   if (q.key == "pure" && q.op == "sort") {
-    res = emitPath(epilog, q.arg[q.arg.length - 1])
+    res = emitPath(epilog, q.arg[0])
     if (res.tag == "hashMap") {
       emitHashMapSorting(epilog, q, res)
     } else if (res.tag == "array") {
@@ -2045,6 +2166,12 @@ let emitCode = (q, ir, settings) => {
 
   } else {
     res = emitPath(epilog, q)
+    if (res.cond) {
+      cgen.if(epilog)(res.cond, buf1 => {
+        cgen.stmt(buf1)(cgen.call("printf", `"undefined\\n"`))
+        cgen.return(epilog)("0")
+      })
+    }
   }
 
   if (q.schema.type.typeSym !== typeSyms.never) {
@@ -2063,7 +2190,7 @@ let emitCode = (q, ir, settings) => {
 
   let t2 = emitGetTime(epilog)
 
-  cgen.printErr(epilog)(`"Timing:\\n\\tInitializaton:\\t%ld μs\\n\\tRuntime:\\t%ld μs\\n\\tTotal:\\t\\t%ld μs\\n"`, cgen.minus(t1, t0), cgen.minus(t2, t1), cgen.minus(t2, t0))
+  cgen.printErr(epilog)(`"Timing:\\n\\tInitializaton:\\t%ld μs\\n\\tRuntime:\\t%ld μs\\n\\tTotal:\\t\\t%ld μs\\n"`, cgen.sub(t1, t0), cgen.sub(t2, t1), cgen.sub(t2, t0))
 
   cgen.return(epilog)("0")
   epilog.push("}")
