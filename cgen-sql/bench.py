@@ -5,7 +5,7 @@ import re
 import matplotlib.pyplot as plt
 import numpy as np
 
-N = 5
+N = 10
 
 rhyme = []
 flare = []
