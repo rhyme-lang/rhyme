@@ -505,7 +505,7 @@ let loopsConsolidate = (q, setObj) => {
 }
 
 
-optimizer.loopsConsolidate = (q, vars) => {
+optimizer.loopsConsolidate = (q, vars, sameDomains) => {
     let filters = {};
     let setObj = {};
     loopsIdentify(q, filters, vars);
@@ -554,7 +554,7 @@ optimizer.loopsConsolidate = (q, vars) => {
                 let obj = filters[filterName];
                 if (typing.isUnknown(obj.type))
                     return false;
-                return typing.typeEquals(filterObj.type, obj.type);
+                return sameDomains[varName].includes(filterName);
             });
             if(potentialConsolidations.length == 0)
                 break;

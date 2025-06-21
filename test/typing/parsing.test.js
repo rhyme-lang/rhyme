@@ -57,7 +57,7 @@ test("basic-string", () => {
 })
 
 test("basic-obj", () => {
-    let type = typing.parseType("{ *u8 : u8 }");
+    let type = typing.parseType("{ u8?: u8 }");
     expectTypeSimilarity(type, {
         "*": types.u8
     });
@@ -99,14 +99,12 @@ test("complex-query-input", () => {
     let type = typing.parseType`{
         udf: {
             toNum: (string) => u8
-        }, data: {
-            *u8: {
-                region: string,
-                country: string,
-                city: string,
-                population: u8
-            }
-        }
+        }, data: [{
+            region: string,
+            country: string,
+            city: string,
+            population: u8
+        }]
     }`;
     expectTypeSimilarity(typing.parseType(type), {
         udf: {
@@ -128,7 +126,7 @@ test("complex-holes", () => {
         udf: {
             toNum: ${typing.createFunction(types.u8, types.string)}
         }, ${"data"}: {
-            ${"*u8"}: {
+            ${"u8"}?: {
                 region: string,
                 country: string,
                 city: ${types.string},
@@ -151,6 +149,19 @@ test("complex-holes", () => {
     })
 })
 
+test("obj-construction", () => {
+    let t1 = typing.parseType`{}`;
+    expect(t1.typeSym).toBe(typeSyms.object);
+    expect(t1.objKey).toBe(null);
+    let t2 = typing.parseType`unknown & {}`;
+    expect(t2.typeSym).toBe(typeSyms.unknown);
+    let t3 = typing.parseType`unknown & {key: value}`;
+    expect(t3.typeSym).toBe(typeSyms.object);
+    expect(t3.objParent.typeSym).toBe(typeSyms.unknown);
+})
+
+/*
+// TODO: New type system doesn't allow for guaranteed inner joins.
 test("complex-reuse-keys", () => {
     let type = typing.parseType`{
         data: {
@@ -180,3 +191,4 @@ test("complex-reuse-keys", () => {
         }
     })
 })
+*/

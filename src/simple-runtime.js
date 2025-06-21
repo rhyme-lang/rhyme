@@ -158,7 +158,7 @@ rt.pure.convert_u64 = (x) => x === undefined ? undefined : BigInt(x) & BigInt("0
 // TODO: Determine if these properly hold for really big numbers (Answer: They don't). Also, find a way to optimize?
 rt.pure.convert_i8 = (x) => x === undefined ? undefined : (((Number(x) + 0x80) & 0xff) - 0x80);
 rt.pure.convert_i16 = (x) => x === undefined ? undefined : (((Number(x) + 0x8000) & 0xffff) - 0x8000);
-rt.pure.convert_i32 = (x) => x === undefined ? undefined : (((Number(x) + 0x80000000) & 0xffffffff) - 0x80000000);
+rt.pure.convert_i32 = (x) => x === undefined ? undefined : (Number(x) & 0xffffffff);
 rt.pure.convert_i64 = (x) => x === undefined ? undefined : ((BigInt(x) + BigInt("0x8000000000000000")) & BigInt("0xffffffffffffffff")) - BigInt("0x8000000000000000");
 // TODO: Determine if all implementations have Math.fround implemented.
 rt.pure.convert_f32 = (x) => x === undefined ? undefined : Math.fround(Number(x));

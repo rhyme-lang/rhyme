@@ -43,14 +43,13 @@ test("testTrivial", async () => {
   expect(res).toEqual("201\n")
 })
 
-let schema = typing.objBuilder()
-  .add(typing.createKey(types.u32), typing.createSimpleObject({
-    A: types.string,
-    B: types.i32,
-    C: types.i32,
-    D: types.i32,
-    String: types.string
-  })).build()
+let schema = typing.parseType`[{
+  A: string,
+  B: i32,
+  C: i32,
+  D: i32,
+  String: string
+}]!`;
 
 test("testSimpleSum1", async () => {
   let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`

@@ -8,14 +8,10 @@ let data = [
     { key: "A", value: 30 }
 ]
 
-let key = typing.createKey(types.string);
-
-let dataSchema = {
-    "-": typing.keyval(key, {
-        key: typing.createUnion("A", "B"),
-        value: types.u8
-   })
-};
+let dataSchema = typing.parseType`[{
+    key: A | B,
+    value: u8
+}]!`;
 
 let countryData = [
     { region: "Asia", country: "Japan", city: "Tokyo", population: 30 },
@@ -31,23 +27,17 @@ let regionData = [
     { region: "Europe", country: "UK" },
 ]
 
-let key2 = typing.createKey(types.string);
+let countrySchema = typing.parseType`[{
+    region: string,
+    country: string,
+    city: string,
+    population: u8
+}]!`;
 
-let countrySchema = {
-    "-": typing.keyval(key2, {
-        region: types.string,
-        country: types.string,
-        city: types.string,
-        population: types.u8
-    })
-};
-
-let regionSchema = {
-    "-": typing.keyval(key2, {
-        region: types.string,
-        country: types.string,
-    })
-};
+let regionSchema = typing.parseType`[{
+    region: string,
+    country: string
+}]`;
 
 test("plainSumTest", () => {
     let query = api.sum("data.*.value")
@@ -308,12 +298,10 @@ test("udfTest", () => {
     let func = api.compile(query, typing.parseType({
         udf: {
             formatDollar: typing.createFunction(types.string, types.u32)
-        }, data: {
-            "-": typing.keyval(typing.createKey(types.u8), {
-                item: types.string,
-                price: types.u32
-            })
-        }
+        }, data: typing.parseType`[{
+            item: string,
+            price: u32
+        }]`
     }))
     let res = func({ data, udf })
     let expected = [{ item: "iPhone", price: "$1200.00" }, { item: "Galaxy", price: "$800.00" }]
@@ -427,7 +415,7 @@ test("graphicsBasicTestParsing", () => {
         "$display": "select",
         data: data
     }
-    let func = api.compile(query, typing.parseType`{data: {*u8: {x: u8, y: u8}}}`);
+    let func = api.compile(query, typing.parseType`{data: [{x: u8, y: u8}]}`);
     let res = func({ data })
     let expected = {
         "$display": "select",

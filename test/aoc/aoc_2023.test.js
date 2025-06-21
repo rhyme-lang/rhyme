@@ -34,6 +34,7 @@ let udf_stdlib = {
   matchAll: (regex, flags) => x => [...x.matchAll(new RegExp(regex, flags))],
   logicalAnd: (x,y) => x && y,
   logicalOr: (x,y) => x || y,
+  logicalNot: (x) => (!x),
   range: (start, stop, step) =>
       Array.from({ length: (stop - start + step - 1) / step }, (_, i) => start + (i * step)),
   slice: start => x => x.slice(start),
@@ -43,7 +44,7 @@ let udf_stdlib = {
   ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
 }
 
-let udf_std_typ = typing.parseType`{
+let udf_std_typ = typing.parseType`unknown & {
   split: (string) => (string) => [string],
   toNum: (any) => f64,
   isGreaterThan: (f64, f64) => boolean,
@@ -57,11 +58,12 @@ let udf_std_typ = typing.parseType`{
   floor: (f64) => f64,
   ceil: (f64) => f64,
   abs: (f64) => f64,
-  modulo: (f64) => f64,
+  modulo: (f64, f64) => f64,
   int2Char: (f64) => string,
   matchAll: (string, string) => (string) => [[string]],
   logicalAnd: (boolean, boolean) => boolean,
   logicalOr: (boolean, boolean) => boolean,
+  logicalNot: (boolean) => boolean,
   range: (u32, u32, u32) => [u32]
 }`;
 // TODO: Add typing support for slice and later functions.
@@ -101,16 +103,11 @@ zoneight234
     ...udf_stdlib
   }
 
-  let udf_typ = typing.parseType`${udf_std_typ} & {
-    match: (string) => [string],
-    toNumW: (string) => i16
-  }`
-
   let digits  = rh`.input | udf.split "\\n" | .*line | udf.match | .*match | udf.toNumW`
   let numbers = rh`first(${digits}) * 10 + last(${digits})`
   let query   = rh`${numbers} | group *line | sum .*`
 
-  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_typ}}`)
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ}}`)
   let res = func({input, udf})
   expect(res).toBe(281)
 })
@@ -224,12 +221,12 @@ let udf = {
   }
 }
 let udf_typ = typing.parseType`${udf_std_typ} & {
-  splitN: (string) => {*u32=A: string},
-  splitB: (string) => {*u32=B: string},
-  match: (string) => [{*u32=D: string}],
+  splitN: (string) => [string],
+  splitB: (string) => [string],
+  match: (string) => [[string]],
   getAdj: (f64) => [[f64]],
-  getCords: (f64) => ({*D: string}) => [f64],
-  optionalChaining: ({*B: string}) => (f64) => f64,
+  getCords: (f64) => ([string]) => [f64],
+  optionalChaining: ([string]) => (f64) => f64,
   isSym: (f64) => boolean
 }`
 let root = api.input()
@@ -282,7 +279,7 @@ test("day3-part2", () => {
   }
   let udf_typ = typing.parseType`${udf_std_typ} & {
     isAdj: (i32, i32, line, match) => boolean,
-    filter: (boolean) => {*string: true} | {},
+    filter: (boolean) => {string?: true},
     andThen: (any, any) => any
   }`
 
@@ -302,7 +299,7 @@ test("day3-part2", () => {
   let partNumsPerGear = rh`${partNumsPerGear_ungrouped} | group *j | group *i | .*0 | .*1`
   // We only aggregate over the gears that are adjacent to exactly two part numbers
   let query = rh`${partNumsPerGear} | ${filterBy("*f2", rh`udf.isEqual ${partNumsPerGear}.length 2`)} | .0 * .1 | sum`
-  let func = api.compile(query)
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ}}`)
   let res = func({input, udf})
 
   expect(res).toBe(467835)
@@ -348,7 +345,7 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
   let query = rh`${lineRes} | group *line | sum .*`
 
   // TODO: Loop consolidation - "udf.getNums" returns an array with same keys, so winNum is consolidated with numYouHave, but this is very bad.
-  let func = api.compile(query) // , typing.parseType`{input: string, udf: ${udf_typ}}`
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_typ}}`)
   let res = func({input, udf})
   expect(res).toBe(13)
 })
@@ -417,7 +414,7 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
 
   // TODO: Figure out why adding typing is so slow.
   // TODO: Loop consolidation makes typing this fail.
-  let func = api.compile(query) // , typing.parseType`{input: string, udf: ${udf_typ}}`)
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ}}`) // , typing.parseType`{input: string, udf: ${udf_typ}}`)
   let res = func({input, udf})
   expect(res).toBe(30)
 })
@@ -580,7 +577,7 @@ humidity-to-location map:
     maps: rh`${intervals} | group *map`
   }
 
-  let f0 = api.compileNew(query)
+  let f0 = api.compileNew(query, typing.parseType`{input: string, udf: ${udf_std_typ}}`)
 
   // XXX: c1_opt (new codegen) and c2 (semantic) are correct, c1 (old codegen) behaves differently
   let result = f0({input, udf})
@@ -619,7 +616,7 @@ humidity-to-location map:
     new:[inRange]
   }
 
-  let f1 = api.compile(query)
+  let f1 = api.compile(query, typing.parseType`{src: [{start: f64, end: f64}], map: {start: f64, end: f64}, udf: ${udf_std_typ}}`)
 
   let src = result.sources
   for (let m in result.maps) {
@@ -634,7 +631,7 @@ humidity-to-location map:
 
   query = rh`.src | .*src | .start | min`
 
-  let f2 = api.compile(query)
+  let f2 = api.compile(query, typing.parseType`{src: [{start: f64, end: f64}]}`)
 
   let min = f2({src})
 
@@ -665,7 +662,7 @@ Distance:  9  40  200`
 
   let query = rh`${root2Int} - ${root1Int} + 1 | group *pair | product .*`
 
-  let func = api.compile(query)
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ}}`)
   let res = func({input, udf})
   expect(res).toBe(288)
 })
@@ -696,7 +693,7 @@ Distance:  9  40  200`
 
   let query = rh`${root2Int} - ${root1Int} + 1`
 
-  let func = api.compile(query)
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ} & {matchAll: unknown}}`) // TODO: Figure out why matchAll pairs are summed.
   let res = func({input, udf})
   expect(res).toBe(71503)
 })
@@ -733,7 +730,7 @@ let udf = {
   let sortedCards = rh`${stats} | group *line | udf.values | udf.sort udf.cmpCard | .*sc`
   let query = rh`((udf.toNum *sc) + 1) * ${sortedCards}.bid | sum`
 
-  let func = api.compile(query)
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ}}`)
   let res = func({input, udf})
   expect(res).toBe(6440)
 })
@@ -776,7 +773,7 @@ let ranks = {J:"a", 2:"b", 3:"c", 4:"d", 5:"e", 6:"f", 7:"g", 8:"h", 9:"i", T:"j
   let sortedCards = rh`${stats} | group *line | udf.values | udf.sort udf.cmpCard | .*sc`
   let query = rh`((udf.toNum *sc) + 1) * ${sortedCards}.bid | sum`
 
-  let func = api.compile(query)
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ}}`)
   let res = func({input, udf})
   expect(res).toBe(5905)
 })
@@ -813,8 +810,7 @@ ZZZ = (ZZZ, ZZZ)`
     steps: rh`state.steps + 1`
   }
 
-  let func = api.compile(query)
-
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ}, state: {state: string, steps: u32}}`)
   // initial state and driver loop
   let state = {
     state: "AAA",
@@ -1004,7 +1000,7 @@ LJ.LJ`
   // is identical to the start cell
   let isConnected = rh`${startPos} | udf.getAdj
                                    | udf.toCoord (connected.(${grid}.(.*adj.0).(.*adj.1)).*neighbor.0 + .*adj.0) (connected.(${grid}.(.*adj.0).(.*adj.1)).*neighbor.1 + .*adj.1)
-                                   | udf.isEqual (udf.isEqual .0 ${startPos}.0) + (udf.isEqual .1 ${startPos}.1) 2`
+                                   | ((udf.isEqual .0 ${startPos}.0) & (udf.isEqual .1 ${startPos}.1))`
   let startCell = rh`${startPos} | udf.getAdj | .*adj | ${filterBy("*f2", isConnected)} | first`
 
   // In the initial state, "curr" is actually the cell after we make the first move
@@ -1028,7 +1024,7 @@ LJ.LJ`
 
   // It stops when the current cell becomes S
   let notVisited = rh`udf.toCoord (connected.(${grid}.(state.curr.0).(state.curr.1)).*adj.0 + state.curr.0) (connected.(${grid}.(state.curr.0).(state.curr.1)).*adj.1 + state.curr.1)
-                      | udf.notEqual (udf.isEqual .0 state.prev.0) + (udf.isEqual .1 state.prev.1) 2`
+                      | udf.logicalNot (udf.isEqual .0 state.prev.0) & (udf.isEqual .1 state.prev.1)`
   let curr = rh`udf.toCoord (connected.(${grid}.(state.curr.0).(state.curr.1)).*adj.0 + state.curr.0) (connected.(${grid}.(state.curr.0).(state.curr.1)).*adj.1 + state.curr.1)
                 | ${filterBy("*f", notVisited)} | first`
 
@@ -1040,7 +1036,7 @@ LJ.LJ`
     count: rh`state.count + 1`
   }
 
-  let func = api.compile(query)
+  let func = api.compileC2(query, typing.parseType`{input: string, udf: ${udf_std_typ}, state: unknown, connected: unknown}`)
 
   while (state.cell != "S") {
     state = func({input, udf, state, connected})
@@ -1186,7 +1182,7 @@ L7JLJL-JLJLJL--JLJ.L`
 
   let pathQuery = rh`.path`
   let query = rh`${grid}.*row | udf.getEnclosedArray *row ${pathQuery} ${grid} | sum .*enclosed | group *row | sum .*`
-  let func = api.compile(query)
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ}}`)
 
   let res = func({input, udf, connected, path})
 
@@ -1369,7 +1365,7 @@ test("day12-part1", () => {
     count: rh`sum (udf.valueOrDefault ${currInput}.res)`
   }
 
-  let func = api.compile(query)
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ}, puzzle: [{ds: [string] & {length: u32}, d: i32, input: [string]}]}`)
 
   let res = 0
   for (let i in puzzles) {
@@ -1496,7 +1492,7 @@ O.#..O.#.#
     n: n
   }
 
-  let func = api.compile(query)
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ}}`)
   while (state.row < state.n) {
     state = func({input, udf, state})
   }
@@ -1747,7 +1743,7 @@ test("day16-part1", () => {
 
   let query = rh`count state.visited.*i.*j`
 
-  let func = api.compile(query)
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ}}`)
   let res = func({state})
 
   expect(res).toBe(46)
@@ -2290,7 +2286,7 @@ U 2 (#7a21e3)`
     x, y, area
   }
 
-  let func = api.compile(query)
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ}}`)
   while (state.curr < digPlan.n) {
     state = func({digPlan, udf, state})
   }
@@ -2371,7 +2367,7 @@ U 2 (#7a21e3)`
     x, y, area
   }
 
-  let func = api.compile(query)
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ}}`)
   while (state.curr < digPlan.n) {
     state = func({digPlan, udf, state})
   }
@@ -2890,7 +2886,7 @@ test("day21-part1", () => {
     curr: rh`udf.toSet ${neighbors}`,
     grid: rh`state.grid`
   }
-  let func = api.compile(query)
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ}, state: {grid: [[string]]}}`)
 
   let i = 0
   while (i < 6) {
@@ -2994,7 +2990,7 @@ test("day22-part1", () => {
   let nonDisintegrableBricks = [rh`state.droppedBricksValues.*.0  | ${filterBy("*f", onlyOneSupportingBrick)}`]
   let query = rh`bricks.length - (udf.toSet ${nonDisintegrableBricks}).size`
 
-  let func = api.compile(query)
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ}, state: {droppedBricksValues: [[string]]}, bricks: [string] & {length: u32}}`)
   let res = func({input, udf, state, bricks})
 
   expect(res).toBe(5)
@@ -3215,7 +3211,7 @@ test("day24-part1", () => {
   // count the number of intersections
   let query = rh`${will_intersect_all} | sum .*`
 
-  let func = api.compile(query)
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ}}`)
   let res = func({input, udf})
 
   expect(res).toBe(2)

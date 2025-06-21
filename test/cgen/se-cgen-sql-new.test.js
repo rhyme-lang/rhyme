@@ -33,14 +33,13 @@ test("testTrivial", async () => {
   expect(res).toEqual("201\n")
 })
 
-let schema = typing.objBuilder()
-  .add(typing.createKey(types.u32), typing.createSimpleObject({
-    A: types.string,
-    B: types.i32,
-    C: types.i32,
-    D: types.i32,
-    String: types.string,
-  })).build()
+let schema = typing.parseType`[{
+  A: string,
+  B: i32,
+  C: i32,
+  D: i32,
+  String: string
+}]!`;
 
 test("testSimpleSum1", async () => {
   let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
@@ -198,10 +197,7 @@ valD
 })
 
 test("testLoadCSVDynamicFilename", async () => {
-  let files_schema = typing.objBuilder()
-    .add(typing.createKey(types.u32), typing.createSimpleObject({
-      file: types.string
-    })).build()
+  let files_schema = typing.parseType`[{ file: string }]!`
 
   let filenames = rh`(loadCSV "./cgen-sql/files.csv" ${files_schema}).*f.file`
 
@@ -216,10 +212,7 @@ test("testLoadCSVDynamicFilename", async () => {
 })
 
 test("testLoadCSVDynamicFilenameJoin", async () => {
-  let files_schema = typing.objBuilder()
-    .add(typing.createKey(types.u32), typing.createSimpleObject({
-      file: types.string
-    })).build()
+  let files_schema = typing.parseType`[{ file: string }]!`
 
   let filenames = rh`(loadCSV "./cgen-sql/files.csv" ${files_schema}).*f.file`
 
@@ -323,25 +316,21 @@ test("testGroupByJS", () => {
   // console.log(res)
 })
 
-let dataSchema = typing.objBuilder()
-  .add(typing.createKey(types.u32), typing.createSimpleObject({
-    key: types.string,
-    value: types.i32
-  })).build()
+let dataSchema = typing.parseType`[{
+  key: string,
+  value: i32
+}]!`
 
-let countrySchema = typing.objBuilder()
-  .add(typing.createKey(types.u32), typing.createSimpleObject({
-    // region: types.string,
-    country: types.string,
-    city: types.string,
-    population: types.u32
-  })).build()
+let countrySchema = typing.parseType`[{
+  country: string,
+  city: string,
+  population: u32
+}]!`
 
-let regionSchema = typing.objBuilder()
-  .add(typing.createKey(types.u32), typing.createSimpleObject({
-    region: types.string,
-    country: types.string
-  })).build()
+let regionSchema = typing.parseType`[{
+  region: string,
+  country: string
+}]!`
 
 test("plainSumTest", async () => {
   let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`

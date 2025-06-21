@@ -10,98 +10,92 @@ let outDir = "cgen-sql/tpch-out"
 
 let answersDir = "cgen-sql/tpch-answers"
 
-let customerSchema = typing.objBuilder()
-  .add(typing.createKey(types.u32), typing.createSimpleObject({
-    c_custkey: types.i32,
-    c_name: types.string,
-    c_address: types.string,
-    c_nationkey: types.i32,
-    c_phone: types.string,
-    c_acctbal: types.f64,
-    c_mktsegment: types.string,
-    c_comment: types.string,
-  })).build()
+let customerSchema = typing.parseType`[{
+    c_custkey: i32,
+    c_name: string,
+    c_address: string,
+    c_nationkey: i32,
+    c_phone: string,
+    c_acctbal: f64,
+    c_mktsegment: string,
+    c_comment: string
+}]!`;
 
-let lineitemSchema = typing.objBuilder()
-  .add(typing.createKey(types.u32), typing.createSimpleObject({
-    l_orderkey: types.i32,
-    l_partkey: types.i32,
-    l_suppkey: types.i32,
-    l_linenumber: types.i32,
-    l_quantity: types.f64,
-    l_extendedprice: types.f64,
-    l_discount: types.f64,
-    l_tax: types.f64,
-    l_returnflag: types.string,
-    l_linestatus: types.string,
-    l_shipdate: types.date,
-    l_commitdate: types.date,
-    l_receiptdate: types.date,
-    l_shipinstruct: types.string,
-    l_shipmode: types.string,
-    l_comment: types.string,
-  })).build()
+let lineitemSchema = typing.parseType`[{
+    l_orderkey: i32,
+    l_partkey: i32,
+    l_suppkey: i32,
+    l_linenumber: i32,
+    l_quantity: f64,
+    l_extendedprice: f64,
+    l_discount: f64,
+    l_tax: f64,
+    l_returnflag: string,
+    l_linestatus: string,
+    l_shipdate: date,
+    l_commitdate: date,
+    l_receiptdate: date,
+    l_shipinstruct: string,
+    l_shipmode: string,
+    l_comment: string
+}]!`;
 
-let nationSchema = typing.objBuilder()
-  .add(typing.createKey(types.u32), typing.createSimpleObject({
-    n_nationkey: types.i32,
-    n_name: types.string,
-    n_regionkey: types.i32,
-    n_comment: types.string,
-  })).build()
+let nationSchema = typing.parseType`[{
+    n_nationkey: i32,
+    n_name: string,
+    n_regionkey: i32,
+    n_comment: string
+}]!`;
 
-let ordersSchema = typing.objBuilder()
-  .add(typing.createKey(types.u32), typing.createSimpleObject({
-    o_orderkey: types.i32,
-    o_custkey: types.i32,
-    o_orderstatus: types.string,
-    o_totalprice: types.f64,
-    o_orderdate: types.date,
-    o_orderpriority: types.string,
-    o_clerk: types.string,
-    o_shippriority: types.i32,
-    o_comment: types.string,
-  })).build()
+let regionSchema = typing.parseType`[{
+  r_regionkey: i32,
+  n_name: string,
+  n_comment: string
+}]!`;
 
-let partSchema = typing.objBuilder()
-  .add(typing.createKey(types.u32), typing.createSimpleObject({
-    p_partkey: types.i32,
-    p_name: types.string,
-    p_mfgr: types.string,
-    p_brand: types.string,
-    p_type: types.string,
-    p_size: types.i32,
-    p_container: types.string,
-    p_retailprice: types.f64,
-    p_comment: types.string,
-  })).build()
+let ordersSchema = typing.parseType`[{
+    o_orderkey: i32,
+    o_custkey: i32,
+    o_orderstatus: string,
+    o_totalprice: f64,
+    o_orderdate: date,
+    o_orderpriority: string,
+    o_clerk: string,
+    o_shippriority: i32,
+    o_clerk: string,
+    o_shoppriority: i32,
+    o_comment: string
+}]!`;
 
-let partsuppSchema = typing.objBuilder()
-  .add(typing.createKey(types.u32), typing.createSimpleObject({
-    ps_partkey: types.i32,
-    ps_suppkey: types.i32,
-    ps_availqty: types.i32,
-    ps_supplycost: types.f64,
-    ps_comment: types.string,
-  })).build()
+let partSchema = typing.parseType`[{
+    p_partkey: i32,
+    p_name: string,
+    p_mfgr: string,
+    p_brand: string,
+    p_type: string,
+    p_size: i32,
+    p_container: string,
+    p_retailprice: f64,
+    p_comment: string
+}]`;
 
-let regionSchema = typing.objBuilder()
-  .add(typing.createKey(types.u32), typing.createSimpleObject({
-    r_regionkey: types.i32,
-    r_name: types.string,
-    r_comment: types.string,
-  })).build()
+let partsuppSchema = typing.parseType`[{
+    ps_partkey: i32,
+    ps_suppkey: i32,
+    ps_availqty: i32,
+    ps_supplycost: f64,
+    ps_comment: string
+}]`;
 
-let supplierSchema = typing.objBuilder()
-  .add(typing.createKey(types.u32), typing.createSimpleObject({
-    s_suppkey: types.i32,
-    s_name: types.string,
-    s_address: types.string,
-    s_nationkey: types.i32,
-    s_phone: types.string,
-    s_acctbal: types.f64,
-    s_comment: types.string,
-  })).build()
+let supplierSchema = typing.parseType`[{
+    s_suppkey: i32,
+    s_name: string,
+    s_address: string,
+    s_nationkey: i32,
+    s_phone: string,
+    s_acctbal: f64,
+    s_comment: string
+}]`;
 
 let customerFile = `"${dataDir}/customer.tbl"`
 let lineitemFile = `"${dataDir}/lineitem.tbl"`

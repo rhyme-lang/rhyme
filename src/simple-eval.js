@@ -888,13 +888,14 @@ let compile = (q,userSettings={}) => {
   q = optimizer.deduplicate(q, {});
   // Perform type checking, and modify ast to include types.
   if(settings.schema) {
-    q = typing.validateIR(settings.schema, q);
+    let res = typing.validateIR(settings.schema, q);
+    q = res.query;
+    if(settings.enableOptimizations) {
+      q = optimizer.loopsConsolidate(q, vars, res.sameDomains);
+    }
   }
 
   // ---- middle tier, imperative form ----
-  if(settings.enableOptimizations && settings.schema) {
-    q = optimizer.loopsConsolidate(q, vars);
-  }
 
   if (settings.extractAssignments && !((settings.enableOptimizations && settings.schema) || settings.extractAssignmentsLate)) {
     // 8. Extract assignments
@@ -939,7 +940,6 @@ let compile = (q,userSettings={}) => {
 
   // 11. Pretty print (debug out)
   let pseudo = emitPseudo(q)
-  
   // 12. Codegen
 
   if (settings.newCodegen)

@@ -161,6 +161,8 @@ let sets = exports.sets = {}
 
 sets.unique = xs => xs.filter((x,i) => xs.indexOf(x) == i)
 
+sets.equal = (s1, s2) => s1.length == s2.length && s1.reduce((acc, x) => acc && s2.includes(x), true)
+
 sets.union = (a,b) => sets.unique([...a,...b])
 
 sets.intersect = (a,b) => {

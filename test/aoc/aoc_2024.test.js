@@ -42,7 +42,7 @@ let udf_stdlib = {
   ifThenElse: (predicate, thenBr, elseBr) => predicate ? thenBr : elseBr,
 }
 
-let udf_std_typ = typing.parseType`{
+let udf_std_typ = typing.parseType`unknown & {
   split: (string) => (string) => [string],
   toNum: (any) => f64,
   isGreaterThan: (f64, f64) => boolean,
@@ -61,7 +61,7 @@ let udf_std_typ = typing.parseType`{
   matchAll: (string, string) => (string) => [[string]],
   logicalAnd: (boolean, boolean) => boolean,
   logicalOr: (boolean, boolean) => boolean,
-  range: (u32, u32, u32) => [u32]
+  range: (i32, i32, i32) => [i32]
 }`;
 
 test("day1-part1", () => {
@@ -83,7 +83,7 @@ test("day1-part1", () => {
   let right = rh`${pairs}.1 | udf.toNum | array | udf.sort`
   let query   = rh`${left}.*i - ${right}.*i | udf.abs | sum`
 
-  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ} & {sort: (any) => {*u16: i16}}}`)
+  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ}}`)
   let res = func({input, udf})
   expect(res).toBe(11)
 })
@@ -136,12 +136,12 @@ test("day2-part1", () => {
 
   let delta = rh`${tail}.*i - ${report}.*i`
 
-  let monotonic = sign => rh`all (udf.range 1 4).(${sign} * ${delta})`
+  let monotonic = sign => rh`all (udf.range 1 4 1).(${sign} * ${delta})`
   let safe = rh`${monotonic(1)} || ${monotonic(-1)}`
 
   let query   = rh`count (*line & ${safe})`
 
-  let func = api.compileC2(query)
+  let func = api.compileC2(query, typing.parseType`{input: string, udf: ${udf_std_typ}}`)
   let res = func({input, udf})
   expect(res).toBe(2)
 })
@@ -169,11 +169,11 @@ test("day2-part2", () => {
   let reports = rh`[${originalReport}, ${dampenedReports}] | .*report`
   let tail = rh`${reports} | udf.slice 1`
   let delta = rh`${tail}.*i - ${reports}.*i`
-  let monotonic = sign => rh`all (udf.range 1 4).(${sign} * ${delta})`
+  let monotonic = sign => rh`all (udf.range 1 4 1).(${sign} * ${delta})`
   let safe = rh`${monotonic(1)} || ${monotonic(-1)} | group *report`
   let query = rh`count (*line & count?(${safe}.*A))`
 
-  let func = api.compileC2(query)
+  let func = api.compileC2(query, typing.parseType`{input: string, udf: ${udf_std_typ}}`)
   let res = func({input, udf})
   expect(res).toBe(4)
 })
@@ -193,7 +193,7 @@ test("day3-part1", () => {
   let mul = rh`${first} * ${second}`
   let query   = rh`sum ${mul}`
 
-  let func = api.compileC2(query)
+  let func = api.compileC2(query, typing.parseType`{input: string, udf: ${udf_std_typ}}`)
   let res = func({input, udf})
   expect(res).toBe(161)
 })
@@ -214,7 +214,7 @@ test("day3-part2", () => {
   }
 
   let match = rh`.input | udf.matchAll "(mul\\\\((\\\\d{1,3}),(\\\\d{1,3})\\\\)|do\\\\(\\\\)|don't\\\\(\\\\))" "g"`
-  let query   = rh`udf.reduce ${match}`
+  let query = rh`udf.reduce ${match}`
 
   let func = api.compileC2(query)
   let res = func({input, udf})

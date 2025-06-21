@@ -140,11 +140,13 @@ api["query"] = api["compile"] = (query, schema = types.unknown) => {
     let c1_opt = new_codegen.generate(rep)
     let c2 = simpleEval.compile(query, {schema: schema})
     let c2_new = simpleEval.compile(query, {schema: schema, newCodegen: true })
+    let c2_unk = simpleEval.compile(query, {schema: types.unknown})
     let wrapper = (x) => {
         let res1 = c1(x)
         let res1_opt = c1_opt(x)
         let res2 = c2(x)
         let res2_new = c2_new(x)
+        let res2_unk = c2_unk(x)
 
         let cmp = src => ({
           toEqual: dst => {
@@ -157,6 +159,7 @@ api["query"] = api["compile"] = (query, schema = types.unknown) => {
         cmp(res1_opt).toEqual(res1)
         cmp(res2).toEqual(res1)
         cmp(res2_new).toEqual(res2)
+        cmp(res2_unk).toEqual(res2)
         return res2
     }
     logDebugOutput({
@@ -173,6 +176,7 @@ api["query"] = api["compile"] = (query, schema = types.unknown) => {
     wrapper.explain_opt = c1_opt.explain
     wrapper.explain2 = c2.explain
     wrapper.explain2_new = c2_new.explain
+    wrapper.explain2_unk = c2_unk.explain
     return wrapper
 }
 api["compileC1"] = api["compileFastPathOnly"] = (query) => {
@@ -212,10 +216,12 @@ api["compileNew"] = (query, schema = types.unknown) => {
   let c1 = new_codegen.generate(rep)
   let c2 = simpleEval.compile(query, { schema })
   let c2_new = simpleEval.compile(query, { newCodegen: true, schema })
+  let c2_unk = simpleEval.compile(query, { newCodegen: true, schema: types.unknown })
   let wrapper = (x) => {
       let res1 = c1(x)
       let res2 = c2(x)
       let res2_new = c2_new(x)
+      let res2_unk = c2_unk(x)
 
       let cmp = src => ({
         toEqual: dst => {
@@ -227,6 +233,7 @@ api["compileNew"] = (query, schema = types.unknown) => {
 
       cmp(res2).toEqual(res1)
       cmp(res2_new).toEqual(res2)
+      cmp(res2_unk).toEqual(res2)
       return res2
   }
   logDebugOutput({
@@ -243,14 +250,16 @@ api["compileNew"] = (query, schema = types.unknown) => {
   return wrapper
 }
 
-api["compileC2"] = (query, schema = types.unknown) => {
+api["compileC2"] = (query, schema = types.unknown, options) => {
   query = ast.unwrap(query)
   // let rep = ir.createIR(query)
-  let c2 = simpleEval.compile(query, { schema })
-  let c2_new = simpleEval.compile(query, { newCodegen: true, schema })
+  let c2 = simpleEval.compile(query, { schema, ...options })
+  let c2_new = simpleEval.compile(query, { newCodegen: true, schema, ...options })
+  let c2_unk = simpleEval.compile(query, {schema: types.unknown, ...options})
   let wrapper = (x) => {
       let res2 = c2(x)
       let res2_new = c2_new(x)
+      let res2_unk = c2_unk(x)
 
       let cmp = src => ({
         toEqual: dst => {
@@ -261,6 +270,7 @@ api["compileC2"] = (query, schema = types.unknown) => {
       try { cmp = expect } catch (e) {} // use test runner if available
 
       cmp(res2_new).toEqual(res2)
+      cmp(res2_unk).toEqual(res2)
       return res2
   }
   logDebugOutput({
@@ -272,6 +282,7 @@ api["compileC2"] = (query, schema = types.unknown) => {
   wrapper.explain = c2.explain
   wrapper.explain2 = c2.explain
   wrapper.explain2_new = c2_new.explain
+  wrapper.explain2_unk = c2_unk.explain
   return wrapper
 }
 

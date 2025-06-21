@@ -2,34 +2,32 @@ const { api } = require('../../src/rhyme')
 const { rh } = require('../../src/parser')
 const { typing, types, props, typeSyms } = require("../../src/typing");
 
-let key = typing.createKey(types.string);
-
-let dataSchema = {
-    "-": typing.keyval(key, {
-        key: typing.createUnion("A", "B"),
-        value: types.f64
-   })
-};
+let dataSchema = typing.parseType`{
+    u32?: {
+        key: A | B,
+        value: f64
+    }
+}`;
 
 let otherSchema = dataSchema;
 
 let schema = {data: dataSchema};
 
-let countrySchema = {
-    "-": typing.keyval(key, {
-        region: types.string,
-        country: types.string,
-        city: types.string,
-        population: types.u8
-    })
-};
+let countrySchema = typing.parseType`{
+    u32?: {
+        region: string,
+        country: string,
+        city: string,
+        population: u16
+    }
+}`;
 
-let regionSchema = {
-    "-": typing.keyval(key, {
-        region: types.string,
-        country: types.string,
-    })
-};
+let regionSchema = typing.parseType`{
+    u32?: {
+        region: string,
+        country: string
+    }
+}`;
 
 // Typing check helper function.
 // Take in human-writeable schema and check its similarity to type.
@@ -109,7 +107,7 @@ test("type-double-generator", () => {
     let func = api.compile(query, {data: dataSchema, other: otherSchema});
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
-    expect(func.explain2.resultType.props).toStrictEqual([props.nothing]);
+    expect(func.explain2.resultType.props).toStrictEqual([]);
     // Must be object keyed by A u B, with values of u8.
     expect(type).toStrictEqual(typing.createUnion(types.f64, typing.createUnion("A", "B")));
 })
@@ -191,10 +189,10 @@ test("nestedGroupAggregateTest", () => {
     // No nothing or errors propogated.
     expect(func.explain2.resultType.props).toStrictEqual([]);
     expectTypeSimilarity(type, {
-        total: types.u8,
+        total: types.u16,
         "*": {
-            total: types.u8,
-            "*": types.u8
+            total: types.u16,
+            "*": types.u16
         }
     });
 })
@@ -258,7 +256,7 @@ test("joinSimpleTest2", () => {
     expect(func.explain2.resultType.props).toStrictEqual([]);
     expectTypeSimilarity(type, {
         "*": {
-            "*": types.u8
+            "*": types.u16
         }
     })
 })
@@ -279,10 +277,10 @@ test("joinWithAggrTest", () => {
     // No nothing or errors propogated.
     expect(func.explain2.resultType.props).toStrictEqual([]);
     expectTypeSimilarity(type, {
-        total: types.u8,
+        total: types.u16,
         "*": {
-            total: types.u8,
-            "*": types.u8
+            total: types.u16,
+            "*": types.u16
         }
     });
 })
@@ -301,7 +299,7 @@ test("udfTest", () => {
     }]
     let func = api.compile(query, {
         data: {
-            "-": typing.keyval(typing.createKey(types.u32), {
+            "-": typing.keyval(types.u32, {
                 item: types.string,
                 price: types.u32
             })

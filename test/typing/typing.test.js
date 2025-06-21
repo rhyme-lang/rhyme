@@ -31,7 +31,7 @@ test("equals-obj", () => {
 })
 
 test("equals-obj-gcd", () => {
-    let keyval = typing.keyval(typing.createKey(types.string), types.u16);
+    let keyval = typing.keyval(types.string, types.u16);
     // Verify that objects with the same key are the same.
     let equal1 = typing.parseType({"-": keyval});
     let equal2 = typing.parseType({"-": keyval});
@@ -59,12 +59,10 @@ test("subtype-basic", () => {
     expect(typing.isSubtype(types.u8, types.u16)).toBe(true);
     expect(typing.isSubtype(types.u16, types.u8)).toBe(false);
 
-    let keyval = typing.keyval(typing.createKey(types.string), types.u16);
+    let keyval = typing.keyval(types.string, types.u16);
     let obj1 = typing.parseType({"-": keyval});
     let obj2 = typing.parseType({y: types.u16});
     expect(typing.isSubtype(obj1, obj2)).toBe(false);
-    let obj3 = typing.parseType({"-": keyval});
-    expect(typing.isSubtype(obj1, obj3)).toBe(true);
 })
 
 test("subtype-function", () => {
@@ -86,15 +84,6 @@ test("subtype-function", () => {
 test("union-basic", () => {
     expect(typing.createUnion(types.u8, types.u16)).toBe(types.u16);
     expect(typing.createUnion(types.u8, types.i16)).toBe(types.i16);
-
-    expect(typing.createUnion(types.string, typing.createKey(types.string))).toBe(types.string);
-})
-
-test("insersect-basic", () => {
-    expect(typing.createIntersection(types.u8, types.i16)).toBe(types.u8);
-    expect(typing.createIntersection(types.string, types.i16)).toBe(types.never);
-    expect(typing.createIntersection("A", "B")).toBe(types.never);
-    expect(typing.createIntersection("A", "A")).toBe("A");
 })
 
 test("no-intersect-basic", () => {
@@ -107,19 +96,6 @@ test("no-intersect-basic", () => {
     expect(typing.typeDoesntIntersect("A", "A")).toBe(false);
     // TODO: Should non-key types be checked?
     // typeDoesntIntersect is only ever ran on key types.
-})
-
-test("no-intersect-basic-keys", () => {
-    let k1 = typing.createKey(types.u8);
-    let k2 = typing.createKey(types.u8);
-    let k3 = typing.createKey(types.u16);
-    let k4 = typing.createKey(types.string);
-
-    // Integer keys can intersect.
-    expect(typing.typeDoesntIntersect(k1, k2)).toBe(false);
-    expect(typing.typeDoesntIntersect(k2, k3)).toBe(false);
-    // String and Integer keys will never intersect.
-    expect(typing.typeDoesntIntersect(k3, k4)).toBe(true);
 })
 
 

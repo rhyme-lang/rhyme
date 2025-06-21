@@ -115,7 +115,7 @@ test("testPathGroup2", () => {
   let query = { "join **A": rh`data.**A.B` }
 
   let func = compile(query)
-  let res = func({data,other})
+  let res = func({data,other, udf: {toString: (x) => String(x)}})
 
   // Explicit grouping is ok if we convert the key to a string
 

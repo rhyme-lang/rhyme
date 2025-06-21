@@ -3,14 +3,10 @@ const { compile } = require('../../src/simple-eval')
 const { rh } = require('../../src/parser')
 const { typing, types, props, typeSyms } = require("../../src/typing");
 
-let key = typing.createKey(types.string);
-
-let dataSchema = {
-    "-": typing.keyval(key, {
-        key: typing.createUnion("A", "B"),
-        value: types.f64
-   })
-};
+let dataSchema = typing.parseType`[{
+    key: A | B,
+    value: f64
+}]!`;
 
 let data = [
     { key: "A", value: 10 },

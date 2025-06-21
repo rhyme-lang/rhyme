@@ -67,15 +67,13 @@ int main() {
 
 let data = {}
 
-let dataInnerObj = typing.createSimpleObject({
-    key: types.string,
-    value: types.i16
-});
-let schema = typing.createSimpleObject({
-    data: typing.objBuilder()
-        .add(typing.createKey(types.string), dataInnerObj)
-        .build()
-});
+let dataInnerObj = typing.parseType`{
+    key: string,
+    value: i16
+}`;
+let schema = typing.parseType`{
+    data: {string?: ${dataInnerObj}}
+}`;
 
 test("testTrivial0", async () => {
   let query = rh`1 + 4`
@@ -213,14 +211,13 @@ test("testHint3MatrixCPP", async () => {
 
   let csr = buildCSR(mat)
 
-  let funcRh = compile(queryRh, { backend : "cpp", schema: typing.createSimpleObject({
-    mat: typing.objBuilder()
-        .add(typing.createKey(types.string), typing.objBuilder()
-            .add(typing.createKey(types.string), types.u16)
-            .build())
-        .build()
-    })
-  });
+  let funcRh = compile(queryRh, { backend : "cpp", schema: typing.parseType`{
+    mat: {
+      string?: {
+        string?: u16
+      }
+    }
+  }`});
   let resRh = await funcRh({mat})
 
   let funcDense = compile(queryDense, { backend : "cpp", schema: typing.createSimpleObject({
