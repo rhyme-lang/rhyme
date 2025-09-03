@@ -1030,7 +1030,7 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
             let {type: t3, props: p3} = argTups[2];
             return {type: createUnion(t2, t3), props: union(p2, p3)};
         } else if (q.op == "sort") {
-            return argTups[argTups.length - 1];
+            return argTups[0];
         } else if (q.op == "year") {
             // arg has to be of type date
             let {type: t1, props: p1} = argTups[0];
@@ -1040,12 +1040,38 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
         } else if (q.op == "substr") {
             // arg has to be of type date
             let {type: t1, props: p1} = argTups[0];
+            let {type: t2, props: p2} = argTups[1];
+            let {type: t3, props: p3} = argTups[2];
             if (!isString(t1))
                 throw new Error("Unable to perform substr operation on non-string type: " + prettyPrintType(t1) + "\nReceived from query: " + pretty(q.arg[0]));
+
+            if (!isInteger(t2))
+                throw new Error("Unable to perform substr operation on non-integer indices: " + prettyPrintType(t2) + "\nReceived from query: " + pretty(q.arg[1]));
+
+            if (!isInteger(t3))
+                throw new Error("Unable to perform substr operation on non-integer indices: " + prettyPrintType(t3) + "\nReceived from query: " + pretty(q.arg[2]));
+
             return {
                 type: types.string,
                 props: p1
             }
+        } else if (q.op == "like") {
+            // arg has to be of type date
+            let {type: t1, props: p1} = argTups[0];
+            let {type: t2, props: p2} = argTups[1];
+            if (!isString(t1))
+                throw new Error("Unable to perform substr operation on non-string type: " + prettyPrintType(t1) + "\nReceived from query: " + pretty(q.arg[0]));
+
+            if (!isString(t2))
+                throw new Error("Unable to perform substr operation on non-string regex: " + prettyPrintType(t2) + "\nReceived from query: " + pretty(q.arg[1]));
+
+            return {
+                type: types.boolean,
+                props: union(p1, nothingSet)
+            }
+        } else if (q.op == "isUndef") {
+            let {type: t1, props: p1} = argTups[0];
+            return {type: types.boolean, props: union(p1, nothingSet)};
         }
         throw new Error("Pure operation not implemented: " + q.op);
     } else if (q.key === "hint") {
@@ -1611,11 +1637,14 @@ let convertAST = (schema, q, completedMap, dontConvertVar = false) => {
                 q.arg = q.arg.map($convertAST);
                 return q;
             } else if (q.op == "and") {
+                q.arg = q.arg.map($convertAST);
                 return q;
             } else if (q.op == "andAlso") {
+                q.arg = q.arg.map($convertAST);
                 return q;
             } else if (q.op == "orElse") {
-              return q;
+                q.arg = q.arg.map($convertAST);
+                return q;
             }
             throw new Error("Pure operation not implemented: " + q.op);
         } else if (q.op == "mkTuple") {
@@ -1634,6 +1663,15 @@ let convertAST = (schema, q, completedMap, dontConvertVar = false) => {
             q.arg = q.arg.map($convertAST);
             return q;
         } else if (q.op === "substr") {
+            q.arg = q.arg.map($convertAST);
+            return q;
+        } else if (q.op === "isUndef") {
+            q.arg = q.arg.map($convertAST);
+            return q;
+        } else if (q.op === "like") {
+            q.arg = q.arg.map($convertAST);
+            return q;
+        } else if (q.op == "singleton") {
             q.arg = q.arg.map($convertAST);
             return q;
         }

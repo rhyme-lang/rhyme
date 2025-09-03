@@ -404,6 +404,21 @@ B|20.0000|
 `)
 })
 
+test("undefinedTest", async () => {
+  let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
+
+  let avg = rh`(sum ${csv}.*.value) / (count ${csv}.*.value)`
+
+  let query = rh`{ key: ${csv}.*.key, avg: ${avg} } | group ${csv}.*.key`
+
+  let q = rh`${query}.C.avg`
+
+  let func = await compile(q, { backend: "c-sql-new", outDir, outFile: "groupByAverageTest1", schema: types.never })
+
+  let res = await func()
+  expect(res).toBe("undefined\n")
+})
+
 test("groupByRelativeSum", async () => {
   let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
 
@@ -596,6 +611,17 @@ test("arrayProjectionMultipleTest", async () => {
 20|B|
 30|A|
 `)
+})
+
+test("arrayAccessUndefTest", async () => {
+  let csv = rh`loadTBL "./cgen-sql/data.tbl" ${dataSchema}`
+
+  let query = rh`[{ value: ${csv}.*.value, key: ${csv}.*.key }].(1 + 10).key`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "arrayProjectionMultipleTest", schema: types.never })
+
+  let res = await func()
+  expect(res).toBe("undefined\n")
 })
 
 /**/
