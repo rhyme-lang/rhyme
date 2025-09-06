@@ -1,3 +1,4 @@
+const { optimize } = require('webpack')
 const { api, rh } = require('../../src/rhyme')
 const { compile } = require('../../src/simple-eval')
 const { typing, types } = require('../../src/typing')
@@ -618,7 +619,7 @@ test("arrayAccessUndefTest", async () => {
 
   let query = rh`[{ value: ${csv}.*.value, key: ${csv}.*.key }].(1 + 10).key`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "arrayProjectionMultipleTest", schema: types.never })
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "arrayAccessUndefTest", schema: types.never })
 
   let res = await func()
   expect(res).toBe("undefined\n")

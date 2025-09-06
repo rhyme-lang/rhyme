@@ -55,6 +55,12 @@ function resolveHole(p) {
 
 exports.resolveHole = resolveHole
 
+let inputFormat = {
+  "csv": true,
+  "tbl": true,
+  "json": true
+}
+
 let preproc = q => {
   console.assert(q && q.xxkey && !q.rhyme_ast)
   if (q.xxkey == "raw") {
@@ -62,11 +68,14 @@ let preproc = q => {
     console.error("unexpected raw input: ", q)
   } if (q.xxkey == "const") {
     return { key: "const", op: q.xxop }
-  } else if (q.xxkey.startsWith && q.xxkey.startsWith("load") && q.xxkey.substring(4) == "CSV" || q.xxkey.substring(4) == "TBL") {
+  } else if (q.xxkey.startsWith && q.xxkey.startsWith("load")) {
     // Only process the first argument which is the filename
     let e1 = preproc(q.xxparam[0])
     if (q.xxparam[1] === undefined || q.xxparam[1].xxkey != "hole") {
       console.error("schema expected for " + q.xxkey)
+    }
+    if (!inputFormat[q.xxkey.substring(4).toLowerCase()]) {
+      console.error("unknown file format for loadInput " + q.xxkey.substring(4).toLowerCase())
     }
     return { key: "loadInput", op: q.xxkey.substring(4).toLowerCase(), arg: [e1], inputSchema: q.xxparam[1].xxop }
   } else if (q.xxkey == "ident") {

@@ -29,6 +29,16 @@ const HASH_MASK = HASH_SIZE - 1
 
 const ARRAY_SIZE = 2048
 
+const TAG = {
+  ARRAY: 0,
+  HASHMAP: 1,
+  HASHMAP_VALUE: 2,
+  HASHMAP_BUCKET: 3,
+  OBJECT: 4,
+  CSV_FILE: 5,
+  JSON_FILE: 6
+}
+
 let filters
 let assignments
 let inputFilesEnv
@@ -242,7 +252,6 @@ let cgen = {
       if (typing.isObject(schema)) {
         continue
       }
-      if (name == "_DEFAULT_") name = "value"
       if (typing.isString(schema)) {
         cgen.declareCharPtr(buf)(name + "_str")
         cgen.declareInt(buf)(name + "_len")
@@ -382,10 +391,19 @@ let emitGetTime = (buf) => {
 }
 
 // Emit code that opens the CSV file and calls mmap
-let emitLoadInput = (buf, filename, id) => {
-  let fd = "fd" + id
-  let mappedFile = "file" + id
-  let size = "n" + id
+let emitLoadInput = (buf, filename, ext) => {
+  let mappedFile = getNewName(`file_${ext}`)
+  if (ext == "json") {
+    let err = getNewName("err")
+    cgen.declareVar(buf)("yyjson_read_err", err)
+    cgen.declarePtr(buf)("yyjson_doc", mappedFile, cgen.call("yyjson_read_file", filename, "0", "NULL", `&${err}`))
+    return { mappedFile }
+  }
+
+  let fd = getNewName("fd")
+  
+  let size = getNewName("n")
+
   cgen.declareInt(buf)(fd, cgen.open(filename))
   cgen.if(buf)(cgen.binary(fd, "-1", "=="), buf1 => {
     cgen.printErr(buf1)(`"Unable to open file %s\\n"`, filename)
@@ -615,7 +633,7 @@ let emitRowScanning = (f, file, cursor, schema, first = true) => {
     return []
   let buf = []
   let v = f.arg[1].op
-  let { mappedFile, size, format } = inputFilesEnv[file]
+  let { mappedFile, size, format } = file.val
 
   let colName = schema.objKey
   let type = schema.objValue
@@ -656,7 +674,7 @@ let emitRowScanning = (f, file, cursor, schema, first = true) => {
 // It requests a new cursor name every time it is invoked
 let getCSVLoopTxt = (f, file, loadInput) => () => {
   let v = f.arg[1].op
-  let { mappedFile, size, format } = inputFilesEnv[file]
+  let { mappedFile, size, format } = file.val
 
   let initCursor = []
 
@@ -742,7 +760,7 @@ let convertToArrayOfSchema = (schema) => {
 let getTmpVarValue = (q, sym) => {
   if (q.key == "update") {
     console.assert(hashMapEnv[sym] !== undefined)
-    return { schema: q.schema, val: { sym }, tag: "hashMap" }
+    return { schema: q.schema, val: { sym }, tag: TAG.HASHMAP }
   } else if (q.op == "array") {
     console.assert(arrayEnv[sym] !== undefined)
     let arr
@@ -767,7 +785,7 @@ let getTmpVarValue = (q, sym) => {
     }
 
     return {
-      schema: q.schema.type, val: { sym, arr, dataCount: `${sym}_count` }, tag: "array"
+      schema: q.schema.type, val: { sym, arr, dataCount: `${sym}_count` }, tag: TAG.ARRAY
     }
   } else if (typing.isString(q.schema)) {
     return { schema: q.schema, val: { str: `${sym}_count`, len: `${sym}_len` } }
@@ -837,13 +855,40 @@ let emitPath = (buf, q) => {
   if (q.key == "loadInput") {
     let file = q.arg[0]
     let filename
+
     if (file.key == "const" && typeof file.op == "string") {
       filename = file.op
     } else {
       filename = pretty(file)
     }
 
-    return { schema: q.schema, val: inputFilesEnv[filename], tag: "inputFile" }
+    // If this is the first time we see this loadInput, load the file
+    if (inputFilesEnv[q.op]?.[filename] == undefined) {
+      inputFilesEnv[q.op] ??= {}
+      let isConstStr = file.key == "const" && typeof file.op == "string"
+      let buf1 = isConstStr ? prolog1 : buf
+      cgen.comment(buf1)(`loading input file: ${filename}`)
+      let filenameVal = emitPath(buf1, file)
+      let filenameStr
+      if (!isConstStr) {
+        if (filenameVal.cond) {
+          cgen.if(buf1)(filenameVal.cond, buf1 => {
+            cgen.printErr(buf1)("\"Attempting to open a file with undefined filename\\n\"")
+            cgen.return(buf1, "1")
+          })
+        }
+        filenameStr = getNewName("tmp_filename")
+        cgen.declareCharArr(buf1)(filenameStr, `${filenameVal.val.len} + 1`)
+        cgen.stmt(buf1)(cgen.call("extract_str1", filenameVal.val.str, filenameVal.val.len, filenameStr))
+      } else {
+        filenameStr = filenameVal.val.str
+      }
+      let { mappedFile, size } = emitLoadInput(buf1, filenameStr, q.op)
+      inputFilesEnv[q.op][filename] = { mappedFile, size, format: q.op }
+    }
+
+    let tag = q.op == "json" ? TAG.JSON_FILE : TAG.CSV_FILE
+    return { schema: q.schema, val: inputFilesEnv[q.op][filename], tag }
   } else if (q.key == "const") {
     if (typeof q.op == "number") {
       return { schema: q.schema, val: String(q.op) }
@@ -873,7 +918,7 @@ let emitPath = (buf, q) => {
       // without doing a hash lookup
       let value = getHashMapValueEntry(sym, currentGroupKey.pos, currentGroupKey.keyPos)
       // must be a simple hash value
-      console.assert(value.tag == "hashMapValue")
+      console.assert(value.tag == TAG.HASHMAP_VALUE)
       return value
     } else {
       // If no free vars, we need to emit the code
@@ -889,10 +934,10 @@ let emitPath = (buf, q) => {
       // We don't want to generate code for getting the data again since we already got the loop info
       let g1 = loopInfo[e2.op][pretty(e1)]
       if (g1 === undefined) {
-        throw new Error("The correctponding loop as not been seen")
+        throw new Error("The correctponding loop as not been seen: " + e2.op + ", " + pretty(e1))
       }
 
-      if (g1.tag == "inputFile") {
+      if (g1.tag == TAG.CSV_FILE) {
         // If we are getting a var from a file,
         // return the object representing a record in the file
         let schema = convertToArrayOfSchema(g1.schema.type.objValue)
@@ -907,12 +952,14 @@ let emitPath = (buf, q) => {
             val[keyVal.name] = { schema: keyVal.schema, val: valName }
           }
         })
-        return { schema, val, tag: "object" }
-      } else if (g1.tag == "hashMap") {
+        return { schema, val, tag: TAG.OBJECT }
+      } else if (g1.tag == TAG.JSON_FILE) {
+        return { schema: typing.i32, val: "1" }
+      } else if (g1.tag == TAG.HASHMAP) {
         // If we are iterating over a hashMap,
         // get the entry directly using the var
         return getHashMapValueEntry(g1.val.sym, undefined, quoteVar(e2.op))
-      } else if (g1.tag == "hashMapBucket") {
+      } else if (g1.tag == TAG.HASHMAP_BUCKET) {
         // If we are iterating over a hashMap bucket,
         // get the stored loop info
         // We don't need to check existance of the bucket here
@@ -922,7 +969,7 @@ let emitPath = (buf, q) => {
 
         if (typing.isObject(bucket.schema.objValue)) {
           let schema = convertToArrayOfSchema(bucket.schema.objValue)
-          let res = { schema, val: {}, tag: "object" }
+          let res = { schema, val: {}, tag: TAG.OBJECT }
           for (let i in schema) {
             let { name: name1, schema: schema1 } = schema[i]
             if (typing.isObject(schema1)) {
@@ -947,7 +994,7 @@ let emitPath = (buf, q) => {
     // If we are not getting a var, get the lhs first
     let v1 = emitPath(buf, e1)
 
-    if (v1.tag == "hashMap") {
+    if (v1.tag == TAG.HASHMAP) {
       // HashMap lookup
       let sym = tmpSym(e1.op)
       let key = emitPath(buf, e2)
@@ -964,7 +1011,7 @@ let emitPath = (buf, q) => {
       return value
     }
 
-    if (v1.tag == "array") {
+    if (v1.tag == TAG.ARRAY) {
       // Array element access
       let idx = emitPath(buf, e2)
       let res = getArrayValueEntry(v1, idx.val)
@@ -974,7 +1021,7 @@ let emitPath = (buf, q) => {
     }
 
     // Then it has to be an object
-    if (v1.tag != "object") {
+    if (v1.tag != TAG.OBJECT) {
       throw new Error("Cannot perform get on non-object values")
     }
 
@@ -986,7 +1033,7 @@ let emitPath = (buf, q) => {
   } else if (q.key == "pure") {
     if (q.op == "mkTuple") {
       let schema = convertToArrayOfSchema(q.schema.type)
-      let res = { schema: q.schema, val: {}, tag: "object" }
+      let res = { schema: q.schema, val: {}, tag: TAG.OBJECT }
       for (let i = 0; i < q.arg.length; i += 2) {
         let k = q.arg[i]
         let v = q.arg[i + 1]
@@ -1183,7 +1230,7 @@ let emitArrayInsert = (buf, array, value) => {
 
   let dataPos = array.val.dataCount
   if (typing.isObject(array.schema.objValue)) {
-    console.assert(value.tag == "object")
+    console.assert(value.tag == TAG.OBJECT)
     for (let key in value.val) {
       let val = value.val[key]
       let valArray = array.val.arr[key]
@@ -1226,7 +1273,7 @@ let getArrayValueEntry = (array, idx) => {
         val[name] = { schema, val: `${array.val.arr[name]}[${idx}]` }
       }
     }
-    res = { schema: valSchema, val, tag: "object" }
+    res = { schema: valSchema, val, tag: TAG.OBJECT }
   } else if (typing.isString(schema)) {
     res = { schema: valSchema, val: { str: `${array.val.arr.str}[${idx}]`, len: `${array.val.arr.len}[${idx}]` } }
   } else {
@@ -1242,8 +1289,6 @@ let emitHashMapValueInit = (buf, sym, keySchema, valSchema) => {
 
   for (let i in valSchema) {
     let { name, schema } = valSchema[i]
-
-    if (name == "_DEFAULT_") name = "values"
 
     if (typing.isObject(schema)) {
       if (sortedCols[sym]?.[name]) {
@@ -1368,15 +1413,13 @@ let getHashMapValueEntry = (sym, pos, keyPos) => {
 
   let res = {}
 
-  res.tag = "object"
+  res.tag = TAG.OBJECT
   res.schema = valSchema
   res.val = {}
   res.keyPos = keyPos
 
   for (let i in valSchema) {
     let { name, schema } = valSchema[i]
-
-    if (name == "_DEFAULT_") name = "values"
 
     if (typing.isObject(schema)) {
       let valArray
@@ -1408,19 +1451,19 @@ let getHashMapValueEntry = (sym, pos, keyPos) => {
           valArray
         },
         keyPos,
-        tag: "hashMapBucket"
+        tag: TAG.HASHMAP_BUCKET
       }
     } else if (typing.isString(schema)) {
-      res.val[name] = { schema, val: { str: `${sym}_${name}_str[${keyPos}]`, len: `${sym}_${name}_len[${keyPos}]` }, keyPos, tag: "hashMapValue" }
+      res.val[name] = { schema, val: { str: `${sym}_${name}_str[${keyPos}]`, len: `${sym}_${name}_len[${keyPos}]` }, keyPos, tag: TAG.HASHMAP_VALUE }
     } else {
-      res.val[name] = { schema, val: `${sym}_${name}[${keyPos}]`, keyPos, tag: "hashMapValue" }
+      res.val[name] = { schema, val: `${sym}_${name}[${keyPos}]`, keyPos, tag: TAG.HASHMAP_VALUE }
     }
   }
 
   // If it is just a single value, don't return the object
   // but the value directly
   if (valSchema.length == 1 && valSchema[0].name == "_DEFAULT_") {
-    return res.val["values"]
+    return res.val["_DEFAULT_"]
   }
 
   return res
@@ -1480,7 +1523,7 @@ let emitHashBucketInsert = (buf, bucket, value) => {
   cgen.stmt(buf)(cgen.assign(`${bucket.val.buckets}[${idx}]`, dataPos))
 
   if (typing.isObject(bucket.schema.objValue)) {
-    console.assert(value.tag == "object")
+    console.assert(value.tag == TAG.OBJECT)
     for (let key in value.val) {
       let val = value.val[key]
       let valArray = bucket.val.valArray[key]
@@ -1518,7 +1561,6 @@ let emitHashMapPrint = (buf, sym, limit) => {
 
   for (let i in valSchema) {
     let { name, schema } = valSchema[i]
-    if (name == "_DEFAULT_") name = "values"
     if (typing.isObject(schema)) {
       buf.push(`print("[", 1);`)
       buf.push(`for (int j = 0; j < ${sym}_${name}_bucket_counts[key_pos]; j++) {`)
@@ -1701,7 +1743,7 @@ let emitStatefulInit = (buf, q, lhs) => {
   } else if (q.op == "max") {
     cgen.stmt(buf)(cgen.assign(lhs.val, "INT_MIN"))
   } else if (q.op == "array") {
-    if (lhs.tag == "hashMapBucket") {
+    if (lhs.tag == TAG.HASHMAP_BUCKET) {
       // lhs passed will be the bucket object
       cgen.stmt(buf)(cgen.assign(lhs.val.bucketCount, "0"))
     } else {
@@ -1735,7 +1777,7 @@ let emitStatefulUpdate1 = (buf, q, lhs, rhs) => {
     }
   } else if (q.op == "array") {
     // lhs passed will be the bucket info object
-    if (lhs.tag == "hashMapBucket") {
+    if (lhs.tag == TAG.HASHMAP_BUCKET) {
       // lhs passed will be the bucket object
       emitHashBucketInsert(buf, lhs, rhs)
     } else {
@@ -1958,44 +2000,7 @@ let emitCode = (q, ir, settings) => {
     let v1 = f.arg[1].op
     let g1 = f.arg[0]
 
-    if (g1.key == "loadInput") {
-      let loadInput = []
-      let file = pretty(g1.arg[0])
-      // constant string filename
-
-      // TODO: might need to have a better way to do CSE
-      // should be done when the loop is actually emitted by new-codegen
-      // where we have the info about the current scope
-
-      if (inputFilesEnv[file] == undefined) {
-        let isConstStr = g1.arg[0].key == "const" && typeof g1.arg[0].op == "string"
-        let buf = isConstStr ? prolog1 : loadInput
-        cgen.comment(buf)(`loading input file: ${file}`)
-        let filename = emitPath(buf, g1.arg[0])
-        let filenameStr
-        if (!isConstStr) {
-          if (filename.cond) {
-            cgen.if(buf)(cond, buf1 => {
-              cgen.printErr(buf1)("Attempting to open a file with undefined filename")
-              cgen.return(buf1, "1")
-            })
-          }
-          filenameStr = getNewName("tmp_filename")
-          cgen.declareCharArr(buf)(filenameStr, `${filename.val.len} + 1`)
-          cgen.stmt(buf)(cgen.call("extract_str1", filename.val.str, filename.val.len, filenameStr))
-        } else {
-          filenameStr = filename.val.str
-        }
-        let { mappedFile, size } = emitLoadInput(buf, filenameStr, i)
-        inputFilesEnv[file] = { mappedFile, size, format: g1.op }
-      }
-
-      let getLoopTxtFunc = getCSVLoopTxt(f, file, loadInput)
-      addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
-
-      loopInfo[v1] ??= {}
-      loopInfo[v1][pretty(g1)] = { schema: g1.schema, val: inputFilesEnv[file], tag: "inputFile" }
-    } else if (g1.key == "mkset") {
+    if (g1.key == "mkset") {
       let data = []
       if (g1.arg[0].key == "pure" && g1.arg[0].op == "combine") {
         let vals = g1.arg[0].arg.map(e => emitPath(data, e))
@@ -2012,17 +2017,25 @@ let emitCode = (q, ir, settings) => {
       let lhs = emitPath(data, g1)
       loopInfo[v1] ??= {}
       loopInfo[v1][pretty(g1)] = lhs
-      if (lhs.tag == "array") {
-        throw new Error("Generator from array not implemented yet")
-      } else if (lhs.tag == "hashMap") {
+      if (lhs.tag == TAG.CSV_FILE) {
+        let getLoopTxtFunc = getCSVLoopTxt(f, lhs, data)
+        addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
+      } else if (lhs.tag == TAG.JSON_FILE) {
+        let getLoopTxtFunc = () => ({
+          info: [], data: [], initCursor: [], loopHeader: ["{"], boundsChecking: [], rowScanning: []
+        })
+        addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
+      } else if (lhs.tag == TAG.ARRAY) {
+        throw new Error("Generator on array not implemented yet")
+      } else if (lhs.tag == TAG.HASHMAP) {
         let getLoopTxtFunc = getHashMapLoopTxt(f, lhs.val.sym)
         addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
         // throw new Error("Generator from hashmap not implemented yet")
-      } else if (lhs.tag == "hashMapBucket") {
+      } else if (lhs.tag == TAG.HASHMAP_BUCKET) {
         let getLoopTxtFunc = getHashBucketLoopTxt(f, lhs, data)
         addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
       } else {
-        throw new Error("Cannot have generator from non-iterable objects")
+        throw new Error("Cannot have generator on non-iterable objects: " + lhs.tag)
       }
     }
   }
@@ -2059,10 +2072,10 @@ let emitCode = (q, ir, settings) => {
           update1 = (buf2, lhs) => {
             cgen.comment(buf2)("init " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
             if (q.extraGroupPath) {
-              console.assert(lhs.tag == "object")
+              console.assert(lhs.tag == TAG.OBJECT)
               lhs = lhs.val[q.extraGroupPath[0]]
             } else {
-              console.assert(lhs.tag == "hashMapValue" || lhs.tag == "hashMapBucket")
+              console.assert(lhs.tag == TAG.HASHMAP_VALUE || lhs.tag == TAG.HASHMAP_BUCKET)
             }
             emitStatefulInit(buf2, q, lhs)
           }
@@ -2073,10 +2086,10 @@ let emitCode = (q, ir, settings) => {
             currentGroupKey = { key: k, pos, keyPos }
 
             if (q.extraGroupPath) {
-              console.assert(lhs.tag == "object")
+              console.assert(lhs.tag == TAG.OBJECT)
               lhs = lhs.val[q.extraGroupPath[0]]
             } else {
-              console.assert(lhs.tag == "hashMapValue" || lhs.tag == "hashMapBucket")
+              console.assert(lhs.tag == TAG.HASHMAP_VALUE || lhs.tag == TAG.HASHMAP_BUCKET)
             }
 
             emitStatefulUpdate(buf2, q, lhs, sym)
@@ -2095,10 +2108,10 @@ let emitCode = (q, ir, settings) => {
         cgen.comment(buf1)("init " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
         let lhs1 = lhs
         if (q.extraGroupPath) {
-          console.assert(lhs.tag == "object")
+          console.assert(lhs.tag == TAG.OBJECT)
           lhs1 = lhs.val[q.extraGroupPath[0]]
         } else {
-          console.assert(lhs1.tag == "hashMapValue" || lhs1.tag == "hashMapBucket")
+          console.assert(lhs.tag == TAG.HASHMAP_VALUE || lhs.tag == TAG.HASHMAP_BUCKET)
         }
         emitStatefulInit(buf1, q, lhs1)
       }
@@ -2107,7 +2120,7 @@ let emitCode = (q, ir, settings) => {
         if (!initRequired[q.op]) continue
         cgen.comment(buf1)("init " + tmpSym(j) + "[" + q.fre[0] + "]" + " = " + pretty(q))
         let lhs1 = getHashMapValueEntry(tmpSym(j), pos, keyPos)
-        console.assert(lhs1.tag == "hashMapValue" || lhs1.tag == "hashMapBucket")
+        console.assert(lhs1.tag == TAG.HASHMAP_VALUE || lhs1.tag == TAG.HASHMAP_BUCKET)
         emitStatefulInit(buf1, q, lhs1)
       }
     })
@@ -2123,7 +2136,7 @@ let emitCode = (q, ir, settings) => {
       emitStatefulUpdateOptCond(update, q, buf1 => {
         emitHashMapUpdate(buf1, sym, keys, pos, keyPos, () => { }, (buf2, lhs) => {
           let lhs1 = getHashMapValueEntry(tmpSym(j), pos, keyPos)
-          console.assert(lhs1.tag == "hashMapValue" || lhs1.tag == "hashMapBucket")
+          console.assert(lhs1.tag == TAG.HASHMAP_VALUE || lhs1.tag == TAG.HASHMAP_BUCKET)
           emitStatefulUpdate(buf2, q, lhs1)
         }, false)
       })
@@ -2139,10 +2152,10 @@ let emitCode = (q, ir, settings) => {
       emitStatefulUpdateOptCond(update, q, buf1 => {
         emitHashMapUpdate(buf1, sym, keys, pos, keyPos, () => { }, (buf2, lhs) => {
           if (q.extraGroupPath) {
-            console.assert(lhs.tag == "object")
+            console.assert(lhs.tag == TAG.OBJECT)
             lhs = lhs.val[q.extraGroupPath[0]]
           } else {
-            console.assert(lhs.tag == "hashMapValue" || lhs.tag == "hashMapBucket")
+            console.assert(lhs.tag == TAG.HASHMAP_VALUE || lhs.tag == TAG.HASHMAP_BUCKET)
           }
           emitStatefulUpdate(buf2, q, lhs)
         }, false)
@@ -2158,9 +2171,9 @@ let emitCode = (q, ir, settings) => {
   let res
   if (q.key == "pure" && q.op == "sort") {
     res = emitPath(epilog, q.arg[0])
-    if (res.tag == "hashMap") {
+    if (res.tag == TAG.HASHMAP) {
       emitHashMapSorting(epilog, q, res)
-    } else if (res.tag == "array") {
+    } else if (res.tag == TAG.ARRAY) {
       emitArraySorting(epilog, q, res)
     } else throw new Error("Can only sort values of a hashmap")
 
@@ -2175,10 +2188,10 @@ let emitCode = (q, ir, settings) => {
   }
 
   if (q.schema.type.typeSym !== typeSyms.never) {
-    if (res.tag == "hashMap") {
+    if (res.tag == TAG.HASHMAP) {
       cgen.comment(epilog)("print hashmap")
       emitHashMapPrint(epilog, res.val.sym, settings.limit)
-    } else if (res.tag == "array") {
+    } else if (res.tag == TAG.ARRAY) {
       cgen.comment(epilog)("print array")
       emitArrayPrint(epilog, res.val.sym, settings.limit)
     } else if (typing.isString(q.schema.type)) {
@@ -2195,11 +2208,17 @@ let emitCode = (q, ir, settings) => {
   cgen.return(epilog)("0")
   epilog.push("}")
 
+  let prolog = [...prolog0, ...prolog1]
+
+  if (inputFilesEnv["json"]) {
+    prolog = ["#include \"yyjson.h\"", ...prolog]
+  }
+
   let newCodegenIR = {
     assignmentStms,
     generatorStms,
     tmpVarWriteRank,
-    prolog: [...prolog0, ...prolog1],
+    prolog,
     epilog
   }
   return generate(newCodegenIR, "c-sql")
@@ -2247,6 +2266,7 @@ let generateCSqlNew = (q, ir, settings) => {
 
   let writeAndCompile = async () => {
     await fs.writeFile(cFile, codeNew)
+    if (inputFilesEnv["json"]) cFile += " ./cgen-sql/yyjson.c"
     await sh(`gcc ${cFlags} ${cFile} -o ${out} -Icgen-sql`)
     return func
   }
