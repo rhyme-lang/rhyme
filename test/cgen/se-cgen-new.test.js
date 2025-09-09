@@ -24,13 +24,21 @@ beforeAll(async () => {
   await sh(`cp cgen-sql/yyjson.h ${outDir}`)
 })
 
-let dataSchema = typing.objBuilder().add(typing.createKey(types.i32), types.i32).build()
-
-test("cppNewCodegenTest", async () => {
-  let data = rh`loadJSON "./cgen/data.json" ${dataSchema}`
-  let query = rh`sum ${data}.*`
+test("loadJSONTest", async () => {
+  let data = rh`loadJSON "./cgen/data.json" ${types.unknown}`
+  let query = rh`${data}`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "cppNewCodegenTest" })
+
+  let res = await func()
+  console.log(res)
+}, 10000)
+
+test("loadJSONSumTest", async () => {
+  let data = rh`loadJSON "./cgen/data.json" ${types.unknown}`
+  let query = rh`sum ${data}.*A.*B`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "loadJSONSumTest" })
 
   let res = await func()
   console.log(res)
