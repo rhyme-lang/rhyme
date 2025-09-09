@@ -28,7 +28,7 @@ test("loadJSONTest", async () => {
   let data = rh`loadJSON "./cgen/data.json" ${types.unknown}`
   let query = rh`${data}`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "cppNewCodegenTest" })
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "loadJSONTest" })
 
   let res = await func()
   console.log(res)
@@ -36,7 +36,7 @@ test("loadJSONTest", async () => {
 
 test("loadJSONSumTest", async () => {
   let data = rh`loadJSON "./cgen/data.json" ${types.unknown}`
-  let query = rh`sum ${data}.*A.*B`
+  let query = rh`sum ${data}.*.value`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "loadJSONSumTest" })
 

@@ -691,7 +691,7 @@ let getJSONLoopTxt = (f, json, data) => () => {
   let loopHeader = []
   loopHeader.push(`for (yyjson_val *${v} = yyjson_obj_iter_next(&${iter}); ${v} != NULL; ${v} = yyjson_obj_iter_next(&${iter})) {`)
 
-  let boundsChecking = []
+  let boundsChecking = [`if (yyjson_object_getn(${json.val}, yyjson_get_str(${v}), yyjson_get_len(${v})))`]
 
   return {
     info, data, initCursor, loopHeader, boundsChecking, rowScanning: []
@@ -727,7 +727,7 @@ let getCSVLoopTxt = (f, file, loadInput) => () => {
 
   let loopHeader = []
   // cgen.stmt(loopHeader)(cgen.assign(quoteVar(v), "-1"))
-  loopHeader.push(`for (int ${v} = 0; ; ${v}++) {`)
+  loopHeader.push(`for (int ${v} = 0; ${cursor} < ${size}; ${v}++) {`)
   // cgen.stmt(loopHeader)(cgen.inc(quoteVar(v)))
 
   let boundsChecking = [`if (${cursor} >= ${size}) break;`]
@@ -749,7 +749,7 @@ let getHashMapLoopTxt = (f, sym) => () => {
 
   let loopHeader = []
 
-  loopHeader.push(`for (int ${quoteVar(v)} = 0; ; ${quoteVar(v)}++) {`)
+  loopHeader.push(`for (int ${quoteVar(v)} = 0; ${quoteVar(v)} < ${sym}_key_count; ${quoteVar(v)}++) {`)
 
   let boundsChecking = []
   boundsChecking.push(`if (${quoteVar(v)} >= ${sym}_key_count) break;`)
@@ -768,7 +768,7 @@ let getHashBucketLoopTxt = (f, bucket, dataBuf) => () => {
 
   let loopHeader = []
 
-  loopHeader.push(`if (!${bucket.cond}) for (int ${quoteVar(v)} = 0; ; ${quoteVar(v)}++) {`)
+  loopHeader.push(`if (!${bucket.cond}) for (int ${quoteVar(v)} = 0; ${quoteVar(v)} < ${bucket.val.bucketCount}; ${quoteVar(v)}++) {`)
 
   let boundsChecking = []
 
@@ -942,13 +942,15 @@ let emitPath = (buf, q, scope) => {
       throw new Error("Constant not supported: " + pretty(q))
     }
   } else if (q.key == "var") {
+    // TODO: Usually a number or a string.
+    // but need to know whether it is a yyjson val
     return { schema: q.schema, val: quoteVar(q.op) }
   } else if (q.key == "ref") {
     let q1 = assignments[q.op]
     let sym = tmpSym(q.op)
 
     if (q1.fre.length > 0) {
-      // For stateful in path with free vars
+      // For stateful in path with free vars i.e. hashmaps
       // We need the free var to be the same as the current group key
       console.assert(currentGroupKey.key == q1.fre[0])
       // We can directly use the pos and keyPos
@@ -1033,6 +1035,18 @@ let emitPath = (buf, q, scope) => {
     // If we are not getting a var, get the lhs first
     let v1 = emitPath(buf, e1, scope)
 
+    if (v1.tag == TAG.JSON) {
+      let key = emitPath(buf, e2, scope)
+      let res = { schema: q.schema, tag: TAG.JSON }
+      
+      // Assume string key now
+      let get = getNewName("tmp_get")
+      cgen.declarePtr(buf)("yyjson_val", get, cgen.call("yyjson_obj_getn", v1.val, key.val.str, key.val.len))
+      res.val = get
+      res.cond = cgen.eq(get, "NULL")
+      return res
+    }
+
     if (v1.tag == TAG.HASHMAP) {
       // HashMap lookup
       let sym = tmpSym(e1.op)
@@ -1098,17 +1112,6 @@ let emitPath = (buf, q, scope) => {
           // let minLen = getNewName("min_len")
 
           cgen.declareInt(buf)(name, cgen.call("strncmp", str1, str2, cgen.ternary(cgen.lt(len1, len2), len1, len2)))
-          // cgen.declareInt(buf)(name, "0")
-          // cgen.declareInt(buf)(curr, "0")
-          // cgen.declareInt(buf)(minLen, cgen.ternary(cgen.lt(len1, len2), len1, len2))
-
-          // buf.push(`while (${curr} < ${minLen}) {`)
-          // cgen.if(buf)(cgen.ne(`${str1}[${curr}]`, `${str2}[${curr}]`), buf1 => {
-          //   cgen.stmt(buf1)(cgen.assign(name, cgen.sub(`${str1}[${curr}]`, `${str2}[${curr}]`)))
-          //   cgen.break(buf)()
-          // })
-          // cgen.stmt(buf)(cgen.inc(curr))
-          // buf.push(`}`)
           cgen.stmt(buf)(cgen.assign(name, cgen.ternary(cgen.eq(name, "0"), cgen.sub(len1, len2), name)))
 
           res = { schema: q.schema, val: cgen.binary(name, "0", op) }

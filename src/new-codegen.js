@@ -379,7 +379,8 @@ exports.generate = (ir, backend = "js") => {
       loopTxts[0].loopHeader.map(emit)
 
       // emit bounds checking for all loops
-      for (let loopTxt of loopTxts) {
+      let [_, ...loopTxts1] = loopTxts
+      for (let loopTxt of loopTxts1) {
         loopTxt.boundsChecking.map(emit)
       }
 
