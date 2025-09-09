@@ -36,7 +36,7 @@ const TAG = {
   HASHMAP_BUCKET: 3,
   OBJECT: 4,
   CSV_FILE: 5,
-  JSON_FILE: 6
+  JSON: 6
 }
 
 let filters
@@ -207,6 +207,7 @@ let cgen = {
   mul: (lhs, rhs) => cgen.binary(lhs, rhs, "*"),
   div: (lhs, rhs) => cgen.binary(lhs, rhs, "/"),
 
+  not: (expr) => "!" + expr,
   and: (lhs, rhs) => cgen.binary(lhs, rhs, "&&"),
   or: (lhs, rhs) => cgen.binary(lhs, rhs, "||"),
   eq: (lhs, rhs) => cgen.binary(lhs, rhs, "=="),
@@ -390,18 +391,26 @@ let emitGetTime = (buf) => {
   return time
 }
 
+let emitLoadJSON = (buf, filename) => {
+  let err = getNewName("err")
+  cgen.declareVar(buf)("yyjson_read_err", err)
+  let doc = getNewName("tmp_doc")
+  cgen.declarePtr(buf)("yyjson_doc", doc, cgen.call("yyjson_read_file", filename, "0", "NULL", `&${err}`))
+  cgen.if(buf)(cgen.not(doc), buf1 => {
+    cgen.printErr(buf1)(`"read error: %s, code: %u at byte position: %lu\\n"`, `${err}.msg`, `${err}.code`, `${err}.pos`)
+    cgen.return(buf1)("1")
+  })
+  let jsonVal = getNewName("json_val")
+  cgen.declarePtr(buf)("yyjson_val", jsonVal, cgen.call("yyjson_doc_get_root", doc))
+  return jsonVal
+}
+
 // Emit code that opens the CSV file and calls mmap
-let emitLoadInput = (buf, filename, ext) => {
+let emitLoadCSV = (buf, filename, ext) => {
   let mappedFile = getNewName(`file_${ext}`)
-  if (ext == "json") {
-    let err = getNewName("err")
-    cgen.declareVar(buf)("yyjson_read_err", err)
-    cgen.declarePtr(buf)("yyjson_doc", mappedFile, cgen.call("yyjson_read_file", filename, "0", "NULL", `&${err}`))
-    return { mappedFile }
-  }
 
   let fd = getNewName("fd")
-  
+
   let size = getNewName("n")
 
   cgen.declareInt(buf)(fd, cgen.open(filename))
@@ -670,6 +679,25 @@ let emitRowScanning = (f, file, cursor, schema, first = true) => {
   return [...emitRowScanning(f, file, cursor, schema.objParent, false), ...buf]
 }
 
+let getJSONLoopTxt = (f, json, data) => () => {
+  let v = f.arg[1].op
+  let info = [`// generator: ${v} <- ${pretty(f.arg[0])}`]
+
+  v = quoteVar(v)
+  let initCursor = []
+  let iter = getNewName("iter")
+  cgen.declareVar(initCursor)("yyjson_obj_iter", iter, cgen.call("yyjson_obj_iter_with", json.val));
+
+  let loopHeader = []
+  loopHeader.push(`for (yyjson_val *${v} = yyjson_obj_iter_next(&${iter}); ${v} != NULL; ${v} = yyjson_obj_iter_next(&${iter})) {`)
+
+  let boundsChecking = []
+
+  return {
+    info, data, initCursor, loopHeader, boundsChecking, rowScanning: []
+  }
+}
+
 // The getLoopTxt functions return functions that will be invoked during the actual code generation
 // It requests a new cursor name every time it is invoked
 let getCSVLoopTxt = (f, file, loadInput) => () => {
@@ -679,6 +707,8 @@ let getCSVLoopTxt = (f, file, loadInput) => () => {
   let initCursor = []
 
   let info = [`// generator: ${v} <- ${pretty(f.arg[0])}`]
+
+  v = quoteVar(v)
 
   let cursor = getNewName("i")
   cgen.declareInt(initCursor)(cursor, "0")
@@ -697,7 +727,7 @@ let getCSVLoopTxt = (f, file, loadInput) => () => {
 
   let loopHeader = []
   // cgen.stmt(loopHeader)(cgen.assign(quoteVar(v), "-1"))
-  loopHeader.push("while (1) {")
+  loopHeader.push(`for (int ${v} = 0; ; ${v}++) {`)
   // cgen.stmt(loopHeader)(cgen.inc(quoteVar(v)))
 
   let boundsChecking = [`if (${cursor} >= ${size}) break;`]
@@ -851,7 +881,7 @@ let emitWildcardMatch = (buf, str, regex, name) => {
 
 // Generate code for paths
 // returns the value of the path
-let emitPath = (buf, q) => {
+let emitPath = (buf, q, scope) => {
   if (q.key == "loadInput") {
     let file = q.arg[0]
     let filename
@@ -868,7 +898,7 @@ let emitPath = (buf, q) => {
       let isConstStr = file.key == "const" && typeof file.op == "string"
       let buf1 = isConstStr ? prolog1 : buf
       cgen.comment(buf1)(`loading input file: ${filename}`)
-      let filenameVal = emitPath(buf1, file)
+      let filenameVal = emitPath(buf1, file, scope)
       let filenameStr
       if (!isConstStr) {
         if (filenameVal.cond) {
@@ -877,17 +907,24 @@ let emitPath = (buf, q) => {
             cgen.return(buf1, "1")
           })
         }
+        // If filename is not a constant string, we need to create a null-terminated copy of the string
         filenameStr = getNewName("tmp_filename")
         cgen.declareCharArr(buf1)(filenameStr, `${filenameVal.val.len} + 1`)
         cgen.stmt(buf1)(cgen.call("extract_str1", filenameVal.val.str, filenameVal.val.len, filenameStr))
       } else {
         filenameStr = filenameVal.val.str
       }
-      let { mappedFile, size } = emitLoadInput(buf1, filenameStr, q.op)
-      inputFilesEnv[q.op][filename] = { mappedFile, size, format: q.op }
+
+      if (q.op == "json") {
+        let jsonVal = emitLoadJSON(buf1, filenameStr)
+        inputFilesEnv[q.op][filename] = jsonVal
+      } else {
+        let { mappedFile, size } = emitLoadCSV(buf1, filenameStr, q.op)
+        inputFilesEnv[q.op][filename] = { mappedFile, size, format: q.op }
+      }
     }
 
-    let tag = q.op == "json" ? TAG.JSON_FILE : TAG.CSV_FILE
+    let tag = q.op == "json" ? TAG.JSON : TAG.CSV_FILE
     return { schema: q.schema, val: inputFilesEnv[q.op][filename], tag }
   } else if (q.key == "const") {
     if (typeof q.op == "number") {
@@ -905,7 +942,7 @@ let emitPath = (buf, q) => {
       throw new Error("Constant not supported: " + pretty(q))
     }
   } else if (q.key == "var") {
-    throw new Error("Cannot have stand-alone var")
+    return { schema: q.schema, val: quoteVar(q.op) }
   } else if (q.key == "ref") {
     let q1 = assignments[q.op]
     let sym = tmpSym(q.op)
@@ -953,8 +990,10 @@ let emitPath = (buf, q) => {
           }
         })
         return { schema, val, tag: TAG.OBJECT }
-      } else if (g1.tag == TAG.JSON_FILE) {
-        return { schema: typing.i32, val: "1" }
+      } else if (g1.tag == TAG.JSON) {
+        // It's better if we do not perform generic get since we should have the iterator ready for the loop,
+        // use yyjson_obj_iter_get_val
+        return { schema: q.schema, val: cgen.call("yyjson_obj_iter_get_val", quoteVar(e2.op)), tag: TAG.JSON }
       } else if (g1.tag == TAG.HASHMAP) {
         // If we are iterating over a hashMap,
         // get the entry directly using the var
@@ -992,12 +1031,12 @@ let emitPath = (buf, q) => {
     }
 
     // If we are not getting a var, get the lhs first
-    let v1 = emitPath(buf, e1)
+    let v1 = emitPath(buf, e1, scope)
 
     if (v1.tag == TAG.HASHMAP) {
       // HashMap lookup
       let sym = tmpSym(e1.op)
-      let key = emitPath(buf, e2)
+      let key = emitPath(buf, e2, scope)
       let [pos, keyPos] = emitHashLookUp(buf, sym, [key])
       let { keySchema, valSchema } = hashMapEnv[sym]
       if (keySchema.length > 1) {
@@ -1013,7 +1052,7 @@ let emitPath = (buf, q) => {
 
     if (v1.tag == TAG.ARRAY) {
       // Array element access
-      let idx = emitPath(buf, e2)
+      let idx = emitPath(buf, e2, scope)
       let res = getArrayValueEntry(v1, idx.val)
       res.cond = cgen.ge(idx.val, v1.val.dataCount)
       if (idx.cond) res.cond = cgen.and(idx.cond, res.cond)
@@ -1038,17 +1077,17 @@ let emitPath = (buf, q) => {
         let k = q.arg[i]
         let v = q.arg[i + 1]
         let { name } = schema[i / 2]
-        res.val[name] = emitPath(buf, v)
+        res.val[name] = emitPath(buf, v, scope)
       }
       return res
     }
 
-    let e1 = emitPath(buf, q.arg[0])
+    let e1 = emitPath(buf, q.arg[0], scope)
     let op = binaryOperators[q.op]
     let res
     if (op) {
       // binary op
-      let e2 = emitPath(buf, q.arg[1])
+      let e2 = emitPath(buf, q.arg[1], scope)
       if (q.op == "equal" || q.op == "notEqual" || q.op == "lessThan" || q.op == "greaterThan" || q.op == "lessThanOrEqual" || q.op == "greaterThanOrEqual") {
         if (typing.isString(q.arg[0].schema.type) && typing.isString(q.arg[1].schema.type)) {
           let { str: str1, len: len1 } = e1.val
@@ -1099,8 +1138,8 @@ let emitPath = (buf, q) => {
       return { schema: q.schema, val: cgen.div(e1.val, "10000"), cond: e1.cond }
     } else if (q.op == "substr") {
       console.assert(typing.isString(e1.schema))
-      let e2 = emitPath(buf, q.arg[1])
-      let e3 = emitPath(buf, q.arg[2])
+      let e2 = emitPath(buf, q.arg[1], scope)
+      let e3 = emitPath(buf, q.arg[2], scope)
       let str = cgen.add(e1.val.str, e2.val)
       let len = cgen.sub(e3.val, e2.val)
       return { schema: typeSyms.string, val: { str, len }, cond: e1.cond }
@@ -1757,6 +1796,9 @@ let emitStatefulInit = (buf, q, lhs) => {
 
 let emitStatefulUpdate1 = (buf, q, lhs, rhs) => {
   if (q.op == "sum") {
+    if (rhs.tag == TAG.JSON) {
+      rhs.val = cgen.call("yyjson_get_num", rhs.val)
+    }
     cgen.stmt(buf)(cgen.assign(lhs.val, cgen.binary(lhs.val, rhs.val, "+")))
   } else if (q.op == "count") {
     cgen.stmt(buf)(cgen.assign(lhs.val, cgen.binary(lhs.val, "1", "+")))
@@ -1802,7 +1844,7 @@ let emitStatefulUpdate = (buf, q, lhs) => {
   if (e.key == "pure" && e.op == "and") e = e.arg[1]
   let rhs = emitPath(buf, e)
   if (rhs.cond) {
-    cgen.if(buf)("!" + rhs.cond, buf1 => {
+    cgen.if(buf)(cgen.not(rhs.cond), buf1 => {
       emitStatefulUpdate1(buf1, q, lhs, rhs)
     })
   } else {
@@ -1815,7 +1857,7 @@ let emitStatefulUpdateOptCond = (buf, q, update) => {
   let e = q.arg[0]
   if (e.key == "pure" && e.op == "and") {
     let cond = emitPath(buf, e.arg[0])
-    if (cond.cond) cond.val = cgen.and("!" + cond.cond, cond.val)
+    if (cond.cond) cond.val = cgen.and(cgen.not(cond.cond), cond.val)
 
     cgen.if(buf)(cond.val, update)
   } else {
@@ -2020,10 +2062,8 @@ let emitCode = (q, ir, settings) => {
       if (lhs.tag == TAG.CSV_FILE) {
         let getLoopTxtFunc = getCSVLoopTxt(f, lhs, data)
         addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
-      } else if (lhs.tag == TAG.JSON_FILE) {
-        let getLoopTxtFunc = () => ({
-          info: [], data: [], initCursor: [], loopHeader: ["{"], boundsChecking: [], rowScanning: []
-        })
+      } else if (lhs.tag == TAG.JSON) {
+        let getLoopTxtFunc = getJSONLoopTxt(f, lhs, data)
         addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
       } else if (lhs.tag == TAG.ARRAY) {
         throw new Error("Generator on array not implemented yet")
@@ -2194,6 +2234,9 @@ let emitCode = (q, ir, settings) => {
     } else if (res.tag == TAG.ARRAY) {
       cgen.comment(epilog)("print array")
       emitArrayPrint(epilog, res.val.sym, settings.limit)
+    } else if (res.tag == TAG.JSON) {
+      cgen.comment(epilog)("print json object")
+      cgen.stmt(epilog)(cgen.call("printf", `"%s\\n"`, cgen.call("yyjson_val_write", res.val, "YYJSON_WRITE_PRETTY", "NULL")))
     } else if (typing.isString(q.schema.type)) {
       cgen.stmt(epilog)(cgen.call("printf", `"%.*s\\n"`, res.val.len, res.val.str))
     } else {
