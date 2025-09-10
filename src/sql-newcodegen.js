@@ -2,6 +2,7 @@ const { generate } = require('./new-codegen')
 const { typing, typeSyms, types } = require('./typing')
 const { pretty } = require('./prettyprint')
 const { sets } = require('./shared')
+const { runtime } = require('./simple-runtime')
 
 const { unique, union } = sets
 
@@ -36,7 +37,8 @@ const TAG = {
   HASHMAP_BUCKET: 3,
   OBJECT: 4,
   CSV_FILE: 5,
-  JSON: 6
+  JSON: 6,
+  MUT_JSON: 7
 }
 
 let filters
@@ -68,7 +70,7 @@ let constStrs
 // generator ir api: mirroring necessary bits from ir.js
 let expr = (txt, ...args) => ({ txt, deps: args })
 
-let trans = ps => unique([...ps, ...ps.flatMap(x => mksetVarDeps[x])])
+let trans = ps => union(ps, ps.flatMap(x => mksetVarDeps[x] || x))
 
 let assign = (txt, lhs_root_sym, lhs_deps, rhs_deps) => {
   let e = expr(txt, ...lhs_deps, ...rhs_deps) // lhs.txt + " " + op + " " + rhs.txt
@@ -342,17 +344,21 @@ let extractUsedAndSortedCols = (q) => {
   } else if (q.key == "update") {
     // only allow a single update without
     // extending result objects of other update ops
-    if (q.arg[0].key != "const" || Object.keys(q.arg[0].op).length != 0) {
-      throw new Error("Cannot extend non-empty objects " + pretty(q))
-    }
-    if (q.arg[3] == undefined) {
-      throw new Error("Trivial group op not supported for now: " + pretty(q))
-    }
+    // if (q.arg[0].key != "const" || Object.keys(q.arg[0].op).length != 0) {
+    //   throw new Error("Cannot extend non-empty objects " + pretty(q))
+    // }
+
 
     let [_e1, _e2, e3, e4] = q.arg
 
     extractUsedAndSortedCols(e3)
-    extractUsedAndSortedCols(e4.arg[0].arg[0])
+
+    if (q.arg[3]) {
+      // mkset
+      extractUsedAndSortedCols(e4.arg[0].arg[0])
+      // throw new Error("Trivial group op not supported for now: " + pretty(q))
+    }
+
   } else if (q.key == "pure" && q.op == "sort") {
     // if a column is used for sorting,
     // we need to define it as a global array
@@ -691,7 +697,7 @@ let getJSONLoopTxt = (f, json, data) => () => {
   let loopHeader = []
   loopHeader.push(`for (yyjson_val *${v} = yyjson_obj_iter_next(&${iter}); ${v} != NULL; ${v} = yyjson_obj_iter_next(&${iter})) {`)
 
-  let boundsChecking = [`if (yyjson_object_getn(${json.val}, yyjson_get_str(${v}), yyjson_get_len(${v})))`]
+  let boundsChecking = [`if (yyjson_obj_getn(${json.val}, yyjson_get_str(${v}), yyjson_get_len(${v})) == NULL) break;`]
 
   return {
     info, data, initCursor, loopHeader, boundsChecking, rowScanning: []
@@ -995,7 +1001,13 @@ let emitPath = (buf, q, scope) => {
       } else if (g1.tag == TAG.JSON) {
         // It's better if we do not perform generic get since we should have the iterator ready for the loop,
         // use yyjson_obj_iter_get_val
-        return { schema: q.schema, val: cgen.call("yyjson_obj_iter_get_val", quoteVar(e2.op)), tag: TAG.JSON }
+        if (Object.keys(loopInfo[e2.op]).length == 1) {
+          // Only one possible lhs of this generator, use the iterator
+          return { schema: q.schema, val: cgen.call("yyjson_obj_iter_get_val", quoteVar(e2.op)), tag: TAG.JSON }
+        } else {
+          // Slow path, use yyjson_obj_getn
+          return { schema: q.schema, val: cgen.call("yyjson_obj_getn", g1.val, cgen.call("yyjson_get_str", quoteVar(e2.op)), cgen.call("yyjson_get_len", quoteVar(e2.op))), tag: TAG.JSON }
+        }
       } else if (g1.tag == TAG.HASHMAP) {
         // If we are iterating over a hashMap,
         // get the entry directly using the var
@@ -1038,7 +1050,7 @@ let emitPath = (buf, q, scope) => {
     if (v1.tag == TAG.JSON) {
       let key = emitPath(buf, e2, scope)
       let res = { schema: q.schema, tag: TAG.JSON }
-      
+
       // Assume string key now
       let get = getNewName("tmp_get")
       cgen.declarePtr(buf)("yyjson_val", get, cgen.call("yyjson_obj_getn", v1.val, key.val.str, key.val.len))
@@ -1168,6 +1180,117 @@ let emitPath = (buf, q, scope) => {
     }
   } else {
     throw new Error("Unknown op: " + pretty(q))
+  }
+}
+
+let emitPathJSON = (buf, q, scope) => {
+  if (q.key == "loadInput") {
+    let file = q.arg[0]
+    let filename
+
+    if (file.key == "const" && typeof file.op == "string") {
+      filename = file.op
+    } else {
+      filename = pretty(file)
+    }
+
+    // If this is the first time we see this loadInput, load the file
+    if (inputFilesEnv[q.op]?.[filename] == undefined) {
+      inputFilesEnv[q.op] ??= {}
+      let isConstStr = file.key == "const" && typeof file.op == "string"
+      let buf1 = isConstStr ? prolog1 : buf
+      cgen.comment(buf1)(`loading input file: ${filename}`)
+      let filenameVal = emitPathJSON(buf1, file, scope)
+      let filenameStr
+      if (!isConstStr) {
+        if (filenameVal.cond) {
+          cgen.if(buf1)(filenameVal.cond, buf1 => {
+            cgen.printErr(buf1)("\"Attempting to open a file with undefined filename\\n\"")
+            cgen.return(buf1, "1")
+          })
+        }
+        // If filename is not a constant string, we need to create a null-terminated copy of the string
+        filenameStr = getNewName("tmp_filename")
+        cgen.declareCharArr(buf1)(filenameStr, `${filenameVal.val.len} + 1`)
+        cgen.stmt(buf1)(cgen.call("extract_str1", filenameVal.val.str, filenameVal.val.len, filenameStr))
+      } else {
+        filenameStr = filenameVal.val.str
+      }
+
+      if (q.op == "json") {
+        let jsonVal = emitLoadJSON(buf1, filenameStr)
+        inputFilesEnv[q.op][filename] = jsonVal
+      } else {
+        throw new Error("File type not supported: " + q.op)
+      }
+    }
+
+    return { schema: q.schema, val: inputFilesEnv[q.op][filename], tag: TAG.JSON }
+  } else if (q.key == "const") {
+    if (typeof q.op == "number") {
+      return { schema: q.schema, val: String(q.op) }
+    } else if (typeof q.op == "string") {
+      // const string is represented as a const char pointer
+      if (constStrs[q.op]) {
+        return { schema: q.schema, val: { str: constStrs[q.op], len: q.op.length } }
+      }
+      let name = getNewName("tmp_str")
+      cgen.declareConstCharPtr(prolog1)(name, '"' + q.op + '"')
+      constStrs[q.op] = name
+      return { schema: q.schema, val: { str: name, len: q.op.length } }
+    } else {
+      throw new Error("Constant not supported: " + pretty(q))
+    }
+  } else if (q.key == "var") {
+    return { schema: q.schema, val: quoteVar(q.op), tag: TAG.JSON }
+  } else if (q.key == "ref") {
+    let sym = tmpSym(q.op)
+    let xs = "\"" + q.fre.map(x => "/" + quoteVar(x)).join("") + "\""
+    return { schema: q.schema, val: cgen.call("yyjson_mut_doc_ptr_get", sym, xs), tag: TAG.MUT_JSON }
+    // } else if (q.key == "genref") {
+    //   let q1 = filters[q.op]
+    //   if (!scope.filters.includes(q.op)) {
+    //     // If we have pre-projected and are now traversing the result,
+    //     // then we won't have genX in scope. Generate it now.
+    //     scope.buf.push("let gen"+q.op+" = "+codegen(q1, scope)+" // lazily generated")
+    //     scope.filters = [...scope.filters, q.op]
+    //   }
+    //   return "gen"+q.op
+    // } else if (settings.extractFilters
+    //         && q.key == "get" && "filter" in q
+    //         && scope.filters.indexOf(q.filter) >= 0) {
+    //   // TODO: check that filters are always defined (currently still best-effort)
+    //   // console.assert(scope.filters.indexOf(q.filter) >= 0)
+    //   return "gen"+q.filter
+    // } else if (q.key == "get" && isDeepVarExp(q.arg[1])) {
+    //   let [e1,e2] = q.arg.map(x => codegen(x,scope))
+    //   return "rt.deepGet("+e1+","+e2+")"
+  } else if (q.key == "get") {
+    let e1 = emitPathJSON(buf, q.arg[0], scope)
+    let e2 = emitPathJSON(buf, q.arg[1], scope)
+
+    let func = e1.tag == TAG.MUT_JSON ? "yyjson_mut_obj_getn" : "yyjson_obj_getn"
+    let rhs = e2.tag == TAG.MUT_JSON || e2.tag == TAG.JSON ?
+      { val: { str: cgen.call("yyjson_get_str", e2.val), len: cgen.call("yyjson_get_len", e2.val) } } : e2
+    return { schema: q.schema, val: cgen.call(func, e1.val, rhs.val.str, rhs.val.len), tag: e1.tag }
+  } else if (q.key == "pure") {
+    let es = q.arg.map(x => emitPathJSON(buf, x, scope))
+    return es[0]
+  } else if (q.key == "hint") {
+    // no-op!
+    return "{}"
+  } else if (q.key == "mkset") {
+    let [e1] = q.arg.map(x => codegen(x, scope))
+    return "rt.singleton(" + e1 + ")"
+  } else if (q.key == "stateful" || q.key == "prefix" || q.key == "update") {
+    if (settings.extractAssignments) {
+      console.error("unexpected nested assignment " + pretty(q))
+    } else {
+      return emitStmInline(q, scope)
+    }
+  } else {
+    console.error("unknown op", pretty(q))
+    return "<?" + q.key + "?>"
   }
 }
 
@@ -1775,6 +1898,22 @@ let reset = () => {
   constStrs = {}
 }
 
+let emitStatefulInitJSON = (buf, q, lhs, doc) => {
+  if (q.op == "sum" || q.op == "count") {
+    return cgen.call("yyjson_mut_double", doc, "0")
+  } else {
+    throw new Error("stateful op not supported: " + pretty(q))
+  }
+}
+
+let emitStatefulUpdateJSON = (buf, q, lhs, rhs) => {
+  if (q.op == "sum") {
+    cgen.stmt(buf)(cgen.assign(lhs.val, cgen.binary(lhs.val, rhs.val, "+")))
+  } else {
+    throw new Error("stateful op not supported: " + pretty(q))
+  }
+}
+
 let emitStatefulInit = (buf, q, lhs) => {
   if (q.op == "sum" || q.op == "count") {
     cgen.stmt(buf)(cgen.assign(lhs.val, "0"))
@@ -1944,14 +2083,20 @@ let collectHashMaps = () => {
     let mkset = q.arg[3]
 
     let keySchema
-    // check if the key is a set of keys
-    if (mkset.arg[0].arg[0].key == "pure" && mkset.arg[0].arg[0].op == "combine") {
-      keySchema = mkset.arg[0].arg[0].arg.map(e => e.schema.type)
+
+
+    if (mkset) {
+      // check if the key is a set of keys
+      if (mkset.arg[0].arg[0].key == "pure" && mkset.arg[0].arg[0].op == "combine") {
+        keySchema = mkset.arg[0].arg[0].arg.map(e => e.schema.type)
+      } else {
+        keySchema = [mkset.arg[0].arg[0].schema.type]
+      }
     } else {
-      keySchema = [mkset.arg[0].arg[0].schema.type]
+      keySchema = [types.u64]
     }
 
-    if (v.fre.length !== 1 || k.op !== v.fre[0]) {
+    if (k.vars.length !== 1 || v.fre.length !== 1 || k.vars[0] !== v.fre[0]) {
       throw new Error("unexpected number of free variables for stateful op " + pretty(v))
     }
 
@@ -2088,7 +2233,7 @@ let emitCode = (q, ir, settings) => {
     let k = assignments[i].arg[1].op
 
     // TODO: should add if check to see if the keys are undefined
-    let keys = k.startsWith("K") ? mksetVarEnv[k] : [k]
+    let keys = k.startsWith("K") ? mksetVarEnv[k] : [{ schema: types.u64, val: quoteVar(k) }]
 
     let sym = tmpSym(i)
 
@@ -2270,6 +2415,120 @@ let emitCode = (q, ir, settings) => {
   return generate(newCodegenIR, "c-sql")
 }
 
+let emitCodeJSON = (q, ir, settings) => {
+  filters = ir.filters
+  assignments = ir.assignments
+
+  reset()
+
+  prolog0.push(`#include "rhyme-sql.h"`)
+  prolog0.push(`#include "yyjson.h"`)
+  prolog1.push("int main() {")
+
+  let t0 = emitGetTime(prolog1)
+
+  inputFilesEnv["json"] = {}
+
+  // map filters/generators
+  for (let i in filters) {
+    let f = filters[i]
+    let v1 = f.arg[1].op
+    let g1 = f.arg[0]
+
+    let data = []
+    let lhs = emitPathJSON(data, g1)
+    loopInfo[v1] ??= {}
+    loopInfo[v1][pretty(g1)] = lhs
+
+    let getLoopTxtFunc = getJSONLoopTxt(f, lhs, data)
+    addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
+  }
+
+  // map assignments
+  for (let i in assignments) {
+    let sym = tmpSym(i)
+
+    let q = assignments[i]
+
+    // emit initialization (see 'emitCode')
+    if (q.key == "stateful" && q.mode != "maybe" && (q.op + "_init") in runtime.stateful || q.key == "update") {
+      let xs = "\"" + q.fre.map(x => "/" + quoteVar(x)).join("") + "\""
+
+      let init_deps = []
+      if (q.key == "update") {
+        let init_arg = q.arg[0]
+        init_deps = [...union(init_arg.fre, init_arg.bnd), ...init_arg.tmps.map(tmpSym)]
+      }
+
+      let scope = { vars: q.fre, filters: [], buf: [] } // XXX filters?
+
+      let buf = []
+
+      cgen.declarePtr(prolog1)("yyjson_mut_doc", sym, cgen.call("yyjson_mut_doc_new", "NULL"))
+
+      cgen.if(buf)(cgen.eq(cgen.call("yyjson_mut_doc_ptr_get", sym, xs), "NULL"), buf1 => {
+        cgen.stmt(buf1)(cgen.call("yyjson_mut_doc_ptr_set", sym, xs, emitStatefulInitJSON(buf, q, sym, sym)))
+      })
+
+      assign(buf, sym, q.fre, init_deps)
+      // assign("rt.init(tmp"+ys+")("+ emitStmInit(q, scope) + ")", sym, q.fre, init_deps)
+    }
+
+    // emit update (see 'emitCode')
+    {
+      let fv = union(q.fre, q.bnd)
+      let xs = "\"" + q.fre.map(x => "/" + quoteVar(x)).join("") + "\""
+
+      let deps = [...fv, ...q.tmps.map(tmpSym)] // XXX rhs dims only?
+
+      let scope = { vars: q.fre, filters: [], buf: [] } // XXX filters?
+
+      let buf = []
+      cgen.stmt(buf)(
+        cgen.call("yyjson_mut_doc_ptr_set", sym, xs,
+          cgen.call("yyjson_mut_double", sym,
+            cgen.add(
+              cgen.call("yyjson_mut_get_num", cgen.call("yyjson_mut_doc_ptr_get", sym, xs)),
+              cgen.call("yyjson_get_num", emitPathJSON(buf, q.arg[0], scope).val)
+              
+            ))))
+      assign(buf, sym, q.fre, deps)
+
+      // assign("rt.update(tmp"+ys+")("+ emitStmUpdate(q,scope) + ")", sym, q.fre, deps)
+    }
+  }
+
+  
+
+  let t1 = emitGetTime(prolog1)
+
+  let prolog = [...prolog0, ...prolog1]
+
+  let epilog = []
+
+  let scope = { vars: q.fre, filters: [] } // XXX filters?
+  let res = emitPathJSON(epilog, q)
+
+  cgen.comment(epilog)("print json object")
+  cgen.stmt(epilog)(cgen.call("printf", `"%s\\n"`, cgen.call("yyjson_mut_val_write", res.val, "YYJSON_WRITE_PRETTY", "NULL")))
+
+  let t2 = emitGetTime(epilog)
+
+  cgen.printErr(epilog)(`"Timing:\\n\\tInitializaton:\\t%ld μs\\n\\tRuntime:\\t%ld μs\\n\\tTotal:\\t\\t%ld μs\\n"`, cgen.sub(t1, t0), cgen.sub(t2, t1), cgen.sub(t2, t0))
+
+  cgen.return(epilog)("0")
+  epilog.push("}")
+
+  let newCodegenIR = {
+    assignmentStms,
+    generatorStms,
+    tmpVarWriteRank,
+    prolog,
+    epilog
+  }
+  return generate(newCodegenIR, "c-sql")
+}
+
 let generateCSqlNew = (q, ir, settings) => {
   let { outDir, outFile } = settings
   const fs = require('fs').promises
@@ -2299,7 +2558,7 @@ let generateCSqlNew = (q, ir, settings) => {
 
   let cFile = joinPaths(outDir, outFile + ".c")
   let out = joinPaths(outDir, outFile)
-  let codeNew = emitCode(q, ir, settings)
+  let codeNew = emitCodeJSON(q, ir, settings)
 
   let cFlags = "-Icgen-sql -O3"
 
@@ -2313,6 +2572,7 @@ let generateCSqlNew = (q, ir, settings) => {
   let writeAndCompile = async () => {
     await fs.writeFile(cFile, codeNew)
     if (inputFilesEnv["json"]) cFile += " ./cgen-sql/yyjson.c"
+    console.log("Executing:", `gcc ${cFlags} ${cFile} -o ${out} -Icgen-sql`)
     await sh(`gcc ${cFlags} ${cFile} -o ${out} -Icgen-sql`)
     return func
   }

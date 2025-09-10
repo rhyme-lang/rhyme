@@ -43,6 +43,18 @@ let schema = typing.objBuilder()
     String: types.string,
   })).build()
 
+test("testScalar", async () => {
+  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+
+  let query = rh`${csv}.*A.C | group *A`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "testScalar", schema: types.never })
+
+  let res = await func()
+  console.log(res)
+  // expect(res).toEqual("228\n")
+})
+
 test("testSimpleSum1", async () => {
   let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
 
