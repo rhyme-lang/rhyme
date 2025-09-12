@@ -341,24 +341,6 @@ let extractUsedAndSortedCols = (q) => {
   } else if (q.key == "ref") {
     let q1 = assignments[q.op]
     extractUsedAndSortedCols(q1)
-  } else if (q.key == "update") {
-    // only allow a single update without
-    // extending result objects of other update ops
-    // if (q.arg[0].key != "const" || Object.keys(q.arg[0].op).length != 0) {
-    //   throw new Error("Cannot extend non-empty objects " + pretty(q))
-    // }
-
-
-    let [_e1, _e2, e3, e4] = q.arg
-
-    extractUsedAndSortedCols(e3)
-
-    if (q.arg[3]) {
-      // mkset
-      extractUsedAndSortedCols(e4.arg[0].arg[0])
-      // throw new Error("Trivial group op not supported for now: " + pretty(q))
-    }
-
   } else if (q.key == "pure" && q.op == "sort") {
     // if a column is used for sorting,
     // we need to define it as a global array
@@ -746,6 +728,25 @@ let getCSVLoopTxt = (f, file, loadInput) => () => {
   }
 }
 
+let getArrayLoopTxt = (f, sym) => () => {
+  let v = f.arg[1].op
+
+  let initCursor = []
+
+  let info = [`// generator: ${v} <- ${pretty(f.arg[0])}`]
+
+  let loopHeader = []
+
+  loopHeader.push(`for (int ${quoteVar(v)} = 0; ${quoteVar(v)} < ${sym}_count; ${quoteVar(v)}++) {`)
+
+  let boundsChecking = []
+  boundsChecking.push(`if (${quoteVar(v)} >= ${sym}_count) break;`)
+
+  return {
+    info, data: [], initCursor, loopHeader, boundsChecking, rowScanning: []
+  }
+}
+
 let getHashMapLoopTxt = (f, sym) => () => {
   let v = f.arg[1].op
 
@@ -796,7 +797,7 @@ let convertToArrayOfSchema = (schema) => {
 let getTmpVarValue = (q, sym) => {
   if (q.key == "update") {
     console.assert(hashMapEnv[sym] !== undefined)
-    return { schema: q.schema, val: { sym }, tag: TAG.HASHMAP }
+    return { schema: q.schema.type, val: { sym }, tag: TAG.HASHMAP }
   } else if (q.op == "array") {
     console.assert(arrayEnv[sym] !== undefined)
     let arr
@@ -824,9 +825,9 @@ let getTmpVarValue = (q, sym) => {
       schema: q.schema.type, val: { sym, arr, dataCount: `${sym}_count` }, tag: TAG.ARRAY
     }
   } else if (typing.isString(q.schema)) {
-    return { schema: q.schema, val: { str: `${sym}_count`, len: `${sym}_len` } }
+    return { schema: q.schema.type, val: { str: `${sym}_count`, len: `${sym}_len` } }
   } else {
-    return { schema: q.schema, val: sym }
+    return { schema: q.schema.type, val: sym }
   }
 }
 
@@ -931,26 +932,26 @@ let emitPath = (buf, q, scope) => {
     }
 
     let tag = q.op == "json" ? TAG.JSON : TAG.CSV_FILE
-    return { schema: q.schema, val: inputFilesEnv[q.op][filename], tag }
+    return { schema: q.schema.type, val: inputFilesEnv[q.op][filename], tag }
   } else if (q.key == "const") {
     if (typeof q.op == "number") {
-      return { schema: q.schema, val: String(q.op) }
+      return { schema: q.schema.type, val: String(q.op) }
     } else if (typeof q.op == "string") {
       // const string is represented as a const char pointer
       if (constStrs[q.op]) {
-        return { schema: q.schema, val: { str: constStrs[q.op], len: q.op.length } }
+        return { schema: q.schema.type, val: { str: constStrs[q.op], len: q.op.length } }
       }
       let name = getNewName("tmp_str")
       cgen.declareConstCharPtr(prolog1)(name, '"' + q.op + '"')
       constStrs[q.op] = name
-      return { schema: q.schema, val: { str: name, len: q.op.length } }
+      return { schema: q.schema.type, val: { str: name, len: q.op.length } }
     } else {
       throw new Error("Constant not supported: " + pretty(q))
     }
   } else if (q.key == "var") {
     // TODO: Usually a number or a string.
     // but need to know whether it is a yyjson val
-    return { schema: q.schema, val: quoteVar(q.op) }
+    return { schema: q.schema.type, val: quoteVar(q.op) }
   } else if (q.key == "ref") {
     let q1 = assignments[q.op]
     let sym = tmpSym(q.op)
@@ -985,7 +986,7 @@ let emitPath = (buf, q, scope) => {
       if (g1.tag == TAG.CSV_FILE) {
         // If we are getting a var from a file,
         // return the object representing a record in the file
-        let schema = convertToArrayOfSchema(g1.schema.type.objValue)
+        let schema = convertToArrayOfSchema(g1.schema.objValue)
         let val = {}
         schema.map(keyVal => {
           let valName = g1.val.mappedFile + "_" + quoteVar(e2.op) + "_" + keyVal.name
@@ -997,17 +998,21 @@ let emitPath = (buf, q, scope) => {
             val[keyVal.name] = { schema: keyVal.schema, val: valName }
           }
         })
-        return { schema, val, tag: TAG.OBJECT }
+        return { schema: q.schema.type, val, tag: TAG.OBJECT }
       } else if (g1.tag == TAG.JSON) {
         // It's better if we do not perform generic get since we should have the iterator ready for the loop,
         // use yyjson_obj_iter_get_val
         if (Object.keys(loopInfo[e2.op]).length == 1) {
           // Only one possible lhs of this generator, use the iterator
-          return { schema: q.schema, val: cgen.call("yyjson_obj_iter_get_val", quoteVar(e2.op)), tag: TAG.JSON }
+          return { schema: q.schema.type, val: cgen.call("yyjson_obj_iter_get_val", quoteVar(e2.op)), tag: TAG.JSON }
         } else {
           // Slow path, use yyjson_obj_getn
-          return { schema: q.schema, val: cgen.call("yyjson_obj_getn", g1.val, cgen.call("yyjson_get_str", quoteVar(e2.op)), cgen.call("yyjson_get_len", quoteVar(e2.op))), tag: TAG.JSON }
+          return { schema: q.schema.type, val: cgen.call("yyjson_obj_getn", g1.val, cgen.call("yyjson_get_str", quoteVar(e2.op)), cgen.call("yyjson_get_len", quoteVar(e2.op))), tag: TAG.JSON }
         }
+      } else if (g1.tag == TAG.ARRAY) {
+        // If we are iterating over a hashMap,
+        // get the entry directly using the var
+        return getArrayValueEntry(g1, quoteVar(e2.op))
       } else if (g1.tag == TAG.HASHMAP) {
         // If we are iterating over a hashMap,
         // get the entry directly using the var
@@ -1022,7 +1027,7 @@ let emitPath = (buf, q, scope) => {
 
         if (typing.isObject(bucket.schema.objValue)) {
           let schema = convertToArrayOfSchema(bucket.schema.objValue)
-          let res = { schema, val: {}, tag: TAG.OBJECT }
+          let res = { schema: q.schema.type, val: {}, tag: TAG.OBJECT }
           for (let i in schema) {
             let { name: name1, schema: schema1 } = schema[i]
             if (typing.isObject(schema1)) {
@@ -1049,7 +1054,7 @@ let emitPath = (buf, q, scope) => {
 
     if (v1.tag == TAG.JSON) {
       let key = emitPath(buf, e2, scope)
-      let res = { schema: q.schema, tag: TAG.JSON }
+      let res = { schema: q.schema.type, tag: TAG.JSON }
 
       // Assume string key now
       let get = getNewName("tmp_get")
@@ -1098,7 +1103,7 @@ let emitPath = (buf, q, scope) => {
   } else if (q.key == "pure") {
     if (q.op == "mkTuple") {
       let schema = convertToArrayOfSchema(q.schema.type)
-      let res = { schema: q.schema, val: {}, tag: TAG.OBJECT }
+      let res = { schema: q.schema.type, val: {}, tag: TAG.OBJECT }
       for (let i = 0; i < q.arg.length; i += 2) {
         let k = q.arg[i]
         let v = q.arg[i + 1]
@@ -1126,14 +1131,14 @@ let emitPath = (buf, q, scope) => {
           cgen.declareInt(buf)(name, cgen.call("strncmp", str1, str2, cgen.ternary(cgen.lt(len1, len2), len1, len2)))
           cgen.stmt(buf)(cgen.assign(name, cgen.ternary(cgen.eq(name, "0"), cgen.sub(len1, len2), name)))
 
-          res = { schema: q.schema, val: cgen.binary(name, "0", op) }
+          res = { schema: q.schema.type, val: cgen.binary(name, "0", op) }
         } else {
-          res = { schema: q.schema, val: cgen.binary(e1.val, e2.val, op) }
+          res = { schema: q.schema.type, val: cgen.binary(e1.val, e2.val, op) }
         }
       } else if (q.op == "fdiv") {
-        res = { schema: q.schema, val: cgen.binary(cgen.cast("double", e1.val), cgen.cast("double", e2.val), op) }
+        res = { schema: q.schema.type, val: cgen.binary(cgen.cast("double", e1.val), cgen.cast("double", e2.val), op) }
       } else {
-        res = { schema: q.schema, val: cgen.binary(e1.val, e2.val, op) }
+        res = { schema: q.schema.type, val: cgen.binary(e1.val, e2.val, op) }
       }
       if (e1.cond && e2.cond) {
         res.cond = cgen.and(e1.cond, e2.cond)
@@ -1148,16 +1153,16 @@ let emitPath = (buf, q, scope) => {
     } else if (q.op == "sort") {
       throw new Error("Unexpected sort op" + pretty(q))
     } else if (q.op.startsWith("convert_")) {
-      return { schema: q.schema, val: cgen.cast(ctypeMap[q.op.substring("convert_".length)], e1.val), cond: e1.cond }
+      return { schema: q.schema.type, val: cgen.cast(ctypeMap[q.op.substring("convert_".length)], e1.val), cond: e1.cond }
     } else if (q.op == "year") {
-      return { schema: q.schema, val: cgen.div(e1.val, "10000"), cond: e1.cond }
+      return { schema: q.schema.type, val: cgen.div(e1.val, "10000"), cond: e1.cond }
     } else if (q.op == "substr") {
       console.assert(typing.isString(e1.schema))
       let e2 = emitPath(buf, q.arg[1], scope)
       let e3 = emitPath(buf, q.arg[2], scope)
       let str = cgen.add(e1.val.str, e2.val)
       let len = cgen.sub(e3.val, e2.val)
-      return { schema: typeSyms.string, val: { str, len }, cond: e1.cond }
+      return { schema: types.string, val: { str, len }, cond: e1.cond }
     } else if (q.op == "like") {
       console.assert(typing.isString(e1.schema))
       if (q.arg[1].key != "const" || typeof q.arg[1].key != "string") {
@@ -1167,10 +1172,10 @@ let emitPath = (buf, q, scope) => {
       let name = getNewName("tmp_like")
       emitWildcardMatch(buf, e1, q.arg[1].op, name)
 
-      return { schema: q.schema, val: name, cond: e1.cond }
+      return { schema: q.schema.type, val: name, cond: e1.cond }
     } else if (q.op == "isUndef") {
       if (e1.cond) {
-        return { schema: q.schema, val: e1.cond }
+        return { schema: q.schema.type, val: e1.cond }
       } else {
         // Cannot be undefined, return the value
         return e1
@@ -1225,28 +1230,28 @@ let emitPathJSON = (buf, q, scope) => {
       }
     }
 
-    return { schema: q.schema, val: inputFilesEnv[q.op][filename], tag: TAG.JSON }
+    return { schema: q.schema.type, val: inputFilesEnv[q.op][filename], tag: TAG.JSON }
   } else if (q.key == "const") {
     if (typeof q.op == "number") {
-      return { schema: q.schema, val: String(q.op) }
+      return { schema: q.schema.type, val: String(q.op) }
     } else if (typeof q.op == "string") {
       // const string is represented as a const char pointer
       if (constStrs[q.op]) {
-        return { schema: q.schema, val: { str: constStrs[q.op], len: q.op.length } }
+        return { schema: q.schema.type, val: { str: constStrs[q.op], len: q.op.length } }
       }
       let name = getNewName("tmp_str")
       cgen.declareConstCharPtr(prolog1)(name, '"' + q.op + '"')
       constStrs[q.op] = name
-      return { schema: q.schema, val: { str: name, len: q.op.length } }
+      return { schema: q.schema.type, val: { str: name, len: q.op.length } }
     } else {
       throw new Error("Constant not supported: " + pretty(q))
     }
   } else if (q.key == "var") {
-    return { schema: q.schema, val: quoteVar(q.op), tag: TAG.JSON }
+    return { schema: q.schema.type, val: quoteVar(q.op), tag: TAG.JSON }
   } else if (q.key == "ref") {
     let sym = tmpSym(q.op)
     let xs = "\"" + q.fre.map(x => "/" + quoteVar(x)).join("") + "\""
-    return { schema: q.schema, val: cgen.call("yyjson_mut_doc_ptr_get", sym, xs), tag: TAG.MUT_JSON }
+    return { schema: q.schema.type, val: cgen.call("yyjson_mut_doc_ptr_get", sym, xs), tag: TAG.MUT_JSON }
     // } else if (q.key == "genref") {
     //   let q1 = filters[q.op]
     //   if (!scope.filters.includes(q.op)) {
@@ -1272,7 +1277,7 @@ let emitPathJSON = (buf, q, scope) => {
     let func = e1.tag == TAG.MUT_JSON ? "yyjson_mut_obj_getn" : "yyjson_obj_getn"
     let rhs = e2.tag == TAG.MUT_JSON || e2.tag == TAG.JSON ?
       { val: { str: cgen.call("yyjson_get_str", e2.val), len: cgen.call("yyjson_get_len", e2.val) } } : e2
-    return { schema: q.schema, val: cgen.call(func, e1.val, rhs.val.str, rhs.val.len), tag: e1.tag }
+    return { schema: q.schema.type, val: cgen.call(func, e1.val, rhs.val.str, rhs.val.len), tag: e1.tag }
   } else if (q.key == "pure") {
     let es = q.arg.map(x => emitPathJSON(buf, x, scope))
     return es[0]
@@ -1338,54 +1343,6 @@ let emitArrayInit = (buf, sym, valSchema) => {
   cgen.declareInt(buf)(`${sym}_count`)
 }
 
-// Emit code that prints the array
-let emitArrayPrint = (buf, sym, limit) => {
-  let { valSchema } = arrayEnv[sym]
-  limit = limit || `${sym}_count`
-
-  if (!typing.isObject(valSchema)) buf.push(`print("[", 1);`)
-
-  if (sortedCols[sym]) {
-    buf.push(`for (int i = 0; i < ${limit}; i++) {`)
-    buf.push(`int data_pos = ${sym}[i];`)
-  } else {
-    buf.push(`for (int data_pos = 0; data_pos < ${limit}; data_pos++) {`)
-  }
-
-  if (typing.isObject(valSchema)) {
-    let objSchema = convertToArrayOfSchema(valSchema)
-    for (let j in objSchema) {
-      let { name, schema } = objSchema[j]
-      if (typing.isObject(schema)) {
-        throw new Error("Not supported")
-      } else if (typing.isString(schema)) {
-        buf.push(`print(${sym}_${name}_str[data_pos], ${sym}_${name}_len[data_pos]);`)
-      } else {
-        buf.push(`printf("%${getFormatSpecifier(schema)}", ${sym}_${name}[data_pos]);`)
-      }
-      buf.push(`print("|", 1);`)
-    }
-  } else if (typing.isString(valSchema)) {
-    buf.push(`print(${sym}_str[data_pos], ${sym}_len[data_pos]);`)
-  } else if (valSchema.typeSym == typeSyms.date) {
-    buf.push(`print_date(${sym}[data_pos]);`)
-  } else {
-    buf.push(`printf("%${getFormatSpecifier(valSchema)}", ${sym}[data_pos]);`)
-  }
-
-  if (typing.isObject(valSchema)) {
-    buf.push(`print("\\n", 1);`)
-  } else {
-    buf.push(`if (data_pos != ${limit} - 1) {`)
-    buf.push(`print(", ", 2);`)
-    buf.push(`}`)
-  }
-  buf.push(`}`)
-  if (!typing.isObject(valSchema)) {
-    buf.push(`print("]\\n", 2);`)
-  }
-}
-
 // Emit code that inserts a value into the array
 let emitArrayInsert = (buf, array, value) => {
   cgen.if(buf)(cgen.eq(array.val.dataCount, ARRAY_SIZE), (buf2) => {
@@ -1439,7 +1396,7 @@ let getArrayValueEntry = (array, idx) => {
       }
     }
     res = { schema: valSchema, val, tag: TAG.OBJECT }
-  } else if (typing.isString(schema)) {
+  } else if (typing.isString(valSchema)) {
     res = { schema: valSchema, val: { str: `${array.val.arr.str}[${idx}]`, len: `${array.val.arr.len}[${idx}]` } }
   } else {
     res = { schema: valSchema, val: `${array.val.arr}[${idx}]` }
@@ -1710,10 +1667,281 @@ let emitHashBucketInsert = (buf, bucket, value) => {
   }
 }
 
-// Emit code that prints the keys and values in a hashmap.
-let emitHashMapPrint = (buf, sym, limit) => {
+let emitStringPrint = (buf, val, settings) => {
+  if (!settings.printFormat || settings.printFormat == "json")
+    cgen.stmt(buf)(cgen.call("printf", `"\\"%.*s\\""`, val.val.len, val.val.str))
+  else
+    cgen.stmt(buf)(cgen.call("printf", `"%.*s"`, val.val.len, val.val.str))
+}
+
+let emitValPrint = (buf, val, settings) => {
+  if (val.tag == TAG.HASHMAP) {
+    cgen.comment(buf)("print hashmap")
+    emitHashMapPrint(buf, val.val.sym, settings)
+  } else if (val.tag == TAG.ARRAY) {
+    cgen.comment(buf)("print array")
+    emitArrayPrint(buf, val.val.sym, settings)
+  } else if (val.tag == TAG.JSON) {
+    cgen.comment(buf)("print json object")
+    cgen.stmt(buf)(cgen.call("printf", `"%s"`, cgen.call("yyjson_val_write", val.val, "0", "NULL")))
+  } else if (val.tag == TAG.OBJECT) {
+    cgen.comment(buf)("print object")
+    emitObjectPrint(buf, val, settings)
+  } else if (typing.isString(val.schema)) {
+    emitStringPrint(buf, val, settings)
+  } else {
+    cgen.stmt(buf)(cgen.call("printf", `"%${getFormatSpecifier(val.schema)}"`, val.val))
+  }
+}
+
+let emitObjectPrint = (buf, val, settings) => {
+  buf.push(`printf("{ ");`)
+  for (let i in Object.keys(val.val)) {
+    let k = Object.keys(val.val)[i]
+    let v = val.val[k]
+    cgen.stmt(buf)(cgen.call("printf", `"\\"%s\\""`, "\"" + k + "\""))
+    cgen.stmt(buf)(cgen.call("printf", `": "`))
+    emitValPrint(buf, v, settings)
+    if (i != Object.keys(val.val).length - 1) {
+      cgen.stmt(buf)(cgen.call("printf", `", "`))
+    }
+  }
+  buf.push(`printf(" }");`)
+}
+
+let emitArrayPrintJSON = (buf, sym, settings) => {
+  let { valSchema } = arrayEnv[sym]
+  let limit = settings.limit || `${sym}_count`
+
+  buf.push(`printf("[");`)
+
+  if (sortedCols[sym]) {
+    buf.push(`for (int i = 0; i < ${limit}; i++) {`)
+    buf.push(`int data_pos = ${sym}[i];`)
+  } else {
+    buf.push(`for (int data_pos = 0; data_pos < ${limit}; data_pos++) {`)
+  }
+
+  if (typing.isObject(valSchema)) {
+
+    buf.push(`printf("{");`)
+    let objSchema = convertToArrayOfSchema(valSchema)
+    for (let j in objSchema) {
+      let { name: name1, schema: schema1 } = objSchema[j]
+      cgen.stmt(buf)(cgen.call("printf", `"\\"${name1}\\":"`))
+      if (typing.isObject(schema1)) {
+        throw new Error("Not supported")
+      } else if (typing.isString(schema1)) {
+        cgen.stmt(buf)(cgen.call("printf", `"\\"%.*s\\""`, `${sym}_${name1}_len[data_pos]`, `${sym}_${name1}_str[data_pos]`))
+      } else {
+        buf.push(`printf("%${getFormatSpecifier(schema1)}", ${sym}_${name1}[data_pos]);`)
+      }
+      if (j != objSchema.length - 1) {
+        buf.push(`printf(",");`)
+      }
+    }
+    buf.push(`printf("}");`)
+
+  } else if (typing.isString(valSchema)) {
+    cgen.stmt(buf)(cgen.call("printf", `"\\"%.*s\\""`, `${sym}_len[data_pos]`, `${sym}_str[data_pos]`))
+  } else if (valSchema.typeSym == typeSyms.date) {
+    buf.push(`print_date(${sym}[data_pos]);`)
+  } else {
+    buf.push(`printf("%${getFormatSpecifier(valSchema)}", ${sym}[data_pos]);`)
+  }
+
+  if (typing.isObject(valSchema)) {
+    if (sortedCols[sym]) {
+      buf.push(`if (i != ${limit} - 1) {`)
+      buf.push(`printf(",");`)
+      buf.push(`}`)
+    } else {
+      buf.push(`if (data_pos != ${limit} - 1) {`)
+      buf.push(`printf(",");`)
+      buf.push(`}`)
+    }
+  } else {
+    buf.push(`if (data_pos != ${limit} - 1) {`)
+    buf.push(`printf(",");`)
+    buf.push(`}`)
+  }
+  buf.push(`}`)
+  buf.push(`printf("]");`)
+}
+
+// Emit code that prints the array
+let emitArrayPrint = (buf, sym, settings) => {
+  if (!settings.printFormat || settings.printFormat == "json") {
+    emitArrayPrintJSON(buf, sym, settings)
+    return
+  }
+  let { valSchema } = arrayEnv[sym]
+  let limit = settings.limit || `${sym}_count`
+
+  if (!typing.isObject(valSchema)) buf.push(`print("[", 1);`)
+
+  if (sortedCols[sym]) {
+    buf.push(`for (int i = 0; i < ${limit}; i++) {`)
+    buf.push(`int data_pos = ${sym}[i];`)
+  } else {
+    buf.push(`for (int data_pos = 0; data_pos < ${limit}; data_pos++) {`)
+  }
+
+  if (typing.isObject(valSchema)) {
+    let objSchema = convertToArrayOfSchema(valSchema)
+    for (let j in objSchema) {
+      let { name, schema } = objSchema[j]
+      if (typing.isObject(schema)) {
+        throw new Error("Not supported")
+      } else if (typing.isString(schema)) {
+        buf.push(`print(${sym}_${name}_str[data_pos], ${sym}_${name}_len[data_pos]);`)
+      } else {
+        buf.push(`printf("%${getFormatSpecifier(schema)}", ${sym}_${name}[data_pos]);`)
+      }
+      buf.push(`print("|", 1);`)
+    }
+  } else if (typing.isString(valSchema)) {
+    buf.push(`print(${sym}_str[data_pos], ${sym}_len[data_pos]);`)
+  } else if (valSchema.typeSym == typeSyms.date) {
+    buf.push(`print_date(${sym}[data_pos]);`)
+  } else {
+    buf.push(`printf("%${getFormatSpecifier(valSchema)}", ${sym}[data_pos]);`)
+  }
+
+  if (typing.isObject(valSchema)) {
+    if (sortedCols[sym]) {
+      buf.push(`if (i != ${limit} - 1) {`)
+      buf.push(`print("\\n", 1);`)
+      buf.push(`}`)
+    } else {
+      buf.push(`if (data_pos != ${limit} - 1) {`)
+      buf.push(`print("\\n", 1);`)
+      buf.push(`}`)
+    }
+  } else {
+    buf.push(`if (data_pos != ${limit} - 1) {`)
+    buf.push(`print(", ", 2);`)
+    buf.push(`}`)
+  }
+  buf.push(`}`)
+  if (!typing.isObject(valSchema)) {
+    buf.push(`print("]", 1);`)
+  }
+}
+
+let emitHashMapPrintJSON = (buf, sym, settings) => {
   let { keySchema, valSchema } = hashMapEnv[sym]
-  limit = limit || `${sym}_key_count`
+  let limit = settings.limit || `${sym}_key_count`
+
+  buf.push(`printf("{");`)
+  if (sortedCols[sym]) {
+    buf.push(`for (int i = 0; i < ${limit}; i++) {`)
+    buf.push(`int key_pos = ${sym}[i];`)
+  } else {
+    buf.push(`for (int key_pos = 0; key_pos < ${limit}; key_pos++) {`)
+  }
+  if (keySchema.length > 1) {
+    throw new Error("JSON does not support multiple keys")
+  }
+
+  buf.push(`// print key`)
+
+  if (typing.isString(keySchema[0])) {
+    cgen.stmt(buf)(cgen.call("printf", `"\\"%.*s\\""`, `${sym}_keys_len0[key_pos]`, `${sym}_keys_str0[key_pos]`))
+  } else if (keySchema[0].typeSym == typeSyms.date) {
+    buf.push(`printf("\\"%d\\"", ${sym}_keys0[data_pos]);`)
+  } else {
+    buf.push(`printf("\\"%${getFormatSpecifier(keySchema[0])}\\"", ${sym}_keys0[key_pos]);`)
+  }
+
+  buf.push(`printf(":");`)
+
+  buf.push(`// print value`)
+
+  if (valSchema[0].name != "_DEFAULT_") {
+    buf.push(`printf("{");`)
+  }
+
+  for (let i in valSchema) {
+    let { name, schema } = valSchema[i]
+
+    if (valSchema[0].name != "_DEFAULT_") {
+      cgen.stmt(buf)(cgen.call("printf", `"\\"${name}\\":"`))
+    }
+
+    if (typing.isObject(schema)) {
+      buf.push(`printf("[");`)
+      buf.push(`for (int j = 0; j < ${sym}_${name}_bucket_counts[key_pos]; j++) {`)
+      buf.push(`int data_pos = ${sym}_${name}_buckets[key_pos * ${BUCKET_SIZE} + j];`)
+
+      if (typing.isObject(schema.objValue)) {
+
+        buf.push(`printf("{");`)
+        let objSchema = convertToArrayOfSchema(schema.objValue)
+        for (let j in objSchema) {
+          let { name: name1, schema: schema1 } = objSchema[j]
+            cgen.stmt(buf)(cgen.call("printf", `"\\"${name1}\\": "`))
+          if (typing.isObject(schema1)) {
+            throw new Error("Not supported")
+          } else if (typing.isString(schema1)) {
+            cgen.stmt(buf)(cgen.call("printf", `"\\"%.*s\\""`, `${sym}_${name}_${name1}_len[data_pos]`, `${sym}_${name}_${name1}_str[data_pos]`))
+          } else {
+            buf.push(`printf("%${getFormatSpecifier(schema1)}", ${sym}_${name}_${name1}[data_pos]);`)
+          }
+          if (j != objSchema.length - 1) {
+            buf.push(`printf(",");`)
+          }
+        }
+        buf.push(`printf("}");`)
+      } else if (typing.isString(schema.objValue)) {
+        cgen.stmt(buf)(cgen.call("printf", `"\\"%.*s\\""`, `${sym}_${name}_len[data_pos]`, `${sym}_${name}_str[data_pos]`))
+      } else if (schema.objValue.typeSym == typeSyms.date) {
+        buf.push(`printf("%d", ${sym}_${name}[data_pos]);`)
+      } else {
+        buf.push(`printf("%${getFormatSpecifier(schema.objValue)}", ${sym}_${name}[data_pos]);`)
+      }
+
+      buf.push(`if (j != ${sym}_${name}_bucket_counts[key_pos] - 1) {`)
+      buf.push(`printf(",");`)
+      buf.push(`}`)
+      buf.push(`}`)
+      buf.push(`printf("]");`)
+    } else if (typing.isString(schema)) {
+      cgen.stmt(buf)(cgen.call("printf", `"\\"%.*s\\""`, `${sym}_${name}_len[key_pos]`, `${sym}_${name}_str[key_pos]`))
+    } else if (schema.typeSym == typeSyms.date) {
+      buf.push(`print_date(${sym}_${name}[key_pos]);`)
+    } else {
+      buf.push(`printf("%${getFormatSpecifier(schema)}", ${sym}_${name}[key_pos]);`)
+    }
+    if (valSchema[0].name != "_DEFAULT_" && i != valSchema.length - 1) {
+      buf.push(`printf(",");`)
+    }
+  }
+
+  if (valSchema[0].name != "_DEFAULT_") {
+    buf.push(`printf("}");`)
+  }
+  if (sortedCols[sym]) {
+    buf.push(`if (i != ${limit} - 1) {`)
+    buf.push(`printf(",");`)
+    buf.push(`}`)
+  } else {
+    buf.push(`if (key_pos != ${limit} - 1) {`)
+    buf.push(`printf(",");`)
+    buf.push(`}`)
+  }
+  buf.push(`}`)
+  buf.push(`printf("}");`)
+}
+
+// Emit code that prints the keys and values in a hashmap.
+let emitHashMapPrint = (buf, sym, settings) => {
+  if (!settings.printFormat || settings.printFormat == "json") {
+    emitHashMapPrintJSON(buf, sym, settings)
+    return
+  }
+  let { keySchema, valSchema } = hashMapEnv[sym]
+  let limit = settings.limit || `${sym}_key_count`
   if (sortedCols[sym]) {
     buf.push(`for (int i = 0; i < ${limit}; i++) {`)
     buf.push(`int key_pos = ${sym}[i];`)
@@ -1766,8 +1994,15 @@ let emitHashMapPrint = (buf, sym, limit) => {
     }
     buf.push(`print("|", 1);`)
   }
-
-  buf.push(`print("\\n", 1);`)
+  if (sortedCols[sym]) {
+    buf.push(`if (i != ${limit} - 1) {`)
+    buf.push(`print("\\n", 1);`)
+    buf.push(`}`)
+  } else {
+    buf.push(`if (key_pos != ${limit} - 1) {`)
+    buf.push(`print("\\n", 1);`)
+    buf.push(`}`)
+  }
   buf.push(`}`)
 }
 
@@ -2084,7 +2319,6 @@ let collectHashMaps = () => {
 
     let keySchema
 
-
     if (mkset) {
       // check if the key is a set of keys
       if (mkset.arg[0].arg[0].key == "pure" && mkset.arg[0].arg[0].op == "combine") {
@@ -2178,13 +2412,6 @@ let emitCode = (q, ir, settings) => {
     }
   }
 
-  // Declare loop counter vars
-  // for (let v in ir.vars) {
-  //   if (v.startsWith("K")) continue
-  //   let counter = `${quoteVar(v)}`
-  //   cgen.declareInt(prolog)(counter)
-  // }
-
   for (let i in filters) {
     let f = filters[i]
     let v1 = f.arg[1].op
@@ -2214,7 +2441,8 @@ let emitCode = (q, ir, settings) => {
         let getLoopTxtFunc = getJSONLoopTxt(f, lhs, data)
         addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
       } else if (lhs.tag == TAG.ARRAY) {
-        throw new Error("Generator on array not implemented yet")
+        let getLoopTxtFunc = getArrayLoopTxt(f, lhs.val.sym)
+        addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
       } else if (lhs.tag == TAG.HASHMAP) {
         let getLoopTxtFunc = getHashMapLoopTxt(f, lhs.val.sym)
         addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
@@ -2363,33 +2591,20 @@ let emitCode = (q, ir, settings) => {
       emitHashMapSorting(epilog, q, res)
     } else if (res.tag == TAG.ARRAY) {
       emitArraySorting(epilog, q, res)
-    } else throw new Error("Can only sort values of a hashmap")
+    } else throw new Error("Sorting is not supported on the result object")
 
   } else {
     res = emitPath(epilog, q)
     if (res.cond) {
       cgen.if(epilog)(res.cond, buf1 => {
-        cgen.stmt(buf1)(cgen.call("printf", `"undefined\\n"`))
+        cgen.stmt(buf1)(cgen.call("printf", `"undefined"`))
         cgen.return(epilog)("0")
       })
     }
   }
 
   if (q.schema.type.typeSym !== typeSyms.never) {
-    if (res.tag == TAG.HASHMAP) {
-      cgen.comment(epilog)("print hashmap")
-      emitHashMapPrint(epilog, res.val.sym, settings.limit)
-    } else if (res.tag == TAG.ARRAY) {
-      cgen.comment(epilog)("print array")
-      emitArrayPrint(epilog, res.val.sym, settings.limit)
-    } else if (res.tag == TAG.JSON) {
-      cgen.comment(epilog)("print json object")
-      cgen.stmt(epilog)(cgen.call("printf", `"%s\\n"`, cgen.call("yyjson_val_write", res.val, "YYJSON_WRITE_PRETTY", "NULL")))
-    } else if (typing.isString(q.schema.type)) {
-      cgen.stmt(epilog)(cgen.call("printf", `"%.*s\\n"`, res.val.len, res.val.str))
-    } else {
-      cgen.stmt(epilog)(cgen.call("printf", `"%${getFormatSpecifier(q.schema.type)}\\n"`, res.val))
-    }
+    emitValPrint(epilog, res, settings)
   }
 
   let t2 = emitGetTime(epilog)
@@ -2490,7 +2705,7 @@ let emitCodeJSON = (q, ir, settings) => {
             cgen.add(
               cgen.call("yyjson_mut_get_num", cgen.call("yyjson_mut_doc_ptr_get", sym, xs)),
               cgen.call("yyjson_get_num", emitPathJSON(buf, q.arg[0], scope).val)
-              
+
             ))))
       assign(buf, sym, q.fre, deps)
 
@@ -2498,7 +2713,7 @@ let emitCodeJSON = (q, ir, settings) => {
     }
   }
 
-  
+
 
   let t1 = emitGetTime(prolog1)
 
@@ -2510,7 +2725,7 @@ let emitCodeJSON = (q, ir, settings) => {
   let res = emitPathJSON(epilog, q)
 
   cgen.comment(epilog)("print json object")
-  cgen.stmt(epilog)(cgen.call("printf", `"%s\\n"`, cgen.call("yyjson_mut_val_write", res.val, "YYJSON_WRITE_PRETTY", "NULL")))
+  cgen.stmt(epilog)(cgen.call("printf", `"%s\\n"`, cgen.call("yyjson_mut_val_write", res.val, "0", "NULL")))
 
   let t2 = emitGetTime(epilog)
 
@@ -2558,7 +2773,7 @@ let generateCSqlNew = (q, ir, settings) => {
 
   let cFile = joinPaths(outDir, outFile + ".c")
   let out = joinPaths(outDir, outFile)
-  let codeNew = emitCodeJSON(q, ir, settings)
+  let codeNew = emitCode(q, ir, settings)
 
   let cFlags = "-Icgen-sql -O3"
 

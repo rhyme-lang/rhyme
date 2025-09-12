@@ -31,7 +31,7 @@ test("testTrivial", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "testTrivial", schema: types.never })
 
   let res = await func()
-  expect(res).toEqual("201\n")
+  expect(JSON.parse(res)).toEqual(201)
 })
 
 let schema = typing.objBuilder()
@@ -46,13 +46,13 @@ let schema = typing.objBuilder()
 test("testScalar", async () => {
   let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
 
-  let query = rh`${csv}.*A.C | group *A`
+  let query = rh`sum ${csv}.*A.C`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "testScalar", schema: types.never })
 
   let res = await func()
   console.log(res)
-  // expect(res).toEqual("228\n")
+  expect(JSON.parse(res)).toEqual(228)
 })
 
 test("testSimpleSum1", async () => {
@@ -63,7 +63,7 @@ test("testSimpleSum1", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "testSimpleSum1", schema: types.never })
 
   let res = await func()
-  expect(res).toEqual("228\n")
+  expect(JSON.parse(res)).toEqual(228)
 })
 
 test("testSimpleSum2", async () => {
@@ -74,7 +74,7 @@ test("testSimpleSum2", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "testSimpleSum2", schema: types.never })
 
   let res = await func()
-  expect(res).toEqual("268\n")
+  expect(JSON.parse(res)).toEqual(268)
 })
 
 test("testSimpleSum3", async () => {
@@ -85,7 +85,7 @@ test("testSimpleSum3", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "testSimpleSum3", schema: types.never })
 
   let res = await func()
-  expect(res).toEqual("238\n")
+  expect(JSON.parse(res)).toEqual(238)
 })
 
 test("testSimpleSum4", async () => {
@@ -96,7 +96,7 @@ test("testSimpleSum4", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "testSimpleSum4", schema: types.never })
 
   let res = await func()
-  expect(res).toEqual("243\n")
+  expect(JSON.parse(res)).toEqual(243)
 })
 
 test("testSimpleSum5", async () => {
@@ -107,7 +107,7 @@ test("testSimpleSum5", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "testSimpleSum5", schema: types.never })
 
   let res = await func()
-  expect(res).toEqual("243\n")
+  expect(JSON.parse(res)).toEqual(243)
 })
 
 test("testLoadCSVMultipleFilesZip", async () => {
@@ -119,7 +119,7 @@ test("testLoadCSVMultipleFilesZip", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "testLoadCSVMultipleFilesZip", schema: types.never })
 
   let res = await func()
-  expect(res).toEqual("231\n")
+  expect(JSON.parse(res)).toEqual(231)
 })
 
 test("testLoadCSVSingleFileJoin", async () => {
@@ -130,7 +130,7 @@ test("testLoadCSVSingleFileJoin", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "testLoadCSVSingleFileJoin", schema: types.never })
 
   let res = await func()
-  expect(res).toEqual("972\n")
+  expect(JSON.parse(res)).toEqual(972)
 })
 
 test("testLoadCSVMultipleFilesJoin", async () => {
@@ -142,7 +142,7 @@ test("testLoadCSVMultipleFilesJoin", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "testLoadCSVMultipleFilesJoin", schema: types.never })
 
   let res = await func()
-  expect(res).toEqual("924\n")
+  expect(JSON.parse(res)).toEqual(924)
 })
 
 test("testMin", async () => {
@@ -153,7 +153,7 @@ test("testMin", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "testMin", schema: types.never })
 
   let res = await func()
-  expect(res).toEqual("1\n")
+  expect(JSON.parse(res)).toEqual(1)
 })
 
 test("testMax", async () => {
@@ -164,18 +164,18 @@ test("testMax", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "testMax", schema: types.never })
 
   let res = await func()
-  expect(res).toEqual("123\n")
+  expect(JSON.parse(res)).toEqual(123)
 })
 
 test("testCount", async () => {
   let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
 
   let query = rh`count ${csv}.*.C`
-  
+
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "testCount", schema: types.never })
 
   let res = await func()
-  expect(res).toEqual("4\n")
+  expect(JSON.parse(res)).toEqual(4)
 })
 
 test("testStatefulPrint1", async () => {
@@ -225,7 +225,7 @@ test("testLoadCSVDynamicFilename", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "testLoadCSVDynamicFilename", schema: types.never })
 
   let res = await func()
-  expect(res).toEqual("18\n")
+  expect(JSON.parse(res)).toEqual(18)
 })
 
 test("testLoadCSVDynamicFilenameJoin", async () => {
@@ -243,7 +243,7 @@ test("testLoadCSVDynamicFilenameJoin", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "testLoadCSVDynamicFilenameJoin", schema: types.never })
 
   let res = await func()
-  expect(res).toEqual("192\n")
+  expect(JSON.parse(res)).toEqual(192)
 })
 
 test("testConstStr", async () => {
@@ -364,7 +364,7 @@ test("plainSumTest", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "plainSumTest", schema: types.never })
 
   let res = await func()
-  expect(res).toBe("60\n")
+  expect(JSON.parse(res)).toEqual(60)
 })
 
 test("plainAverageTest", async () => {
@@ -375,7 +375,7 @@ test("plainAverageTest", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "plainAverageTest", schema: types.never })
 
   let res = await func()
-  expect(res).toBe("20.0000\n")
+  expect(JSON.parse(res)).toEqual(20)
 })
 
 test("uncorrelatedAverageTest", async () => {
@@ -386,20 +386,18 @@ test("uncorrelatedAverageTest", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "uncorrelatedAverageTest", schema: types.never })
 
   let res = await func()
-  expect(res).toBe("20.0000\n")
+  expect(JSON.parse(res)).toEqual(20)
 })
 
 test("groupByTest", async () => {
   let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
 
-  let query = rh`{ key: ${csv}.*.key, sum: sum ${csv}.*.value } | group ${csv}.*.key`
+  let query = rh`sum ${csv}.*.value | group ${csv}.*.key`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "groupByTest", schema: types.never })
 
   let res = await func()
-  expect(res).toBe(`A|40|
-B|20|
-`)
+  expect(JSON.parse(res)).toEqual({ A: 40, B: 20 })
 })
 
 test("groupByAverageTest", async () => {
@@ -407,14 +405,12 @@ test("groupByAverageTest", async () => {
 
   let avg = rh`(sum ${csv}.*.value) / (count ${csv}.*.value)`
 
-  let query = rh`{ key: ${csv}.*.key, avg: ${avg} } | group ${csv}.*.key`
+  let query = rh`${avg} | group ${csv}.*.key`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "groupByAverageTest", schema: types.never })
 
   let res = await func()
-  expect(res).toBe(`A|20.0000|
-B|20.0000|
-`)
+  expect(JSON.parse(res)).toEqual({ A: 20, B: 20 })
 })
 
 test("undefinedTest", async () => {
@@ -429,67 +425,54 @@ test("undefinedTest", async () => {
   let func = await compile(q, { backend: "c-sql-new", outDir, outFile: "groupByAverageTest1", schema: types.never })
 
   let res = await func()
-  expect(res).toBe("undefined\n")
+  expect(res).toBe("undefined")
 })
 
 test("groupByRelativeSum", async () => {
   let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
 
-  let query = rh`{ key: ${csv}.*.key, precentage: (sum ${csv}.*.value) / (sum ${csv}.*B.value) } | group ${csv}.*.key`
+  let query = rh`((sum ${csv}.*.value) / (sum ${csv}.*B.value)) | group ${csv}.*.key`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "groupByRelativeSum", schema: types.never })
 
   let res = await func()
-  expect(res).toBe(`A|0.6667|
-B|0.3333|
-`)
+  expect(JSON.parse(res)).toEqual({ A: 0.6667, B: 0.3333 })
 })
 
 test("groupCountByPopulation", async () => {
   let csv = rh`loadCSV "./cgen-sql/country.csv" ${countrySchema}`
 
   // test integer values as group key
-  let query = rh`{ pop: ${csv}.*.population, count: count ${csv}.*.city } | group ${csv}.*.population`
+  let query = rh`count ${csv}.*.city | group ${csv}.*.population`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "groupCountByPopulation", schema: types.never })
 
   let res = await func()
-  expect(res).toBe(`30|1|
-20|1|
-10|2|
-`)
+  expect(JSON.parse(res)).toEqual({ "30": 1, "20": 1, "10": 2 })
 })
 
 test("groupRegionByCountry", async () => {
   let csv = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
 
   // test strings as hashtable values
-  let query = rh`{ country: ${csv}.*.country, region: ${csv}.*.region } | group ${csv}.*.country`
+  let query = rh`${csv}.*.region | group ${csv}.*.country`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "groupRegionByCountry", schema: types.never })
 
   let res = await func()
-  expect(res).toBe(`Japan|Asia|
-China|Asia|
-France|Europe|
-UK|Europe|
-`)
+  expect(JSON.parse(res)).toEqual({ Japan: "Asia", China: "Asia", France: "Europe", UK: "Europe" })
 })
 
 test("nestedLoopJoinSimpleTest", async () => {
   let country = rh`loadCSV "./cgen-sql/country.csv" ${countrySchema}`
   let region = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
 
-  let query = rh`{ city: ${country}.*.city, region: (${region}.*.country == ${country}.*.country) & ${region}.*.region } | group ${country}.*.city`
+  let query = rh`(${region}.*.country == ${country}.*.country) & ${region}.*.region | group ${country}.*.city`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "nestedLoopJoinSimpleTest", schema: types.never })
 
   let res = await func()
-  expect(res).toBe(`Tokyo|Asia|
-Beijing|Asia|
-Paris|Europe|
-London|Europe|
-`)
+  expect(JSON.parse(res)).toEqual({ Tokyo: "Asia", Beijing: "Asia", Paris: "Europe", London: "Europe" })
 })
 
 test("nestedLoopJoinWithAggrTest", async () => {
@@ -497,14 +480,12 @@ test("nestedLoopJoinWithAggrTest", async () => {
   let region = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
 
   // SELECT SUM(country.population) FROM country JOIN region ON region.country = country.country GROUP BY region.region
-  let query = rh`{ region: ${region}.*.region, sum: sum ((${region}.*.country == ${country}.*.country) & ${country}.*.population) } | group ${region}.*.region`
+  let query = rh`sum ((${region}.*.country == ${country}.*.country) & ${country}.*.population) | group ${region}.*.region`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "nestedLoopJoinWithAggrTest", schema: types.never })
 
   let res = await func()
-  expect(res).toBe(`Asia|50|
-Europe|20|
-`)
+  expect(JSON.parse(res)).toEqual({ Asia: 50, Europe: 20 })
 })
 
 test("hashJoinSimpleTest", async () => {
@@ -512,15 +493,11 @@ test("hashJoinSimpleTest", async () => {
   let region = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
 
   let q1 = rh`${region}.*O.region | group ${region}.*O.country`
-  let query = rh`{ city: ${country}.*.city, country: ${q1}.(${country}.*.country) } | group ${country}.*.city`
+  let query = rh`${q1}.(${country}.*.country) | group ${country}.*.city`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "hashJoinSimpleTest", schema: types.never })
   let res = await func()
-  expect(res).toBe(`Tokyo|Asia|
-Beijing|Asia|
-Paris|Europe|
-London|Europe|
-`)
+  expect(JSON.parse(res)).toEqual({ Tokyo: "Asia", Beijing: "Asia", Paris: "Europe", London: "Europe" })
 })
 
 test("hashJoinWithAggrTest", async () => {
@@ -528,13 +505,11 @@ test("hashJoinWithAggrTest", async () => {
   let region = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
 
   let q1 = rh`${region}.*O.region | group ${region}.*O.country`
-  let query = rh`{region: ${q1}.(${country}.*.country), sum: sum ${country}.*.population} | group ${q1}.(${country}.*.country)`
+  let query = rh`sum ${country}.*.population | group ${q1}.(${country}.*.country)`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "hashJoinWithAggrTest", schema: types.never })
   let res = await func()
-  expect(res).toBe(`Asia|50|
-Europe|20|
-`)
+  expect(JSON.parse(res)).toEqual({ Asia: 50, Europe: 20 })
 })
 
 let countryData = [
@@ -554,14 +529,12 @@ let regionData = [
 test("groupByArray", async () => {
   let region = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
 
-  let query = rh`{ region: ${region}.*O.region, countries: array ${region}.*O.country} | group ${region}.*O.region`
+  let query = rh`array ${region}.*O.country | group ${region}.*O.region`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "groupByArray", schema: types.never })
   let res = await func()
 
-  expect(res).toBe(`Asia|[Japan, China]|
-Europe|[France, UK]|
-`)
+  expect(JSON.parse(res)).toEqual({ Asia: ["Japan", "China"], Europe: ["France", "UK"] })
 })
 
 test("hashJoinArray", async () => {
@@ -569,14 +542,12 @@ test("hashJoinArray", async () => {
   let region = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
 
   let q1 = rh`${region}.*O.region | group ${region}.*O.country`
-  let query = rh`{ region: ${q1}.(${country}.*.country), pops: array ${country}.*.population } | group ${q1}.(${country}.*.country)`
+  let query = rh`array ${country}.*.population | group ${q1}.(${country}.*.country)`
 
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "hashJoinArray", schema: types.never })
   let res = await func()
 
-  expect(res).toBe(`Asia|[30, 20]|
-Europe|[10, 10]|
-`)
+  expect(JSON.parse(res)).toEqual({ Asia: [30, 20], Europe: [10, 10] })
 })
 
 test("plainSumTBLTest", async () => {
@@ -587,7 +558,7 @@ test("plainSumTBLTest", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "plainSumTBLTest", schema: types.never })
 
   let res = await func()
-  expect(res).toBe("60\n")
+  expect(JSON.parse(res)).toEqual(60)
 })
 
 test("arrayProjectionSingleTest", async () => {
@@ -598,7 +569,7 @@ test("arrayProjectionSingleTest", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "arrayProjectionSingleTest", schema: types.never })
 
   let res = await func()
-  expect(res).toBe("[10, 20, 30]\n")
+  expect(JSON.parse(res)).toEqual([10, 20, 30])
 })
 
 test("arrayProjectionSingleStringTest", async () => {
@@ -609,7 +580,7 @@ test("arrayProjectionSingleStringTest", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "arrayProjectionSingleStringTest", schema: types.never })
 
   let res = await func()
-  expect(res).toBe("[A, B, A]\n")
+  expect(JSON.parse(res)).toEqual(["A", "B", "A"])
 })
 
 test("arrayProjectionMultipleTest", async () => {
@@ -620,10 +591,7 @@ test("arrayProjectionMultipleTest", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "arrayProjectionMultipleTest", schema: types.never })
 
   let res = await func()
-  expect(res).toBe(`10|A|
-20|B|
-30|A|
-`)
+  expect(JSON.parse(res)).toEqual([{ value: 10, key: "A" }, { value: 20, key: "B" }, { value: 30, key: "A" }])
 })
 
 test("arrayAccessUndefTest", async () => {
@@ -634,7 +602,41 @@ test("arrayAccessUndefTest", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "arrayAccessUndefTest", schema: types.never })
 
   let res = await func()
-  expect(res).toBe("undefined\n")
+  expect(res).toBe("undefined")
+})
+
+test("testArraySimpleSum1", async () => {
+  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+
+  let query = rh`sum [{C: ${csv}.*A.C}].*B.C`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "testArraySimpleSum1", schema: types.never, enableOptimization: false })
+
+  let res = await func()
+  expect(res).toEqual("228")
+})
+
+test("testJSMkTuple", () => {
+
+  let query = rh`{
+    A: sum data.*.value,
+    B: [data.*.value]
+  } | group data.*.key`
+
+  let func = compile(query, { newCodegen: true })
+
+  console.log(func.explain.code)
+})
+
+test("testJSONPrinting", async () => {
+  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+
+  let query = rh`{A:1, B:2}`
+
+  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "testJSONPrinting", schema: types.never })
+
+  let res = await func()
+  console.log(JSON.parse(res))
 })
 
 /**/
