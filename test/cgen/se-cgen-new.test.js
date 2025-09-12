@@ -31,7 +31,11 @@ test("loadJSONTest", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "loadJSONTest" })
 
   let res = await func()
-  console.log(res)
+  expect(JSON.parse(res)).toEqual({
+    A: { key: "U", value: 40 },
+    B: { key: "U", value: 20 },
+    C: { key: "V", value: 10 },
+  })
 }, 10000)
 
 
@@ -40,15 +44,15 @@ let other = rh`loadJSON "./cgen-sql/json/other.json" ${types.unknown}`
 let nested = rh`loadJSON "./cgen-sql/json/nested.json" ${types.unknown}`
 
 let data1 = {
-    A: { key: "U", value: 40 },
-    B: { key: "U", value: 20 },
-    C: { key: "V", value: 10 },
+  A: { key: "U", value: 40 },
+  B: { key: "U", value: 20 },
+  C: { key: "V", value: 10 },
 }
 
 let other1 = {
-    A: { value: 100 },
-    B: { value: 400 },
-    D: { value: 200 },
+  A: { value: 100 },
+  B: { value: 400 },
+  D: { value: 200 },
 }
 
 //
@@ -61,7 +65,6 @@ test("testScalar1", async () => {
   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "testScalar1" })
   let res = await func()
 
-  console.log(res)
   expect(JSON.parse(res)).toEqual(70)
 }, 10000)
 
@@ -101,7 +104,7 @@ test("testJoinScalar3", async () => {
   let res = await func()
 
   expect(JSON.parse(res)).toEqual(770)
-})
+}, 10000)
 
 
 test("testNested1", async () => {
@@ -111,5 +114,5 @@ test("testNested1", async () => {
   let res = await func()
 
   expect(JSON.parse(res)).toEqual(210)
-})
+}, 10000)
 
