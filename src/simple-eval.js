@@ -6,6 +6,7 @@ const { generate } = require('./new-codegen')
 const { preproc } = require('./preprocess')
 const { runtime } = require('./simple-runtime')
 const { pretty, setEmitPseudoState, emitPseudo } = require('./prettyprint')
+const { generateC } = require('./cgen/codegen')
 const { generateCSql } = require('./sql-codegen')
 const { generateCSqlNew } = require('./sql-newcodegen')
 const { typing, types, typeSyms } = require('./typing')
@@ -38,8 +39,11 @@ let defaultSettings = {
   schema: types.unknown,
   enableOptimizations: true,
 
+  // c backend options
+  format: "json",
+
   outDir: "cgen-sql",
-  outFile: "tmp.c"
+  outFile: "tmp"
 }
 
 
@@ -945,6 +949,10 @@ let compile = (q,userSettings={}) => {
   if (settings.newCodegen)
     return translateToNewCodegen(q)
 
+  if (settings.backend == "c-new") {
+    let ir = {filters, assignments, vars, order, pseudo}
+    return generateC(q, ir, settings)
+  }
 
   if (settings.backend == "c" || settings.backend == "cpp") {
     const fs = require('fs/promises')

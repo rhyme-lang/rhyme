@@ -163,7 +163,7 @@ test("q1-alt", async () => {
 
   let query = rh`sort ${query1} "l_returnflag" 0 "l_linestatus" 0`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q1-alt", schema: types.never, enableOptimizations: false, printFormat: "csv" })
+  let func = await compile(query, { backend: "c-new", outDir, outFile: "q1-alt", schema: types.never, enableOptimizations: false, printFormat: "csv" })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q1.out`).toString()
@@ -357,7 +357,7 @@ test("q6", async () => {
 
   let query = rh`sum (${cond}) & (${lineitem}.*.l_extendedprice * ${lineitem}.*.l_discount)`
 
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "q6", schema: types.never })
+  let func = await compile(query, { backend: "c-new", outDir, outFile: "q6", schema: types.never })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q6.out`).toString()

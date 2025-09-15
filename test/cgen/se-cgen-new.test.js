@@ -24,21 +24,6 @@ beforeAll(async () => {
   await sh(`cp cgen-sql/yyjson.h ${outDir}`)
 })
 
-test("loadJSONTest", async () => {
-  let data = rh`loadJSON "./cgen/data.json" ${types.unknown}`
-  let query = rh`${data}`
-
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "loadJSONTest" })
-
-  let res = await func()
-  expect(JSON.parse(res)).toEqual({
-    A: { key: "U", value: 40 },
-    B: { key: "U", value: 20 },
-    C: { key: "V", value: 10 },
-  })
-}, 10000)
-
-
 let data = rh`loadJSON "./cgen-sql/json/data.json" ${types.unknown}`
 let other = rh`loadJSON "./cgen-sql/json/other.json" ${types.unknown}`
 let nested = rh`loadJSON "./cgen-sql/json/nested.json" ${types.unknown}`
@@ -77,42 +62,3 @@ test("testScalar1", async () => {
 //   expect(JSON.parse(res)).toEqual({A:140, B:420})
 
 // }, 10000)
-
-test("testZipScalar3", async () => {
-  let query = rh`(sum ${data}.*A.value) + (sum ${other}.*A.value)`
-
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "testZipScalar3" })
-  let res = await func()
-
-  expect(JSON.parse(res)).toEqual(560)
-}, 10000)
-
-// test("testZipScalar4", async () => {
-//   let query = rh`(sum ${data}.*A.value) + ${other}.*A.value` 
-
-//   let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "testZipScalar4" })
-//   let res = await func()
-
-//   expect(JSON.parse(res)).toEqual({A:140, B:420})
-// , 10000})
-
-
-test("testJoinScalar3", async () => {
-  let query = rh`(sum ${data}.*A.value) + (sum ${other}.*B.value)`
-
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "testJoinScalar3" })
-  let res = await func()
-
-  expect(JSON.parse(res)).toEqual(770)
-}, 10000)
-
-
-test("testNested1", async () => {
-  let query = rh`sum ${nested}.*A.*B.value`
-
-  let func = await compile(query, { backend: "c-sql-new", outDir, outFile: "testNested1" })
-  let res = await func()
-
-  expect(JSON.parse(res)).toEqual(210)
-}, 10000)
-

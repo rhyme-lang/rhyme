@@ -1,0 +1,198 @@
+const { typing, typeSyms, types } = require('../typing')
+
+let cTypes = {
+  // any:  "rh",
+  // never:"rh",
+  // boolean:  "rh",
+  // string:"rh",
+  u8: "uint8_t",
+  u16: "uint16_t",
+  u32: "uint32_t",
+  u64: "uint64_t",
+  i8: "int8_t",
+  i16: "int16_t",
+  i32: "int32_t",
+  i64: "int64_t",
+  f32: "float",
+  f64: "double",
+  date: "int32_t",
+}
+
+let formatSpecifierMap = {
+  // any:  "rh",
+  // never:"rh",
+  // boolean:  "rh",
+  // string:"rh",
+  u8: "hhu",
+  u16: "hu",
+  u32: "u",
+  u64: "lu",
+  i8: "hhd",
+  i16: "hd",
+  i32: "d",
+  i64: "ld",
+  f32: ".3f",
+  f64: ".4lf",
+  date: "d"
+}
+
+let binaryOperators = {
+  equal: "==",
+  notEqual: "!=",
+
+  lessThan: "<",
+  greaterThan: ">",
+
+  lessThanOrEqual: "<=",
+  greaterThanOrEqual: ">=",
+
+  plus: "+",
+  minus: "-",
+  times: "*",
+  fdiv: "/",
+  div: "/",
+  mod: "%",
+
+  andAlso: "&&",
+  orElse: "||"
+}
+
+let c = {}
+
+// Expressions
+c.cast = (type, expr) => `(${type})${expr}`
+
+c.inc = (expr) => expr + "++"
+
+c.binary = (lhs, rhs, op) => `(${lhs} ${op} ${rhs})`
+c.ternary = (cond, tVal, fVal) => `(${cond} ? ${tVal} : ${fVal})`
+
+c.assign = (lhs, rhs) => `${lhs} = ${rhs}`
+
+c.add = (lhs, rhs) => c.binary(lhs, rhs, "+")
+c.sub = (lhs, rhs) => c.binary(lhs, rhs, "-")
+
+c.mul = (lhs, rhs) => c.binary(lhs, rhs, "*")
+c.div = (lhs, rhs) => c.binary(lhs, rhs, "/")
+
+c.not = (expr) => "!" + expr
+c.and = (lhs, rhs) => c.binary(lhs, rhs, "&&")
+c.or = (lhs, rhs) => c.binary(lhs, rhs, "||")
+c.eq = (lhs, rhs) => c.binary(lhs, rhs, "==")
+c.ne = (lhs, rhs) => c.binary(lhs, rhs, "!=")
+
+c.lt = (lhs, rhs) => c.binary(lhs, rhs, "<")
+c.gt = (lhs, rhs) => c.binary(lhs, rhs, ">")
+
+c.le = (lhs, rhs) => c.binary(lhs, rhs, "<=")
+c.ge = (lhs, rhs) => c.binary(lhs, rhs, ">=")
+
+c.call = (f, ...args) => `${f}(${args.join(", ")})`
+
+c.malloc = (type, n) => c.call("malloc", `sizeof(${type}) * ${n}`)
+c.calloc = (type, n) => c.call("calloc", n, `sizeof(${type})`)
+c.open = (file) => c.call("open", file, 0)
+c.close = (fd) => c.call("close", fd)
+
+c.mmap = (fd, size) => c.call("mmap", 0, size, "PROT_READ", "MAP_FILE | MAP_SHARED", fd, 0)
+
+// Statements
+c.comment = (buf) => (s) => buf.push("// " + s)
+c.stmt = (buf) => (expr) => buf.push(expr + ";")
+
+c.declareVar = (buf) => (type, name, init, constant = false) => buf.push((constant ? "const " : "") + type + " " + name + (init ? ` = ${init};` : ";"))
+c.declareArr = (buf) => (type, name, len, init, constant = false) => buf.push((constant ? "const " : "") + `${type} ${name}[${len}]` + (init ? ` = ${init};` : ";"))
+c.declarePtr = (buf) => (type, name, init, constant = false) => buf.push((constant ? "const " : "") + `${type} *${name}` + (init ? ` = ${init};` : ";"))
+c.declarePtrPtr = (buf) => (type, name, init, constant = false) => buf.push((constant ? "const " : "") + `${type} **${name}` + (init ? ` = ${init};` : ";"))
+
+c.declareInt = (buf) => (name, init) => c.declareVar(buf)("int", name, init)
+c.declareLong = (buf) => (name, init) => c.declareVar(buf)("long", name, init)
+c.declareULong = (buf) => (name, init) => c.declareVar(buf)("unsigned long", name, init)
+c.declareCharArr = (buf) => (name, len, init) => c.declareArr(buf)("char", name, len, init)
+c.declareIntPtr = (buf) => (name, init) => c.declarePtr(buf)("int", name, init)
+c.declareCharPtr = (buf) => (name, init) => c.declarePtr(buf)("char", name, init)
+c.declareConstCharPtr = (buf) => (name, init) => c.declarePtr(buf)("char", name, init, true)
+c.declareCharPtrPtr = (buf) => (name, init) => c.declarePtrPtr(buf)("char", name, init)
+
+c.declareStruct = (buf) => (name, types, fields) => {
+  buf.push(`struct ${name} {`)
+  for (let i in types) {
+    let type = types[i]
+    let field = fields[i]
+    c.declareVar(buf)(type, field)
+  }
+  buf.push(`};`)
+}
+
+c.printf = (buf) => (fmt, ...args) => buf.push(c.call("printf", "\"" + fmt + "\"", ...args) + ";")
+c.printErr = (buf) => (fmt, ...args) => buf.push(c.call("fprintf", "stderr", "\"" + fmt + "\"", ...args) + ";")
+
+c.if = (buf) => (cond, tBranch, fBranch) => {
+  buf.push(`if (${cond}) {`)
+  tBranch(buf)
+  if (fBranch) {
+    buf.push("} else {")
+    fBranch(buf)
+  }
+  buf.push("}")
+}
+
+c.while = (buf) => (cond, body) => {
+  buf.push(`while (${cond}) {`)
+  body(buf)
+  buf.push("}")
+}
+
+c.while1 = (buf) => (cond, body) => {
+  buf.push(`while (${cond}) ${body};`)
+}
+
+c.continue = (buf) => () => buf.push("continue;")
+c.break = (buf) => () => buf.push("break;")
+c.return = (buf) => (expr) => buf.push(`return ${expr};`)
+
+let convertToCType = (type) => {
+  if (type.typeSym === "dynkey")
+    return convertToCType(type.keySuperkey)
+  if (type.typeSym === "union")
+    throw new Error("Unable to convert union type to C type currently: " + typing.prettyPrintType(type))
+  if (type.typeSym in cTypes)
+    return cTypes[type.typeSym]
+  throw new Error("Unknown type: " + typing.prettyPrintType(type))
+}
+
+let getFormatSpecifier = (type) => {
+  if (type.typeSym === "dynkey")
+    return getFormatSpecifier(type.keySuperkey)
+  if (type.typeSym === "union")
+    throw new Error("Unable to get type specifier for union tpyes currently: " + typing.prettyPrintType(type))
+  if (type.typeSym in formatSpecifierMap)
+    return formatSpecifierMap[type.typeSym]
+  throw new Error("Unknown type: " + typing.prettyPrintType(type))
+}
+
+let convertToArrayOfSchema = (schema) => {
+  if (schema.objKey === null) {
+    return []
+  }
+  return [...convertToArrayOfSchema(schema.objParent), { name: schema.objKey, schema: schema.objValue }]
+}
+
+let tmpSym = i => "tmp" + i
+
+let quoteVar = s => s.replaceAll("*", "x")
+
+let utils = {
+  tmpSym,
+  quoteVar,
+  cTypes,
+  binaryOperators,
+  convertToCType,
+  getFormatSpecifier,
+  convertToArrayOfSchema
+}
+
+module.exports = {
+  c,
+  utils
+}
