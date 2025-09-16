@@ -26,9 +26,13 @@ let value = {}
 
 value.primitive = (schema, val, tag, cond, keyPos) => ({ schema, val, tag, cond, keyPos })
 
+value.json = (schema, val, cond, keyPos) => ({ schema, val, tag: TAG.JSON, cond, keyPos })
+
 value.string = (schema, str, len, tag, cond, keyPos) => ({ schema, val: { str, len }, tag, cond, keyPos })
 
 value.hashmap = (schema, sym, htable, count, keys, cond, keyPos) => ({ schema, val: { sym, htable, count, keys }, tag: TAG.HASHMAP, cond, keyPos })
+
+value.array = (schema, sym, count, cond) => ({ schema, val: { sym, count }, tag: TAG.ARRAY, cond })
 
 module.exports = {
   TAG,
