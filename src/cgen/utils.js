@@ -1,4 +1,5 @@
-const { typing, typeSyms, types } = require('../typing')
+const { typing } = require('../typing')
+const { symbol } = require("./symbol")
 
 let cTypes = {
   // any:  "rh",
@@ -178,9 +179,70 @@ let convertToArrayOfSchema = (schema) => {
   return [...convertToArrayOfSchema(schema.objParent), { name: schema.objKey, schema: schema.objValue }]
 }
 
+let isSimpleObject = (schema) => {
+  if (schema.objKey === null) {
+    return true
+  }
+  if (typeof schema.objKey == "object") return false
+  return isSimpleObject(schema.objParent)
+}
+
 let tmpSym = i => "tmp" + i
 
 let quoteVar = s => s.replaceAll("*", "x")
+
+let emitWildcardStrSearch = (buf, str, currIdx, parts, partIdx, strictStart, strictEnd, name) => {
+  if (partIdx == parts.length) {
+    c.stmt(buf)(c.assign(name, "1"))
+    return
+  }
+  let tmp = symbol.getSymbol("tmp_strstr")
+  c.declareInt(buf)(tmp, c.call("strnstr_idx", c.add(str.val.str, currIdx), c.sub(str.val.len, currIdx), "\"" + parts[partIdx] + "\"", parts[partIdx].length))
+
+  let checkStart
+  if (partIdx == 0 && strictStart) {
+    checkStart = c.eq(tmp, "0")
+  } else {
+    checkStart = c.ge(tmp, "0")
+  }
+
+
+  let checkEnd
+  if (partIdx == parts.length - 1 && strictEnd) {
+    checkEnd = c.eq(c.add(tmp, parts[partIdx].length), c.sub(str.val.len, currIdx))
+  } else {
+    checkEnd = c.le(c.add(tmp, parts[partIdx].length), c.sub(str.val.len, currIdx))
+  }
+
+  currIdx = c.add(tmp, parts[partIdx].length)
+
+  c.if(buf)(c.and(checkStart, checkEnd), buf1 => {
+    emitWildcardStrSearch(buf1, str, currIdx, parts, partIdx + 1, strictStart, strictEnd, name)
+  }, buf2 => {
+    c.stmt(buf2)(c.assign(name, "0"))
+  })
+}
+
+// Only works for regex that have .*
+let emitWildcardMatch = (buf, str, regex, name) => {
+  // get the constant parts
+  let parts = regex.split(".*")
+  c.declareInt(buf)(name)
+
+  let strictStart = true
+  let strictEnd = true
+
+  if (parts[0] === "") {
+    parts = parts.slice(1)
+    strictStart = false
+  }
+  if (parts[parts.length - 1] === "") {
+    parts = parts.slice(0, -1)
+    strictEnd = false
+  }
+
+  emitWildcardStrSearch(buf, str, "0", parts, 0, strictStart, strictEnd, name)
+}
 
 let utils = {
   tmpSym,
@@ -189,7 +251,9 @@ let utils = {
   binaryOperators,
   convertToCType,
   getFormatSpecifier,
-  convertToArrayOfSchema
+  convertToArrayOfSchema,
+  isSimpleObject,
+  emitWildcardMatch
 }
 
 module.exports = {

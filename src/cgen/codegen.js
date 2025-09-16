@@ -1,12 +1,12 @@
 const { c, utils } = require("./utils")
-const { hashmap } = require("./data-structs")
+const { hashmap, array, BUCKET_SIZE } = require("./collections")
 const { TAG, value } = require("./value")
 const { symbol } = require("./symbol")
 const { csv } = require("./csv")
 const { printEmitter } = require("./print")
 
 const { generate } = require("../new-codegen")
-const { typing, types } = require('../typing')
+const { typing, types, typeSyms } = require('../typing')
 const { sets } = require('../shared')
 const { pretty } = require('../prettyprint')
 const { runtime } = require('../simple-runtime')
@@ -173,8 +173,45 @@ let emitCompareFunc = (buf, name, valPairs, orders) => {
   buf.push(`}`)
 }
 
+let emitArraySorting = (buf, q, arr) => {
+  let sym = arr.val.sym
+  let count = arr.val.count
+
+  let columns = q.arg.slice(1)
+
+  let vals = []
+  let orders = []
+  let arrayEntry1 = array.getValueAtIdx(arr, "*i")
+  let arrayEntry2 = array.getValueAtIdx(arr, "*j")
+
+  for (let i = 0; i < columns.length; i += 2) {
+    let column = columns[i]
+    let order = columns[i + 1]
+
+    if (arrayEntry1.tag != TAG.OBJECT || arrayEntry2.tag != TAG.OBJECT) {
+      throw new Error("Sroting not supported here")
+    }
+    vals.push([
+      arrayEntry1.val[column.op],
+      arrayEntry2.val[column.op]
+    ])
+    orders.push(order.op)
+  }
+
+  let compareFunc = symbol.getSymbol("compare_func")
+  emitCompareFunc(prolog0, compareFunc, vals, orders)
+
+  c.declareIntPtr(buf)(sym, c.cast("int *", c.malloc("int", count)))
+  c.stmt(buf)(`for (int i = 0; i < ${count}; i++) ${sym}[i] = i`)
+
+  c.stmt(buf)(c.call("qsort", sym, count, "sizeof(int)", c.cast("__compar_fn_t", compareFunc)))
+
+  arr.val.sorted = true
+}
+
 let emitHashMapSorting = (buf, q, map) => {
   let sym = map.val.sym
+  let count = map.val.count
 
   let columns = q.arg.slice(1)
 
@@ -199,10 +236,10 @@ let emitHashMapSorting = (buf, q, map) => {
   let compareFunc = symbol.getSymbol("compare_func")
   emitCompareFunc(prolog0, compareFunc, vals, orders)
 
-  c.declareIntPtr(buf)(sym, c.cast("int *", c.malloc("int", `${sym}_key_count`)))
-  c.stmt(buf)(`for (int i = 0; i < ${sym}_key_count; i++) ${sym}[i] = i`)
+  c.declareIntPtr(buf)(sym, c.cast("int *", c.malloc("int", count)))
+  c.stmt(buf)(`for (int i = 0; i < ${count}; i++) ${sym}[i] = i`)
 
-  c.stmt(buf)(c.call("qsort", sym, `${sym}_key_count`, "sizeof(int)", c.cast("__compar_fn_t", compareFunc)))
+  c.stmt(buf)(c.call("qsort", sym, count, "sizeof(int)", c.cast("__compar_fn_t", compareFunc)))
 
   map.val.sorted = true
 }
@@ -222,7 +259,7 @@ let emitStatefulInit = (buf, q, lhs) => {
       c.stmt(buf)(c.assign(lhs.val.bucketCount, "0"))
     } else {
       // lhs passed will be the array object
-      c.stmt(buf)(c.assign(lhs.val.dataCount, "0"))
+      c.stmt(buf)(c.assign(lhs.val.count, "0"))
     }
   } else {
     throw new Error("stateful op not supported: " + pretty(q))
@@ -231,9 +268,6 @@ let emitStatefulInit = (buf, q, lhs) => {
 
 let emitStatefulUpdate1 = (buf, q, lhs, rhs) => {
   if (q.op == "sum") {
-    if (rhs.tag == TAG.JSON) {
-      rhs.val = c.call("yyjson_get_num", rhs.val)
-    }
     c.stmt(buf)(c.assign(lhs.val, c.binary(lhs.val, rhs.val, "+")))
   } else if (q.op == "count") {
     c.stmt(buf)(c.assign(lhs.val, c.binary(lhs.val, "1", "+")))
@@ -256,10 +290,10 @@ let emitStatefulUpdate1 = (buf, q, lhs, rhs) => {
     // lhs passed will be the bucket info object
     if (lhs.tag == TAG.HASHMAP_BUCKET) {
       // lhs passed will be the bucket object
-      emitHashBucketInsert(buf, lhs, rhs)
+      hashmap.emitHashBucketInsert(buf, lhs, rhs)
     } else {
       // lhs passed will be the array object
-      emitArrayInsert(buf, lhs, rhs)
+      array.emitArrayInsert(buf, lhs, rhs)
     }
 
   } else if (q.op == "print") {
@@ -267,7 +301,7 @@ let emitStatefulUpdate1 = (buf, q, lhs, rhs) => {
       let { str, len } = rhs.val
       c.stmt(buf)(c.call("printf", `"%.*s\\n"`, len, str))
     } else {
-      c.stmt(buf)(c.call("printf", `"%${getFormatSpecifier(q.arg[0].schema.type)}\\n"`, rhs.val))
+      c.stmt(buf)(c.call("printf", `"%${utils.getFormatSpecifier(q.arg[0].schema.type)}\\n"`, rhs.val))
     }
   } else {
     throw new Error("stateful op not supported: " + pretty(q))
@@ -277,27 +311,13 @@ let emitStatefulUpdate1 = (buf, q, lhs, rhs) => {
 let emitStatefulUpdate = (buf, q, lhs) => {
   let e = q.arg[0]
   let rhs = emitPath(buf, e)
-  console.log(rhs)
-  if (rhs.cond) {
-    console.log("here")
-    c.if(buf)(c.not(rhs.cond), buf1 => {
+  if (lhs.cond || rhs.cond) {
+    let cond = lhs.cond && rhs.cond ? c.or(lhs.cond, rhs.cond) : (lhs.cond ? lhs.cond : rhs.cond)
+    c.if(buf)(c.not(cond), buf1 => {
       emitStatefulUpdate1(buf1, q, lhs, rhs)
     })
   } else {
     emitStatefulUpdate1(buf, q, lhs, rhs)
-  }
-}
-
-// Extract the top-level condition for stateful operations
-let emitStatefulUpdateOptCond = (buf, q, update) => {
-  let e = q.arg[0]
-  if (e.key == "pure" && e.op == "and") {
-    let cond = emitPath(buf, e.arg[0])
-    if (cond.cond) cond.val = c.and(c.not(cond.cond), cond.val)
-
-    c.if(buf)(cond.val, update)
-  } else {
-    update(buf)
   }
 }
 
@@ -403,8 +423,6 @@ let emitPath = (buf, q, scope) => {
       throw new Error("Constant not supported: " + pretty(q))
     }
   } else if (q.key == "var") {
-    // TODO: Usually a number or a string.
-    // but need to know whether it is a yyjson val
     return vars[q.op].val
   } else if (q.key == "ref") {
     let q1 = assignments[q.op]
@@ -413,11 +431,18 @@ let emitPath = (buf, q, scope) => {
     if (q1.fre.length > 0) {
       // We can directly use the pos and keyPos
       // without doing a hash lookup
-      let value = hashmap.getHashMapValueEntry(tmpVar, currentGroupKey.pos, currentGroupKey.keyPos)
-      console.log(value)
+      let keys = q1.fre.map(f => {
+        if (Array.isArray(vars[f].val)) {
+          return vars[f].val
+        }
+        return [vars[f].val]
+      })
+      if (keys.length > 1) throw new Error("Multi level lookup not supported")
+      let rootMap = tmpVars[assignmentToSym[q.op]]
+      let [pos, keyPos] = hashmap.emitHashLookUp(buf, rootMap, keys[0])
+      let value = hashmap.getHashMapValueEntry(tmpVar, pos, keyPos)
       return value
     } else {
-      // If no free vars, we need to emit the code
       return tmpVar
     }
   } else if (q.key == "get") {
@@ -459,11 +484,11 @@ let emitPath = (buf, q, scope) => {
       } else if (g1.tag == TAG.ARRAY) {
         // If we are iterating over a hashMap,
         // get the entry directly using the var
-        return getArrayValueEntry(g1, quoteVar(e2.op))
+        return array.getValueAtIdx(g1, quoteVar(e2.op))
       } else if (g1.tag == TAG.HASHMAP) {
         // If we are iterating over a hashMap,
         // get the entry directly using the var
-        return getHashMapValueEntry(g1.val.sym, undefined, quoteVar(e2.op))
+        return hashmap.getHashMapValueEntry(g1, undefined, quoteVar(e2.op))
       } else if (g1.tag == TAG.HASHMAP_BUCKET) {
         // If we are iterating over a hashMap bucket,
         // get the stored loop info
@@ -472,25 +497,7 @@ let emitPath = (buf, q, scope) => {
         bucket = g1
         let dataPos = `${bucket.val.buckets}[${c.add(c.mul(bucket.keyPos, BUCKET_SIZE), quoteVar(e2.op))}]`
 
-        if (typing.isObject(bucket.schema.objValue)) {
-          let schema = convertToArrayOfSchema(bucket.schema.objValue)
-          let res = { schema: q.schema.type, val: {}, tag: TAG.OBJECT }
-          for (let i in schema) {
-            let { name: name1, schema: schema1 } = schema[i]
-            if (typing.isObject(schema1)) {
-              throw new Error("Not supported")
-            } else if (typing.isString(schema1)) {
-              res.val[name1] = { schema: schema1, val: { str: `${bucket.val.valArray[name1].str}[${dataPos}]`, len: `${bucket.val.valArray[name1].len}[${dataPos}]` } }
-            } else {
-              res.val[name1] = { schema: schema1, val: `${bucket.val.valArray[name1]}[${dataPos}]` }
-            }
-          }
-          return res
-        } else if (typing.isString(bucket.schema.objValue)) {
-          return { schema: bucket.schema.objValue, val: { str: `${bucket.val.valArray.str}[${dataPos}]`, len: `${bucket.val.valArray.len}[${dataPos}]` } }
-        } else {
-          return { schema: bucket.schema.objValue, val: `${bucket.val.valArray}[${dataPos}]` }
-        }
+        return array.getValueAtIdx(bucket, dataPos)
       } else {
         throw new Error("Cannot get var from non-iterable object")
       }
@@ -513,17 +520,12 @@ let emitPath = (buf, q, scope) => {
 
     if (v1.tag == TAG.HASHMAP) {
       // HashMap lookup
-      let sym = tmpSym(e1.op)
       let key = emitPath(buf, e2, scope)
-      let [pos, keyPos] = emitHashLookUp(buf, sym, [key])
-      let { keySchema, valSchema } = hashMapEnv[sym]
-      if (keySchema.length > 1) {
-        throw new Error("not supported for now")
-      }
+      let [pos, keyPos] = hashmap.emitHashLookUp(buf, v1, [key])
       // The value is undefined if keyPos == -1
       // emitPath will not handle undefined values
       // It is up to the top-level caller of emitPath how undefined is handled
-      let value = getHashMapValueEntry(sym, pos, keyPos)
+      let value = hashmap.getHashMapValueEntry(v1, pos, keyPos)
       value.cond = c.eq(keyPos, "-1")
       return value
     }
@@ -531,8 +533,8 @@ let emitPath = (buf, q, scope) => {
     if (v1.tag == TAG.ARRAY) {
       // Array element access
       let idx = emitPath(buf, e2, scope)
-      let res = getArrayValueEntry(v1, idx.val)
-      res.cond = c.ge(idx.val, v1.val.dataCount)
+      let res = array.getValueAtIdx(v1, idx.val)
+      res.cond = c.ge(idx.val, v1.val.count)
       if (idx.cond) res.cond = c.and(idx.cond, res.cond)
       return res
     }
@@ -546,19 +548,24 @@ let emitPath = (buf, q, scope) => {
       throw new Error("Cannot get non-constant string field from objects")
     }
 
-    return { ...v1.val[e2.op], cond: v1.cond }
+    let cond = v1.cond
+    if (!v1.val[e2.op]) cond = "1"
+    return { ...v1.val[e2.op], cond }
   } else if (q.key == "pure") {
     if (q.op == "sort") {
       let e = emitPath(buf, q.arg[0])
       if (e.tag == TAG.HASHMAP) {
         emitHashMapSorting(buf, q, e)
         return e
+      } else if (e.tag == TAG.ARRAY) {
+        emitArraySorting(buf, q, e)
+        return e
       } else
         throw new Error("Sorting is not supported on this object: " + e)
     }
 
     if (q.op == "mkTuple") {
-      let schema = convertToArrayOfSchema(q.schema.type)
+      let schema = utils.convertToArrayOfSchema(q.schema.type)
       let res = { schema: q.schema.type, val: {}, tag: TAG.OBJECT }
       for (let i = 0; i < q.arg.length; i += 2) {
         let k = q.arg[i]
@@ -576,7 +583,7 @@ let emitPath = (buf, q, scope) => {
       // binary op
       let e2 = emitPath(buf, q.arg[1], scope)
       if (q.op == "equal" || q.op == "notEqual" || q.op == "lessThan" || q.op == "greaterThan" || q.op == "lessThanOrEqual" || q.op == "greaterThanOrEqual") {
-        if (typing.isString(q.arg[0].schema.type) && typing.isString(q.arg[1].schema.type)) {
+        if (typing.isString(e1.schema) && typing.isString(e2.schema)) {
           let { str: str1, len: len1 } = e1.val
           let { str: str2, len: len2 } = e2.val
 
@@ -626,7 +633,7 @@ let emitPath = (buf, q, scope) => {
       }
 
       let name = symbol.getSymbol("tmp_like")
-      emitWildcardMatch(buf, e1, q.arg[1].op, name)
+      utils.emitWildcardMatch(buf, e1, q.arg[1].op, name)
 
       return { schema: q.schema.type, val: name, cond: e1.cond }
     } else if (q.op == "isUndef") {
@@ -724,6 +731,23 @@ let collectRelevantStatefulInPath = (q, currentGroupPath) => {
   }
 }
 
+let addHashMapBucket = (map, q, name, currentGroupPath) => {
+  hashmap.emitHashMapBucketsInit(prolog1, map, name, q.schema.type)
+
+  let bucket = map.val.values[name]
+  let e = q.arg[0]
+
+  if (typing.isObject(e.schema.type) && utils.isSimpleObject(e.schema.type)) {
+    let values = utils.convertToArrayOfSchema(e.schema.type)
+    for (let i in values) {
+      let { name, schema } = values[i]
+      hashmap.emitHashMapBucketValuesInit(prolog1, map, bucket, name, schema)
+    }
+  } else {
+    hashmap.emitHashMapBucketValuesInit(prolog1, map, bucket, "_DEFAULT_", e.schema.type)
+  }
+}
+
 let addHashMapValue = (map, q, name, currentGroupPath) => {
   if (q.key == "pure" && q.op.startsWith("convert_")) {
     q = q.arg[0]
@@ -745,9 +769,9 @@ let addHashMapValue = (map, q, name, currentGroupPath) => {
 
   let sym = tmpSym(currentGroupPath.sym)
   if (q1.op == "array") {
-    hashmap.emitHashMapBucketsInit(prolog1, map, name, q.schema.type)
+    addHashMapBucket(map, q1, name, currentGroupPath)
   } else {
-    hashmap.emitHashMapValueInit(prolog1, map, name, q.schema.type, sortedCols?.[sym][name], prolog0)
+    hashmap.emitHashMapValueInit(prolog1, map, name, q.schema.type, sortedCols?.[sym]?.[name], prolog0)
   }
   collectRelevantStatefulInPath(q1.arg[0], currentGroupPath)
 }
@@ -802,6 +826,24 @@ let collectHashMaps = () => {
   }
 }
 
+let collectArray = (q, i) => {
+  let sym = tmpSym(i)
+  let count = array.emitArrayInit(prolog1, sym)
+  let tmpVar = value.array(q.schema.type, sym, count)
+  tmpVars[i] = tmpVar
+  let e = q.arg[0]
+
+  if (typing.isObject(e.schema.type) && utils.isSimpleObject(e.schema.type)) {
+    let values = utils.convertToArrayOfSchema(e.schema.type)
+    for (let i in values) {
+      let { name, schema } = values[i]
+      array.emitArrayValueInit(prolog1, tmpVar, name, schema, sortedCols?.[sym]?.[name], prolog0)
+    }
+  } else {
+    array.emitArrayValueInit(prolog1, tmpVar, "_DEFAULT_", e.schema.type)
+  }
+}
+
 // Process the filters and create generator statements
 let processFilters = () => {
   for (let i in filters) {
@@ -827,22 +869,22 @@ let processFilters = () => {
       vars[v1].lhs ??= {}
       vars[v1].lhs[pretty(g1)] = lhs
       // Generate loops based on different types of left hand side values
+      if (firstSeen) vars[v1].val = value.primitive(lhs.schema.objKey, v1)
       if (lhs.tag == TAG.CSV_FILE) {
         let getLoopTxtFunc = csv.getCSVLoopTxt(f, lhs, data, usedCols)
-        vars[v1].val = value.primitive(lhs.schema.objKey, v1)
         addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
       } else if (lhs.tag == TAG.JSON) {
         let getLoopTxtFunc = getJSONLoopTxt(f, lhs, data)
+        if (firstSeen) vars[v1].val.tag = TAG.JSON
         addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
       } else if (lhs.tag == TAG.ARRAY) {
-        let getLoopTxtFunc = getArrayLoopTxt(f, lhs.val.sym)
+        let getLoopTxtFunc = array.getArrayLoopTxt(f, lhs)
         addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
       } else if (lhs.tag == TAG.HASHMAP) {
-        let getLoopTxtFunc = getHashMapLoopTxt(f, lhs.val.sym)
+        let getLoopTxtFunc = hashmap.getHashMapLoopTxt(f, lhs)
         addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
-        // throw new Error("Generator from hashmap not implemented yet")
       } else if (lhs.tag == TAG.HASHMAP_BUCKET) {
-        let getLoopTxtFunc = getHashBucketLoopTxt(f, lhs, data)
+        let getLoopTxtFunc = hashmap.getHashBucketLoopTxt(f, lhs, data)
         addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
       } else {
         throw new Error("Cannot have generator on non-iterable objects: " + lhs.tag)
@@ -887,12 +929,13 @@ let emitCode = (q, ir, settings) => {
   for (let i in assignments) {
     let q = assignments[i]
     if (q.key == "update" || assignmentToSym[i]) continue
-    if (q.op == "print") continue
+    if (q.op == "print") {
+      tmpVars[i] = { schema: types.never }
+      continue
+    }
     let sym = tmpSym(i)
     if (q.op == "array") {
-      // emitArrayInit(prolog1, sym, q.schema.type.objValue)
-      // arrayEnv[sym] = { valSchema: q.schema.type.objValue }
-      throw new Error("Not implemented yet")
+      collectArray(q, i)
     } else if (typing.isString(q.schema.type)) {
       c.declarePtr(prolog1)("char", `${sym}_str`)
       c.declareInt(prolog1)(`${sym}_len`)
@@ -915,8 +958,6 @@ let emitCode = (q, ir, settings) => {
     emitStatefulInPath(i)
   }
 
-  console.log(assignmentStms)
-
   for (let i in updateOps) {
     let q = assignments[i]
     let sym = tmpSym(i)
@@ -931,11 +972,59 @@ let emitCode = (q, ir, settings) => {
 
     let keys = Array.isArray(vars[e1.op].val) ? vars[e1.op].val : [vars[e1.op].val]
 
-    let init = []
     let map = tmpVars[i]
+
+    if (!shouldInit) {
+      let lookup = []
+      let [pos, keyPos] = hashmap.emitHashLookUp(lookup, map, keys)
+      assign(lookup, sym, fv, [])
+      for (let j of updateOps[i]) {
+        let q = assignments[j]
+        let buf = []
+        let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
+
+        let update1 = () => { }
+        if (q.mode === "maybe") {
+          // We still need to initialize it to some value if it is in maybe mode
+          update1 = (buf2, lhs) => {
+            c.comment(buf2)("init " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
+            if (q.extraGroupPath) {
+              console.assert(lhs.tag == TAG.OBJECT)
+              lhs = lhs.val[q.extraGroupPath]
+            }
+            emitStatefulInit(buf2, q, lhs)
+          }
+        }
+        c.comment(buf)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
+        // Extract the top-level condition for stateful operations
+        let e = q.arg[0]
+        let update = (buf1) => hashmap.emitHashMapUpdate(buf1, map, keys, pos, keyPos, update1, (buf2, lhs) => {
+          currentGroupKey = { key: k, pos, keyPos }
+          let cond = lhs.cond
+          if (q.extraGroupPath) {
+            console.assert(lhs.tag == TAG.OBJECT)
+            lhs = lhs.val[q.extraGroupPath]
+          }
+          lhs.cond = cond
+          emitStatefulUpdate(buf2, q, lhs, sym)
+        }, true)
+        if (e.key == "pure" && e.op == "and") {
+          let cond = emitPath(buf, e.arg[0])
+          if (cond.cond) cond.val = c.and(c.not(cond.cond), cond.val)
+          c.if(buf)(cond.val, update)
+        } else {
+          update(buf)
+        }
+
+        assign(buf, sym, fv, deps)
+      }
+      // extra not supported yet
+      continue
+    }
+
+    let init = []
     //   c.comment(init)("init and update " + sym + " = " + pretty(assignments[i]))
     let [pos, keyPos] = hashmap.emitHashLookUpOrUpdate(init, map, keys, (buf1, lhs, pos, keyPos) => {
-      console.log(buf1, lhs, pos, keyPos)
       for (let j of updateOps[i]) {
         let q = assignments[j]
         if (!initRequired(q)) continue
@@ -945,7 +1034,6 @@ let emitCode = (q, ir, settings) => {
           console.assert(lhs.tag == TAG.OBJECT)
           lhs1 = lhs.val[q.extraGroupPath]
         }
-        console.log(q, lhs1)
         emitStatefulInit(buf1, q, lhs1)
       }
       for (let j of updateOpsExtra[i]) {
@@ -960,13 +1048,14 @@ let emitCode = (q, ir, settings) => {
     assign(init, sym, fv, [])
 
     currentGroupKey = { key: k, pos, keyPos }
+    let update = []
     for (let j of updateOpsExtra[i]) {
       let update = []
       let q = assignments[j]
       c.comment(update)("update " + tmpSym(j) + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
       let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
 
-      hashmap.emitHashMapUpdate(update, map, keys, pos, keyPos, () => { }, (buf, lhs) => {
+      hashmap.emitHashLookUpAndUpdate(update, map, keys, (buf, lhs, pos, keyPos) => {
         let lhs1 = hashmap.getHashMapValueEntry(tmpVars[j], pos, keyPos)
         emitStatefulUpdate(buf, q, lhs1)
       }, false)
@@ -978,7 +1067,7 @@ let emitCode = (q, ir, settings) => {
       c.comment(update)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
       let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
 
-      hashmap.emitHashMapUpdate(update, map, keys, pos, keyPos, () => { }, (buf, lhs) => {
+      hashmap.emitHashLookUpAndUpdate(update, map, keys, (buf, lhs, pos, keyPos) => {
         if (q.extraGroupPath) {
           console.assert(lhs.tag == TAG.OBJECT)
           lhs = lhs.val[q.extraGroupPath]
@@ -989,142 +1078,19 @@ let emitCode = (q, ir, settings) => {
     }
   }
 
-  // // Iterate and emit stateful ops
-  // for (let i in updateOps) {
-  //   let k = assignments[i].arg[1].op
-
-  //   // TODO: should add if check to see if the keys are undefined
-  //   let keys = k.startsWith("K") ? vars[k].val : [vars[k].val]
-
-  //   let sym = tmpSym(i)
-
-  //   let fv = [k]
-
-  //   let init = []
-
-  //   c.comment(init)("init and update " + sym + " = " + pretty(assignments[i]))
-  //   let shouldInit = updateOps[i].some(j => initRequired(assignments[j])) ||
-  //     updateOpsExtra[i].some(j => initRequired(assignments[j]))
-
-  //   if (!shouldInit) {
-  //     let lookup = []
-  //     let [pos, keyPos] = hashmap.emitHashLookUp(lookup, sym, keys)
-  //     assign(lookup, sym, fv, [])
-  //     for (let j of updateOps[i]) {
-  //       let q = assignments[j]
-  //       let buf = []
-  //       let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
-
-  //       let update1 = () => { }
-  //       if (q.mode === "maybe") {
-  //         // We still need to initialize it to some value if it is in maybe mode
-  //         update1 = (buf2, lhs) => {
-  //           c.comment(buf2)("init " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
-  //           if (q.extraGroupPath) {
-  //             console.assert(lhs.tag == TAG.OBJECT)
-  //             lhs = lhs.val[q.extraGroupPath[0]]
-  //           } else {
-  //             console.assert(lhs.tag == TAG.HASHMAP_VALUE || lhs.tag == TAG.HASHMAP_BUCKET)
-  //           }
-  //           emitStatefulInit(buf2, q, lhs)
-  //         }
-  //       }
-  //       c.comment(buf)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
-  //       emitStatefulUpdateOptCond(buf, q, buf1 => {
-  //         hashmap.emitHashMapUpdate(buf1, sym, keys, pos, keyPos, update1, (buf2, lhs) => {
-  //           currentGroupKey = { key: k, pos, keyPos }
-
-  //           if (q.extraGroupPath) {
-  //             console.assert(lhs.tag == TAG.OBJECT)
-  //             lhs = lhs.val[q.extraGroupPath[0]]
-  //           } else {
-  //             console.assert(lhs.tag == TAG.HASHMAP_VALUE || lhs.tag == TAG.HASHMAP_BUCKET)
-  //           }
-
-  //           emitStatefulUpdate(buf2, q, lhs, sym)
-  //         }, true)
-  //       })
-  //       assign(buf, sym, fv, deps)
-  //     }
-  //     // extra not supported yet
-  //     continue
-  //   }
-
-  //   let [pos, keyPos] = hashmap.emitHashLookUpOrUpdate(init, sym, keys, (buf1, lhs, pos, keyPos) => {
-  //     for (let j of updateOps[i]) {
-  //       let q = assignments[j]
-  //       if (!initRequired(q)) continue
-  //       c.comment(buf1)("init " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
-  //       let lhs1 = lhs
-  //       if (q.extraGroupPath) {
-  //         console.assert(lhs.tag == TAG.OBJECT)
-  //         lhs1 = lhs.val[q.extraGroupPath[0]]
-  //       } else {
-  //         console.assert(lhs.tag == TAG.HASHMAP_VALUE || lhs.tag == TAG.HASHMAP_BUCKET)
-  //       }
-  //       emitStatefulInit(buf1, q, lhs1)
-  //     }
-  //     for (let j of updateOpsExtra[i]) {
-  //       let q = assignments[j]
-  //       if (!initRequired(q)) continue
-  //       c.comment(buf1)("init " + tmpSym(j) + "[" + q.fre[0] + "]" + " = " + pretty(q))
-  //       let lhs1 = hashmap.getHashMapValueEntry(tmpSym(j), pos, keyPos)
-  //       console.assert(lhs1.tag == TAG.HASHMAP_VALUE || lhs1.tag == TAG.HASHMAP_BUCKET)
-  //       emitStatefulInit(buf1, q, lhs1)
-  //     }
-  //   })
-  //   assign(init, sym, fv, [])
-
-  //   currentGroupKey = { key: k, pos, keyPos }
-  //   for (let j of updateOpsExtra[i]) {
-  //     let update = []
-  //     let q = assignments[j]
-  //     c.comment(update)("update " + tmpSym(j) + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
-  //     let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
-
-  //     emitStatefulUpdateOptCond(update, q, buf1 => {
-  //       hashmap.emitHashMapUpdate(buf1, sym, keys, pos, keyPos, () => { }, (buf2, lhs) => {
-  //         let lhs1 = hashmap.getHashMapValueEntry(tmpSym(j), pos, keyPos)
-  //         console.assert(lhs1.tag == TAG.HASHMAP_VALUE || lhs1.tag == TAG.HASHMAP_BUCKET)
-  //         emitStatefulUpdate(buf2, q, lhs1)
-  //       }, false)
-  //     })
-
-  //     assign(update, sym, fv, deps)
-  //   }
-  //   for (let j of updateOps[i]) {
-  //     let update = []
-  //     let q = assignments[j]
-  //     c.comment(update)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
-  //     let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
-
-  //     emitStatefulUpdateOptCond(update, q, buf1 => {
-  //       hashmap.emitHashMapUpdate(buf1, sym, keys, pos, keyPos, () => { }, (buf2, lhs) => {
-  //         if (q.extraGroupPath) {
-  //           console.assert(lhs.tag == TAG.OBJECT)
-  //           lhs = lhs.val[q.extraGroupPath[0]]
-  //         } else {
-  //           console.assert(lhs.tag == TAG.HASHMAP_VALUE || lhs.tag == TAG.HASHMAP_BUCKET)
-  //         }
-  //         emitStatefulUpdate(buf2, q, lhs)
-  //       }, false)
-  //     })
-
-  //     assign(update, sym, fv, deps)
-  //   }
-  // }
-
   let epilog = []
 
-  res = emitPath(epilog, q)
+  let res = emitPath(epilog, q)
+
   if (res.cond) {
-    cgen.if(epilog)(res.cond, buf1 => {
-      cgen.stmt(buf1)(cgen.call("printf", `"undefined"`))
-      cgen.return(epilog)("0")
+    c.if(epilog)(res.cond, buf1 => {
+      c.printf(buf1)("undefined")
+      c.return(buf1)("0")
     })
   }
 
-  printEmitter.emitValPrint(epilog, res, settings)
+  if (res.schema.typeSym != typeSyms.never)
+    printEmitter.emitValPrint(epilog, res, settings)
 
   // Return and close the main function
   c.return(epilog)("0")
