@@ -28,6 +28,142 @@ let data = rh`loadJSON "./cgen-sql/json/data.json" ${types.unknown}`
 let other = rh`loadJSON "./cgen-sql/json/other.json" ${types.unknown}`
 let nested = rh`loadJSON "./cgen-sql/json/nested.json" ${types.unknown}`
 
+let country = rh`loadJSON "./cgen-sql/json/country.json" ${types.unknown}`
+let region = rh`loadJSON "./cgen-sql/json/region.json" ${types.unknown}`
+
+//
+// ----- Tests from basic.test.js
+//
+
+test("plainAverageTest", async () => {
+  let query = api.div(api.sum(rh`${data}.*.value`), api.count(rh`${data}.*.value`))
+
+  let func = await compile(query, { backend: "c-new", outDir, outFile: "plainAverageTest" })
+  let res = await func()
+
+  expect(JSON.parse(res)).toEqual(23.3333)
+})
+
+test("uncorrelatedAverageTest", async () => {
+  let query = api.div(api.sum(rh`${data}.*A.value`), api.count(rh`${data}.*B.value`))
+
+  let func = await compile(query, { backend: "c-new", outDir, outFile: "uncorrelatedAverageTest" })
+  let res = await func()
+
+  expect(JSON.parse(res)).toEqual(23.3333)
+})
+
+test("groupByTest", async () => {
+  let query = rh`{
+    total: sum(${data}.*.value),
+    ${data}.*.key: sum(${data}.*.value)
+  }`
+
+  let func = await compile(query, { backend: "c-new", outDir, outFile: "uncorrelatedAverageTest", enableOptimizations: false })
+  let res = await func()
+
+  // total is currectly ignored but it is constructed in the code
+  expect(JSON.parse(res)).toEqual({ "U": 60, "V": 10 })
+})
+
+test("groupByAverageTest", async () => {
+  let avg = p => api.div(api.sum(p), api.count(p))
+  let query = rh`{
+    total: sum(${data}.*.value),
+    ${data}.*.key: ${avg(rh`${data}.*.value`)}
+  }`
+
+  let func = await compile(query, { backend: "c-new", outDir, outFile: "groupByAverageTest", enableOptimizations: false })
+  let res = await func()
+
+  // total is currectly ignored but it is constructed in the code
+  expect(JSON.parse(res)).toEqual({ "U": 30, "V": 10 })
+})
+
+test("groupByRelativeSum", async () => {
+  let query = rh`{
+    total: sum(${data}.*.value),
+    ${data}.*.key: sum(${data}.*.value) / sum(${data}.*B.value)
+  }`
+
+  let func = await compile(query, { backend: "c-new", outDir, outFile: "groupByRelativeSum", enableOptimizations: false })
+  let res = await func()
+
+  expect(JSON.parse(res)).toEqual({ "U": 0.8571, "V": 0.1429 })
+})
+
+test("nestedGroupAggregateTest", async () => {
+  let query = rh`{
+    ${country}.*.region: {
+      ${country}.*.city: sum(${country}.*.population)
+    }
+  }`
+
+  let func = await compile(query, { backend: "c-new", outDir, outFile: "nestedGroupAggregateTest", enableOptimizations: false })
+  let res = await func()
+
+  expect(JSON.parse(res)).toEqual({ "U": 0.8571, "V": 0.1429 })
+})
+
+test("joinSimpleTest1", async () => {
+  let q1 = rh`{
+    ${country}.*O.country: ${country}.*O.region
+  }`
+  let query = rh`{
+    ${country}.*.city: {
+      country: ${country}.*.country,
+      region: ${q1}.(${country}.*.country)
+    }
+  }`
+
+
+  let func = await compile(query, { backend: "c-new", outDir, outFile: "joinSimpleTest1", enableOptimizations: false })
+  let res = await func()
+
+  let expected = {
+    "Beijing": { country: "China", region: "Asia" },
+    "Paris": { country: "France", region: "Europe" },
+    "London": { country: "UK", region: "Europe" },
+    "Tokyo": { country: "Japan", region: "Asia" }
+  }
+
+  expect(JSON.parse(res)).toEqual(expected)
+})
+
+test("joinSimpleTest1B", async () => {
+  let q1 = rh`{
+    ${country}.*O.country: single ${country}.*O.region
+  }`
+  let query = rh`{
+    ${country}.*.city: {
+      country: single ${country}.*.country,
+      region: single ${q1}.(${country}.*.country)
+    }
+  }`
+
+
+  let func = await compile(query, { backend: "c-new", outDir, outFile: "joinSimpleTest1B", enableOptimizations: false })
+  let res = await func()
+
+  let expected = {
+    "Beijing": { country: "China", region: "Asia" },
+    "Paris": { country: "France", region: "Europe" },
+    "London": { country: "UK", region: "Europe" },
+    "Tokyo": { country: "Japan", region: "Asia" }
+  }
+
+  expect(JSON.parse(res)).toEqual(expected)
+})
+
+test("arrayTest1", async () => {
+  let query = rh`sum(sum(${data}.*.value))`
+
+  let func = await compile(query, { backend: "c-new", outDir, outFile: "arrayTest1", enableOptimizations: false })
+  let res = await func()
+
+  expect(JSON.parse(res)).toBe(70)
+})
+
 //
 // ----- Tests from se-basic.test.js
 //
