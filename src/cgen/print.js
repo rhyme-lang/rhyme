@@ -57,7 +57,10 @@ let emitHashMapPrintJSON = (buf, map, settings) => {
   buf.push(`// print key`)
   for (let i in map.val.keys) {
     let key = map.val.keys[i]
-    if (typing.isString(key.schema)) {
+    if (key.tag == TAG.JSON) {
+      key.val += "[key_pos]"
+      emitValPrint(buf, key, settings)
+    } else if (typing.isString(key.schema)) {
       key.val.str += "[key_pos]"
       key.val.len += "[key_pos]"
       emitStringPrint(buf, key, settings)
@@ -204,6 +207,8 @@ let emitValPrint = (buf, val, settings) => {
     emitStringPrint(buf, val, settings)
   } else if (val.schema.typeSym == typeSyms.date) {
     buf.push(`print_date(${val.val});`)
+  } else if (val.schema.typeSym == typeSyms.boolean) {
+    c.printf(buf)(`%s`, c.ternary(val.val, `"true"`, `"false"`))
   } else {
     c.printf(buf)(`%${utils.getFormatSpecifier(val.schema)}`, val.val)
   }

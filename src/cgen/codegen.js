@@ -3,6 +3,7 @@ const { hashmap, array, BUCKET_SIZE } = require("./collections")
 const { TAG, value } = require("./value")
 const { symbol } = require("./symbol")
 const { csv } = require("./csv")
+const { json } = require("./json")
 const { printEmitter } = require("./print")
 
 const { generate } = require("../new-codegen")
@@ -268,6 +269,9 @@ let emitStatefulInit = (buf, q, lhs) => {
 
 let emitStatefulUpdate1 = (buf, q, lhs, rhs) => {
   if (q.op == "sum") {
+    if (rhs.tag == TAG.JSON) {
+      rhs = json.convertJSONTo(rhs, types.f64)
+    }
     c.stmt(buf)(c.assign(lhs.val, c.binary(lhs.val, rhs.val, "+")))
   } else if (q.op == "count") {
     c.stmt(buf)(c.assign(lhs.val, c.binary(lhs.val, "1", "+")))
@@ -397,7 +401,7 @@ let emitPath = (buf, q, scope) => {
       let filenameStr = emitFilenameStr(buf1, file)
 
       if (q.op == "json") {
-        let jsonVal = emitLoadJSON(buf1, filenameStr)
+        let jsonVal = json.emitLoadJSON(buf1, filenameStr)
         inputFiles[q.op][filename] = jsonVal
       } else {
         let { mappedFile, size } = csv.emitLoadCSV(buf1, filenameStr, q.op)
@@ -419,6 +423,10 @@ let emitPath = (buf, q, scope) => {
       c.declareConstCharPtr(prolog1)(name, '"' + q.op + '"')
       constStrs[q.op] = name
       return value.string(q.schema.type, name, q.op.length)
+    } else if (typeof q.op == "boolean") {
+      return value.primitive(q.schema.type, q.op ? 1 : 0)
+    } else if (typeof q.op == "undefined") {
+      return value.primitive(q.schema.type, 0, undefined, "1")
     } else {
       throw new Error("Constant not supported: " + pretty(q))
     }
@@ -474,7 +482,7 @@ let emitPath = (buf, q, scope) => {
       } else if (g1.tag == TAG.JSON) {
         // It's better if we do not perform generic get since we should have the iterator ready for the loop,
         // use yyjson_obj_iter_get_val
-        if (Object.keys(loopInfo[e2.op]).length == 1) {
+        if (pretty(e1) == Object.keys(vars[e2.op].lhs)[0]) {
           // Only one possible lhs of this generator, use the iterator
           return { schema: q.schema.type, val: c.call("yyjson_obj_iter_get_val", quoteVar(e2.op)), tag: TAG.JSON }
         } else {
@@ -736,8 +744,9 @@ let addHashMapBucket = (map, q, name, currentGroupPath) => {
 
   let bucket = map.val.values[name]
   let e = q.arg[0]
-
-  if (typing.isObject(e.schema.type) && utils.isSimpleObject(e.schema.type)) {
+  if (typing.isUnknown(e.schema.type)) {
+    hashmap.emitHashMapBucketValuesInit(prolog1, map, bucket, "_DEFAULT_", e.schema.type)
+  } else if (typing.isObject(e.schema.type) && utils.isSimpleObject(e.schema.type)) {
     let values = utils.convertToArrayOfSchema(e.schema.type)
     for (let i in values) {
       let { name, schema } = values[i]
@@ -758,22 +767,23 @@ let addHashMapValue = (map, q, name, currentGroupPath) => {
   let q1 = assignments[q.op]
   if (q1.key == "update") return
 
-  if (!same(q1.fre, currentGroupPath.path)) {
-    throw new Error("Stateful op expected to have the same set of free variables as the current group path but got: " + q1.fre + " and " + currentGroupPath.path)
+  if (q1.key == "stateful" && q1.fre.length != 0) {
+    if (!same(q1.fre, currentGroupPath.path)) {
+      throw new Error("Stateful op expected to have the same set of free variables as the current group path but got: " + q1.fre + " and " + currentGroupPath.path)
+    }
+    assignmentToSym[q.op] = currentGroupPath.sym
+    updateOps[currentGroupPath.sym].push(q.op)
+
+    if (name != "_DEFAULT_") q1.extraGroupPath = name
+
+    let sym = tmpSym(currentGroupPath.sym)
+    if (q1.op == "array") {
+      addHashMapBucket(map, q1, name, currentGroupPath)
+    } else {
+      hashmap.emitHashMapValueInit(prolog1, map, name, q.schema.type, sortedCols?.[sym]?.[name], prolog0)
+    }
+    collectRelevantStatefulInPath(q1.arg[0], currentGroupPath)
   }
-
-  assignmentToSym[q.op] = currentGroupPath.sym
-  updateOps[currentGroupPath.sym].push(q.op)
-
-  if (name != "_DEFAULT_") q1.extraGroupPath = name
-
-  let sym = tmpSym(currentGroupPath.sym)
-  if (q1.op == "array") {
-    addHashMapBucket(map, q1, name, currentGroupPath)
-  } else {
-    hashmap.emitHashMapValueInit(prolog1, map, name, q.schema.type, sortedCols?.[sym]?.[name], prolog0)
-  }
-  collectRelevantStatefulInPath(q1.arg[0], currentGroupPath)
 }
 
 // Collect hashmaps required for the query
@@ -844,6 +854,28 @@ let collectArray = (q, i) => {
   }
 }
 
+let collectOtherStatefulOps = () => {
+  for (let i in assignments) {
+    let q = assignments[i]
+    if (q.key == "update" || assignmentToSym[i]) continue
+    if (q.op == "print") {
+      tmpVars[i] = { schema: types.never }
+      continue
+    }
+    let sym = tmpSym(i)
+    if (q.op == "array") {
+      collectArray(q, i)
+    } else if (typing.isString(q.schema.type)) {
+      c.declarePtr(prolog1)("char", `${sym}_str`)
+      c.declareInt(prolog1)(`${sym}_len`)
+      tmpVars[i] = value.string(q.schema.type, `${sym}_str`, `${sym}_len`)
+    } else {
+      c.declareVar(prolog1)(utils.convertToCType(q.schema.type), sym)
+      tmpVars[i] = value.primitive(q.schema.type, sym)
+    }
+  }
+}
+
 // Process the filters and create generator statements
 let processFilters = () => {
   for (let i in filters) {
@@ -869,12 +901,14 @@ let processFilters = () => {
       vars[v1].lhs ??= {}
       vars[v1].lhs[pretty(g1)] = lhs
       // Generate loops based on different types of left hand side values
-      if (firstSeen) vars[v1].val = value.primitive(lhs.schema.objKey, v1)
+      if (firstSeen) {
+        vars[v1].val = value.primitive(lhs.schema.objKey || types.unknown, quoteVar(v1))
+      }
       if (lhs.tag == TAG.CSV_FILE) {
         let getLoopTxtFunc = csv.getCSVLoopTxt(f, lhs, data, usedCols)
         addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
       } else if (lhs.tag == TAG.JSON) {
-        let getLoopTxtFunc = getJSONLoopTxt(f, lhs, data)
+        let getLoopTxtFunc = json.getJSONLoopTxt(f, lhs, data)
         if (firstSeen) vars[v1].val.tag = TAG.JSON
         addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
       } else if (lhs.tag == TAG.ARRAY) {
@@ -910,45 +944,14 @@ let emitCode = (q, ir, settings) => {
   // Collect hashmaps needed for the query and relevant stateful ops
   collectHashMaps()
 
-  // // Collect arrays
-  // for (let i in assignments) {
-  //   let q = assignments[i]
-  //   if (q.key == "update" || assignmentToSym[i]) continue
-  //   if (q.op == "print") continue
-  //   let sym = tmpSym(i)
-  //   if (q.op == "array") {
-  //     emitArrayInit(prolog1, sym, q.schema.type.objValue)
-  //     arrayEnv[sym] = { valSchema: q.schema.type.objValue }
-  //   } else {
-  //     cgen.declareVar(prolog1)(convertToCType(q.schema.type), sym)
-  //   }
-  // }
-
   // Before we process the filters, we need to collect the arrays
   // We can also collect other stateful ops here
-  for (let i in assignments) {
-    let q = assignments[i]
-    if (q.key == "update" || assignmentToSym[i]) continue
-    if (q.op == "print") {
-      tmpVars[i] = { schema: types.never }
-      continue
-    }
-    let sym = tmpSym(i)
-    if (q.op == "array") {
-      collectArray(q, i)
-    } else if (typing.isString(q.schema.type)) {
-      c.declarePtr(prolog1)("char", `${sym}_str`)
-      c.declareInt(prolog1)(`${sym}_len`)
-      tmpVars[i] = value.string(q.schema.type, `${sym}_str`, `${sym}_len`)
-    } else {
-      c.declareVar(prolog1)(utils.convertToCType(q.schema.type), sym)
-      tmpVars[i] = value.primitive(q.schema.type, sym)
-    }
-  }
+  collectOtherStatefulOps()
 
   // Process filters
   processFilters()
 
+  // Emit the stateful ops that are not captured by update ops
   for (let i in assignments) {
     let q = assignments[i]
     let sym = tmpSym(i)
@@ -1151,9 +1154,10 @@ let generateC = (q, ir, settings) => {
 
   let writeAndCompile = async () => {
     await fs.writeFile(cFile, codeNew)
-    if (inputFiles["json"]) cFile += " ./cgen-sql/yyjson.c"
-    console.log("Executing:", `gcc ${cFlags} ${cFile} -o ${out} -Icgen-sql`)
-    await sh(`gcc ${cFlags} ${cFile} -o ${out} -Icgen-sql`)
+    if (inputFiles["json"]) cFlags += " -Lcgen-sql -lyyjson"
+    let cmd = `gcc ${cFile} -o ${out} ${cFlags}`
+    console.log("Executing:", cmd)
+    await sh(cmd)
     return func
   }
 

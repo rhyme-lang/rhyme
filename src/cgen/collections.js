@@ -1,4 +1,5 @@
 const { c, utils } = require("./utils")
+const { json } = require("./json")
 const { symbol } = require("./symbol")
 const { typing, types, typeSyms } = require('../typing')
 const { TAG, value } = require("./value")
@@ -42,11 +43,23 @@ let allocatePrimitiveBuffer = (buf, type, name, size, global, prolog0) => {
   }
 }
 
+let allocateYYJSONBuffer = (buf, name, size, global, prolog0) => {
+  if (global) {
+    c.declarePtr(prolog0)("yyjson_val", name)
+    c.stmt(buf)(c.assign(name, c.cast("yyjson_val **", c.malloc("yyjson_val *", size))))
+  } else {
+    c.declarePtrPtr(buf)("yyjson_val", name, c.cast("yyjson_val **", c.malloc("yyjson_val *", size)))
+  }
+}
+
 let emitHashMapKeyDecls = (buf, sym, keySchema) => {
   let keys = []
   for (let i in keySchema) {
     let schema = keySchema[i]
-    if (typing.isString(schema)) {
+    if (typing.isUnknown(schema)) {
+      allocateYYJSONBuffer(buf, `${sym}_keys${i}`, HASH_SIZE)
+      keys.push(value.json(schema, `${sym}_keys${i}`))
+    } else if (typing.isString(schema)) {
       allocateStringBuffer(buf, `${sym}_keys_str${i}`, `${sym}_keys_len${i}`, HASH_SIZE)
       keys.push(value.string(schema, `${sym}_keys_str${i}`, `${sym}_keys_len${i}`))
     } else {
@@ -83,10 +96,14 @@ let emitHashMapBucketValuesInit = (buf, map, bucket, name, schema) => {
   let sym = map.val.sym
   let res = { schema }
 
-  if (typing.isObject(schema)) {
+  if (typing.isUnknown(schema)) {
+    allocateYYJSONBuffer(buf, `${sym}_${name}`, DATA_SIZE)
+    res.val = `${sym}_${name}`
+    res.tag = TAG.JSON
+  } else if (typing.isObject(schema)) {
     // Nested hashmap
     throw new Error("Nested hashmap not supported for now")
-  } if (typing.isString(schema)) {
+  } else if (typing.isString(schema)) {
     allocateStringBuffer(buf, `${sym}_${name}_str`, `${sym}_${name}_len`, DATA_SIZE)
     res.val = { str: `${sym}_${name}_str`, len: `${sym}_${name}_len` }
   } else {
@@ -105,10 +122,14 @@ let emitHashMapValueInit = (buf, map, name, schema, sorted, prolog0) => {
 
   c.comment(buf)(`value of ${sym}: ${name}`)
   let res = { schema }
-  if (typing.isObject(schema)) {
+  if (typing.isUnknown(schema)) {
+    allocateYYJSONBuffer(buf, `${sym}_${name}`, HASH_SIZE, sorted, prolog0)
+    res.val = `${sym}_${name}`
+    res.tag = TAG.JSON
+  } else if (typing.isObject(schema)) {
     // Nested hashmap
     throw new Error("Nested hashmap not supported for now")
-  } if (typing.isString(schema)) {
+  } else if (typing.isString(schema)) {
     allocateStringBuffer(buf, `${sym}_${name}_str`, `${sym}_${name}_len`, HASH_SIZE, sorted, prolog0)
     res.val = { str: `${sym}_${name}_str`, len: `${sym}_${name}_len` }
   } else {
@@ -190,25 +211,22 @@ let emitHashMapUpdate = (buf, map, keys, pos, keyPos, update1, update2, checkExi
 let hash = (buf, keys) => {
   let hashed = symbol.getSymbol("hash")
 
-  if (keys.length == 1) {
-    let schema = keys[0].schema.type || keys[0].schema
-    if (typing.isString(schema)) {
-      c.declareULong(buf)(hashed, c.call("hash", keys[0].val.str, keys[0].val.len))
-    } else if (typing.isNumber(schema) || schema.typeSym == typeSyms.date) {
-      c.declareULong(buf)(hashed, c.cast("unsigned long", keys[0].val))
-    } else {
-      throw new Error("Cannot hash key with type " + typing.prettyPrintType(schema))
-    }
-    return hashed
-  }
-
   c.declareULong(buf)(hashed, "0")
   for (let i in keys) {
     let key = keys[i]
     let schema = key.schema
     let tmpHash = symbol.getSymbol("tmp_hash")
 
-    if (typing.isString(schema)) {
+    if (key.tag == TAG.JSON) {
+      c.declareULong(buf)(tmpHash)
+      c.if(buf)(c.call("yyjson_is_str", key.val), buf1 => {
+        let converted = json.convertJSONTo(key, types.string)
+        c.stmt(buf1)(c.assign(tmpHash, c.call("hash", converted.val.str, converted.val.len)))
+      }, buf1 => {
+        let converted = json.convertJSONTo(key, types.f64)
+        c.stmt(buf1)(c.assign(tmpHash, c.cast("unsigned long", converted.val)))
+      })
+    } else if (typing.isString(schema)) {
       c.declareULong(buf)(tmpHash, c.call("hash", key.val.str, key.val.len))
     } else if (typing.isNumber(schema) || schema.typeSym == typeSyms.date) {
       c.declareULong(buf)(tmpHash, c.cast("unsigned long", key.val))
@@ -242,8 +260,20 @@ let emitHashLookUp = (buf, map, keys) => {
   for (let i in keys) {
     let key = keys[i]
     let schema = key.schema
+    if (key.tag == TAG.JSON) {
+      let lhs = { schema: map.val.keys[i].schema, val: `${map.val.keys[i].val}[${keyPos}]` }
+      let lhs_str = json.convertJSONTo(lhs, types.string)
+      let lhs_num = json.convertJSONTo(lhs, types.f64)
+      let key_str = json.convertJSONTo(key, types.string)
+      let key_num = json.convertJSONTo(key, types.f64)
+      let comparison = c.ternary(
+        c.call("yyjson_is_str", key.val),
+        c.ne(c.call("compare_str2", lhs_str.val.str, lhs_str.val.len, key_str.val.str, key_str.val.len), "0"),
+        c.ne(lhs_num.val, key_num.val)
+      )
+      compareKeys = compareKeys ? c.or(compareKeys, comparison) : comparison
 
-    if (typing.isString(schema)) {
+    } else if (typing.isString(schema)) {
       let keyStr = `${map.val.keys[i].val.str}[${keyPos}]`
       let keyLen = `${map.val.keys[i].val.len}[${keyPos}]`
 
@@ -259,9 +289,9 @@ let emitHashLookUp = (buf, map, keys) => {
 
   // increment the position until we find a match or an empty slot
   c.while(buf)(
-    c.and(c.ne(keyPos, "-1"), "(" + compareKeys + ")"),
+    c.and(c.ne(keyPos, "-1"), compareKeys),
     buf1 => {
-      c.stmt(buf1)(c.assign(pos, c.binary("(" + c.add(pos, "1") + ")", HASH_MASK, "&")))
+      c.stmt(buf1)(c.assign(pos, c.binary(c.add(pos, "1"), HASH_MASK, "&")))
     }
   )
 
