@@ -765,7 +765,9 @@ let addHashMapValue = (map, q, name, currentGroupPath) => {
     throw new Error("stateful op expected but got " + pretty(q))
   }
   let q1 = assignments[q.op]
-  if (q1.key == "update") return
+  if (q1.key == "update") {
+    throw new Error("Nested hashmap not implemented")
+  }
 
   if (q1.key == "stateful" && q1.fre.length != 0) {
     if (!same(q1.fre, currentGroupPath.path)) {
