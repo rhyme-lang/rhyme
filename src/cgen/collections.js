@@ -266,6 +266,7 @@ let emitHashLookUp = (buf, map, keys) => {
       let lhs_num = json.convertJSONTo(lhs, types.f64)
       let key_str = json.convertJSONTo(key, types.string)
       let key_num = json.convertJSONTo(key, types.f64)
+      console.log(map.val.keys)
       let comparison = c.ternary(
         c.call("yyjson_is_str", key.val),
         c.ne(c.call("compare_str2", lhs_str.val.str, lhs_str.val.len, key_str.val.str, key_str.val.len), "0"),

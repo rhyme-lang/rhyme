@@ -24,7 +24,15 @@ beforeAll(async () => {
   await sh(`cp cgen-sql/yyjson.h ${outDir}`)
 })
 
-let data = rh`loadJSON "./cgen-sql/json/data.json" ${types.unknown}`
+let key = typing.createKey(types.string);
+let dataSchema = {
+  "-": typing.keyval(key, {
+    key: types.string,
+    value: types.u8
+  })
+}
+
+let data = rh`loadJSON "./cgen-sql/json/data.json" ${typing.parseType(dataSchema)}`
 let other = rh`loadJSON "./cgen-sql/json/other.json" ${types.unknown}`
 let nested = rh`loadJSON "./cgen-sql/json/nested.json" ${types.unknown}`
 
@@ -168,7 +176,15 @@ test("arrayTest1", async () => {
 // ----- Tests from se-basic.test.js
 //
 
-/* ----- testScalar0: not supported ----- */
+test("constString", async () => {
+  let query = rh`"Hello, World!"`
+
+  let func = await compile(query, { backend: "c-new", outDir, outFile: "constString" })
+  let res = await func()
+
+  console.log(res)
+  expect(JSON.parse(res)).toEqual("Hello, World!")
+})
 
 test("testScalar1", async () => {
   let query = rh`sum ${data}.*.value`

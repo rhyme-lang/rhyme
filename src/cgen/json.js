@@ -11,19 +11,12 @@ const { quoteVar } = utils
 // It will otherwise try to convert to the expected type
 // Returns the original value if no schema is provided
 let convertJSONTo = (json, schema) => {
-  let outSchema = json.schema || schema
-  if (typing.isUnknown(outSchema)) {
-    outSchema = schema
-  }
-
-  if (!outSchema) return json
-
-  if (typing.isString(outSchema)) {
+  if (typing.isString(schema)) {
     let str = c.call("yyjson_get_str", json.val)
     let len = c.call("yyjson_get_len", json.val)
     let cond = c.call("yyjson_is_str", json.val)
-    return value.string(outSchema, str, len, undefined, cond)
-  } else if (typing.isNumber(outSchema)) {
+    return value.string(schema, str, len, undefined, cond)
+  } else if (typing.isNumber(schema)) {
     // Assume number
     let func1 = "yyjson_get_num"
     let func2 = "yyjson_is_num"
@@ -38,9 +31,9 @@ let convertJSONTo = (json, schema) => {
     }
     let val = c.call(func1, json.val)
     let cond = c.call(func2, json.val)
-    return value.primitive(outSchema, val, undefined, cond)
+    return value.primitive(schema, val, undefined, cond)
   } else {
-    throw new Error("Cannot convert JSON val to type: ", typing.prettyPrintType(outSchema))
+    throw new Error("Cannot convert JSON val to type: ", typing.prettyPrintType(schema))
   }
 }
 
