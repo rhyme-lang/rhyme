@@ -203,6 +203,8 @@ let emitValPrint = (buf, val, settings) => {
   } else if (val.tag == TAG.HASHMAP_BUCKET) {
     c.comment(buf)("print bucket")
     emitHashMapBucketPrint(buf, val, settings)
+  } else if (val.tag == TAG.NESTED_HASHMAP) {
+    c.comment(buf)("print nested hashmap")
   } else if (typing.isString(val.schema)) {
     emitStringPrint(buf, val, settings)
   } else if (val.schema.typeSym == typeSyms.date) {

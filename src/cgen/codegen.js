@@ -327,16 +327,21 @@ let emitStatefulUpdate1 = (buf, q, lhs, rhs) => {
 }
 
 let emitStatefulUpdate = (buf, q, lhs) => {
-  let e = q.arg[0]
-  let rhs = emitPath(buf, e)
-  if (lhs.cond || rhs.cond) {
-    let cond = lhs.cond && rhs.cond ? c.or(lhs.cond, rhs.cond) : (lhs.cond ? lhs.cond : rhs.cond)
-    c.if(buf)(c.not(cond), buf1 => {
-      emitStatefulUpdate1(buf1, q, lhs, rhs)
-    })
+  if (q.key == "update") {
+
   } else {
-    emitStatefulUpdate1(buf, q, lhs, rhs)
+    let e = q.arg[0]
+    let rhs = emitPath(buf, e)
+    if (lhs.cond || rhs.cond) {
+      let cond = lhs.cond && rhs.cond ? c.or(lhs.cond, rhs.cond) : (lhs.cond ? lhs.cond : rhs.cond)
+      c.if(buf)(c.not(cond), buf1 => {
+        emitStatefulUpdate1(buf1, q, lhs, rhs)
+      })
+    } else {
+      emitStatefulUpdate1(buf, q, lhs, rhs)
+    }
   }
+
 }
 
 let emitStatefulInPath = (i) => {
@@ -735,7 +740,8 @@ let collectRelevantStatefulInPath = (q, currentGroupPath) => {
     q = assignments[i]
     let sym = tmpSym(i)
     if (q.key == "update") {
-      collectHashMaps1(ref)
+      collectHashMap(ref)
+      return
     } else {
       if (q.fre.length == 0) {
       } else {
@@ -751,9 +757,10 @@ let collectRelevantStatefulInPath = (q, currentGroupPath) => {
         hashmap.emitHashMapValueInit(prolog1, dummy, `_DEFAULT_`, q.schema.type)
         tmpVars[i] = dummy
       }
-      q.arg.map(x => collectRelevantStatefulInPath(x, currentGroupPath))
     }
-  } else if (q.arg) {
+  }
+
+  if (q.arg) {
     q.arg.map(x => collectRelevantStatefulInPath(x, currentGroupPath))
   }
 }
@@ -786,10 +793,9 @@ let addHashMapValue = (map, q, name, currentGroupPath) => {
   let q1 = assignments[q.op]
   if (q1.key == "update") {
     // We cannot sort on a nested hashamp column
-    hashmap.emitNestedHashMapInit(prolog1, map, name, q.schema.type, prolog0)
     assignmentToSym[q.op] = currentGroupPath.sym
     updateOps[currentGroupPath.sym].push(q.op)
-    collectHashMaps1(q)
+    collectNestedHashMap(q, map, name, currentGroupPath)
   } else if (q1.key == "stateful" && q1.fre.length != 0) {
     if (!same(q1.fre, currentGroupPath.path)) {
       throw new Error("Stateful op expected to have the same set of free variables as the current group path but got: " + q1.fre + " and " + currentGroupPath.path)
@@ -810,117 +816,99 @@ let addHashMapValue = (map, q, name, currentGroupPath) => {
   }
 }
 
-// Collect hashmaps required for the query
-let collectHashMaps1 = q => {
-  // Iterate through all update ops to group stateful ops together
-  if (q.key == "ref") {
-    let i = q.op
+let collectNestedHashMap = (q, map, name, currentGroupPath) => {
+  let i = q.op
 
-    if (visitedAssignments[i]) return
-    visitedAssignments[i] = true
+  q = assignments[q.op]
+  let sym = tmpSym(i)
 
-    q = assignments[q.op]
-    let sym = tmpSym(i)
+  let [e0, e1, e2, e3] = q.arg
 
-    if (q.key == "update") {
-      let [e0, e1, e2, e3] = q.arg
-
-      if (e1.vars.length > 1) {
-        throw new Error("Not supported for now")
-      }
-
-      let keySchema = [e1.schema.type]
-
-      // If there is a mkset
-      if (e3) {
-        // Check if the key is a set of keys
-        let mksetVal = e3.arg[0].arg[0]
-        if (mksetVal.key == "pure" && mksetVal.op == "combine") {
-          keySchema = mksetVal.arg.map(e => e.schema.type)
-        } else {
-          keySchema = [mksetVal.schema.type]
-        }
-        collectHashMaps1(e3)
-      }
-
-      updateOps[i] = []
-      updateOpsExtra[i] = []
-
-      // Create hashmap
-      let { htable, count, keys } = hashmap.emitHashMapInit(prolog1, sym, keySchema)
-      let tmpVar = value.hashmap(q.schema.type, sym, htable, count, keys)
-
-      let currentGroupPath = { sym: i, path: [...q.fre, e1.op], keySchema }
-      if (e2.key == "pure" && e2.op == "mkTuple") {
-        for (let j = 0; j < e2.arg.length; j += 2) {
-          let key = e2.arg[j]
-          let val = e2.arg[j + 1]
-          addHashMapValue(tmpVar, val, key.op, currentGroupPath)
-        }
-      } else {
-        addHashMapValue(tmpVar, e2, "_DEFAULT_", currentGroupPath)
-      }
-
-      tmpVars[i] = tmpVar
-    } else {
-      if (q.fre.length > 0) {
-        throw new Error("Not expected")
-      } else {
-        q.arg.map(collectHashMaps1)
-      }
-    }
-  } else if (q.arg) {
-    q.arg.map(collectHashMaps1)
+  if (e1.vars.length > 1) {
+    throw new Error("Not supported for now")
   }
+
+  let keySchema = [e1.schema.type]
+
+  // If there is a mkset
+  if (e3) {
+    // Check if the key is a set of keys
+    let mksetVal = e3.arg[0].arg[0]
+    if (mksetVal.key == "pure" && mksetVal.op == "combine") {
+      keySchema = mksetVal.arg.map(e => e.schema.type)
+    } else {
+      keySchema = [mksetVal.schema.type]
+    }
+    collectHashMapsInPath(e3)
+  }
+
+  // Create hashmap
+  hashmap.emitNestedHashMapInit(prolog1, map, name, q.schema.type, keySchema)
+  let nestedMap = map.val.values[name]
+
+  console.log(nestedMap)
+
+  currentGroupPath.path.push(e1.op)
+  addHashMapValue(nestedMap, e2, "_DEFAULT_", currentGroupPath)
+  currentGroupPath.path.pop()
 }
 
 // Collect hashmaps required for the query
-let collectHashMaps = () => {
-  // Iterate through all update ops to group stateful ops together
-  for (let i in assignments) {
-    let q = assignments[i]
-    let sym = tmpSym(i)
+let collectHashMap = (q) => {
+  let i = q.op
 
-    if (q.key != "update") continue
+  if (updateOps[i]) return
 
-    let [e0, e1, e2, e3] = q.arg
+  q = assignments[q.op]
+  let sym = tmpSym(i)
 
-    if (e1.vars.length > 1) {
-      throw new Error("Not supported for now")
-    }
+  let [e0, e1, e2, e3] = q.arg
 
-    let keySchema = [e1.schema.type]
+  if (e1.vars.length > 1) {
+    throw new Error("Not supported for now")
+  }
 
-    // If there is a mkset
-    if (e3) {
-      // Check if the key is a set of keys
-      let mksetVal = e3.arg[0].arg[0]
-      if (mksetVal.key == "pure" && mksetVal.op == "combine") {
-        keySchema = mksetVal.arg.map(e => e.schema.type)
-      } else {
-        keySchema = [mksetVal.schema.type]
-      }
-    }
+  let keySchema = [e1.schema.type]
 
-    updateOps[i] = []
-    updateOpsExtra[i] = []
-
-    // Create hashmap
-    let { htable, count, keys } = hashmap.emitHashMapInit(prolog1, sym, keySchema)
-    let tmpVar = value.hashmap(q.schema.type, sym, htable, count, keys)
-
-    let currentGroupPath = { sym: i, path: [...q.fre, e1.op], keySchema }
-    if (e2.key == "pure" && e2.op == "mkTuple") {
-      for (let j = 0; j < e2.arg.length; j += 2) {
-        let key = e2.arg[j]
-        let val = e2.arg[j + 1]
-        addHashMapValue(tmpVar, val, key.op, currentGroupPath)
-      }
+  // If there is a mkset
+  if (e3) {
+    // Check if the key is a set of keys
+    let mksetVal = e3.arg[0].arg[0]
+    if (mksetVal.key == "pure" && mksetVal.op == "combine") {
+      keySchema = mksetVal.arg.map(e => e.schema.type)
     } else {
-      addHashMapValue(tmpVar, e2, "_DEFAULT_", currentGroupPath)
+      keySchema = [mksetVal.schema.type]
     }
+    collectHashMapsInPath(e3)
+  }
 
-    tmpVars[i] = tmpVar
+  updateOps[i] = []
+  updateOpsExtra[i] = []
+
+  // Create hashmap
+  let { htable, count, keys } = hashmap.emitHashMapInit(prolog1, sym, keySchema)
+  let tmpVar = value.hashmap(q.schema.type, sym, htable, count, keys)
+
+  let currentGroupPath = { sym: i, path: [...q.fre, e1.op], keySchema }
+  if (e2.key == "pure" && e2.op == "mkTuple") {
+    for (let j = 0; j < e2.arg.length; j += 2) {
+      let key = e2.arg[j]
+      let val = e2.arg[j + 1]
+      addHashMapValue(tmpVar, val, key.op, currentGroupPath)
+    }
+  } else {
+    addHashMapValue(tmpVar, e2, "_DEFAULT_", currentGroupPath)
+  }
+
+  tmpVars[i] = tmpVar
+}
+
+// Collect hashmaps required for the query
+let collectHashMapsInPath = q => {
+  if (q.key == "ref" && assignments[q.op].key == "update") {
+    collectHashMap(q)
+  } else if (q.arg) {
+    q.arg.map(collectHashMapsInPath)
   }
 }
 
@@ -1031,7 +1019,7 @@ let emitCode = (q, ir, settings) => {
 
   // Collect hashmaps needed for the query and relevant stateful ops
   // collectHashMaps()
-  collectHashMaps1(q)
+  collectHashMapsInPath(q)
 
   // Before we process the filters, we need to collect the arrays
   // We can also collect other stateful ops here

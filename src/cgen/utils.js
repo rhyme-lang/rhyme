@@ -113,7 +113,7 @@ c.declareCharArr = (buf) => (name, len, init) => c.declareArr(buf)("char", name,
 c.declareIntPtr = (buf) => (name, init) => c.declarePtr(buf)("int", name, init)
 c.declareCharPtr = (buf) => (name, init) => c.declarePtr(buf)("char", name, init)
 c.declareConstCharPtr = (buf) => (name, init) => c.declarePtr(buf)("char", name, init, true)
-c.declareCharPtrPtr = (buf) => (name, init) => c.declarePtrPtr(buf)("char", name, init)
+c.declareCharPtrPtr = (buf) => (name, init) => c.declarePtrPtr(buf)("char", name, init, true)
 
 c.declareStruct = (buf) => (name, types, fields) => {
   buf.push(`struct ${name} {`)

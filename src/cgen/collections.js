@@ -27,16 +27,14 @@ let reset = (settings) => {
   hashMask = hashSize - 1
 }
 
-let encodeName = name => "$" + name + "$"
-
 let allocateStringBuffer = (buf, str, len, size, global, prolog0) => {
   if (global) {
     c.declareCharPtrPtr(prolog0)(str)
     c.declareIntPtr(prolog0)(len)
-    c.stmt(buf)(c.assign(str, c.cast("char **", c.malloc("char *", size))))
+    c.stmt(buf)(c.assign(str, c.cast("const char **", c.malloc("const char *", size))))
     c.stmt(buf)(c.assign(len, c.cast("int *", c.malloc("int", size))))
   } else {
-    c.declareCharPtrPtr(buf)(str, c.cast("char **", c.malloc("char *", size)))
+    c.declareCharPtrPtr(buf)(str, c.cast("const char **", c.malloc("const char *", size)))
     c.declareIntPtr(buf)(len, c.cast("int *", c.malloc("int", size)))
   }
 }
@@ -59,19 +57,19 @@ let allocateYYJSONBuffer = (buf, name, size, global, prolog0) => {
   }
 }
 
-let emitHashMapKeyDecls = (buf, sym, keySchema) => {
+let emitHashMapKeyDecls = (buf, sym, keySchema, size = hashSize) => {
   let keys = []
   for (let i in keySchema) {
     let schema = keySchema[i]
     if (typing.isUnknown(schema)) {
-      allocateYYJSONBuffer(buf, `${sym}_keys${i}`, hashSize)
+      allocateYYJSONBuffer(buf, `${sym}_keys${i}`, size)
       keys.push(value.json(schema, `${sym}_keys${i}`))
     } else if (typing.isString(schema)) {
-      allocateStringBuffer(buf, `${sym}_keys_str${i}`, `${sym}_keys_len${i}`, hashSize)
+      allocateStringBuffer(buf, `${sym}_keys_str${i}`, `${sym}_keys_len${i}`, size)
       keys.push(value.string(schema, `${sym}_keys_str${i}`, `${sym}_keys_len${i}`))
     } else {
       let cType = utils.convertToCType(schema)
-      allocatePrimitiveBuffer(buf, cType, `${sym}_keys${i}`, hashSize)
+      allocatePrimitiveBuffer(buf, cType, `${sym}_keys${i}`, size)
       keys.push(value.primitive(schema, `${sym}_keys${i}`))
     }
   }
@@ -126,23 +124,24 @@ let emitHashMapBucketValuesInit = (buf, map, bucket, name, schema) => {
 
 let emitHashMapValueInit = (buf, map, name, schema, sorted, prolog0) => {
   let sym = map.val.sym
+  let size = map.tag == TAG.NESTED_HASHMAP ? dataSize : hashSize
 
   c.comment(buf)(`value of ${sym}: ${name}`)
   let res = { schema }
   if (typing.isUnknown(schema)) {
-    allocateYYJSONBuffer(buf, `${sym}_${name}`, hashSize, sorted, prolog0)
+    allocateYYJSONBuffer(buf, `${sym}_${name}`, size, sorted, prolog0)
     res.val = `${sym}_${name}`
     res.tag = TAG.JSON
   } else if (typing.isObject(schema)) {
     // Nested hashmap
     throw new Error("Nested hashmap not supported for now")
   } else if (typing.isString(schema)) {
-    allocateStringBuffer(buf, `${sym}_${name}_str`, `${sym}_${name}_len`, hashSize, sorted, prolog0)
+    allocateStringBuffer(buf, `${sym}_${name}_str`, `${sym}_${name}_len`, size, sorted, prolog0)
     res.val = { str: `${sym}_${name}_str`, len: `${sym}_${name}_len` }
   } else {
     // let convertToCType report "type not supported" errors
     let cType = utils.convertToCType(schema)
-    allocatePrimitiveBuffer(buf, cType, `${sym}_${name}`, hashSize, sorted, prolog0)
+    allocatePrimitiveBuffer(buf, cType, `${sym}_${name}`, size, sorted, prolog0)
     res.val = `${sym}_${name}`
   }
 
@@ -150,17 +149,40 @@ let emitHashMapValueInit = (buf, map, name, schema, sorted, prolog0) => {
   map.val.values[name] = res
 }
 
-let emitNestedHashMapInit = (buf, map, name, schema, prolog0) => {
-  let sym = map.val.sym
+let emitNestedHashMapKeyDecls = (buf, sym, name, keySchema) => {
+  let keys = []
+  for (let i in keySchema) {
+    let schema = keySchema[i]
+    if (typing.isUnknown(schema)) {
+      allocateYYJSONBuffer(buf, `${sym}_${name}_keys${i}`, dataSize)
+      keys.push(value.json(schema, `${sym}_${name}_keys${i}`))
+    } else if (typing.isString(schema)) {
+      allocateStringBuffer(buf, `${sym}_${name}_keys_str${i}`, `${sym}_${name}_keys_len${i}`, dataSize)
+      keys.push(value.string(schema, `${sym}_${name}_keys_str${i}`, `${sym}_${name}_keys_len${i}`))
+    } else {
+      let cType = utils.convertToCType(schema)
+      allocatePrimitiveBuffer(buf, cType, `${sym}_${name}_keys${i}`, dataSize)
+      keys.push(value.primitive(schema, `${sym}_${name}_keys${i}`))
+    }
+  }
+  return keys
+}
 
+let emitNestedHashMapInit = (buf, map, name, schema, keySchema) => {
+  let sym = map.val.sym + name
   let res = { schema }
 
-  c.comment(buf)(`value of ${sym}: ${name} --- nested hashmap`)
+  let counts = `${sym}_nested_key_counts`
+  let htables = `${sym}_htables`
 
-  allocatePrimitiveBuffer(buf, "uint64_t", `${sym}_${name}`, hashSize)
-  res.val = `${sym}_${name}`
+  console.log(keySchema)
+  let keys = emitHashMapKeyDecls(buf, sym, keySchema, dataSize)
 
-  console.log(buf)
+  c.declareIntPtr(buf)(htables, c.cast("int *", c.malloc("int", dataSize)))
+  c.declareIntPtr(buf)(counts, c.cast("int *", c.malloc("int", hashSize)))
+
+  res.val = { sym, htables, counts, keys }
+  res.tag = TAG.NESTED_HASHMAP
 
   map.val.values ??= {}
   map.val.values[name] = res

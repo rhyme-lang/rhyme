@@ -127,7 +127,7 @@ test("nestedGroupAggregateTest", async () => {
   let func = await compile(query, { backend: "c-new", outDir, outFile: "nestedGroupAggregateTest", enableOptimizations: false })
   let res = await func()
 
-  console.log(JSON.parse(res))
+  console.log(res)
 })
 
 test("joinSimpleTest1", async () => {
