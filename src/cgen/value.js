@@ -20,7 +20,8 @@ const TAG = {
   OBJECT: "object",
   CSV_FILE: "csv",
   JSON: "json",
-  COMBINED_KEY: "combined_key"
+  COMBINED_KEY: "combined_key",
+  NESTED_HASHMAP: "nested_hashap"
 }
 
 let value = {}
@@ -39,6 +40,10 @@ value.string = (schema, str, len, tag, cond, keyPos) => ({
 
 value.hashmap = (schema, sym, htable, count, keys, cond, keyPos) => ({
   schema, val: { sym, htable, count, keys, values: {} }, tag: TAG.HASHMAP, cond, keyPos
+})
+
+value.nestedHashMap = (schema, htables, counts, keys, cond, keyPos) => ({
+  schema, val: { htables, counts, keys, values: {} }, tag: TAG.NESTED_HASHMAP, cond, keyPos
 })
 
 value.array = (schema, sym, count, cond) => ({
