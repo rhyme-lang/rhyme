@@ -61,6 +61,8 @@ let constStrs
 // Stores tmp vars
 let tmpVars
 
+let visitedAssignments
+
 let getDeps = q => [...q.fre, ...q.tmps.map(tmpSym)]
 
 // generator ir api: mirroring necessary bits from ir.js
@@ -132,6 +134,8 @@ let reset = () => {
   constStrs = {}
 
   tmpVars = {}
+
+  visitedAssignments = {}
 }
 
 let initializeProlog = () => {
@@ -275,10 +279,11 @@ let emitStatefulInit = (buf, q, lhs) => {
 }
 
 let emitStatefulUpdate1 = (buf, q, lhs, rhs) => {
+  if (rhs.tag == TAG.JSON) {
+    let schema = q.op == "array" ? q.schema.type.objValue : q.schema.type
+    rhs = json.convertJSONTo(rhs, schema)
+  }
   if (q.op == "sum") {
-    if (rhs.tag == TAG.JSON) {
-      rhs = json.convertJSONTo(rhs, types.f64)
-    }
     c.stmt(buf)(c.assign(lhs.val, c.binary(lhs.val, rhs.val, "+")))
   } else if (q.op == "count") {
     c.stmt(buf)(c.assign(lhs.val, c.binary(lhs.val, "1", "+")))
@@ -336,7 +341,7 @@ let emitStatefulInPath = (i) => {
   let q = assignments[i]
   let sym = tmpSym(i)
 
-  if (q.fre.length > 0) throw new Error("unexpected number of free variables for stateful op in path: " + pretty(v))
+  if (q.fre.length > 0) throw new Error("unexpected number of free variables for stateful op in path: " + pretty(q) + " has free vars: " + q.fre)
 
   let fv = q.fre
   let tmpVar = tmpVars[i]
@@ -723,25 +728,33 @@ let collectUsedAndSortedCols = q => {
 // Try to find relevant stateful in the arg of another stateful that can be grouped into the same hashmap
 let collectRelevantStatefulInPath = (q, currentGroupPath) => {
   if (q.key == "ref") {
-    q1 = assignments[q.op]
-    if (q1.key == "update") {
-      return
-    }
-    if (q1.key == "stateful" && q1.fre.length != 0) {
-      if (!same(q1.fre, currentGroupPath.path)) {
-        throw new Error("Stateful op expected to have the same set of free variables as the current group path but got: " + q1.fre + " and " + currentGroupPath.path)
+    let ref = q
+    let i = q.op
+    q = assignments[i]
+    let sym = tmpSym(i)
+    if (q.key == "update") {
+      collectHashMaps1(ref)
+    } else {
+      if (q.fre.length == 0) {
+      } else {
+        if (!same(q.fre, currentGroupPath.path)) {
+          console.log(q)
+          throw new Error("Stateful op expected to have the same set of free variables as the current group path but got: " + q.fre + " and " + currentGroupPath.path)
+        }
+
+        if (visitedAssignments[i]) return
+        visitedAssignments[i] = true
+
+        assignmentToSym[i] = currentGroupPath.sym
+        updateOpsExtra[currentGroupPath.sym].push(i)
+
+        let dummy = { schema: { objValue: q.schema.type }, val: { sym } }
+        hashmap.emitHashMapValueInit(prolog1, dummy, `_DEFAULT_`, q.schema.type)
+        tmpVars[i] = dummy
       }
-
-      assignmentToSym[q.op] = currentGroupPath.sym
-      updateOpsExtra[currentGroupPath.sym].push(q.op)
-
-      let dummy = { schema: { objValue: q1.schema.type }, val: { sym: tmpSym(q.op) } }
-      hashmap.emitHashMapValueInit(prolog1, dummy, `_DEFAULT_`, q1.schema.type)
-      tmpVars[q.op] = dummy
+      q.arg.map(x => collectRelevantStatefulInPath(x, currentGroupPath))
     }
-  }
-
-  if (q.arg) {
+  } else if (q.arg) {
     q.arg.map(x => collectRelevantStatefulInPath(x, currentGroupPath))
   }
 }
@@ -765,7 +778,7 @@ let addHashMapBucket = (map, q, name, currentGroupPath) => {
 }
 
 let addHashMapValue = (map, q, name, currentGroupPath) => {
-  if (q.key == "pure" && q.op.startsWith("convert_")) {
+  while (q.key == "pure" && q.op.startsWith("convert_")) {
     q = q.arg[0]
   }
   if (q.key != "ref") {
@@ -773,10 +786,12 @@ let addHashMapValue = (map, q, name, currentGroupPath) => {
   }
   let q1 = assignments[q.op]
   if (q1.key == "update") {
-    throw new Error("Nested hashmap not implemented")
-  }
+    // We cannot sort on a nested hashamp column
+    hashmap.emitNestedHashMapInit(prolog1, map, name, q.schema.type, prolog0)
 
-  if (q1.key == "stateful" && q1.fre.length != 0) {
+  } else if (q1.key == "stateful" && q1.fre.length != 0) {
+    if (visitedAssignments[q.op]) return
+    visitedAssignments[q.op] = true
     if (!same(q1.fre, currentGroupPath.path)) {
       throw new Error("Stateful op expected to have the same set of free variables as the current group path but got: " + q1.fre + " and " + currentGroupPath.path)
     }
@@ -787,11 +802,76 @@ let addHashMapValue = (map, q, name, currentGroupPath) => {
 
     let sym = tmpSym(currentGroupPath.sym)
     if (q1.op == "array") {
+      // We cannot sort on an array column
       addHashMapBucket(map, q1, name, currentGroupPath)
     } else {
       hashmap.emitHashMapValueInit(prolog1, map, name, q.schema.type, sortedCols?.[sym]?.[name], prolog0)
     }
     collectRelevantStatefulInPath(q1.arg[0], currentGroupPath)
+  }
+}
+
+// Collect hashmaps required for the query
+let collectHashMaps1 = q => {
+  // Iterate through all update ops to group stateful ops together
+  if (q.key == "ref") {
+    let i = q.op
+
+    if (visitedAssignments[i]) return
+    visitedAssignments[i] = true
+
+    q = assignments[q.op]
+    let sym = tmpSym(i)
+
+    if (q.key == "update") {
+      let [e0, e1, e2, e3] = q.arg
+
+      if (e1.vars.length > 1) {
+        throw new Error("Not supported for now")
+      }
+
+      let keySchema = [e1.schema.type]
+
+      // If there is a mkset
+      if (e3) {
+        // Check if the key is a set of keys
+        let mksetVal = e3.arg[0].arg[0]
+        if (mksetVal.key == "pure" && mksetVal.op == "combine") {
+          keySchema = mksetVal.arg.map(e => e.schema.type)
+        } else {
+          keySchema = [mksetVal.schema.type]
+        }
+        collectHashMaps1(e3)
+      }
+
+      updateOps[i] = []
+      updateOpsExtra[i] = []
+
+      // Create hashmap
+      let { htable, count, keys } = hashmap.emitHashMapInit(prolog1, sym, keySchema)
+      let tmpVar = value.hashmap(q.schema.type, sym, htable, count, keys)
+
+      let currentGroupPath = { sym: i, path: [...q.fre, e1.op], keySchema }
+      if (e2.key == "pure" && e2.op == "mkTuple") {
+        for (let j = 0; j < e2.arg.length; j += 2) {
+          let key = e2.arg[j]
+          let val = e2.arg[j + 1]
+          addHashMapValue(tmpVar, val, key.op, currentGroupPath)
+        }
+      } else {
+        addHashMapValue(tmpVar, e2, "_DEFAULT_", currentGroupPath)
+      }
+
+      tmpVars[i] = tmpVar
+    } else {
+      if (q.fre.length > 0) {
+        throw new Error("Not expected")
+      } else {
+        q.arg.map(collectHashMaps1)
+      }
+    }
+  } else if (q.arg) {
+    q.arg.map(collectHashMaps1)
   }
 }
 
@@ -810,7 +890,7 @@ let collectHashMaps = () => {
       throw new Error("Not supported for now")
     }
 
-    let keySchema = [types.u32]
+    let keySchema = [e1.schema.type]
 
     // If there is a mkset
     if (e3) {
@@ -947,155 +1027,154 @@ let emitCode = (q, ir, settings) => {
   // Fill with default prolog
   initializeProlog()
 
-  // // Get the used filters to optimize CSV reading
-  // collectUsedAndSortedCols(q)
+  // Get the used filters to optimize CSV reading
+  collectUsedAndSortedCols(q)
 
-  // // Collect hashmaps needed for the query and relevant stateful ops
+  // Collect hashmaps needed for the query and relevant stateful ops
   // collectHashMaps()
+  collectHashMaps1(q)
 
-  // // Before we process the filters, we need to collect the arrays
-  // // We can also collect other stateful ops here
-  // collectOtherStatefulOps()
+  // Before we process the filters, we need to collect the arrays
+  // We can also collect other stateful ops here
+  collectOtherStatefulOps()
 
-  // // Process filters
-  // processFilters()
+  // Process filters
+  processFilters()
 
-  // // Emit the stateful ops that are not captured by update ops
-  // for (let i in assignments) {
-  //   let q = assignments[i]
-  //   let sym = tmpSym(i)
+  // Emit the stateful ops that are not captured by update ops
+  for (let i in assignments) {
+    let q = assignments[i]
 
-  //   if (q.key == "update" || assignmentToSym[i]) continue
+    if (q.key == "update" || assignmentToSym[i]) continue
 
-  //   emitStatefulInPath(i)
-  // }
+    emitStatefulInPath(i)
+  }
 
-  // for (let i in updateOps) {
-  //   let q = assignments[i]
-  //   let sym = tmpSym(i)
+  for (let i in updateOps) {
+    let q = assignments[i]
+    let sym = tmpSym(i)
 
-  //   let k = assignments[i].arg[1].op
+    let k = assignments[i].arg[1].op
 
-  //   let shouldInit = updateOps[i].some(j => initRequired(assignments[j])) || updateOpsExtra[i].some(j => initRequired(assignments[j]))
+    let shouldInit = updateOps[i].some(j => initRequired(assignments[j])) || updateOpsExtra[i].some(j => initRequired(assignments[j]))
 
-  //   let [e0, e1, e2, e3] = q.arg
+    let [e0, e1, e2, e3] = q.arg
 
-  //   let fv = [...q.fre, e1.op]
+    let fv = [...q.fre, e1.op]
 
-  //   let keys = Array.isArray(vars[e1.op].val) ? vars[e1.op].val : [vars[e1.op].val]
+    let keys = Array.isArray(vars[e1.op].val) ? vars[e1.op].val : [vars[e1.op].val]
 
-  //   let map = tmpVars[i]
+    let map = tmpVars[i]
 
-  //   if (!shouldInit) {
-  //     let lookup = []
-  //     let [pos, keyPos] = hashmap.emitHashLookUp(lookup, map, keys)
-  //     assign(lookup, sym, fv, [])
-  //     for (let j of updateOps[i]) {
-  //       let q = assignments[j]
-  //       let buf = []
-  //       let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
+    if (!shouldInit) {
+      let lookup = []
+      let [pos, keyPos] = hashmap.emitHashLookUp(lookup, map, keys)
+      assign(lookup, sym, fv, [])
+      for (let j of updateOps[i]) {
+        let q = assignments[j]
+        let buf = []
+        let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
 
-  //       let update1 = () => { }
-  //       if (q.mode === "maybe") {
-  //         // We still need to initialize it to some value if it is in maybe mode
-  //         update1 = (buf2, lhs) => {
-  //           c.comment(buf2)("init " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
-  //           if (q.extraGroupPath) {
-  //             console.assert(lhs.tag == TAG.OBJECT)
-  //             lhs = lhs.val[q.extraGroupPath]
-  //           }
-  //           emitStatefulInit(buf2, q, lhs)
-  //         }
-  //       }
-  //       c.comment(buf)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
-  //       // Extract the top-level condition for stateful operations
-  //       let e = q.arg[0]
-  //       let update = (buf1) => hashmap.emitHashMapUpdate(buf1, map, keys, pos, keyPos, update1, (buf2, lhs) => {
-  //         currentGroupKey = { key: k, pos, keyPos }
-  //         let cond = lhs.cond
-  //         if (q.extraGroupPath) {
-  //           console.assert(lhs.tag == TAG.OBJECT)
-  //           lhs = lhs.val[q.extraGroupPath]
-  //         }
-  //         lhs.cond = cond
-  //         emitStatefulUpdate(buf2, q, lhs, sym)
-  //       }, true)
-  //       if (e.key == "pure" && e.op == "and") {
-  //         let cond = emitPath(buf, e.arg[0])
-  //         if (cond.cond) cond.val = c.and(c.not(cond.cond), cond.val)
-  //         c.if(buf)(cond.val, update)
-  //       } else {
-  //         update(buf)
-  //       }
+        let update1 = () => { }
+        if (q.mode === "maybe") {
+          // We still need to initialize it to some value if it is in maybe mode
+          update1 = (buf2, lhs) => {
+            c.comment(buf2)("init " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
+            if (q.extraGroupPath) {
+              console.assert(lhs.tag == TAG.OBJECT)
+              lhs = lhs.val[q.extraGroupPath]
+            }
+            emitStatefulInit(buf2, q, lhs)
+          }
+        }
+        c.comment(buf)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
+        // Extract the top-level condition for stateful operations
+        let e = q.arg[0]
+        let update = (buf1) => hashmap.emitHashMapUpdate(buf1, map, keys, pos, keyPos, update1, (buf2, lhs) => {
+          currentGroupKey = { key: k, pos, keyPos }
+          let cond = lhs.cond
+          if (q.extraGroupPath) {
+            console.assert(lhs.tag == TAG.OBJECT)
+            lhs = lhs.val[q.extraGroupPath]
+          }
+          lhs.cond = cond
+          emitStatefulUpdate(buf2, q, lhs, sym)
+        }, true)
+        if (e.key == "pure" && e.op == "and") {
+          let cond = emitPath(buf, e.arg[0])
+          if (cond.cond) cond.val = c.and(c.not(cond.cond), cond.val)
+          c.if(buf)(cond.val, update)
+        } else {
+          update(buf)
+        }
 
-  //       assign(buf, sym, fv, deps)
-  //     }
-  //     // extra not supported yet
-  //     continue
-  //   }
+        assign(buf, sym, fv, deps)
+      }
+      // extra not supported yet
+      continue
+    }
 
-  //   let init = []
-  //   //   c.comment(init)("init and update " + sym + " = " + pretty(assignments[i]))
-  //   let [pos, keyPos] = hashmap.emitHashLookUpOrUpdate(init, map, keys, (buf1, lhs, pos, keyPos) => {
-  //     for (let j of updateOps[i]) {
-  //       let q = assignments[j]
-  //       if (!initRequired(q)) continue
-  //       c.comment(buf1)("init " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
-  //       let lhs1 = lhs
-  //       if (q.extraGroupPath) {
-  //         console.assert(lhs.tag == TAG.OBJECT)
-  //         lhs1 = lhs.val[q.extraGroupPath]
-  //       }
-  //       emitStatefulInit(buf1, q, lhs1)
-  //     }
-  //     for (let j of updateOpsExtra[i]) {
-  //       let q = assignments[j]
-  //       if (!initRequired(q)) continue
-  //       c.comment(buf1)("init " + tmpSym(j) + "[" + q.fre[0] + "]" + " = " + pretty(q))
-  //       let lhs1 = hashmap.getHashMapValueEntry(tmpVars[j], pos, keyPos)
-  //       emitStatefulInit(buf1, q, lhs1)
-  //     }
-  //   })
+    let init = []
+    //   c.comment(init)("init and update " + sym + " = " + pretty(assignments[i]))
+    let [pos, keyPos] = hashmap.emitHashLookUpOrUpdate(init, map, keys, (buf1, lhs, pos, keyPos) => {
+      for (let j of updateOps[i]) {
+        let q = assignments[j]
+        if (!initRequired(q)) continue
+        c.comment(buf1)("init " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
+        let lhs1 = lhs
+        if (q.extraGroupPath) {
+          console.assert(lhs.tag == TAG.OBJECT)
+          lhs1 = lhs.val[q.extraGroupPath]
+        }
+        emitStatefulInit(buf1, q, lhs1)
+      }
+      for (let j of updateOpsExtra[i]) {
+        let q = assignments[j]
+        if (!initRequired(q)) continue
+        c.comment(buf1)("init " + tmpSym(j) + "[" + q.fre[0] + "]" + " = " + pretty(q))
+        let lhs1 = hashmap.getHashMapValueEntry(tmpVars[j], pos, keyPos)
+        emitStatefulInit(buf1, q, lhs1)
+      }
+    })
 
-  //   assign(init, sym, fv, [])
+    assign(init, sym, fv, [])
 
-  //   currentGroupKey = { key: k, pos, keyPos }
-  //   let update = []
-  //   for (let j of updateOpsExtra[i]) {
-  //     let update = []
-  //     let q = assignments[j]
-  //     c.comment(update)("update " + tmpSym(j) + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
-  //     let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
+    currentGroupKey = { key: k, pos, keyPos }
+    for (let j of updateOpsExtra[i]) {
+      let update = []
+      let q = assignments[j]
+      c.comment(update)("update " + tmpSym(j) + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
+      let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
 
-  //     hashmap.emitHashLookUpAndUpdate(update, map, keys, (buf, lhs, pos, keyPos) => {
-  //       let lhs1 = hashmap.getHashMapValueEntry(tmpVars[j], pos, keyPos)
-  //       emitStatefulUpdate(buf, q, lhs1)
-  //     }, false)
-  //     assign(update, sym, fv, deps)
-  //   }
-  //   for (let j of updateOps[i]) {
-  //     let update = []
-  //     let q = assignments[j]
-  //     c.comment(update)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
-  //     let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
+      hashmap.emitHashLookUpAndUpdate(update, map, keys, (buf, lhs, pos, keyPos) => {
+        let lhs1 = hashmap.getHashMapValueEntry(tmpVars[j], pos, keyPos)
+        emitStatefulUpdate(buf, q, lhs1)
+      }, false)
+      assign(update, sym, fv, deps)
+    }
+    for (let j of updateOps[i]) {
+      let update = []
+      let q = assignments[j]
+      c.comment(update)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
+      let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
 
-  //     hashmap.emitHashLookUpAndUpdate(update, map, keys, (buf, lhs, pos, keyPos) => {
-  //       if (q.extraGroupPath) {
-  //         console.assert(lhs.tag == TAG.OBJECT)
-  //         lhs = lhs.val[q.extraGroupPath]
-  //       }
-  //       emitStatefulUpdate(buf, q, lhs)
-  //     }, false)
-  //     assign(update, sym, fv, deps)
-  //   }
-  // }
+      hashmap.emitHashLookUpAndUpdate(update, map, keys, (buf, lhs, pos, keyPos) => {
+        if (q.extraGroupPath) {
+          console.assert(lhs.tag == TAG.OBJECT)
+          lhs = lhs.val[q.extraGroupPath]
+        }
+        emitStatefulUpdate(buf, q, lhs)
+      }, false)
+      assign(update, sym, fv, deps)
+    }
+  }
 
   let epilog = []
 
-  // Different take on this backend
-  let res = path(epilog, q)
+  // // Different take on this backend
+  // let res = path(epilog, q)
 
-  // let res = emitPath(epilog, q)
+  let res = emitPath(epilog, q)
 
   if (res.cond) {
     c.if(epilog)(res.cond, buf1 => {
@@ -1461,10 +1540,7 @@ let path = (buf, q) => {
       for (let i = 0; i < q.arg.length; i += 2) {
         let k = q.arg[i]
         let v = q.arg[i + 1]
-        let save = currentGroupPath
-        currentGroupPath = { path: [...currentGroupPath, k.op] }
         res.val[k.op] = path(buf, v)
-        currentGroupPath = save
       }
       return res
     } else if (q.op.startsWith("convert_")) {
