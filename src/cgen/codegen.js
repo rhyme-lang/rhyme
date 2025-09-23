@@ -106,9 +106,9 @@ let addGenerator = (e1, e2, getLoopTxtFunc) => {
   generatorStms.push(e)
 }
 
-let reset = () => {
+let reset = (settings) => {
   symbol.reset()
-  hashmap.reset()
+  hashmap.reset(settings)
 
   currentGroupPath = {}
   emittedFilters = {}
@@ -273,6 +273,8 @@ let emitStatefulInit = (buf, q, lhs) => {
       // lhs passed will be the array object
       c.stmt(buf)(c.assign(lhs.val.count, "0"))
     }
+  } else if (q.key == "update") {
+    console.log(lhs)
   } else {
     throw new Error("stateful op not supported: " + pretty(q))
   }
@@ -742,9 +744,6 @@ let collectRelevantStatefulInPath = (q, currentGroupPath) => {
           throw new Error("Stateful op expected to have the same set of free variables as the current group path but got: " + q.fre + " and " + currentGroupPath.path)
         }
 
-        if (visitedAssignments[i]) return
-        visitedAssignments[i] = true
-
         assignmentToSym[i] = currentGroupPath.sym
         updateOpsExtra[currentGroupPath.sym].push(i)
 
@@ -788,10 +787,10 @@ let addHashMapValue = (map, q, name, currentGroupPath) => {
   if (q1.key == "update") {
     // We cannot sort on a nested hashamp column
     hashmap.emitNestedHashMapInit(prolog1, map, name, q.schema.type, prolog0)
-
+    assignmentToSym[q.op] = currentGroupPath.sym
+    updateOps[currentGroupPath.sym].push(q.op)
+    collectHashMaps1(q)
   } else if (q1.key == "stateful" && q1.fre.length != 0) {
-    if (visitedAssignments[q.op]) return
-    visitedAssignments[q.op] = true
     if (!same(q1.fre, currentGroupPath.path)) {
       throw new Error("Stateful op expected to have the same set of free variables as the current group path but got: " + q1.fre + " and " + currentGroupPath.path)
     }
@@ -1018,7 +1017,7 @@ let processFilters = () => {
 }
 
 let emitCode = (q, ir, settings) => {
-  reset()
+  reset(settings)
 
   filters = ir.filters
   assignments = ir.assignments

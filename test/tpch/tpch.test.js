@@ -10,6 +10,15 @@ let outDir = "cgen-sql/tpch-out"
 
 let answersDir = "cgen-sql/tpch-answers"
 
+let settings = {
+  backend: "c-new",
+  schema: types.never,
+  outDir,
+  hashSize: 16777216,
+  enableOptimizations: false,
+  format: "csv"
+}
+
 let customerSchema = typing.objBuilder()
   .add(typing.createKey(types.u32), typing.createSimpleObject({
     c_custkey: types.i32,
@@ -163,7 +172,7 @@ test("q1-alt", async () => {
 
   let query = rh`sort ${query1} "l_returnflag" 0 "l_linestatus" 0`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "q1-alt", schema: types.never, enableOptimizations: false, format: "csv" })
+  let func = await compile(query, { ...settings, outFile: "q1-alt" })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q1.out`).toString()
@@ -201,7 +210,7 @@ test("q1", async () => {
   }]`
   let query = rh`sort ${lineitem2} "l_returnflag" 0 "l_linestatus" 0`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "q1", schema: types.never, enableOptimizations: false, format: "csv" })
+  let func = await compile(query, { ...settings, outFile: "q1" })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q1.out`).toString()
@@ -250,7 +259,7 @@ test("q2", async () => {
 
   let query = rh`sort ${partsupp2} "s_acctbal" 1 "n_name" 0 "s_name" 0 "p_partkey" 0`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "q2", schema: types.never, enableOptimizations: false, limit: 100, format: "csv" })
+  let func = await compile(query, { ...settings, outFile: "q2", limit: 100 })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q2.out`).toString()
@@ -280,7 +289,7 @@ test("q3", async () => {
 
   let query = rh`sort ${lineitem1} "revenue" 1 "o_orderdate" 0`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "q3", schema: types.never, enableOptimizations: false, limit: 10, format: "csv" })
+  let func = await compile(query, { ...settings, outFile: "q3", limit: 10 })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q3.out`).toString()
@@ -298,7 +307,7 @@ test("q4", async () => {
   } | group ${orders}.*.o_orderpriority`
   let query = rh`sort ${countL} "o_orderpriority" 0`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "q4", schema: types.never, enableOptimizations: false, format: "csv" })
+  let func = await compile(query, { ...settings, outFile: "q4" })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q4.out`).toString()
@@ -341,7 +350,7 @@ test("q5", async () => {
 
   let query = rh`sort ${lineitem1} "revenue" 1`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "q5", schema: types.never, enableOptimizations: false, format: "csv" })
+  let func = await compile(query, { ...settings, outFile: "q5" })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q5.out`).toString()
@@ -357,7 +366,7 @@ test("q6", async () => {
 
   let query = rh`sum (${cond}) & (${lineitem}.*.l_extendedprice * ${lineitem}.*.l_discount)`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "q6", schema: types.never, format: "csv" })
+  let func = await compile(query, { ...settings, outFile: "q6" })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q6.out`).toString()
@@ -403,7 +412,7 @@ test("q7", async () => {
 
   let query = rh`sort ${lineitem1} "supp_nation" 0 "cust_nation" 0 "l_year" 0`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "q7", schema: types.never, enableOptimizations: false, format: "csv", printFormat: "csv" })
+  let func = await compile(query, { ...settings, outFile: "q7" })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q7.out`).toString()
@@ -457,7 +466,7 @@ test("q8", async () => {
 
   let query = rh`sort ${supplier1} "year" 0`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "q8", schema: types.never, enableOptimizations: false, format: "csv" })
+  let func = await compile(query, { ...settings, outFile: "q8" })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q8.out`).toString()
@@ -503,7 +512,7 @@ test("q9", async () => {
 
   let query = rh`sort ${orders1} "nation" 0 "o_year" 1`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "q9", schema: types.never, enableOptimizations: false, format: "csv" })
+  let func = await compile(query, { ...settings, outFile: "q9" })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q9.out`).toString()
@@ -547,7 +556,7 @@ test("q10", async () => {
 
   let query = rh`sort ${lineitem1} "revenue" 1`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "q10", schema: types.never, enableOptimizations: false, limit: 20, format: "csv" })
+  let func = await compile(query, { ...settings, outFile: "q10", limit: 20 })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q10.out`).toString()
@@ -578,7 +587,7 @@ test("q11", async () => {
 
   let query = rh`sort ${partsupp2} "value" 1`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "q11", schema: types.never, enableOptimizations: false, format: "csv" })
+  let func = await compile(query, { ...settings, outFile: "q11" })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q11.out`).toString()
@@ -608,7 +617,7 @@ test("q12", async () => {
 
   let query = rh`sort ${lineitem1} "l_shipmode" 0`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "q12", schema: types.never, enableOptimizations: false, format: "csv" })
+  let func = await compile(query, { ...settings, outFile: "q12" })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q12.out`).toString()
@@ -631,7 +640,7 @@ test("q13", async () => {
 
   let query = rh`sort ${customer2} "custdist" 1 "c_count" 1`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "q13", schema: types.never, enableOptimizations: false, format: "csv" })
+  let func = await compile(query, { ...settings, outFile: "q13" })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q13.out`).toString()
@@ -653,7 +662,7 @@ test("q14", async () => {
 
   let query = rh`100 * ${sum1} / ${sum2}`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "q14", schema: types.never, enableOptimizations: false, format: "csv" })
+  let func = await compile(query, { ...settings, outFile: "q14" })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q14.out`).toString()
@@ -683,7 +692,7 @@ test("q15", async () => {
     total_revenue: ${sumMap}.*.total_revenue
   }]`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "q15", schema: types.never, enableOptimizations: false, format: "csv" })
+  let func = await compile(query, { ...settings, outFile: "q15" })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q15.out`).toString()
@@ -726,7 +735,7 @@ test("q16", async () => {
 
   let query = rh`sort ${part2} "supplier_cnt" 1 "p_brand" 0 "p_type" 0 "p_size" 0`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "q16", schema: types.never, enableOptimizations: false, format: "csv" })
+  let func = await compile(query, { ...settings, outFile: "q16" })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q16.out`).toString()
@@ -749,7 +758,7 @@ test("q17", async () => {
   let cond = rh`${part1}.(${lineitem}.*l2.l_partkey).*p2 == ${lineitem}.*l2.l_partkey && ${lineitem}.*l2.l_quantity < ${avgMap}.(${lineitem}.*l2.l_partkey)`
   let query = rh`(sum (${cond} & ${lineitem}.*l2.l_extendedprice)) / 7.0`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "q17", schema: types.never, enableOptimizations: false, format: "csv" })
+  let func = await compile(query, { ...settings, outFile: "q17" })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q17.out`).toString()
@@ -766,7 +775,7 @@ test("q17-alt", async () => {
   let cond = rh`${part1}.(${lineitem}.*l2.l_partkey).*p2 == ${lineitem}.*l2.l_partkey && ${lineitem}.*l2.l_quantity < ${avgMap}.(${lineitem}.*l2.l_partkey)`
   let query = rh`(sum (${cond} & ${lineitem}.*l2.l_extendedprice)) / 7.0`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "q17-alt", schema: types.never, enableOptimizations: false, format: "csv" })
+  let func = await compile(query, { ...settings, outFile: "q17-alt" })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q17.out`).toString()
@@ -814,7 +823,7 @@ test("q18", async () => {
 
   let query = rh`sort ${lineitem3} "o_totalprice" 1 "o_orderdate" 0`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "q18", schema: types.never, enableOptimizations: false, format: "csv" })
+  let func = await compile(query, { ...settings, outFile: "q18" })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q18.out`).toString()
@@ -863,7 +872,7 @@ test("q19", async () => {
 
   let query = rh`sum (${cond} & (${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount)))`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "q19", schema: types.never, enableOptimizations: false, format: "csv" })
+  let func = await compile(query, { ...settings, outFile: "q19" })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q19.out`).toString()
@@ -901,7 +910,7 @@ test("q20", async () => {
 
   let query = rh`sort ${supplier1} "s_name" 0`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "q20", schema: types.never, enableOptimizations: false, format: "csv" })
+  let func = await compile(query, { ...settings, outFile: "q20" })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q20.out`).toString()
@@ -942,7 +951,7 @@ test("q21", async () => {
 
   let query = rh`sort ${orders2} "numwait" 1 "s_name" 0`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "q21", schema: types.never, enableOptimizations: false, limit: 100, format: "csv" })
+  let func = await compile(query, { ...settings, outFile: "q21", limit: 100 })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q21.out`).toString()
@@ -976,7 +985,7 @@ test("q22", async () => {
 
   let query = rh`sort ${customer2} "cntrycode" 0`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "q22", schema: types.never, enableOptimizations: false, format: "csv" })
+  let func = await compile(query, { ...settings, outFile: "q22" })
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q22.out`).toString()
