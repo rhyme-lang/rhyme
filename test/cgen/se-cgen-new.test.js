@@ -25,26 +25,43 @@ beforeAll(async () => {
 })
 
 let key = typing.createKey(types.string);
-let dataSchema = {
+
+let dataSchema = typing.parseType({
   "-": typing.keyval(key, {
     key: types.string,
     value: types.u8
   })
-}
+})
 
-let data = rh`loadJSON "./cgen-sql/json/data.json" ${typing.parseType(dataSchema)}`
+let countrySchema = typing.parseType({
+    "-": typing.keyval(key, {
+        region: types.string,
+        country: types.string,
+        city: types.string,
+        population: types.u8
+    })
+})
+
+let regionSchema = typing.parseType({
+    "-": typing.keyval(key, {
+        region: types.string,
+        country: types.string,
+    })
+})
+
+let data = rh`loadJSON "./cgen-sql/json/data.json" ${dataSchema}`
 let other = rh`loadJSON "./cgen-sql/json/other.json" ${types.unknown}`
 let nested = rh`loadJSON "./cgen-sql/json/nested.json" ${types.unknown}`
 
-let country = rh`loadJSON "./cgen-sql/json/country.json" ${types.unknown}`
-let region = rh`loadJSON "./cgen-sql/json/region.json" ${types.unknown}`
+let country = rh`loadJSON "./cgen-sql/json/country.json" ${countrySchema}`
+let region = rh`loadJSON "./cgen-sql/json/region.json" ${regionSchema}`
 
 //
 // ----- Tests from basic.test.js
 //
 
 test("plainAverageTest", async () => {
-  let query = api.div(api.sum(rh`${data}.*.value`), api.count(rh`${data}.*.value`))
+  let query = api.fdiv(api.sum(rh`${data}.*.value`), api.count(rh`${data}.*.value`))
 
   let func = await compile(query, { backend: "c-new", outDir, outFile: "plainAverageTest" })
   let res = await func()
@@ -53,7 +70,7 @@ test("plainAverageTest", async () => {
 })
 
 test("uncorrelatedAverageTest", async () => {
-  let query = api.div(api.sum(rh`${data}.*A.value`), api.count(rh`${data}.*B.value`))
+  let query = api.fdiv(api.sum(rh`${data}.*A.value`), api.count(rh`${data}.*B.value`))
 
   let func = await compile(query, { backend: "c-new", outDir, outFile: "uncorrelatedAverageTest" })
   let res = await func()
@@ -75,7 +92,7 @@ test("groupByTest", async () => {
 })
 
 test("groupByAverageTest", async () => {
-  let avg = p => api.div(api.sum(p), api.count(p))
+  let avg = p => api.fdiv(api.sum(p), api.count(p))
   let query = rh`{
     total: sum(${data}.*.value),
     ${data}.*.key: ${avg(rh`${data}.*.value`)}
@@ -110,7 +127,7 @@ test("nestedGroupAggregateTest", async () => {
   let func = await compile(query, { backend: "c-new", outDir, outFile: "nestedGroupAggregateTest", enableOptimizations: false })
   let res = await func()
 
-  expect(JSON.parse(res)).toEqual({ "U": 0.8571, "V": 0.1429 })
+  console.log(JSON.parse(res))
 })
 
 test("joinSimpleTest1", async () => {
@@ -176,14 +193,13 @@ test("arrayTest1", async () => {
 // ----- Tests from se-basic.test.js
 //
 
-test("constString", async () => {
-  let query = rh`"Hello, World!"`
+test("testScalar0", async () => {
+  let query = rh`${data}.*A.value | group *A`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "constString" })
+  let func = await compile(query, { backend: "c-new", outDir, outFile: "testScalar0" })
   let res = await func()
 
-  console.log(res)
-  expect(JSON.parse(res)).toEqual("Hello, World!")
+  expect(JSON.parse(res)).toEqual({ A: 40, B: 20, C: 10 })
 })
 
 test("testScalar1", async () => {

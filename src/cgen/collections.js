@@ -143,6 +143,15 @@ let emitHashMapValueInit = (buf, map, name, schema, sorted, prolog0) => {
   map.val.values[name] = res
 }
 
+let emitNestedHashMapInit = (buf, map, name, schema, prolog0) => {
+  let sym = map.val.sym
+
+  c.comment(buf)(`value of ${sym}: ${name} --- nested hashmap`)
+
+  // map.val.values ??= {}
+  // map.val.values[name] = res
+}
+
 // Initialize the key arrays
 // The value arrays will be added and associated to this hashmap later
 let emitHashMapInit = (buf, sym, keySchema) => {
@@ -168,45 +177,6 @@ let emitHashMapInit = (buf, sym, keySchema) => {
   return { htable, count, keys }
 }
 
-let emitHashMapInsert = (buf, map, keys, pos, keyPos, lhs, init) => {
-  c.stmt(buf)(c.assign(keyPos, map.val.count))
-  c.stmt(buf)(c.inc(map.val.count))
-  c.stmt(buf)(c.assign(`${map.val.htable}[${pos}]`, keyPos))
-
-  for (let i in keys) {
-    let key = keys[i]
-    let schema = key.schema
-
-    if (typing.isString(schema)) {
-      let keyStr = `${map.val.keys[i].val.str}[${keyPos}]`
-      let keyLen = `${map.val.keys[i].val.len}[${keyPos}]`
-
-      c.stmt(buf)(c.assign(keyStr, key.val.str))
-      c.stmt(buf)(c.assign(keyLen, key.val.len))
-    } else {
-      c.stmt(buf)(c.assign(`${map.val.keys[i].val}[${keyPos}]`, key.val))
-    }
-  }
-  init(buf, lhs, pos, keyPos)
-}
-
-// Emit the code that updates the hashMap value for the key at keyPos
-// it will initialize the key if it is not there when checkExistance is set to true
-let emitHashMapUpdate = (buf, map, keys, pos, keyPos, update1, update2, checkExistance) => {
-  let sym = map.val.sym
-  let lhs = getHashMapValueEntry(map, pos, keyPos)
-
-  lhs.cond = c.eq(keyPos, "-1")
-
-  if (checkExistance) {
-    c.if(buf)(c.eq(keyPos, "-1"), buf1 => {
-      emitHashMapInsert(buf1, map, keys, pos, keyPos, lhs, update1)
-    })
-  }
-
-  update2(buf, lhs, pos, keyPos)
-}
-
 // Calculate the hash value for a set of keys
 let hash = (buf, keys) => {
   let hashed = symbol.getSymbol("hash")
@@ -218,15 +188,10 @@ let hash = (buf, keys) => {
     let tmpHash = symbol.getSymbol("tmp_hash")
 
     if (key.tag == TAG.JSON) {
-      c.declareULong(buf)(tmpHash)
-      c.if(buf)(c.call("yyjson_is_str", key.val), buf1 => {
-        let converted = json.convertJSONTo(key, types.string)
-        c.stmt(buf1)(c.assign(tmpHash, c.call("hash", converted.val.str, converted.val.len)))
-      }, buf1 => {
-        let converted = json.convertJSONTo(key, types.f64)
-        c.stmt(buf1)(c.assign(tmpHash, c.cast("unsigned long", converted.val)))
-      })
-    } else if (typing.isString(schema)) {
+      key = json.convertJSONTo(key, schema)
+    }
+    
+    if (typing.isString(schema)) {
       c.declareULong(buf)(tmpHash, c.call("hash", key.val.str, key.val.len))
     } else if (typing.isNumber(schema) || schema.typeSym == typeSyms.date) {
       c.declareULong(buf)(tmpHash, c.cast("unsigned long", key.val))
@@ -239,6 +204,32 @@ let hash = (buf, keys) => {
   }
 
   return hashed
+}
+
+let emitHashMapInsert = (buf, map, keys, pos, keyPos, lhs, init) => {
+  c.stmt(buf)(c.assign(keyPos, map.val.count))
+  c.stmt(buf)(c.inc(map.val.count))
+  c.stmt(buf)(c.assign(`${map.val.htable}[${pos}]`, keyPos))
+
+  for (let i in keys) {
+    let key = keys[i]
+    let schema = key.schema
+
+    if (key.tag == TAG.JSON) {
+      key = json.convertJSONTo(key, schema)
+    }
+
+    if (typing.isString(schema)) {
+      let keyStr = `${map.val.keys[i].val.str}[${keyPos}]`
+      let keyLen = `${map.val.keys[i].val.len}[${keyPos}]`
+
+      c.stmt(buf)(c.assign(keyStr, key.val.str))
+      c.stmt(buf)(c.assign(keyLen, key.val.len))
+    } else {
+      c.stmt(buf)(c.assign(`${map.val.keys[i].val}[${keyPos}]`, key.val))
+    }
+  }
+  init(buf, lhs, pos, keyPos)
 }
 
 // Emit the code that finds the key in the hashmap.
@@ -261,20 +252,10 @@ let emitHashLookUp = (buf, map, keys) => {
     let key = keys[i]
     let schema = key.schema
     if (key.tag == TAG.JSON) {
-      let lhs = { schema: map.val.keys[i].schema, val: `${map.val.keys[i].val}[${keyPos}]` }
-      let lhs_str = json.convertJSONTo(lhs, types.string)
-      let lhs_num = json.convertJSONTo(lhs, types.f64)
-      let key_str = json.convertJSONTo(key, types.string)
-      let key_num = json.convertJSONTo(key, types.f64)
-      console.log(map.val.keys)
-      let comparison = c.ternary(
-        c.call("yyjson_is_str", key.val),
-        c.ne(c.call("compare_str2", lhs_str.val.str, lhs_str.val.len, key_str.val.str, key_str.val.len), "0"),
-        c.ne(lhs_num.val, key_num.val)
-      )
-      compareKeys = compareKeys ? c.or(compareKeys, comparison) : comparison
-
-    } else if (typing.isString(schema)) {
+      key = json.convertJSONTo(key, schema)
+    }
+    
+    if (typing.isString(schema)) {
       let keyStr = `${map.val.keys[i].val.str}[${keyPos}]`
       let keyLen = `${map.val.keys[i].val.len}[${keyPos}]`
 
@@ -300,6 +281,23 @@ let emitHashLookUp = (buf, map, keys) => {
   c.declareInt(buf)(keyPos, `${map.val.htable}[${pos}]`)
 
   return [pos, keyPos]
+}
+
+// Emit the code that updates the hashMap value for the key at keyPos
+// it will initialize the key if it is not there when checkExistance is set to true
+let emitHashMapUpdate = (buf, map, keys, pos, keyPos, update1, update2, checkExistance) => {
+  let sym = map.val.sym
+  let lhs = getHashMapValueEntry(map, pos, keyPos)
+
+  lhs.cond = c.eq(keyPos, "-1")
+
+  if (checkExistance) {
+    c.if(buf)(c.eq(keyPos, "-1"), buf1 => {
+      emitHashMapInsert(buf1, map, keys, pos, keyPos, lhs, update1)
+    })
+  }
+
+  update2(buf, lhs, pos, keyPos)
 }
 
 // Emit the code that performs a lookup of the key in the hashmap, then
@@ -561,8 +559,13 @@ let hashmap = {
   emitHashBucketInsert,
   emitHashMapBucketValuesInit,
   getHashMapLoopTxt,
-  getHashBucketLoopTxt
+  getHashBucketLoopTxt,
+  emitNestedHashMapInit
 }
+
+// let hashmapC1 = {
+//   emitHashMapInit1
+// }
 
 module.exports = {
   array,
