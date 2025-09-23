@@ -8,16 +8,23 @@ const { pretty } = require('../prettyprint')
 
 const { tmpSym, quoteVar } = utils
 
-const HASH_SIZE = 16777216
+let hashSize = 256
 
-const BUCKET_SIZE = 64
-const DATA_SIZE = HASH_SIZE * BUCKET_SIZE
+let bucketSize = 64
+let dataSize = hashSize * bucketSize
 
-const HASH_MASK = HASH_SIZE - 1
+let hashMask = hashSize - 1
 
-const ARRAY_SIZE = 2048
+let arraySize = 2048
 
-let reset = () => {
+let reset = (settings) => {
+  hashSize = settings.hashSize || 256
+  bucketSize = settings.bucketSize || 64
+  arraySize = settings.arraySize || 2048
+
+  dataSize = hashSize * bucketSize
+
+  hashMask = hashSize - 1
 }
 
 let encodeName = name => "$" + name + "$"
@@ -57,14 +64,14 @@ let emitHashMapKeyDecls = (buf, sym, keySchema) => {
   for (let i in keySchema) {
     let schema = keySchema[i]
     if (typing.isUnknown(schema)) {
-      allocateYYJSONBuffer(buf, `${sym}_keys${i}`, HASH_SIZE)
+      allocateYYJSONBuffer(buf, `${sym}_keys${i}`, hashSize)
       keys.push(value.json(schema, `${sym}_keys${i}`))
     } else if (typing.isString(schema)) {
-      allocateStringBuffer(buf, `${sym}_keys_str${i}`, `${sym}_keys_len${i}`, HASH_SIZE)
+      allocateStringBuffer(buf, `${sym}_keys_str${i}`, `${sym}_keys_len${i}`, hashSize)
       keys.push(value.string(schema, `${sym}_keys_str${i}`, `${sym}_keys_len${i}`))
     } else {
       let cType = utils.convertToCType(schema)
-      allocatePrimitiveBuffer(buf, cType, `${sym}_keys${i}`, HASH_SIZE)
+      allocatePrimitiveBuffer(buf, cType, `${sym}_keys${i}`, hashSize)
       keys.push(value.primitive(schema, `${sym}_keys${i}`))
     }
   }
@@ -81,8 +88,8 @@ let emitHashMapBucketsInit = (buf, map, name, schema) => {
   let buckets = `${sym}_${name}_buckets`
   c.declareInt(buf)(dataCount, "0")
 
-  c.declareIntPtr(buf)(buckets, c.cast("int *", c.malloc("int", DATA_SIZE)))
-  c.declareIntPtr(buf)(bucketCount, c.cast("int *", c.malloc("int", HASH_SIZE)))
+  c.declareIntPtr(buf)(buckets, c.cast("int *", c.malloc("int", dataSize)))
+  c.declareIntPtr(buf)(bucketCount, c.cast("int *", c.malloc("int", hashSize)))
 
   res.val = { dataCount, bucketCount, buckets }
   res.tag = TAG.HASHMAP_BUCKET
@@ -97,19 +104,19 @@ let emitHashMapBucketValuesInit = (buf, map, bucket, name, schema) => {
   let res = { schema }
 
   if (typing.isUnknown(schema)) {
-    allocateYYJSONBuffer(buf, `${sym}_${name}`, DATA_SIZE)
+    allocateYYJSONBuffer(buf, `${sym}_${name}`, dataSize)
     res.val = `${sym}_${name}`
     res.tag = TAG.JSON
   } else if (typing.isObject(schema)) {
     // Nested hashmap
     throw new Error("Nested hashmap not supported for now")
   } else if (typing.isString(schema)) {
-    allocateStringBuffer(buf, `${sym}_${name}_str`, `${sym}_${name}_len`, DATA_SIZE)
+    allocateStringBuffer(buf, `${sym}_${name}_str`, `${sym}_${name}_len`, dataSize)
     res.val = { str: `${sym}_${name}_str`, len: `${sym}_${name}_len` }
   } else {
     // let convertToCType report "type not supported" errors
     let cType = utils.convertToCType(schema)
-    allocatePrimitiveBuffer(buf, cType, `${sym}_${name}`, DATA_SIZE)
+    allocatePrimitiveBuffer(buf, cType, `${sym}_${name}`, dataSize)
     res.val = `${sym}_${name}`
   }
 
@@ -123,19 +130,19 @@ let emitHashMapValueInit = (buf, map, name, schema, sorted, prolog0) => {
   c.comment(buf)(`value of ${sym}: ${name}`)
   let res = { schema }
   if (typing.isUnknown(schema)) {
-    allocateYYJSONBuffer(buf, `${sym}_${name}`, HASH_SIZE, sorted, prolog0)
+    allocateYYJSONBuffer(buf, `${sym}_${name}`, hashSize, sorted, prolog0)
     res.val = `${sym}_${name}`
     res.tag = TAG.JSON
   } else if (typing.isObject(schema)) {
     // Nested hashmap
     throw new Error("Nested hashmap not supported for now")
   } else if (typing.isString(schema)) {
-    allocateStringBuffer(buf, `${sym}_${name}_str`, `${sym}_${name}_len`, HASH_SIZE, sorted, prolog0)
+    allocateStringBuffer(buf, `${sym}_${name}_str`, `${sym}_${name}_len`, hashSize, sorted, prolog0)
     res.val = { str: `${sym}_${name}_str`, len: `${sym}_${name}_len` }
   } else {
     // let convertToCType report "type not supported" errors
     let cType = utils.convertToCType(schema)
-    allocatePrimitiveBuffer(buf, cType, `${sym}_${name}`, HASH_SIZE, sorted, prolog0)
+    allocatePrimitiveBuffer(buf, cType, `${sym}_${name}`, hashSize, sorted, prolog0)
     res.val = `${sym}_${name}`
   }
 
@@ -146,10 +153,17 @@ let emitHashMapValueInit = (buf, map, name, schema, sorted, prolog0) => {
 let emitNestedHashMapInit = (buf, map, name, schema, prolog0) => {
   let sym = map.val.sym
 
+  let res = { schema }
+
   c.comment(buf)(`value of ${sym}: ${name} --- nested hashmap`)
 
-  // map.val.values ??= {}
-  // map.val.values[name] = res
+  allocatePrimitiveBuffer(buf, "uint64_t", `${sym}_${name}`, hashSize)
+  res.val = `${sym}_${name}`
+
+  console.log(buf)
+
+  map.val.values ??= {}
+  map.val.values[name] = res
 }
 
 // Initialize the key arrays
@@ -168,11 +182,11 @@ let emitHashMapInit = (buf, sym, keySchema) => {
 
   // htable
   c.comment(buf)(`hash table for ${sym}`)
-  c.declareIntPtr(buf)(htable, c.cast("int *", c.malloc("int", HASH_SIZE)))
+  c.declareIntPtr(buf)(htable, c.cast("int *", c.malloc("int", hashSize)))
 
   // init htable entries to -1
   c.comment(buf)(`init hash table entries to -1 for ${sym}`)
-  c.stmt(buf)(c.call("memset", htable, "-1", `sizeof(int) * ${HASH_SIZE}`))
+  c.stmt(buf)(c.call("memset", htable, "-1", `sizeof(int) * ${hashSize}`))
 
   return { htable, count, keys }
 }
@@ -190,7 +204,7 @@ let hash = (buf, keys) => {
     if (key.tag == TAG.JSON) {
       key = json.convertJSONTo(key, schema)
     }
-    
+
     if (typing.isString(schema)) {
       c.declareULong(buf)(tmpHash, c.call("hash", key.val.str, key.val.len))
     } else if (typing.isNumber(schema) || schema.typeSym == typeSyms.date) {
@@ -242,7 +256,7 @@ let emitHashLookUp = (buf, map, keys) => {
   let sym = map.val.sym
 
   let pos = symbol.getSymbol("pos")
-  c.declareULong(buf)(pos, c.binary(hashed, HASH_MASK, "&"))
+  c.declareULong(buf)(pos, c.binary(hashed, hashMask, "&"))
 
   let keyPos = `${map.val.htable}[${pos}]`
 
@@ -254,7 +268,7 @@ let emitHashLookUp = (buf, map, keys) => {
     if (key.tag == TAG.JSON) {
       key = json.convertJSONTo(key, schema)
     }
-    
+
     if (typing.isString(schema)) {
       let keyStr = `${map.val.keys[i].val.str}[${keyPos}]`
       let keyLen = `${map.val.keys[i].val.len}[${keyPos}]`
@@ -273,7 +287,7 @@ let emitHashLookUp = (buf, map, keys) => {
   c.while(buf)(
     c.and(c.ne(keyPos, "-1"), compareKeys),
     buf1 => {
-      c.stmt(buf1)(c.assign(pos, c.binary(c.add(pos, "1"), HASH_MASK, "&")))
+      c.stmt(buf1)(c.assign(pos, c.binary(c.add(pos, "1"), hashMask, "&")))
     }
   )
 
@@ -317,7 +331,7 @@ let emitHashLookUpAndUpdate = (buf, map, keys, update, checkExistance) =>
   emitHashLookUpAndUpdateCust(buf, map, keys, () => { }, update, checkExistance)
 
 let emitHashLookUpAndUpdateCust = (buf, map, keys, update1, update2, checkExistance) => {
-  c.if(buf)(c.eq(map.val.count, HASH_SIZE), buf1 => {
+  c.if(buf)(c.eq(map.val.count, hashSize), buf1 => {
     c.printErr(buf1)("hashmap size reached its full capacity\\n")
     c.return(buf1)("1")
   })
@@ -369,7 +383,7 @@ let getHashMapValueEntry = (map, pos, keyPos) => {
 
 // Emit the code that insertes a value into a hashmap bucket
 let emitHashBucketInsert = (buf, bucket, value) => {
-  c.if(buf)(c.eq(bucket.val.bucketCount, BUCKET_SIZE), (buf2) => {
+  c.if(buf)(c.eq(bucket.val.bucketCount, bucketSize), (buf2) => {
     c.printErr(buf2)("hashmap bucket size reached its full capacity\\n")
     c.return(buf2)("1")
   })
@@ -384,7 +398,7 @@ let emitHashBucketInsert = (buf, bucket, value) => {
   c.declareInt(buf)(bucketPos, bucket.val.bucketCount)
   c.stmt(buf)(c.assign(bucket.val.bucketCount, c.add(bucketPos, "1")))
 
-  let idx = c.add(c.mul(bucket.keyPos, BUCKET_SIZE), bucketPos)
+  let idx = c.add(c.mul(bucket.keyPos, bucketSize), bucketPos)
   c.stmt(buf)(c.assign(`${bucket.val.buckets}[${idx}]`, dataPos))
 
   let lhs = getHashMapValueEntry(bucket, undefined, dataPos)
@@ -419,12 +433,12 @@ let emitArrayValueInit = (buf, arr, name, schema, sorted, prolog0) => {
     // Nested hashmap
     throw new Error("Nested hashmap not supported for now")
   } if (typing.isString(schema)) {
-    allocateStringBuffer(buf, `${sym}_${name}_str`, `${sym}_${name}_len`, ARRAY_SIZE, sorted, prolog0)
+    allocateStringBuffer(buf, `${sym}_${name}_str`, `${sym}_${name}_len`, arraySize, sorted, prolog0)
     res.val = { str: `${sym}_${name}_str`, len: `${sym}_${name}_len` }
   } else {
     // let convertToCType report "type not supported" errors
     let cType = utils.convertToCType(schema)
-    allocatePrimitiveBuffer(buf, cType, `${sym}_${name}`, ARRAY_SIZE, sorted, prolog0)
+    allocatePrimitiveBuffer(buf, cType, `${sym}_${name}`, arraySize, sorted, prolog0)
     res.val = `${sym}_${name}`
   }
 
@@ -443,7 +457,7 @@ let emitArrayInit = (buf, sym) => {
 
 // Emit code that inserts a value into the array
 let emitArrayInsert = (buf, arr, value) => {
-  c.if(buf)(c.eq(arr.val.count, ARRAY_SIZE), (buf1) => {
+  c.if(buf)(c.eq(arr.val.count, arraySize), (buf1) => {
     c.printErr(buf1)("array size reached its full capacity\\n")
     c.return(buf1)("1")
   })
@@ -570,5 +584,5 @@ let hashmap = {
 module.exports = {
   array,
   hashmap,
-  BUCKET_SIZE
+  BUCKET_SIZE: bucketSize
 }
