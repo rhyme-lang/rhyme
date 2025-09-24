@@ -1,5 +1,5 @@
 const { c, utils } = require("./utils")
-const { hashmap, array, BUCKET_SIZE } = require("./collections")
+const { hashmap, array, bucketSize } = require("./collections")
 const { TAG, value } = require("./value")
 const { symbol } = require("./symbol")
 const { csv } = require("./csv")
@@ -274,7 +274,7 @@ let emitStatefulInit = (buf, q, lhs) => {
       c.stmt(buf)(c.assign(lhs.val.count, "0"))
     }
   } else if (q.key == "update") {
-    console.log(lhs)
+    c.stmt(buf)(c.assign(lhs.val.count, "0"))
   } else {
     throw new Error("stateful op not supported: " + pretty(q))
   }
@@ -522,7 +522,7 @@ let emitPath = (buf, q, scope) => {
         // We don't need to check existance of the bucket here
         // since it is checked before the loop executes
         bucket = g1
-        let dataPos = `${bucket.val.buckets}[${c.add(c.mul(bucket.keyPos, BUCKET_SIZE), quoteVar(e2.op))}]`
+        let dataPos = `${bucket.val.buckets}[${c.add(c.mul(bucket.keyPos, bucketSize), quoteVar(e2.op))}]`
 
         return array.getValueAtIdx(bucket, dataPos)
       } else {
@@ -795,6 +795,7 @@ let addHashMapValue = (map, q, name, currentGroupPath) => {
     // We cannot sort on a nested hashamp column
     assignmentToSym[q.op] = currentGroupPath.sym
     updateOps[currentGroupPath.sym].push(q.op)
+    q1.root = currentGroupPath.sym
     collectNestedHashMap(q, map, name, currentGroupPath)
   } else if (q1.key == "stateful" && q1.fre.length != 0) {
     if (!same(q1.fre, currentGroupPath.path)) {
@@ -846,10 +847,14 @@ let collectNestedHashMap = (q, map, name, currentGroupPath) => {
   hashmap.emitNestedHashMapInit(prolog1, map, name, q.schema.type, keySchema)
   let nestedMap = map.val.values[name]
 
-  console.log(nestedMap)
+  updateOps[i] = []
+  updateOpsExtra[i] = []
 
+  let iOld = currentGroupPath.sym
+  currentGroupPath.sym = i
   currentGroupPath.path.push(e1.op)
   addHashMapValue(nestedMap, e2, "_DEFAULT_", currentGroupPath)
+  currentGroupPath.sym = iOld
   currentGroupPath.path.pop()
 }
 
@@ -908,6 +913,7 @@ let collectHashMapsInPath = q => {
   if (q.key == "ref" && assignments[q.op].key == "update") {
     collectHashMap(q)
   } else if (q.arg) {
+    if (q.key == "ref") q = assignments[q.op]
     q.arg.map(collectHashMapsInPath)
   }
 }
@@ -1051,7 +1057,12 @@ let emitCode = (q, ir, settings) => {
 
     let keys = Array.isArray(vars[e1.op].val) ? vars[e1.op].val : [vars[e1.op].val]
 
-    let map = tmpVars[i]
+    let map
+    if (q.fre.length == 0) {
+      map = tmpVars[i]
+    } else {
+      map = tmpVars[q.root]
+    }
 
     if (!shouldInit) {
       let lookup = []
@@ -1102,6 +1113,14 @@ let emitCode = (q, ir, settings) => {
     }
 
     let init = []
+    if (q.fre.length > 0) {
+      for (let k of q.fre) {
+        let keys = Array.isArray(vars[k].val) ? vars[k].val : [vars[k].val]
+        let [pos, keyPos] = hashmap.emitHashLookUp(init, map, keys)
+        map = hashmap.getHashMapValueEntry(map, pos, keyPos)
+      }
+    }
+
     //   c.comment(init)("init and update " + sym + " = " + pretty(assignments[i]))
     let [pos, keyPos] = hashmap.emitHashLookUpOrUpdate(init, map, keys, (buf1, lhs, pos, keyPos) => {
       for (let j of updateOps[i]) {
@@ -1142,8 +1161,10 @@ let emitCode = (q, ir, settings) => {
     for (let j of updateOps[i]) {
       let update = []
       let q = assignments[j]
+      if (q.key == "update") continue
       c.comment(update)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
-      let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
+      let f = tmp => assignmentToSym[tmp] ? f(assignmentToSym[tmp]) : tmp
+      let deps = [...union(fv, q.bnd), ...q.tmps.map(f).map(tmpSym)]
 
       hashmap.emitHashLookUpAndUpdate(update, map, keys, (buf, lhs, pos, keyPos) => {
         if (q.extraGroupPath) {
@@ -1442,7 +1463,7 @@ let emitGet = (buf, q) => {
       // We don't need to check existance of the bucket here
       // since it is checked before the loop executes
       bucket = g1
-      let dataPos = `${bucket.val.buckets}[${c.add(c.mul(bucket.keyPos, BUCKET_SIZE), quoteVar(e2.op))}]`
+      let dataPos = `${bucket.val.buckets}[${c.add(c.mul(bucket.keyPos, bucketSize), quoteVar(e2.op))}]`
 
       return array.getValueAtIdx(bucket, dataPos)
     } else {

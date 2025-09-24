@@ -34,19 +34,19 @@ let dataSchema = typing.parseType({
 })
 
 let countrySchema = typing.parseType({
-    "-": typing.keyval(key, {
-        region: types.string,
-        country: types.string,
-        city: types.string,
-        population: types.u8
-    })
+  "-": typing.keyval(key, {
+    region: types.string,
+    country: types.string,
+    city: types.string,
+    population: types.u8
+  })
 })
 
 let regionSchema = typing.parseType({
-    "-": typing.keyval(key, {
-        region: types.string,
-        country: types.string,
-    })
+  "-": typing.keyval(key, {
+    region: types.string,
+    country: types.string,
+  })
 })
 
 let data = rh`loadJSON "./cgen-sql/json/data.json" ${dataSchema}`
@@ -127,7 +127,11 @@ test("nestedGroupAggregateTest", async () => {
   let func = await compile(query, { backend: "c-new", outDir, outFile: "nestedGroupAggregateTest", enableOptimizations: false })
   let res = await func()
 
-  console.log(res)
+  let expected = {
+    "Asia": { "Beijing": 20, "Tokyo": 30 },
+    "Europe": { "London": 10, "Paris": 10 }
+  }
+  expect(JSON.parse(res)).toEqual(expected)
 })
 
 test("joinSimpleTest1", async () => {
