@@ -215,10 +215,12 @@ let emitHashMapInit = (buf, sym, keySchema) => {
 }
 
 // Calculate the hash value for a set of keys
-let hash = (buf, keys) => {
+let hash = (buf, key) => {
   let hashed = symbol.getSymbol("hash")
 
   c.declareULong(buf)(hashed, "0")
+
+  let keys = key.tag == TAG.COMBINED_KEY ? key.val.keys : [key]
   for (let i in keys) {
     let key = keys[i]
     let schema = key.schema
@@ -243,13 +245,14 @@ let hash = (buf, keys) => {
   return hashed
 }
 
-let emitHashMapInsert = (buf, map, keys, pos, keyPos, lhs, init) => {
+let emitHashMapInsert = (buf, map, key, pos, keyPos, lhs, init) => {
   c.stmt(buf)(c.assign(keyPos, map.val.count))
   c.stmt(buf)(c.inc(map.val.count))
 
   let indexing = map.tag == TAG.NESTED_HASHMAP ? `[${map.keyPos} * ${hashSize} + ${pos}]` : "[" + pos + "]"
   c.stmt(buf)(c.assign(map.val.htable + indexing, keyPos))
 
+  let keys = key.tag == TAG.COMBINED_KEY ? key.val.keys : [key]
   for (let i in keys) {
     let key = keys[i]
     let schema = key.schema
@@ -277,8 +280,8 @@ let emitHashMapInsert = (buf, map, keys, pos, keyPos, lhs, init) => {
 // Linear probing is used for resolving collisions.
 // Comparison of keys is based on different key types.
 // The actual storage of the values / data does not affect the lookup
-let emitHashLookUp = (buf, map, keys) => {
-  let hashed = hash(buf, keys)
+let emitHashLookUp = (buf, map, key) => {
+  let hashed = hash(buf, key)
 
   let sym = map.val.sym
 
@@ -290,6 +293,7 @@ let emitHashLookUp = (buf, map, keys) => {
 
   let compareKeys = undefined
 
+  let keys = key.tag == TAG.COMBINED_KEY ? key.val.keys : [key]
   for (let i in keys) {
     let key = keys[i]
     let schema = key.schema
@@ -327,7 +331,7 @@ let emitHashLookUp = (buf, map, keys) => {
 
 // Emit the code that updates the hashMap value for the key at keyPos
 // it will initialize the key if it is not there when checkExistance is set to true
-let emitHashMapUpdate = (buf, map, keys, pos, keyPos, update1, update2, checkExistance) => {
+let emitHashMapUpdate = (buf, map, key, pos, keyPos, update1, update2, checkExistance) => {
   let sym = map.val.sym
   let lhs = getHashMapValueEntry(map, pos, keyPos)
 
@@ -335,7 +339,7 @@ let emitHashMapUpdate = (buf, map, keys, pos, keyPos, update1, update2, checkExi
 
   if (checkExistance) {
     c.if(buf)(c.eq(keyPos, "-1"), buf1 => {
-      emitHashMapInsert(buf1, map, keys, pos, keyPos, lhs, update1)
+      emitHashMapInsert(buf1, map, key, pos, keyPos, lhs, update1)
     })
   }
 
@@ -347,18 +351,18 @@ let emitHashMapUpdate = (buf, map, keys, pos, keyPos, update1, update2, checkExi
 //   does nothing
 // if the key is not found:
 //   inserts a new key into the hashmap and initializes it
-let emitHashLookUpOrUpdate = (buf, map, keys, update) =>
-  emitHashLookUpAndUpdateCust(buf, map, keys, update, () => { }, true)
+let emitHashLookUpOrUpdate = (buf, map, key, update) =>
+  emitHashLookUpAndUpdateCust(buf, map, key, update, () => { }, true)
 
 // Emit the code that performs a lookup of the key in the hashmap, then
 // if the key is found:
 //   updates the value
 // if the key is not found:
 //   inserts a new key into the hashmap and initializes it
-let emitHashLookUpAndUpdate = (buf, map, keys, update, checkExistance) =>
-  emitHashLookUpAndUpdateCust(buf, map, keys, () => { }, update, checkExistance)
+let emitHashLookUpAndUpdate = (buf, map, key, update, checkExistance) =>
+  emitHashLookUpAndUpdateCust(buf, map, key, () => { }, update, checkExistance)
 
-let emitHashLookUpAndUpdateCust = (buf, map, keys, update1, update2, checkExistance) => {
+let emitHashLookUpAndUpdateCust = (buf, map, key, update1, update2, checkExistance) => {
   if (checkExistance) {
     // We might insert a new key into the map, check size
     c.if(buf)(c.eq(map.val.count, hashSize), buf1 => {
@@ -367,9 +371,9 @@ let emitHashLookUpAndUpdateCust = (buf, map, keys, update1, update2, checkExista
     })
   }
 
-  let [pos, keyPos] = emitHashLookUp(buf, map, keys)
+  let [pos, keyPos] = emitHashLookUp(buf, map, key)
 
-  emitHashMapUpdate(buf, map, keys, pos, keyPos, update1, update2, checkExistance)
+  emitHashMapUpdate(buf, map, key, pos, keyPos, update1, update2, checkExistance)
 
   return [pos, keyPos]
 }
