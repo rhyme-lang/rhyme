@@ -1,8 +1,9 @@
 const { c, utils } = require("./utils")
 const { TAG } = require("./value")
-const { hashmap, BUCKET_SIZE } = require("./collections")
+const { hashmap, hashSize, bucketSize } = require("./collections")
 
 const { typing, typeSyms } = require("../typing")
+const { symbol } = require("./symbol")
 
 let emitStringPrint = (buf, val, settings) => {
   if (settings.format == "json")
@@ -117,6 +118,71 @@ let emitHashMapPrint = (buf, map, settings) => {
   buf.push(`}`)
 }
 
+// Emit code that prints the keys and values in a hashmap.
+let emitNestedHashMapPrint = (buf, map, settings) => {
+  if (settings.format != "json") {
+    throw new Error("Nested hashmaps must be printed in json")
+  }
+  // let count = map.val.count
+  // let limit = settings.limit || count
+  // let loopVar = symbol.getSymbol("key_pos")
+  // buf.push(`for (int ${loopVar} = 0; ${loopVar} < ${limit}; ${loopVar}++) {`)
+
+  // buf.push(`// print value`)
+
+  // let value = hashmap.getHashMapValueEntry(map, undefined, loopVar)
+  // console.log(value)
+  // emitValPrint(buf, value, settings)
+
+  // buf.push(`if (${loopVar} != ${limit} - 1) {`)
+  // c.printf(buf)("\\n")
+  // buf.push(`}`)
+
+  // buf.push(`}`)
+
+  let sym = map.val.sym
+  let count = map.val.count
+  let limit = settings.limit || count
+
+  c.printf(buf)("{")
+
+  let loopVar = symbol.getSymbol("key_pos")
+  buf.push(`for (int ${loopVar} = 0; ${loopVar} < ${limit}; ${loopVar}++) {`)
+
+  buf.push(`// print key`)
+  let indexing = `[${map.keyPos} * ${hashSize} + ${loopVar}]`
+  for (let i in map.val.keys) {
+    let key = map.val.keys[i]
+    if (key.tag == TAG.JSON) {
+      key.val += indexing
+      emitValPrint(buf, key, settings)
+    } else if (typing.isString(key.schema)) {
+      key.val.str += indexing
+      key.val.len += indexing
+      emitStringPrint(buf, key, settings)
+    } else {
+      key.val += indexing
+      // Add quotes around non-string keys
+      c.printf(buf)(`\\"%${utils.getFormatSpecifier(key.schema)}\\"`, key.val)
+    }
+  }
+
+  c.printf(buf)(":")
+
+  buf.push(`// print value`)
+
+  let value = hashmap.getHashMapValueEntry(map, undefined, loopVar)
+  emitValPrint(buf, value, settings)
+
+  buf.push(`if (${loopVar} != ${limit} - 1) {`)
+  c.printf(buf)(",")
+  buf.push(`}`)
+
+  buf.push(`}`)
+
+  c.printf(buf)("}")
+}
+
 let emitArrayPrintJSON = (buf, arr, settings) => {
   let sym = arr.val.sym
   let count = arr.val.count
@@ -174,7 +240,7 @@ let emitHashMapBucketPrint = (buf, bucket, settings) => {
   let buckets = bucket.val.buckets
   c.printf(buf)("[")
   buf.push(`for (int j = 0; j < ${bucketCount}; j++) {`)
-  buf.push(`int data_pos = ${buckets}[key_pos * ${BUCKET_SIZE} + j];`)
+  buf.push(`int data_pos = ${buckets}[key_pos * ${bucketSize} + j];`)
 
   let value = hashmap.getHashMapValueEntry(bucket, undefined, "data_pos")
   emitValPrint(buf, value, settings)
@@ -205,6 +271,7 @@ let emitValPrint = (buf, val, settings) => {
     emitHashMapBucketPrint(buf, val, settings)
   } else if (val.tag == TAG.NESTED_HASHMAP) {
     c.comment(buf)("print nested hashmap")
+    emitNestedHashMapPrint(buf, val, settings)
   } else if (typing.isString(val.schema)) {
     emitStringPrint(buf, val, settings)
   } else if (val.schema.typeSym == typeSyms.date) {

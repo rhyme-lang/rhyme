@@ -124,7 +124,7 @@ let emitHashMapBucketValuesInit = (buf, map, bucket, name, schema) => {
 
 let emitHashMapValueInit = (buf, map, name, schema, sorted, prolog0) => {
   let sym = map.val.sym
-  let size = map.tag == TAG.NESTED_HASHMAP ? dataSize : hashSize
+  let size = map.tag == TAG.NESTED_HASHMAP ? hashSize * hashSize : hashSize
 
   c.comment(buf)(`value of ${sym}: ${name}`)
   let res = { schema }
@@ -172,16 +172,17 @@ let emitNestedHashMapInit = (buf, map, name, schema, keySchema) => {
   let sym = map.val.sym + name
   let res = { schema }
 
-  let counts = `${sym}_nested_key_counts`
-  let htables = `${sym}_htables`
+  let count = `${sym}_nested_key_counts`
+  let htable = `${sym}_htables`
 
-  console.log(keySchema)
-  let keys = emitHashMapKeyDecls(buf, sym, keySchema, dataSize)
+  let keys = emitHashMapKeyDecls(buf, sym, keySchema, hashSize * hashSize)
 
-  c.declareIntPtr(buf)(htables, c.cast("int *", c.malloc("int", dataSize)))
-  c.declareIntPtr(buf)(counts, c.cast("int *", c.malloc("int", hashSize)))
+  c.declareIntPtr(buf)(htable, c.cast("int *", c.malloc("int", hashSize * hashSize)))
+  c.declareIntPtr(buf)(count, c.cast("int *", c.malloc("int", hashSize)))
 
-  res.val = { sym, htables, counts, keys }
+  c.stmt(buf)(c.call("memset", htable, "-1", `sizeof(int) * ${hashSize * hashSize}`))
+
+  res.val = { sym, htable, count, keys }
   res.tag = TAG.NESTED_HASHMAP
 
   map.val.values ??= {}
@@ -245,7 +246,9 @@ let hash = (buf, keys) => {
 let emitHashMapInsert = (buf, map, keys, pos, keyPos, lhs, init) => {
   c.stmt(buf)(c.assign(keyPos, map.val.count))
   c.stmt(buf)(c.inc(map.val.count))
-  c.stmt(buf)(c.assign(`${map.val.htable}[${pos}]`, keyPos))
+
+  let indexing = map.tag == TAG.NESTED_HASHMAP ? `[${map.keyPos} * ${hashSize} + ${pos}]` : "[" + pos + "]"
+  c.stmt(buf)(c.assign(map.val.htable + indexing, keyPos))
 
   for (let i in keys) {
     let key = keys[i]
@@ -255,14 +258,16 @@ let emitHashMapInsert = (buf, map, keys, pos, keyPos, lhs, init) => {
       key = json.convertJSONTo(key, schema)
     }
 
+    let indexing = map.tag == TAG.NESTED_HASHMAP ? `[${map.keyPos} * ${hashSize} + ${keyPos}]` : "[" + keyPos + "]"
+
     if (typing.isString(schema)) {
-      let keyStr = `${map.val.keys[i].val.str}[${keyPos}]`
-      let keyLen = `${map.val.keys[i].val.len}[${keyPos}]`
+      let keyStr = map.val.keys[i].val.str + indexing
+      let keyLen = map.val.keys[i].val.len + indexing
 
       c.stmt(buf)(c.assign(keyStr, key.val.str))
       c.stmt(buf)(c.assign(keyLen, key.val.len))
     } else {
-      c.stmt(buf)(c.assign(`${map.val.keys[i].val}[${keyPos}]`, key.val))
+      c.stmt(buf)(c.assign(map.val.keys[i].val + indexing, key.val))
     }
   }
   init(buf, lhs, pos, keyPos)
@@ -280,7 +285,8 @@ let emitHashLookUp = (buf, map, keys) => {
   let pos = symbol.getSymbol("pos")
   c.declareULong(buf)(pos, c.binary(hashed, hashMask, "&"))
 
-  let keyPos = `${map.val.htable}[${pos}]`
+  let keyPos = map.tag == TAG.NESTED_HASHMAP ? `${map.val.htable}[${map.keyPos} * ${hashSize} + ${pos}]` : `${map.val.htable}[${pos}]`
+  let indexing = map.tag == TAG.NESTED_HASHMAP ? `[${map.keyPos} * ${hashSize} + ${keyPos}]` : "[" + keyPos + "]"
 
   let compareKeys = undefined
 
@@ -292,14 +298,14 @@ let emitHashLookUp = (buf, map, keys) => {
     }
 
     if (typing.isString(schema)) {
-      let keyStr = `${map.val.keys[i].val.str}[${keyPos}]`
-      let keyLen = `${map.val.keys[i].val.len}[${keyPos}]`
+      let keyStr = map.val.keys[i].val.str + indexing
+      let keyLen = map.val.keys[i].val.len + indexing
 
       let { str, len } = key.val
       let comparison = c.ne(c.call("compare_str2", keyStr, keyLen, str, len), "0")
       compareKeys = compareKeys ? c.or(compareKeys, comparison) : comparison
     } else {
-      let comparison = c.ne(`${map.val.keys[i].val}[${keyPos}]`, key.val)
+      let comparison = c.ne(map.val.keys[i].val + indexing, key.val)
       compareKeys = compareKeys ? c.or(compareKeys, comparison) : comparison
     }
 
@@ -313,10 +319,10 @@ let emitHashLookUp = (buf, map, keys) => {
     }
   )
 
-  keyPos = symbol.getSymbol("key_pos")
-  c.declareInt(buf)(keyPos, `${map.val.htable}[${pos}]`)
+  let keyPos1 = symbol.getSymbol("key_pos")
+  c.declareInt(buf)(keyPos1, keyPos)
 
-  return [pos, keyPos]
+  return [pos, keyPos1]
 }
 
 // Emit the code that updates the hashMap value for the key at keyPos
@@ -353,10 +359,13 @@ let emitHashLookUpAndUpdate = (buf, map, keys, update, checkExistance) =>
   emitHashLookUpAndUpdateCust(buf, map, keys, () => { }, update, checkExistance)
 
 let emitHashLookUpAndUpdateCust = (buf, map, keys, update1, update2, checkExistance) => {
-  c.if(buf)(c.eq(map.val.count, hashSize), buf1 => {
-    c.printErr(buf1)("hashmap size reached its full capacity\\n")
-    c.return(buf1)("1")
-  })
+  if (checkExistance) {
+    // We might insert a new key into the map, check size
+    c.if(buf)(c.eq(map.val.count, hashSize), buf1 => {
+      c.printErr(buf1)("hashmap size reached its full capacity\\n")
+      c.return(buf1)("1")
+    })
+  }
 
   let [pos, keyPos] = emitHashLookUp(buf, map, keys)
 
@@ -367,7 +376,7 @@ let emitHashLookUpAndUpdateCust = (buf, map, keys, update1, update2, checkExista
 
 let getValueAtIdx = (val, idx) => {
   let res = {}
-  let indexing = "[" + idx + "]"
+  let indexing = val.tag == TAG.NESTED_HASHMAP ? `[${val.keyPos} * ${hashSize} + ${idx}]` : "[" + idx + "]"
 
   res.schema = val.schema.objValue
   res.tag = TAG.OBJECT
@@ -376,7 +385,9 @@ let getValueAtIdx = (val, idx) => {
   for (let key in val.val.values) {
     let value = val.val.values[key]
     res.val[key] = JSON.parse(JSON.stringify(value))
-    if (value.tag == TAG.HASHMAP_BUCKET) {
+    if (value.tag == TAG.NESTED_HASHMAP) {
+      res.val[key].val.count += indexing
+    } else if (value.tag == TAG.HASHMAP_BUCKET) {
       res.val[key].val.bucketCount += indexing
     } else if (typing.isString(value.schema)) {
       res.val[key].val.str += indexing
@@ -606,5 +617,6 @@ let hashmap = {
 module.exports = {
   array,
   hashmap,
-  BUCKET_SIZE: bucketSize
+  hashSize,
+  bucketSize
 }
