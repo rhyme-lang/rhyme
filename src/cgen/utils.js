@@ -206,7 +206,6 @@ let emitWildcardStrSearch = (buf, str, currIdx, parts, partIdx, strictStart, str
     checkStart = c.ge(tmp, "0")
   }
 
-
   let checkEnd
   if (partIdx == parts.length - 1 && strictEnd) {
     checkEnd = c.eq(c.add(tmp, parts[partIdx].length), c.sub(str.val.len, currIdx))

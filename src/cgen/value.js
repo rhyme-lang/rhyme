@@ -50,6 +50,10 @@ value.array = (schema, sym, count, cond) => ({
   schema, val: { sym, count }, tag: TAG.ARRAY, cond
 })
 
+value.combinedKey = (schema, keys, cond, keyPos) => ({
+  schema, val: { keys }, tag: TAG.COMBINED_KEY, cond, keyPos
+})
+
 module.exports = {
   TAG,
   value

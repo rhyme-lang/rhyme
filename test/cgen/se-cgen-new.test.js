@@ -29,7 +29,13 @@ let key = typing.createKey(types.string);
 let dataSchema = typing.parseType({
   "-": typing.keyval(key, {
     key: types.string,
-    value: types.u8
+    value: types.u32
+  })
+})
+
+let otherSchema = typing.parseType({
+  "-": typing.keyval(key, {
+    value: types.u32
   })
 })
 
@@ -38,7 +44,7 @@ let countrySchema = typing.parseType({
     region: types.string,
     country: types.string,
     city: types.string,
-    population: types.u8
+    population: types.u32
   })
 })
 
@@ -49,9 +55,17 @@ let regionSchema = typing.parseType({
   })
 })
 
+let nestedSchema = typing.parseType({
+  "-": typing.keyval(key, {
+    "-": typing.keyval(key, {
+      value: types.u32
+    })
+  })
+})
+
 let data = rh`loadJSON "./cgen-sql/json/data.json" ${dataSchema}`
-let other = rh`loadJSON "./cgen-sql/json/other.json" ${types.unknown}`
-let nested = rh`loadJSON "./cgen-sql/json/nested.json" ${types.unknown}`
+let other = rh`loadJSON "./cgen-sql/json/other.json" ${otherSchema}`
+let nested = rh`loadJSON "./cgen-sql/json/nested.json" ${nestedSchema}`
 
 let country = rh`loadJSON "./cgen-sql/json/country.json" ${countrySchema}`
 let region = rh`loadJSON "./cgen-sql/json/region.json" ${regionSchema}`
@@ -215,7 +229,14 @@ test("testScalar1", async () => {
   expect(JSON.parse(res)).toEqual(70)
 })
 
-/* ----- testZipScalar2: not supported ----- */
+test("testZipScalar2", async () => {
+  let query = rh`${data}.*A.value + ${other}.*A.value | group *A`
+
+  let func = await compile(query, { backend: "c-new", outDir, outFile: "testZipScalar2" })
+  let res = await func()
+
+  expect(JSON.parse(res)).toEqual({ A: 140, B: 420 })
+})
 
 test("testZipScalar3", async () => {
   let query = rh`(sum ${data}.*A.value) + (sum ${other}.*A.value)`
@@ -226,13 +247,33 @@ test("testZipScalar3", async () => {
   expect(JSON.parse(res)).toEqual(560)
 })
 
-/* ----- testZipScalar4: not supported ----- */
-/* ----- testJoinScalar2: not supported ----- */
+test("testZipScalar4", async () => {
+  let query = rh`((sum ${data}.*A.value) + ${other}.*A.value) | group *A`
+
+  let func = await compile(query, { backend: "c-new", outDir, outFile: "testZipScalar4", enableOptimizations: false })
+  let res = await func()
+
+  expect(JSON.parse(res)).toEqual({ A: 140, B: 420 })
+})
+
+test("testJoinScalar2", async () => {
+  // TODO: make it work for single
+  let query = rh`sum (${data}.*A.value + ${other}.*B.value) | group*B | group *A`
+
+  let func = await compile(query, { backend: "c-new", outDir, outFile: "testJoinScalar2", enableOptimizations: false })
+  let res = await func()
+
+  expect(JSON.parse(res)).toEqual({
+    A: { A: 140, B: 440, D: 240 },
+    B: { A: 120, B: 420, D: 220 },
+    C: { A: 110, B: 410, D: 210 }
+  })
+})
 
 test("testJoinScalar3", async () => {
   let query = rh`(sum ${data}.*A.value) + (sum ${other}.*B.value)`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testJoinScalar3" })
+  let func = await compile(query, { backend: "c-new", outDir, outFile: "testJoinScalar3", enableOptimizations: false })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual(770)
