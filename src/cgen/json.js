@@ -51,7 +51,29 @@ let emitLoadJSON = (buf, filename) => {
   return jsonVal
 }
 
-let getJSONLoopTxt = (f, json, data) => () => {
+let getJSONArrayLoopTxt = (f, json, data) => () => {
+  let v = f.arg[1].op
+  let info = [`// generator: ${v} <- ${pretty(f.arg[0])}`]
+
+  v = quoteVar(v)
+  let gen = v + "_gen"
+  let initCursor = []
+  let iter = symbol.getSymbol("iter")
+  c.declareVar(initCursor)("yyjson_arr_iter", iter, c.call("yyjson_arr_iter_with", json.val));
+
+  let loopHeader = []
+  loopHeader.push(`for (int ${v} = 0; ; ${v}++) {`)
+  c.declarePtr(loopHeader)("yyjson_val", gen, `yyjson_arr_iter_next(&${iter})`)
+  loopHeader.push(`if (!${gen}) break;`)
+
+  let boundsChecking = [`if (${v} < yyjson_get_len(${json.val})) break;`]
+
+  return {
+    info, data, initCursor, loopHeader, boundsChecking, rowScanning: []
+  }
+}
+
+let getJSONObjLoopTxt = (f, json, data) => () => {
   let v = f.arg[1].op
   let info = [`// generator: ${v} <- ${pretty(f.arg[0])}`]
 
@@ -73,7 +95,8 @@ let getJSONLoopTxt = (f, json, data) => () => {
 let json = {
   convertJSONTo,
   emitLoadJSON,
-  getJSONLoopTxt
+  getJSONObjLoopTxt,
+  getJSONArrayLoopTxt
 }
 
 module.exports = {

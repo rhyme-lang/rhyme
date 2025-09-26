@@ -1,0 +1,6 @@
+[
+    { "region": "Asia", "country": "Japan", "city": "Tokyo", "population": 30 },
+    { "region": "Asia", "country": "China", "city": "Beijing", "population": 20 },
+    { "region": "Europe", "country": "France", "city": "Paris", "population": 10 },
+    { "region": "Europe", "country": "UK", "city": "London", "population": 10 }
+]

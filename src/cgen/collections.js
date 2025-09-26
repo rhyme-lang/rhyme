@@ -124,24 +124,33 @@ let emitHashMapBucketValuesInit = (buf, map, bucket, name, schema) => {
 
 let emitHashMapValueInit = (buf, map, name, schema, sorted, prolog0) => {
   let sym = map.val.sym
-  let size = map.tag == TAG.NESTED_HASHMAP ? hashSize * hashSize : hashSize
+  let size = hashSize
 
   c.comment(buf)(`value of ${sym}: ${name}`)
   let res = { schema }
   if (typing.isUnknown(schema)) {
-    allocateYYJSONBuffer(buf, `${sym}_${name}`, size, sorted, prolog0)
+    if (map.tag == TAG.NESTED_HASHMAP) {
+      map.val.struct.addField("yyjson_val **", `${sym}_${name}`)
+    } else
+      allocateYYJSONBuffer(buf, `${sym}_${name}`, size, sorted, prolog0)
     res.val = `${sym}_${name}`
     res.tag = TAG.JSON
   } else if (typing.isObject(schema)) {
     // Nested hashmap
     throw new Error("Nested hashmap not supported for now")
   } else if (typing.isString(schema)) {
-    allocateStringBuffer(buf, `${sym}_${name}_str`, `${sym}_${name}_len`, size, sorted, prolog0)
+    if (map.tag == TAG.NESTED_HASHMAP) {
+      map.val.struct.addField("const char **", `${sym}_${name}_str`)
+      map.val.struct.addField("int *", `${sym}_${name}_len`)
+    } else
+      allocateStringBuffer(buf, `${sym}_${name}_str`, `${sym}_${name}_len`, size, sorted, prolog0)
     res.val = { str: `${sym}_${name}_str`, len: `${sym}_${name}_len` }
   } else {
-    // let convertToCType report "type not supported" errors
     let cType = utils.convertToCType(schema)
-    allocatePrimitiveBuffer(buf, cType, `${sym}_${name}`, size, sorted, prolog0)
+    if (map.tag == TAG.NESTED_HASHMAP) {
+      map.val.struct.addField(cType + " *", `${sym}_${name}`)
+    } else
+      allocatePrimitiveBuffer(buf, cType, `${sym}_${name}`, size, sorted, prolog0)
     res.val = `${sym}_${name}`
   }
 
@@ -149,44 +158,82 @@ let emitHashMapValueInit = (buf, map, name, schema, sorted, prolog0) => {
   map.val.values[name] = res
 }
 
-let emitNestedHashMapKeyDecls = (buf, sym, name, keySchema) => {
+let emitNestedHashMapKeyDecls = (struct, sym, keySchema) => {
   let keys = []
   for (let i in keySchema) {
     let schema = keySchema[i]
     if (typing.isUnknown(schema)) {
-      allocateYYJSONBuffer(buf, `${sym}_${name}_keys${i}`, dataSize)
-      keys.push(value.json(schema, `${sym}_${name}_keys${i}`))
+      struct.addField("yyjson_val **", `${sym}_keys${i}`)
+      keys.push(value.json(schema, `${sym}_keys${i}`))
     } else if (typing.isString(schema)) {
-      allocateStringBuffer(buf, `${sym}_${name}_keys_str${i}`, `${sym}_${name}_keys_len${i}`, dataSize)
-      keys.push(value.string(schema, `${sym}_${name}_keys_str${i}`, `${sym}_${name}_keys_len${i}`))
+      struct.addField("const char **", `${sym}_keys_str${i}`)
+      struct.addField("int *", `${sym}_keys_len${i}`)
+      keys.push(value.string(schema, `${sym}_keys_str${i}`, `${sym}_keys_len${i}`))
     } else {
       let cType = utils.convertToCType(schema)
-      allocatePrimitiveBuffer(buf, cType, `${sym}_${name}_keys${i}`, dataSize)
-      keys.push(value.primitive(schema, `${sym}_${name}_keys${i}`))
+      struct.addField(cType, `${sym}_keys${i}`)
+      keys.push(value.primitive(schema, `${sym}_keys${i}`))
     }
   }
   return keys
 }
 
-let emitNestedHashMapInit = (buf, map, name, schema, keySchema) => {
-  let sym = map.val.sym + name
+let emitNestedHashMapInit = (buf, sym, map, name, schema, keySchema) => {
   let res = { schema }
 
-  let count = `${sym}_nested_key_counts`
-  let htable = `${sym}_htables`
+  let ptr = map.val.sym + name
 
-  let keys = emitHashMapKeyDecls(buf, sym, keySchema, hashSize * hashSize)
+  let struct = c.struct(sym)
 
-  c.declareIntPtr(buf)(htable, c.cast("int *", c.malloc("int", hashSize * hashSize)))
-  c.declareIntPtr(buf)(count, c.cast("int *", c.malloc("int", hashSize)))
+  c.declarePtrPtr(buf)("struct " + sym, ptr, c.cast("struct " + sym + " **", c.malloc("struct " + sym + " *", hashSize)))
 
-  c.stmt(buf)(c.call("memset", htable, "-1", `sizeof(int) * ${hashSize * hashSize}`))
+  let count = `${sym}_key_count`
+  let htable = `${sym}_htable`
 
-  res.val = { sym, htable, count, keys }
+  let keys = emitNestedHashMapKeyDecls(struct, sym, keySchema)
+  struct.addField("int *", htable)
+  struct.addField("int", count)
+
+  res.val = { sym, ptr, struct, htable, count, keys }
   res.tag = TAG.NESTED_HASHMAP
 
   map.val.values ??= {}
   map.val.values[name] = res
+}
+
+let emitNestedHashMapAllocation = (buf, map) => {
+  let assign = (...args) => c.stmt(buf)(c.assign(...args))
+
+  assign(map.val.ptr, c.cast(`struct ${map.val.struct.name} *`, c.malloc(`struct ${map.val.struct.name}`, 1)))
+  assign(map.val.count, "0")
+  assign(map.val.htable, c.cast("int *", c.malloc("int", hashSize)))
+  c.stmt(buf)(c.call("memset", map.val.htable, "-1", `sizeof(int) * ${hashSize}`))
+
+  for (let i in map.val.keys) {
+    let key = map.val.keys[i]
+    if (typing.isString(key.schema)) {
+      assign(key.val.str, c.cast("const char **", c.malloc("const char *", hashSize)))
+      assign(key.val.len, c.cast("int *", c.malloc("int", hashSize)))
+    } else {
+      let cType = utils.convertToCType(key.schema)
+      assign(key.val, c.cast(`${cType} *`, c.malloc(cType, hashSize)))
+    }
+  }
+
+  for (let name in map.val.values) {
+    let value = map.val.values[name]
+    if (value.tag == TAG.NESTED_HASHMAP) {
+      throw new Error("Not implemented yet")
+    } else if (value.tag == TAG.HASHMAP_BUCKET) {
+      throw new Error("Not implemented yet")
+    } else if (typing.isString(value.schema)) {
+      assign(value.val.str, c.cast("const char **", c.malloc("const char *", hashSize)))
+      assign(value.val.len, c.cast("int *", c.malloc("int", hashSize)))
+    } else {
+      let cType = utils.convertToCType(value.schema)
+      assign(value.val, c.cast(`${cType} *`, c.malloc(cType, hashSize)))
+    }
+  }
 }
 
 // Initialize the key arrays
@@ -249,8 +296,7 @@ let emitHashMapInsert = (buf, map, key, pos, keyPos, lhs, init) => {
   c.stmt(buf)(c.assign(keyPos, map.val.count))
   c.stmt(buf)(c.inc(map.val.count))
 
-  let indexing = map.tag == TAG.NESTED_HASHMAP ? `[${map.keyPos} * ${hashSize} + ${pos}]` : "[" + pos + "]"
-  c.stmt(buf)(c.assign(map.val.htable + indexing, keyPos))
+  c.stmt(buf)(c.assign(map.val.htable + "[" + pos + "]", keyPos))
 
   let keys = key.tag == TAG.COMBINED_KEY ? key.val.keys : [key]
   for (let i in keys) {
@@ -261,7 +307,7 @@ let emitHashMapInsert = (buf, map, key, pos, keyPos, lhs, init) => {
       key = json.convertJSONTo(key, schema)
     }
 
-    let indexing = map.tag == TAG.NESTED_HASHMAP ? `[${map.keyPos} * ${hashSize} + ${keyPos}]` : "[" + keyPos + "]"
+    let indexing = "[" + keyPos + "]"
 
     if (typing.isString(schema)) {
       let keyStr = map.val.keys[i].val.str + indexing
@@ -288,8 +334,8 @@ let emitHashLookUp = (buf, map, key) => {
   let pos = symbol.getSymbol("pos")
   c.declareULong(buf)(pos, c.binary(hashed, hashMask, "&"))
 
-  let keyPos = map.tag == TAG.NESTED_HASHMAP ? `${map.val.htable}[${map.keyPos} * ${hashSize} + ${pos}]` : `${map.val.htable}[${pos}]`
-  let indexing = map.tag == TAG.NESTED_HASHMAP ? `[${map.keyPos} * ${hashSize} + ${keyPos}]` : "[" + keyPos + "]"
+  let keyPos = `${map.val.htable}[${pos}]`
+  let indexing = "[" + keyPos + "]"
 
   let compareKeys = undefined
 
@@ -378,26 +424,58 @@ let emitHashLookUpAndUpdateCust = (buf, map, key, update1, update2, checkExistan
   return [pos, keyPos]
 }
 
+let getNestedHashmapAtIdx = (map, idx) => {
+  let indexing = "[" + idx + "]"
+  let ptr = map.val.ptr += indexing
+  map.val.htable = ptr + "->" + map.val.htable
+  map.val.count = ptr + "->" + map.val.count
+
+  for (let i in map.val.keys) {
+    let key = map.val.keys[i]
+    if (typing.isString(key.schema)) {
+      key.val.str = ptr + "->" + key.val.str
+      key.val.len = ptr + "->" + key.val.len
+    } else {
+      key.val = ptr + "->" + key.val
+    }
+  }
+
+  for (let name in map.val.values) {
+    let value = map.val.values[name]
+    if (value.tag == TAG.NESTED_HASHMAP) {
+      throw new Error("Not implemented yet")
+    } else if (value.tag == TAG.HASHMAP_BUCKET) {
+      throw new Error("Not implemented yet")
+    } else if (typing.isString(value.schema)) {
+      value.val.str = ptr + "->" + value.val.str
+      value.val.len = ptr + "->" + value.val.len
+    } else {
+      value.val = ptr + "->" + value.val
+    }
+  }
+}
+
 let getValueAtIdx = (val, idx) => {
   let res = {}
-  let indexing = val.tag == TAG.NESTED_HASHMAP ? `[${val.keyPos} * ${hashSize} + ${idx}]` : "[" + idx + "]"
+  let indexing = "[" + idx + "]"
 
   res.schema = val.schema.objValue
   res.tag = TAG.OBJECT
   res.val = {}
 
-  for (let key in val.val.values) {
-    let value = val.val.values[key]
-    res.val[key] = JSON.parse(JSON.stringify(value))
+  for (let name in val.val.values) {
+    let value = val.val.values[name]
+    // Deep copy
+    res.val[name] = JSON.parse(JSON.stringify(value))
     if (value.tag == TAG.NESTED_HASHMAP) {
-      res.val[key].val.count += indexing
+      getNestedHashmapAtIdx(res.val[name], idx)
     } else if (value.tag == TAG.HASHMAP_BUCKET) {
-      res.val[key].val.bucketCount += indexing
+      res.val[name].val.bucketCount += indexing
     } else if (typing.isString(value.schema)) {
-      res.val[key].val.str += indexing
-      res.val[key].val.len += indexing
+      res.val[name].val.str += indexing
+      res.val[name].val.len += indexing
     } else {
-      res.val[key].val += indexing
+      res.val[name].val += indexing
     }
   }
 
@@ -446,7 +524,13 @@ let emitHashBucketInsert = (buf, bucket, value) => {
 
       if (typing.isObject(val.schema)) {
         throw new Error("Not supported")
-      } else if (typing.isString(val.schema)) {
+      }
+
+      if (val.tag == TAG.JSON) {
+        val = json.convertJSONTo(val, val.schema)
+      }
+
+      if (typing.isString(val.schema)) {
         c.stmt(buf)(c.assign(lhs.val[key].val.str, val.val.str))
         c.stmt(buf)(c.assign(lhs.val[key].val.len, val.val.len))
       } else {
@@ -509,7 +593,13 @@ let emitArrayInsert = (buf, arr, value) => {
 
       if (typing.isObject(val.schema)) {
         throw new Error("Not supported")
-      } else if (typing.isString(val.schema)) {
+      }
+
+      if (val.tag == TAG.JSON) {
+        val = json.convertJSONTo(val, val.schema)
+      }
+      
+      if (typing.isString(val.schema)) {
         c.stmt(buf)(c.assign(lhs.val[key].val.str, val.val.str))
         c.stmt(buf)(c.assign(lhs.val[key].val.len, val.val.len))
       } else {
@@ -600,7 +690,6 @@ let hashmap = {
   emitHashMapValueInit,
   emitHashMapBucketsInit,
   emitHashMapInsert,
-
   emitHashLookUpOrUpdate,
   emitHashLookUpAndUpdate,
   emitHashLookUpAndUpdateCust,
@@ -611,7 +700,8 @@ let hashmap = {
   emitHashMapBucketValuesInit,
   getHashMapLoopTxt,
   getHashBucketLoopTxt,
-  emitNestedHashMapInit
+  emitNestedHashMapInit,
+  emitNestedHashMapAllocation
 }
 
 // let hashmapC1 = {

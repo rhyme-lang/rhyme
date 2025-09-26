@@ -115,15 +115,25 @@ c.declareCharPtr = (buf) => (name, init) => c.declarePtr(buf)("char", name, init
 c.declareConstCharPtr = (buf) => (name, init) => c.declarePtr(buf)("char", name, init, true)
 c.declareCharPtrPtr = (buf) => (name, init) => c.declarePtrPtr(buf)("char", name, init, true)
 
-c.declareStruct = (buf) => (name, types, fields) => {
+c.declareStruct = (buf) => (struct) => {
+  let { name, fields } = struct
   buf.push(`struct ${name} {`)
-  for (let i in types) {
-    let type = types[i]
-    let field = fields[i]
-    c.declareVar(buf)(type, field)
+  for (let i in fields) {
+    let {type, name} = fields[i]
+    if (type.indexOf("*") >= 0)
+      buf.push(`${type}${name};`)
+    else
+      c.declareVar(buf)(type, name)
   }
   buf.push(`};`)
 }
+
+c.struct = (name) => ({
+  name, fields: [],
+  addField: function(type, name) {
+    this.fields.push({type, name})
+  }
+})
 
 c.printf = (buf) => (fmt, ...args) => buf.push(c.call("printf", "\"" + fmt + "\"", ...args) + ";")
 c.printErr = (buf) => (fmt, ...args) => buf.push(c.call("fprintf", "stderr", "\"" + fmt + "\"", ...args) + ";")
@@ -154,7 +164,7 @@ c.return = (buf) => (expr) => buf.push(`return ${expr};`)
 
 let convertToCType = (type) => {
   if (type.typeSym === "dynkey")
-    return convertToCType(type.keySuperkey)
+    return convertToCType(type.keySupertype)
   if (type.typeSym === "union")
     throw new Error("Unable to convert union type to C type currently: " + typing.prettyPrintType(type))
   if (type.typeSym in cTypes)
@@ -164,7 +174,7 @@ let convertToCType = (type) => {
 
 let getFormatSpecifier = (type) => {
   if (type.typeSym === "dynkey")
-    return getFormatSpecifier(type.keySuperkey)
+    return getFormatSpecifier(type.keySupertype)
   if (type.typeSym === "union")
     throw new Error("Unable to get type specifier for union tpyes currently: " + typing.prettyPrintType(type))
   if (type.typeSym in formatSpecifierMap)

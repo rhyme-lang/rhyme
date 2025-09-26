@@ -254,7 +254,7 @@ let emitStatefulInit = (buf, q, lhs) => {
       c.stmt(buf)(c.assign(lhs.val.count, "0"))
     }
   } else if (q.key == "update") {
-    c.stmt(buf)(c.assign(lhs.val.count, "0"))
+    hashmap.emitNestedHashMapAllocation(buf, lhs)
   } else {
     throw new Error("stateful op not supported: " + pretty(q))
   }
@@ -307,21 +307,16 @@ let emitStatefulUpdate1 = (buf, q, lhs, rhs) => {
 }
 
 let emitStatefulUpdate = (buf, q, lhs) => {
-  if (q.key == "update") {
-
+  let e = q.arg[0]
+  let rhs = emitPath(buf, e)
+  if (lhs.cond || rhs.cond) {
+    let cond = lhs.cond && rhs.cond ? c.or(lhs.cond, rhs.cond) : (lhs.cond ? lhs.cond : rhs.cond)
+    c.if(buf)(c.not(cond), buf1 => {
+      emitStatefulUpdate1(buf1, q, lhs, rhs)
+    })
   } else {
-    let e = q.arg[0]
-    let rhs = emitPath(buf, e)
-    if (lhs.cond || rhs.cond) {
-      let cond = lhs.cond && rhs.cond ? c.or(lhs.cond, rhs.cond) : (lhs.cond ? lhs.cond : rhs.cond)
-      c.if(buf)(c.not(cond), buf1 => {
-        emitStatefulUpdate1(buf1, q, lhs, rhs)
-      })
-    } else {
-      emitStatefulUpdate1(buf, q, lhs, rhs)
-    }
+    emitStatefulUpdate1(buf, q, lhs, rhs)
   }
-
 }
 
 let emitStatefulInPath = (i) => {
@@ -450,9 +445,11 @@ let emitGet = (buf, q) => {
       })
       return { schema: q.schema.type, val, tag: TAG.OBJECT }
     } else if (g1.tag == TAG.JSON) {
-      // It's better if we do not perform generic get since we should have the iterator ready for the loop,
-      // use yyjson_obj_iter_get_val
-      if (pretty(e1) == Object.keys(vars[e2.op].lhs)[0]) {
+      if (vars[e2.op].gen) {
+        return vars[e2.op].gen
+      } else if (pretty(e1) == Object.keys(vars[e2.op].lhs)[0]) {
+        // It's better if we do not perform generic get since we should have the iterator ready for the loop,
+        // use yyjson_obj_iter_get_val
         // Only one possible lhs of this generator, use the iterator
         return { schema: q.schema.type, val: c.call("yyjson_obj_iter_get_val", quoteVar(e2.op)), tag: TAG.JSON }
       } else {
@@ -829,8 +826,9 @@ let collectNestedHashMap = (q, map, name, currentGroupPath) => {
   }
 
   // Create hashmap
-  hashmap.emitNestedHashMapInit(prolog1, map, name, q.schema.type, keySchema)
+  hashmap.emitNestedHashMapInit(prolog1, sym, map, name, q.schema.type, keySchema)
   let nestedMap = map.val.values[name]
+  let struct = nestedMap.val.struct
 
   updateOps[i] = []
   updateOpsExtra[i] = []
@@ -841,6 +839,8 @@ let collectNestedHashMap = (q, map, name, currentGroupPath) => {
   addHashMapValue(nestedMap, e2, "_DEFAULT_", currentGroupPath)
   currentGroupPath.sym = iOld
   currentGroupPath.path.pop()
+
+  c.declareStruct(prolog0)(struct)
 }
 
 // Collect hashmaps required for the query
@@ -963,6 +963,9 @@ let processFilters = () => {
       vars[v1].lhs ??= {}
       vars[v1].lhs[pretty(g1)] = lhs
       // Generate loops based on different types of left hand side values
+      if (typing.isUnknown(g1.schema.type)) {
+        throw new Error("Cannot generate loop")
+      }
       if (firstSeen) {
         vars[v1].val = value.primitive(lhs.schema.objKey || types.unknown, quoteVar(v1))
       }
@@ -970,9 +973,16 @@ let processFilters = () => {
         let getLoopTxtFunc = csv.getCSVLoopTxt(f, lhs, data, usedCols)
         addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
       } else if (lhs.tag == TAG.JSON) {
-        let getLoopTxtFunc = json.getJSONLoopTxt(f, lhs, data)
-        if (firstSeen) vars[v1].val.tag = TAG.JSON
-        addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
+        if (typing.isNumber(g1.schema.type.objKey)) {
+          let getLoopTxtFunc = json.getJSONArrayLoopTxt(f, lhs, data)
+          if (firstSeen) vars[v1].gen = value.json(g1.schema.type.objValue, quoteVar(v1) + "_gen")
+          addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
+        } else {
+          let getLoopTxtFunc = json.getJSONObjLoopTxt(f, lhs, data)
+          if (firstSeen) vars[v1].val.tag = TAG.JSON
+          addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
+        }
+
       } else if (lhs.tag == TAG.ARRAY) {
         let getLoopTxtFunc = array.getArrayLoopTxt(f, lhs)
         addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
