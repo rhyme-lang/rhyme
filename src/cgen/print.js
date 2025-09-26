@@ -123,24 +123,7 @@ let emitNestedHashMapPrint = (buf, map, settings) => {
   if (settings.format != "json") {
     throw new Error("Nested hashmaps must be printed in json")
   }
-  // let count = map.val.count
-  // let limit = settings.limit || count
-  // let loopVar = symbol.getSymbol("key_pos")
-  // buf.push(`for (int ${loopVar} = 0; ${loopVar} < ${limit}; ${loopVar}++) {`)
 
-  // buf.push(`// print value`)
-
-  // let value = hashmap.getHashMapValueEntry(map, undefined, loopVar)
-  // console.log(value)
-  // emitValPrint(buf, value, settings)
-
-  // buf.push(`if (${loopVar} != ${limit} - 1) {`)
-  // c.printf(buf)("\\n")
-  // buf.push(`}`)
-
-  // buf.push(`}`)
-
-  let sym = map.val.sym
   let count = map.val.count
   let limit = settings.limit || count
 
@@ -150,7 +133,7 @@ let emitNestedHashMapPrint = (buf, map, settings) => {
   buf.push(`for (int ${loopVar} = 0; ${loopVar} < ${limit}; ${loopVar}++) {`)
 
   buf.push(`// print key`)
-  let indexing = `[${map.keyPos} * ${hashSize} + ${loopVar}]`
+  let indexing = `[${loopVar}]`
   for (let i in map.val.keys) {
     let key = map.val.keys[i]
     if (key.tag == TAG.JSON) {

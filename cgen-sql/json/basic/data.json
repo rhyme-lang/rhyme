@@ -1,0 +1,5 @@
+[
+    { "key": "A", "value": 10 },
+    { "key": "B", "value": 20 },
+    { "key": "A", "value": 30 }
+]

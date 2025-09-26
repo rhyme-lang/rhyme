@@ -243,7 +243,7 @@ exports.generate = (ir, backend = "js") => {
   let code = []
   let indent = 0
   function emit(str) {
-    if (str == "}") indent--
+    if (str.indexOf("}") == 0) indent--
     code.push("".padEnd(indent * 4, ' ') + str)
     if  (str.indexOf("{") >= 0 && (str.indexOf("{") == 0 || str[str.indexOf("{") - 1] === " ")) {
       let l_num = (str.match(/{/g)||[]).length
