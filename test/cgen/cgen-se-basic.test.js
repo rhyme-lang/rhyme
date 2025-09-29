@@ -101,8 +101,7 @@ test("testZipScalar4", async () => {
 })
 
 test("testJoinScalar2", async () => {
-  // TODO: make it work for single
-  let query = rh`sum (${data}.*A.value + ${other}.*B.value) | group*B | group *A`
+  let query = rh`${data}.*A.value + ${other}.*B.value | group*B | group *A`
 
   let func = await compile(query, { backend: "c-new", outDir, outFile: "testJoinScalar2", enableOptimizations: false })
   let res = await func()
@@ -123,8 +122,27 @@ test("testJoinScalar3", async () => {
   expect(JSON.parse(res)).toEqual(770)
 })
 
-/* ----- testJoinScalar4: not supported ----- */
-/* ----- testNested0: not supported ----- */
+test("testJoinScalar4", async () => {
+  let query = rh`(sum ${data}.*A.value) + ${other}.*B.value | group *B`
+
+  let func = await compile(query, { backend: "c-new", outDir, outFile: "testJoinScalar4", enableOptimizations: false })
+  let res = await func()
+
+  expect(JSON.parse(res)).toEqual({ A: 170, B: 470, D: 270 })
+})
+
+test("testNested0", async () => {
+  let query = rh`${nested}.*A.*B.value | group *B | group *A`
+
+  let func = await compile(query, { backend: "c-new", outDir, outFile: "testNested0", enableOptimizations: false })
+  let res = await func()
+
+  expect(JSON.parse(res)).toEqual({
+    U: { A: 10, B: 20 },
+    V: { B: 30, C: 40 },
+    W: { D: 50, E: 60 }
+  })
+})
 
 test("testNested1", async () => {
   let query = rh`sum ${nested}.*A.*B.value`
@@ -135,7 +153,19 @@ test("testNested1", async () => {
   expect(JSON.parse(res)).toEqual(210)
 })
 
-/* ----- testZipNested2: not supported ----- */
+test("testZipNested2", async () => {
+  let query = rh`${nested}.*A.*B.value + ${other}.*B.value | group *B | group *A`
+
+  let func = await compile(query, { backend: "c-new", outDir, outFile: "testZipNested2", enableOptimizations: false })
+  let res = await func()
+
+  expect(JSON.parse(res)).toEqual({ // restrict inner to A,B,D
+    U: { A: 110, B: 420 },
+    V: { B: 430 },
+    W: { D: 250 }
+  })
+})
+
 /* ----- testZipNested3: not supported ----- */
 /* ----- testZipNestedRec3: not supported ----- */
 /* ----- testGroup0: not supported ----- */

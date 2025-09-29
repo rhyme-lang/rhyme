@@ -1056,6 +1056,13 @@ let emitCode = (q, ir, settings) => {
 
     if (!shouldInit) {
       let lookup = []
+      if (q.fre.length > 0) {
+        for (let k of q.fre) {
+          let key = vars[k].val
+          let [pos, keyPos] = hashmap.emitHashLookUp(lookup, map, key)
+          map = hashmap.getHashMapValueEntry(map, pos, keyPos)
+        }
+      }
       let [pos, keyPos] = hashmap.emitHashLookUp(lookup, map, key)
       assign(lookup, sym, fv, [])
       for (let j of updateOps[i]) {
