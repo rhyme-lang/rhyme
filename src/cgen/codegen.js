@@ -202,7 +202,7 @@ let emitArraySorting = (buf, q, arr) => {
 }
 
 let emitHashMapSorting = (buf, q, map) => {
-  let sym = map.val.sym
+  let sym = tmpSym(map.val.sym)
   let count = map.val.count
 
   let columns = q.arg.slice(1)
@@ -776,7 +776,7 @@ let addHashMapValue = (map, q, name, currentGroupPath) => {
   if (q1.key == "update") {
     // We cannot sort on a nested hashamp column
     assignmentToSym[q.op] = currentGroupPath.sym
-    updateOps[currentGroupPath.sym].push(q.op)
+    updateOps[map.val.sym].push(q.op)
     q1.root = currentGroupPath.sym
     collectNestedHashMap(q, map, name, currentGroupPath)
   } else if (q1.key == "stateful" && q1.fre.length != 0) {
@@ -784,11 +784,11 @@ let addHashMapValue = (map, q, name, currentGroupPath) => {
       throw new Error("Stateful op expected to have the same set of free variables as the current group path but got: " + q1.fre + " and " + currentGroupPath.path)
     }
     assignmentToSym[q.op] = currentGroupPath.sym
-    updateOps[currentGroupPath.sym].push(q.op)
+    updateOps[map.val.sym].push(q.op)
 
     if (name != "_DEFAULT_") q1.extraGroupPath = name
 
-    let sym = tmpSym(currentGroupPath.sym)
+    let sym = tmpSym(map.val.sym)
     if (q1.op == "array") {
       // We cannot sort on an array column
       addHashMapBucket(map, q1, name, currentGroupPath)
@@ -826,7 +826,7 @@ let collectNestedHashMap = (q, map, name, currentGroupPath) => {
   }
 
   // Create hashmap
-  hashmap.emitNestedHashMapInit(prolog1, sym, map, name, q.schema.type, keySchema)
+  hashmap.emitNestedHashMapInit(prolog1, i, map, name, q.schema.type, keySchema)
   let nestedMap = map.val.values[name]
   let struct = nestedMap.val.struct
 
@@ -834,10 +834,10 @@ let collectNestedHashMap = (q, map, name, currentGroupPath) => {
   updateOpsExtra[i] = []
 
   let iOld = currentGroupPath.sym
-  currentGroupPath.sym = i
+  // currentGroupPath.sym = i
   currentGroupPath.path.push(e1.op)
   addHashMapValue(nestedMap, e2, "_DEFAULT_", currentGroupPath)
-  currentGroupPath.sym = iOld
+  // currentGroupPath.sym = iOld
   currentGroupPath.path.pop()
 
   c.declareStruct(prolog0)(struct)
@@ -876,8 +876,8 @@ let collectHashMap = (q) => {
   updateOpsExtra[i] = []
 
   // Create hashmap
-  let { htable, count, keys } = hashmap.emitHashMapInit(prolog1, sym, keySchema)
-  let tmpVar = value.hashmap(q.schema.type, sym, htable, count, keys)
+  let { htable, count, keys } = hashmap.emitHashMapInit(prolog1, i, keySchema)
+  let tmpVar = value.hashmap(q.schema.type, i, htable, count, keys)
 
   let currentGroupPath = { sym: i, path: [...q.fre, e1.op], keySchema }
   if (e2.key == "pure" && e2.op == "mkTuple") {
@@ -1052,12 +1052,14 @@ let emitCode = (q, ir, settings) => {
       map = tmpVars[i]
     } else {
       map = tmpVars[q.root]
+      // sym = tmpSym(q.root)
     }
 
     if (!shouldInit) {
       let lookup = []
       if (q.fre.length > 0) {
         for (let k of q.fre) {
+          // console.log(q, map, tmpVars)
           let key = vars[k].val
           let [pos, keyPos] = hashmap.emitHashLookUp(lookup, map, key)
           map = hashmap.getHashMapValueEntry(map, pos, keyPos)

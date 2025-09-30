@@ -2,6 +2,8 @@ const { c, utils } = require("./utils")
 const { TAG } = require("./value")
 const { hashmap, hashSize, bucketSize } = require("./collections")
 
+const { tmpSym } = utils
+
 const { typing, typeSyms } = require("../typing")
 const { symbol } = require("./symbol")
 
@@ -40,7 +42,7 @@ let emitObjectPrint = (buf, obj, settings) => {
 
 // Emit code that prints the keys and values in a hashmap.
 let emitHashMapPrintJSON = (buf, map, settings) => {
-  let sym = map.val.sym
+  let sym = tmpSym(map.val.sym)
   let count = map.val.count
   let limit = settings.limit || count
 
@@ -94,7 +96,7 @@ let emitHashMapPrint = (buf, map, settings) => {
     emitHashMapPrintJSON(buf, map, settings)
     return
   }
-  let sym = map.val.sym
+  let sym = tmpSym(map.val.sym)
   let count = map.val.count
   let limit = settings.limit || count
   if (map.val.sorted) {

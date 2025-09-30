@@ -78,7 +78,7 @@ let emitHashMapKeyDecls = (buf, sym, keySchema, size = hashSize) => {
 
 let emitHashMapBucketsInit = (buf, map, name, schema) => {
   // stateful "array" op
-  let sym = map.val.sym
+  let sym = tmpSym(map.val.sym)
   let res = { schema }
 
   let dataCount = `${sym}_${name}_count`
@@ -98,7 +98,7 @@ let emitHashMapBucketsInit = (buf, map, name, schema) => {
 
 let emitHashMapBucketValuesInit = (buf, map, bucket, name, schema) => {
   // stateful "array" op
-  let sym = map.val.sym
+  let sym = tmpSym(map.val.sym)
   let res = { schema }
 
   if (typing.isUnknown(schema)) {
@@ -123,7 +123,7 @@ let emitHashMapBucketValuesInit = (buf, map, bucket, name, schema) => {
 }
 
 let emitHashMapValueInit = (buf, map, name, schema, sorted, prolog0) => {
-  let sym = map.val.sym
+  let sym = tmpSym(map.val.sym)
   let size = hashSize
 
   c.comment(buf)(`value of ${sym}: ${name}`)
@@ -178,14 +178,19 @@ let emitNestedHashMapKeyDecls = (struct, sym, keySchema) => {
   return keys
 }
 
-let emitNestedHashMapInit = (buf, sym, map, name, schema, keySchema) => {
+let emitNestedHashMapInit = (buf, i, map, name, schema, keySchema) => {
+  let sym = tmpSym(i)
   let res = { schema }
 
-  let ptr = map.val.sym + name
+  let ptr = tmpSym(map.val.sym) + name
 
   let struct = c.struct(sym)
 
-  c.declarePtrPtr(buf)("struct " + sym, ptr, c.cast("struct " + sym + " **", c.malloc("struct " + sym + " *", hashSize)))
+  if (map.tag == TAG.NESTED_HASHMAP) {
+    map.val.struct.addField("struct " + sym + " **", ptr)
+  } else {
+    c.declarePtrPtr(buf)("struct " + sym, ptr, c.cast("struct " + sym + " **", c.malloc("struct " + sym + " *", hashSize)))
+  }
 
   let count = `${sym}_key_count`
   let htable = `${sym}_htable`
@@ -194,7 +199,7 @@ let emitNestedHashMapInit = (buf, sym, map, name, schema, keySchema) => {
   struct.addField("int *", htable)
   struct.addField("int", count)
 
-  res.val = { sym, ptr, struct, htable, count, keys }
+  res.val = { sym: i, ptr, struct, htable, count, keys }
   res.tag = TAG.NESTED_HASHMAP
 
   map.val.values ??= {}
@@ -223,7 +228,8 @@ let emitNestedHashMapAllocation = (buf, map) => {
   for (let name in map.val.values) {
     let value = map.val.values[name]
     if (value.tag == TAG.NESTED_HASHMAP) {
-      throw new Error("Not implemented yet")
+      assign(value.val.ptr, c.cast(`struct ${value.val.struct.name} **`, c.malloc(`struct ${value.val.struct.name} *`, 1)))
+      // throw new Error("Not implemented yet")
     } else if (value.tag == TAG.HASHMAP_BUCKET) {
       throw new Error("Not implemented yet")
     } else if (typing.isString(value.schema)) {
@@ -238,7 +244,8 @@ let emitNestedHashMapAllocation = (buf, map) => {
 
 // Initialize the key arrays
 // The value arrays will be added and associated to this hashmap later
-let emitHashMapInit = (buf, sym, keySchema) => {
+let emitHashMapInit = (buf, i, keySchema) => {
+  let sym = tmpSym(i)
   c.comment(buf)(`init hashmap for ${sym}`)
   // keys
   c.comment(buf)(`keys of ${sym}`)
@@ -443,7 +450,7 @@ let getNestedHashmapAtIdx = (map, idx) => {
   for (let name in map.val.values) {
     let value = map.val.values[name]
     if (value.tag == TAG.NESTED_HASHMAP) {
-      throw new Error("Not implemented yet")
+      value.val.ptr = ptr + "->" + value.val.ptr
     } else if (value.tag == TAG.HASHMAP_BUCKET) {
       throw new Error("Not implemented yet")
     } else if (typing.isString(value.schema)) {
@@ -598,7 +605,7 @@ let emitArrayInsert = (buf, arr, value) => {
       if (val.tag == TAG.JSON) {
         val = json.convertJSONTo(val, val.schema)
       }
-      
+
       if (typing.isString(val.schema)) {
         c.stmt(buf)(c.assign(lhs.val[key].val.str, val.val.str))
         c.stmt(buf)(c.assign(lhs.val[key].val.len, val.val.len))

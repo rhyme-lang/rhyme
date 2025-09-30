@@ -166,6 +166,22 @@ test("testZipNested2", async () => {
   })
 })
 
+
+test("testZipNested3", async () => {
+  let query = rh`${nested}.*A.*B.value + ${nested}.*C.*B.value | group *C | group *B | group *A`
+
+  let func = await compile(query, { backend: "c-new", outDir, outFile: "testZipNested3", enableOptimizations: false })
+  let res = await func()
+
+  console.log(res)
+
+  // expect(JSON.parse(res)).toEqual({ // restrict inner to A,B,D
+  //   U: { A: 110, B: 420 },
+  //   V: { B: 430 },
+  //   W: { D: 250 }
+  // })
+})
+
 /* ----- testZipNested3: not supported ----- */
 /* ----- testZipNestedRec3: not supported ----- */
 /* ----- testGroup0: not supported ----- */
