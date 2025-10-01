@@ -47,7 +47,7 @@ function buildDeps(assignmentStms, generatorStms, tmpVarWriteRank) {
     assignByTmp[e.writeSym] ??= []
     deps[nodes.length] ??= {}
     assignByTmp[e.writeSym].push(i)
-    nodes.push({type: "stmt", val: e})
+    nodes.push({ type: "stmt", val: e })
     assign2Node[i] = nodes.length - 1
   }
 
@@ -69,7 +69,7 @@ function buildDeps(assignmentStms, generatorStms, tmpVarWriteRank) {
   let gen2Node = {}
   for (let e in gensBySym) {
     deps[nodes.length] ??= {}
-    nodes.push({type: "gen", val: e, data: gensBySym[e]})
+    nodes.push({ type: "gen", val: e, data: gensBySym[e] })
     gen2Node[e] = nodes.length - 1
   }
 
@@ -237,6 +237,10 @@ exports.generate = (ir, backend = "js") => {
   let explain = {}
   explain.src = ir.query
 
+  let scopeTable = scope()
+  // Enter root scope
+  scopeTable.enter()
+
   //
   // init codegen
   //
@@ -245,15 +249,32 @@ exports.generate = (ir, backend = "js") => {
   function emit(str) {
     if (str.indexOf("}") == 0) indent--
     code.push("".padEnd(indent * 4, ' ') + str)
-    if  (str.indexOf("{") >= 0 && (str.indexOf("{") == 0 || str[str.indexOf("{") - 1] === " ")) {
-      let l_num = (str.match(/{/g)||[]).length
-      let r_num = (str.match(/}/g)||[]).length
+    if (str.indexOf("{") >= 0 && (str.indexOf("{") == 0 || str[str.indexOf("{") - 1] === " ")) {
+      let l_num = (str.match(/{/g) || []).length
+      let r_num = (str.match(/}/g) || []).length
       if (l_num > r_num) indent++
       if (l_num < r_num) indent--
     }
   }
+  function emitC(stmt) {
+    if (typeof stmt == "string") {
+      stmt = scopeTable.applySubst(stmt, scopeTable.curr)
+      emit(stmt)
+    } else {
+      let res = scopeTable.search(stmt)
+      if (res) {
+        scopeTable.addSubst(stmt, res)
+      } else {
+        scopeTable.insertStmt(stmt)
+        let buf = []
+        stmt.emit(buf)
+        buf = buf.map(str => scopeTable.applySubst(str, scopeTable.curr))
+        buf.map(emit)
+      }
+    }
+  }
   if (backend == "cpp" || backend == "c-sql") {
-    prolog.forEach(emit)
+    prolog.forEach(emitC)
   } else if (backend == "js") {
     emit("inp => {")
     emit("let tmp = {}")
@@ -291,7 +312,7 @@ exports.generate = (ir, backend = "js") => {
   let istmp = s => s.startsWith("tmp")
 
   let getStmt = i => assignmentStms[i]
-  let makeUnique = a => a.filter(function(item, pos) {
+  let makeUnique = a => a.filter(function (item, pos) {
     return a.indexOf(item) == pos
   })
   // get the loops that a statement needs to reside in
@@ -302,7 +323,7 @@ exports.generate = (ir, backend = "js") => {
   function stmtClosed(curr, dep) {
     return Object.keys(stmt2stmtByLoop[curr][dep]).every(l => closedLoopByStmt[dep][l])
   }
-  let stmtEmitted = e =>  emittedStmts[e]
+  let stmtEmitted = e => emittedStmts[e]
   // check whether dep is fully materialized (available) with respect to curr, it checks:
   //    1. dep is emitted
   //    2. with respect to curr, all the loops of dep that need to be closed is now closed
@@ -340,7 +361,7 @@ exports.generate = (ir, backend = "js") => {
   function emitStatement(i) {
     let e = getStmt(i)
     if (backend == "c-sql") {
-      e.txt.map(emit)
+      e.txt.map(emitC)
     } else {
       emit(e.txt)
     }
@@ -361,31 +382,31 @@ exports.generate = (ir, backend = "js") => {
       let loops = gensBySym[s]
       let loopTxts = loops.map(x => x.getLoopTxt())
       for (let loopTxt of loopTxts) {
-        loopTxt.data.map(emit)
+        loopTxt.data.map(emitC)
       }
 
       // initialize cursors for all loops
       for (let loopTxt of loopTxts) {
-        loopTxt.initCursor.map(emit)
+        loopTxt.initCursor.map(emitC)
       }
 
       // emit comment line for each generated filter
       for (let loopTxt of loopTxts) {
-        loopTxt.info.map(emit)
+        loopTxt.info.map(emitC)
       }
 
       // we only want to emit the loop header for the first loop
-      loopTxts[0].loopHeader.map(emit)
+      loopTxts[0].loopHeader.map(emitC)
 
       // emit bounds checking for all loops
       let [_, ...loopTxts1] = loopTxts
       for (let loopTxt of loopTxts1) {
-        loopTxt.boundsChecking.map(emit)
+        loopTxt.boundsChecking.map(emitC)
       }
 
       // emit row scanning for all loops
       for (let loopTxt of loopTxts) {
-        loopTxt.rowScanning.map(emit)
+        loopTxt.rowScanning.map(emitC)
       }
     } else if (backend == "js") {
       emit("for (let " + quoteVar(e.sym) + " in " + e.rhs + ") {")
@@ -397,12 +418,14 @@ exports.generate = (ir, backend = "js") => {
       console.error(`unsupported backend : ${backend}`)
       return
     }
+    scopeTable.enter()
 
     openedLoops.push(s)
   }
   function emitLoopEpilog() {
     l = openedLoops.pop()
     emit("}")
+    scopeTable.exit()
     // XXX could be optimized by a two-directional map
     for (let i in closedLoopByStmt) {
       let stmt = getStmt(i)
@@ -534,16 +557,15 @@ exports.generate = (ir, backend = "js") => {
   // wrap up codegen
   //
   if (backend == "cpp" || backend == "c-sql") {
-    epilog.forEach(emit)
+    epilog.forEach(emitC)
     let codeString = code.join("\n")
     return codeString
   } else if (backend == "js") {
     emit("return " + res.txt)
     emit("}")
     if (trace)
-        code.forEach(s => print(s))
+      code.forEach(s => print(s))
     let codeString = code.join("\n")
-    // console.log(codeString)
     let rt = runtime // make available in scope for generated code
     let queryFunc = eval(codeString)
     queryFunc.explain = explain
@@ -558,3 +580,49 @@ exports.generate = (ir, backend = "js") => {
     return
   }
 }
+
+
+let scope = () => ({
+  curr: undefined,
+  insertStmt: function (stmt) {
+    if (!this.curr) throw new Error("Not in any scope right now")
+    this.curr.stmts.push(stmt)
+  },
+  search: function (stmt) {
+    let tmp = this.curr
+    while (tmp) {
+      let res = this.searchInScope(stmt, tmp)
+      if (res) return res
+      tmp = tmp.parent
+    }
+  },
+  searchInScope: function (stmt, scope) {
+    for (let stmt1 of scope.stmts) {
+      if (JSON.stringify(stmt.key) == JSON.stringify(stmt1.key) && stmt.map.val.sym == stmt1.map.val.sym) {
+        return stmt1
+      }
+    }
+  },
+  addSubst: function (oldStmt, newStmt) {
+    let [oldPos, oldKeyPos] = oldStmt.out
+    let [newPos, newKeyPos] = newStmt.out
+    this.curr.subst[oldPos] = newPos
+    this.curr.subst[oldKeyPos] = newKeyPos
+  },
+  applySubst: function(str, scope) {
+    for (let oldName in scope.subst) {
+      let newName = scope.subst[oldName]
+      str = str.replaceAll(oldName, newName)
+    }
+    return str
+  },
+  enter: function () {
+    // create new table
+    let newScope = { parent: this.curr, stmts: [], subst: {} }
+    this.curr = newScope
+  },
+  exit: function () {
+    if (!this.curr) throw new Error("Not in any scope right now")
+    this.curr = this.curr.parent
+  }
+})

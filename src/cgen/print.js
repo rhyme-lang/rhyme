@@ -59,7 +59,7 @@ let emitHashMapPrintJSON = (buf, map, settings) => {
 
   buf.push(`// print key`)
   for (let i in map.val.keys) {
-    let key = map.val.keys[i]
+    let key = JSON.parse(JSON.stringify(map.val.keys[i]))
     if (key.tag == TAG.JSON) {
       key.val += "[key_pos]"
       emitValPrint(buf, key, settings)
@@ -137,7 +137,7 @@ let emitNestedHashMapPrint = (buf, map, settings) => {
   buf.push(`// print key`)
   let indexing = `[${loopVar}]`
   for (let i in map.val.keys) {
-    let key = map.val.keys[i]
+    let key = JSON.parse(JSON.stringify(map.val.keys[i]))
     if (key.tag == TAG.JSON) {
       key.val += indexing
       emitValPrint(buf, key, settings)
