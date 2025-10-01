@@ -332,50 +332,99 @@ let emitHashMapInsert = (buf, map, key, pos, keyPos, lhs, init) => {
 // Comparison of keys is based on different key types.
 // The actual storage of the values / data does not affect the lookup
 let emitHashLookUp = (buf, map, key) => {
-  let hashed = hash(buf, key)
-
   let sym = map.val.sym
 
-  let pos = symbol.getSymbol("pos")
-  let keyPos1 = symbol.getSymbol("key_pos")
+  let pos = symbol.getSymbol("tmp_pos") + "$" // aid cse
+  let keyPos1 = symbol.getSymbol("key_pos") + "$"
 
-  c.declareULong(buf)(pos, c.binary(hashed, hashMask, "&"))
+  let stmt = {
+    map,
+    key,
+    out: [pos, keyPos1],
+    emit: function (buf) {
+      let hashed = hash(buf, key)
 
-  let keyPos = `${map.val.htable}[${pos}]`
-  let indexing = "[" + keyPos + "]"
+      let [pos, keyPos1] = this.out
+      c.declareULong(buf)(pos, c.binary(hashed, hashMask, "&"))
 
-  let compareKeys = undefined
+      let keyPos = `${map.val.htable}[${pos}]`
+      let indexing = "[" + keyPos + "]"
 
-  let keys = key.tag == TAG.COMBINED_KEY ? key.val.keys : [key]
-  for (let i in keys) {
-    let key = keys[i]
-    let schema = key.schema
-    if (key.tag == TAG.JSON) {
-      key = json.convertJSONTo(key, schema)
-    }
+      let compareKeys = undefined
 
-    if (typing.isString(schema)) {
-      let keyStr = map.val.keys[i].val.str + indexing
-      let keyLen = map.val.keys[i].val.len + indexing
+      let keys = key.tag == TAG.COMBINED_KEY ? key.val.keys : [key]
+      for (let i in keys) {
+        let key = keys[i]
+        let schema = key.schema
+        if (key.tag == TAG.JSON) {
+          key = json.convertJSONTo(key, schema)
+        }
 
-      let { str, len } = key.val
-      let comparison = c.ne(c.call("compare_str2", keyStr, keyLen, str, len), "0")
-      compareKeys = compareKeys ? c.or(compareKeys, comparison) : comparison
-    } else {
-      let comparison = c.ne(map.val.keys[i].val + indexing, key.val)
-      compareKeys = compareKeys ? c.or(compareKeys, comparison) : comparison
+        if (typing.isString(schema)) {
+          let keyStr = map.val.keys[i].val.str + indexing
+          let keyLen = map.val.keys[i].val.len + indexing
+
+          let { str, len } = key.val
+
+          let comparison = c.ne(c.call("compare_str2", keyStr, keyLen, str, len), "0")
+          compareKeys = compareKeys ? c.or(compareKeys, comparison) : comparison
+        } else {
+          let comparison = c.ne(map.val.keys[i].val + indexing, key.val)
+          compareKeys = compareKeys ? c.or(compareKeys, comparison) : comparison
+        }
+      }
+
+      // increment the position until we find a match or an empty slot
+      c.while(buf)(
+        c.and(c.ne(keyPos, "-1"), compareKeys),
+        buf1 => {
+          c.stmt(buf1)(c.assign(pos, c.binary(c.add(pos, "1"), hashMask, "&")))
+        }
+      )
+
+      c.declareInt(buf)(keyPos1, keyPos)
     }
   }
 
-  // increment the position until we find a match or an empty slot
-  c.while(buf)(
-    c.and(c.ne(keyPos, "-1"), compareKeys),
-    buf1 => {
-      c.stmt(buf1)(c.assign(pos, c.binary(c.add(pos, "1"), hashMask, "&")))
-    }
-  )
+  // c.declareULong(buf)(pos, c.binary(hashed, hashMask, "&"))
 
-  c.declareInt(buf)(keyPos1, keyPos)
+  // let keyPos = `${map.val.htable}[${pos}]`
+  // let indexing = "[" + keyPos + "]"
+
+  // let compareKeys = undefined
+
+  // let keys = key.tag == TAG.COMBINED_KEY ? key.val.keys : [key]
+  // for (let i in keys) {
+  //   let key = keys[i]
+  //   let schema = key.schema
+  //   if (key.tag == TAG.JSON) {
+  //     key = json.convertJSONTo(key, schema)
+  //   }
+
+  //   if (typing.isString(schema)) {
+  //     let keyStr = map.val.keys[i].val.str + indexing
+  //     let keyLen = map.val.keys[i].val.len + indexing
+
+  //     let { str, len } = key.val
+  //     let comparison = c.ne(c.call("compare_str2", keyStr, keyLen, str, len), "0")
+  //     compareKeys = compareKeys ? c.or(compareKeys, comparison) : comparison
+  //   } else {
+  //     let comparison = c.ne(map.val.keys[i].val + indexing, key.val)
+  //     compareKeys = compareKeys ? c.or(compareKeys, comparison) : comparison
+  //   }
+  // }
+
+  // // increment the position until we find a match or an empty slot
+  // c.while(buf)(
+  //   c.and(c.ne(keyPos, "-1"), compareKeys),
+  //   buf1 => {
+  //     c.stmt(buf1)(c.assign(pos, c.binary(c.add(pos, "1"), hashMask, "&")))
+  //   }
+  // )
+
+  // c.declareInt(buf)(keyPos1, keyPos)
+
+  buf.push(stmt)
 
   return [pos, keyPos1]
 }
