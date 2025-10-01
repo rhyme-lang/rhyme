@@ -59,14 +59,16 @@ let getJSONArrayLoopTxt = (f, json, data) => () => {
   let gen = v + "_gen"
   let initCursor = []
   let iter = symbol.getSymbol("iter")
-  c.declareVar(initCursor)("yyjson_arr_iter", iter, c.call("yyjson_arr_iter_with", json.val));
 
   let loopHeader = []
+  
+  c.declareVar(loopHeader)("yyjson_arr_iter", iter, c.call("yyjson_arr_iter_with", json.val));
   loopHeader.push(`for (int ${v} = 0; ; ${v}++) {`)
+
   c.declarePtr(loopHeader)("yyjson_val", gen, `yyjson_arr_iter_next(&${iter})`)
   loopHeader.push(`if (!${gen}) break;`)
 
-  let boundsChecking = [`if (${v} < yyjson_get_len(${json.val})) continue;`]
+  let boundsChecking = [`if (${v} >= yyjson_get_len(${json.val})) continue;`]
 
   return {
     info, data, initCursor, loopHeader, boundsChecking, rowScanning: []
@@ -80,9 +82,9 @@ let getJSONObjLoopTxt = (f, json, data) => () => {
   v = quoteVar(v)
   let initCursor = []
   let iter = symbol.getSymbol("iter")
-  c.declareVar(initCursor)("yyjson_obj_iter", iter, c.call("yyjson_obj_iter_with", json.val));
-
+  
   let loopHeader = []
+  c.declareVar(loopHeader)("yyjson_obj_iter", iter, c.call("yyjson_obj_iter_with", json.val));
   loopHeader.push(`for (yyjson_val *${v} = yyjson_obj_iter_next(&${iter}); ${v} != NULL; ${v} = yyjson_obj_iter_next(&${iter})) {`)
 
   let boundsChecking = [`if (yyjson_obj_getn(${json.val}, yyjson_get_str(${v}), yyjson_get_len(${v})) == NULL) continue;`]

@@ -6,7 +6,7 @@ const os = require('child_process')
 
 // point to the data directory
 let dataDir = "cgen-sql/data/SF1"
-let outDir = "cgen-sql/tpch-out"
+let outDir = "cgen-sql/out/tpch"
 
 let answersDir = "cgen-sql/tpch-answers"
 

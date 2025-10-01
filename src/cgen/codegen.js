@@ -598,15 +598,18 @@ let emitGet = (buf, q) => {
       })
       return { schema: q.schema.type, val, tag: TAG.OBJECT }
     } else if (g1.tag == TAG.JSON) {
-      if (vars[e2.op].gen) {
-        return vars[e2.op].gen
-      } else if (pretty(e1) == Object.keys(vars[e2.op].lhs)[0]) {
+      if (pretty(e1) == Object.keys(vars[e2.op].lhs)[0]) {
         // It's better if we do not perform generic get since we should have the iterator ready for the loop,
         // use yyjson_obj_iter_get_val
         // Only one possible lhs of this generator, use the iterator
+        if (vars[e2.op].gen) {
+          return vars[e2.op].gen
+        }
         return { schema: q.schema.type, val: c.call("yyjson_obj_iter_get_val", quoteVar(e2.op)), tag: TAG.JSON }
       } else {
         // Slow path, use yyjson_obj_getn
+        if (typing.isNumber(e1.schema.type.objKey))
+          return { schema: q.schema.type, val: c.call("yyjson_arr_get", g1.val, quoteVar(e2.op)), tag: TAG.JSON }
         return { schema: q.schema.type, val: c.call("yyjson_obj_getn", g1.val, c.call("yyjson_get_str", quoteVar(e2.op)), c.call("yyjson_get_len", quoteVar(e2.op))), tag: TAG.JSON }
       }
     } else if (g1.tag == TAG.ARRAY) {
@@ -935,6 +938,7 @@ let addHashMapValue = (map, q, name, currentGroupPath) => {
     collectNestedHashMap(q, map, name, currentGroupPath)
   } else if (q1.key == "stateful" && q1.fre.length != 0) {
     if (!same(q1.fre, currentGroupPath.path)) {
+      console.log(currentGroupPath)
       throw new Error("Stateful op expected to have the same set of free variables as the current group path but got: " + q1.fre + " and " + currentGroupPath.path)
     }
     assignmentToSym[q.op] = currentGroupPath.sym
@@ -1122,7 +1126,7 @@ let processFilters = () => {
         throw new Error("Cannot generate loop")
       }
       if (firstSeen) {
-        vars[v1].val = value.primitive(lhs.schema.objKey || types.unknown, quoteVar(v1))
+        vars[v1].val = value.primitive(g1.schema.type.objKey || types.unknown, quoteVar(v1))
       }
       if (lhs.tag == TAG.CSV_FILE) {
         let getLoopTxtFunc = csv.getCSVLoopTxt(f, lhs, data, usedCols)

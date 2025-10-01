@@ -17,7 +17,7 @@ let sh = (cmd) => {
   })
 }
 
-let outDir = "cgen-sql/out/"
+let outDir = "cgen-sql/out/sql-new"
 
 beforeAll(async () => {
   await sh(`rm -rf ${outDir}`)
