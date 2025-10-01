@@ -66,7 +66,7 @@ let getJSONArrayLoopTxt = (f, json, data) => () => {
   c.declarePtr(loopHeader)("yyjson_val", gen, `yyjson_arr_iter_next(&${iter})`)
   loopHeader.push(`if (!${gen}) break;`)
 
-  let boundsChecking = [`if (${v} < yyjson_get_len(${json.val})) break;`]
+  let boundsChecking = [`if (${v} < yyjson_get_len(${json.val})) continue;`]
 
   return {
     info, data, initCursor, loopHeader, boundsChecking, rowScanning: []
@@ -85,7 +85,7 @@ let getJSONObjLoopTxt = (f, json, data) => () => {
   let loopHeader = []
   loopHeader.push(`for (yyjson_val *${v} = yyjson_obj_iter_next(&${iter}); ${v} != NULL; ${v} = yyjson_obj_iter_next(&${iter})) {`)
 
-  let boundsChecking = [`if (yyjson_obj_getn(${json.val}, yyjson_get_str(${v}), yyjson_get_len(${v})) == NULL) break;`]
+  let boundsChecking = [`if (yyjson_obj_getn(${json.val}, yyjson_get_str(${v}), yyjson_get_len(${v})) == NULL) continue;`]
 
   return {
     info, data, initCursor, loopHeader, boundsChecking, rowScanning: []

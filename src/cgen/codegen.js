@@ -50,6 +50,8 @@ let vars
 // Stores tmp vars
 let tmpVars
 
+let visitedAssignments
+
 let getDeps = q => [...q.fre, ...q.tmps.map(tmpSym)]
 
 // generator ir api: mirroring necessary bits from ir.js
@@ -116,6 +118,8 @@ let reset = (settings) => {
   vars = {}
 
   tmpVars = {}
+
+  visitedAssignments = {}
 }
 
 let initializeProlog = () => {
@@ -346,6 +350,155 @@ let emitStatefulInPath = (i) => {
 
   emitStatefulUpdate(buf, q, tmpVar)
   assign(buf, sym, fv, deps)
+}
+
+let emitStateful = (q, i) => {
+  if (!updateOps[i]) return
+  if (visitedAssignments[i]) return
+  visitedAssignments[i] = true
+
+  let sym = tmpSym(i)
+
+  let k = assignments[i].arg[1].op
+
+  let shouldInit = updateOps[i].some(j => initRequired(assignments[j])) || updateOpsExtra[i].some(j => initRequired(assignments[j]))
+
+  let [e0, e1, e2, e3] = q.arg
+
+  let fv = [...q.fre, e1.op]
+
+  let key = vars[e1.op].val
+
+  let map
+  if (q.fre.length == 0) {
+    map = tmpVars[i]
+  } else {
+    map = tmpVars[q.root]
+    sym = tmpSym(q.root)
+  }
+
+  if (!shouldInit) {
+    let lookup = []
+    if (q.fre.length > 0) {
+      for (let k of q.fre) {
+        // console.log(q, map, tmpVars)
+        let key = vars[k].val
+        let [pos, keyPos] = hashmap.emitHashLookUp(lookup, map, key)
+        map = hashmap.getHashMapValueEntry(map, pos, keyPos)
+      }
+    }
+    let [pos, keyPos] = hashmap.emitHashLookUp(lookup, map, key)
+    assign(lookup, sym, fv, [])
+    for (let j of updateOps[i]) {
+      let q = assignments[j]
+      let buf = []
+      let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
+
+      let update1 = () => { }
+      if (q.mode === "maybe") {
+        // We still need to initialize it to some value if it is in maybe mode
+        update1 = (buf2, lhs) => {
+          c.comment(buf2)("init " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
+          if (q.extraGroupPath) {
+            console.assert(lhs.tag == TAG.OBJECT)
+            lhs = lhs.val[q.extraGroupPath]
+          }
+          emitStatefulInit(buf2, q, lhs)
+        }
+      }
+      c.comment(buf)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
+      // Extract the top-level condition for stateful operations
+      let e = q.arg[0]
+      let update = (buf1) => hashmap.emitHashMapUpdate(buf1, map, key, pos, keyPos, update1, (buf2, lhs) => {
+        currentGroupKey = { key: k, pos, keyPos }
+        let cond = lhs.cond
+        if (q.extraGroupPath) {
+          console.assert(lhs.tag == TAG.OBJECT)
+          lhs = lhs.val[q.extraGroupPath]
+        }
+        lhs.cond = cond
+        emitStatefulUpdate(buf2, q, lhs, sym)
+      }, true)
+      if (e.key == "pure" && e.op == "and") {
+        let cond = emitPath(buf, e.arg[0])
+        if (cond.cond) cond.val = c.and(c.not(cond.cond), cond.val)
+        c.if(buf)(cond.val, update)
+      } else {
+        update(buf)
+      }
+
+      assign(buf, sym, fv, deps)
+    }
+    // extra not supported yet
+    return
+  }
+
+  let init = []
+  if (q.fre.length > 0) {
+    for (let k of q.fre) {
+      let key = vars[k].val
+      let [pos, keyPos] = hashmap.emitHashLookUp(init, map, key)
+      map = hashmap.getHashMapValueEntry(map, pos, keyPos)
+    }
+  }
+
+  //   c.comment(init)("init and update " + sym + " = " + pretty(assignments[i]))
+  let [pos, keyPos] = hashmap.emitHashLookUpOrUpdate(init, map, key, (buf1, lhs, pos, keyPos) => {
+    for (let j of updateOps[i]) {
+      let q = assignments[j]
+      if (!initRequired(q)) continue
+      c.comment(buf1)("init " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
+      let lhs1 = lhs
+      if (q.extraGroupPath) {
+        console.assert(lhs.tag == TAG.OBJECT)
+        lhs1 = lhs.val[q.extraGroupPath]
+      }
+      emitStatefulInit(buf1, q, lhs1)
+    }
+    for (let j of updateOpsExtra[i]) {
+      let q = assignments[j]
+      if (!initRequired(q)) continue
+      c.comment(buf1)("init " + tmpSym(j) + "[" + q.fre[0] + "]" + " = " + pretty(q))
+      let lhs1 = hashmap.getHashMapValueEntry(tmpVars[j], pos, keyPos)
+      emitStatefulInit(buf1, q, lhs1)
+    }
+  })
+
+  assign(init, sym, fv, [])
+
+  currentGroupKey = { key: k, pos, keyPos }
+  for (let j of updateOpsExtra[i]) {
+    let update = []
+    let q = assignments[j]
+    c.comment(update)("update " + tmpSym(j) + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
+    let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
+
+    hashmap.emitHashLookUpAndUpdate(update, map, key, (buf, lhs, pos, keyPos) => {
+      let lhs1 = hashmap.getHashMapValueEntry(tmpVars[j], pos, keyPos)
+      emitStatefulUpdate(buf, q, lhs1)
+    }, false)
+    assign(update, sym, fv, deps)
+  }
+  for (let j of updateOps[i]) {
+    let update = []
+    let q = assignments[j]
+    if (q.key == "update") {
+      emitStateful(q, j)
+      continue
+    }
+    c.comment(update)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
+    let f = tmp => assignmentToSym[tmp] ? f(assignmentToSym[tmp]) : tmp
+    let deps = [...union(fv, q.bnd), ...q.tmps.map(f).map(tmpSym)]
+
+    hashmap.emitHashLookUpAndUpdate(update, map, key, (buf, lhs, pos, keyPos) => {
+      if (q.extraGroupPath) {
+        console.assert(lhs.tag == TAG.OBJECT)
+        lhs = lhs.val[q.extraGroupPath]
+      }
+      emitStatefulUpdate(buf, q, lhs)
+    }, false)
+    assign(update, sym, fv, deps)
+  }
 }
 
 let emitLoadInput = (buf, q) => {
@@ -636,6 +789,7 @@ let emitPath = (buf, q) => {
   } else if (q.key == "var") {
     return vars[q.op].val
   } else if (q.key == "ref") {
+    emitStateful(assignments[q.op], q.op)
     let q1 = assignments[q.op]
     let tmpVar = tmpVars[q.op]
 
@@ -785,6 +939,7 @@ let addHashMapValue = (map, q, name, currentGroupPath) => {
     }
     assignmentToSym[q.op] = currentGroupPath.sym
     updateOps[map.val.sym].push(q.op)
+    q1.root = currentGroupPath.sym
 
     if (name != "_DEFAULT_") q1.extraGroupPath = name
 
@@ -1033,148 +1188,148 @@ let emitCode = (q, ir, settings) => {
     emitStatefulInPath(i)
   }
 
-  for (let i in updateOps) {
-    let q = assignments[i]
-    let sym = tmpSym(i)
+  // for (let i in updateOps) {
+  //   let q = assignments[i]
+  //   let sym = tmpSym(i)
 
-    let k = assignments[i].arg[1].op
+  //   let k = assignments[i].arg[1].op
 
-    let shouldInit = updateOps[i].some(j => initRequired(assignments[j])) || updateOpsExtra[i].some(j => initRequired(assignments[j]))
+  //   let shouldInit = updateOps[i].some(j => initRequired(assignments[j])) || updateOpsExtra[i].some(j => initRequired(assignments[j]))
 
-    let [e0, e1, e2, e3] = q.arg
+  //   let [e0, e1, e2, e3] = q.arg
 
-    let fv = [...q.fre, e1.op]
+  //   let fv = [...q.fre, e1.op]
 
-    let key = vars[e1.op].val
+  //   let key = vars[e1.op].val
 
-    let map
-    if (q.fre.length == 0) {
-      map = tmpVars[i]
-    } else {
-      map = tmpVars[q.root]
-      // sym = tmpSym(q.root)
-    }
+  //   let map
+  //   if (q.fre.length == 0) {
+  //     map = tmpVars[i]
+  //   } else {
+  //     map = tmpVars[q.root]
+  //     // sym = tmpSym(q.root)
+  //   }
 
-    if (!shouldInit) {
-      let lookup = []
-      if (q.fre.length > 0) {
-        for (let k of q.fre) {
-          // console.log(q, map, tmpVars)
-          let key = vars[k].val
-          let [pos, keyPos] = hashmap.emitHashLookUp(lookup, map, key)
-          map = hashmap.getHashMapValueEntry(map, pos, keyPos)
-        }
-      }
-      let [pos, keyPos] = hashmap.emitHashLookUp(lookup, map, key)
-      assign(lookup, sym, fv, [])
-      for (let j of updateOps[i]) {
-        let q = assignments[j]
-        let buf = []
-        let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
+  //   if (!shouldInit) {
+  //     let lookup = []
+  //     if (q.fre.length > 0) {
+  //       for (let k of q.fre) {
+  //         // console.log(q, map, tmpVars)
+  //         let key = vars[k].val
+  //         let [pos, keyPos] = hashmap.emitHashLookUp(lookup, map, key)
+  //         map = hashmap.getHashMapValueEntry(map, pos, keyPos)
+  //       }
+  //     }
+  //     let [pos, keyPos] = hashmap.emitHashLookUp(lookup, map, key)
+  //     assign(lookup, sym, fv, [])
+  //     for (let j of updateOps[i]) {
+  //       let q = assignments[j]
+  //       let buf = []
+  //       let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
 
-        let update1 = () => { }
-        if (q.mode === "maybe") {
-          // We still need to initialize it to some value if it is in maybe mode
-          update1 = (buf2, lhs) => {
-            c.comment(buf2)("init " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
-            if (q.extraGroupPath) {
-              console.assert(lhs.tag == TAG.OBJECT)
-              lhs = lhs.val[q.extraGroupPath]
-            }
-            emitStatefulInit(buf2, q, lhs)
-          }
-        }
-        c.comment(buf)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
-        // Extract the top-level condition for stateful operations
-        let e = q.arg[0]
-        let update = (buf1) => hashmap.emitHashMapUpdate(buf1, map, key, pos, keyPos, update1, (buf2, lhs) => {
-          currentGroupKey = { key: k, pos, keyPos }
-          let cond = lhs.cond
-          if (q.extraGroupPath) {
-            console.assert(lhs.tag == TAG.OBJECT)
-            lhs = lhs.val[q.extraGroupPath]
-          }
-          lhs.cond = cond
-          emitStatefulUpdate(buf2, q, lhs, sym)
-        }, true)
-        if (e.key == "pure" && e.op == "and") {
-          let cond = emitPath(buf, e.arg[0])
-          if (cond.cond) cond.val = c.and(c.not(cond.cond), cond.val)
-          c.if(buf)(cond.val, update)
-        } else {
-          update(buf)
-        }
+  //       let update1 = () => { }
+  //       if (q.mode === "maybe") {
+  //         // We still need to initialize it to some value if it is in maybe mode
+  //         update1 = (buf2, lhs) => {
+  //           c.comment(buf2)("init " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
+  //           if (q.extraGroupPath) {
+  //             console.assert(lhs.tag == TAG.OBJECT)
+  //             lhs = lhs.val[q.extraGroupPath]
+  //           }
+  //           emitStatefulInit(buf2, q, lhs)
+  //         }
+  //       }
+  //       c.comment(buf)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
+  //       // Extract the top-level condition for stateful operations
+  //       let e = q.arg[0]
+  //       let update = (buf1) => hashmap.emitHashMapUpdate(buf1, map, key, pos, keyPos, update1, (buf2, lhs) => {
+  //         currentGroupKey = { key: k, pos, keyPos }
+  //         let cond = lhs.cond
+  //         if (q.extraGroupPath) {
+  //           console.assert(lhs.tag == TAG.OBJECT)
+  //           lhs = lhs.val[q.extraGroupPath]
+  //         }
+  //         lhs.cond = cond
+  //         emitStatefulUpdate(buf2, q, lhs, sym)
+  //       }, true)
+  //       if (e.key == "pure" && e.op == "and") {
+  //         let cond = emitPath(buf, e.arg[0])
+  //         if (cond.cond) cond.val = c.and(c.not(cond.cond), cond.val)
+  //         c.if(buf)(cond.val, update)
+  //       } else {
+  //         update(buf)
+  //       }
 
-        assign(buf, sym, fv, deps)
-      }
-      // extra not supported yet
-      continue
-    }
+  //       assign(buf, sym, fv, deps)
+  //     }
+  //     // extra not supported yet
+  //     continue
+  //   }
 
-    let init = []
-    if (q.fre.length > 0) {
-      for (let k of q.fre) {
-        let key = vars[k].val
-        let [pos, keyPos] = hashmap.emitHashLookUp(init, map, key)
-        map = hashmap.getHashMapValueEntry(map, pos, keyPos)
-      }
-    }
+  //   let init = []
+  //   if (q.fre.length > 0) {
+  //     for (let k of q.fre) {
+  //       let key = vars[k].val
+  //       let [pos, keyPos] = hashmap.emitHashLookUp(init, map, key)
+  //       map = hashmap.getHashMapValueEntry(map, pos, keyPos)
+  //     }
+  //   }
 
-    //   c.comment(init)("init and update " + sym + " = " + pretty(assignments[i]))
-    let [pos, keyPos] = hashmap.emitHashLookUpOrUpdate(init, map, key, (buf1, lhs, pos, keyPos) => {
-      for (let j of updateOps[i]) {
-        let q = assignments[j]
-        if (!initRequired(q)) continue
-        c.comment(buf1)("init " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
-        let lhs1 = lhs
-        if (q.extraGroupPath) {
-          console.assert(lhs.tag == TAG.OBJECT)
-          lhs1 = lhs.val[q.extraGroupPath]
-        }
-        emitStatefulInit(buf1, q, lhs1)
-      }
-      for (let j of updateOpsExtra[i]) {
-        let q = assignments[j]
-        if (!initRequired(q)) continue
-        c.comment(buf1)("init " + tmpSym(j) + "[" + q.fre[0] + "]" + " = " + pretty(q))
-        let lhs1 = hashmap.getHashMapValueEntry(tmpVars[j], pos, keyPos)
-        emitStatefulInit(buf1, q, lhs1)
-      }
-    })
+  //   //   c.comment(init)("init and update " + sym + " = " + pretty(assignments[i]))
+  //   let [pos, keyPos] = hashmap.emitHashLookUpOrUpdate(init, map, key, (buf1, lhs, pos, keyPos) => {
+  //     for (let j of updateOps[i]) {
+  //       let q = assignments[j]
+  //       if (!initRequired(q)) continue
+  //       c.comment(buf1)("init " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
+  //       let lhs1 = lhs
+  //       if (q.extraGroupPath) {
+  //         console.assert(lhs.tag == TAG.OBJECT)
+  //         lhs1 = lhs.val[q.extraGroupPath]
+  //       }
+  //       emitStatefulInit(buf1, q, lhs1)
+  //     }
+  //     for (let j of updateOpsExtra[i]) {
+  //       let q = assignments[j]
+  //       if (!initRequired(q)) continue
+  //       c.comment(buf1)("init " + tmpSym(j) + "[" + q.fre[0] + "]" + " = " + pretty(q))
+  //       let lhs1 = hashmap.getHashMapValueEntry(tmpVars[j], pos, keyPos)
+  //       emitStatefulInit(buf1, q, lhs1)
+  //     }
+  //   })
 
-    assign(init, sym, fv, [])
+  //   assign(init, sym, fv, [])
 
-    currentGroupKey = { key: k, pos, keyPos }
-    for (let j of updateOpsExtra[i]) {
-      let update = []
-      let q = assignments[j]
-      c.comment(update)("update " + tmpSym(j) + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
-      let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
+  //   currentGroupKey = { key: k, pos, keyPos }
+  //   for (let j of updateOpsExtra[i]) {
+  //     let update = []
+  //     let q = assignments[j]
+  //     c.comment(update)("update " + tmpSym(j) + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
+  //     let deps = [...union(fv, q.bnd), ...q.tmps.map(tmp => assignmentToSym[tmp] ? tmpSym(assignmentToSym[tmp]) : tmpSym(tmp))]
 
-      hashmap.emitHashLookUpAndUpdate(update, map, key, (buf, lhs, pos, keyPos) => {
-        let lhs1 = hashmap.getHashMapValueEntry(tmpVars[j], pos, keyPos)
-        emitStatefulUpdate(buf, q, lhs1)
-      }, false)
-      assign(update, sym, fv, deps)
-    }
-    for (let j of updateOps[i]) {
-      let update = []
-      let q = assignments[j]
-      if (q.key == "update") continue
-      c.comment(update)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
-      let f = tmp => assignmentToSym[tmp] ? f(assignmentToSym[tmp]) : tmp
-      let deps = [...union(fv, q.bnd), ...q.tmps.map(f).map(tmpSym)]
+  //     hashmap.emitHashLookUpAndUpdate(update, map, key, (buf, lhs, pos, keyPos) => {
+  //       let lhs1 = hashmap.getHashMapValueEntry(tmpVars[j], pos, keyPos)
+  //       emitStatefulUpdate(buf, q, lhs1)
+  //     }, false)
+  //     assign(update, sym, fv, deps)
+  //   }
+  //   for (let j of updateOps[i]) {
+  //     let update = []
+  //     let q = assignments[j]
+  //     if (q.key == "update") continue
+  //     c.comment(update)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
+  //     let f = tmp => assignmentToSym[tmp] ? f(assignmentToSym[tmp]) : tmp
+  //     let deps = [...union(fv, q.bnd), ...q.tmps.map(f).map(tmpSym)]
 
-      hashmap.emitHashLookUpAndUpdate(update, map, key, (buf, lhs, pos, keyPos) => {
-        if (q.extraGroupPath) {
-          console.assert(lhs.tag == TAG.OBJECT)
-          lhs = lhs.val[q.extraGroupPath]
-        }
-        emitStatefulUpdate(buf, q, lhs)
-      }, false)
-      assign(update, sym, fv, deps)
-    }
-  }
+  //     hashmap.emitHashLookUpAndUpdate(update, map, key, (buf, lhs, pos, keyPos) => {
+  //       if (q.extraGroupPath) {
+  //         console.assert(lhs.tag == TAG.OBJECT)
+  //         lhs = lhs.val[q.extraGroupPath]
+  //       }
+  //       emitStatefulUpdate(buf, q, lhs)
+  //     }, false)
+  //     assign(update, sym, fv, deps)
+  //   }
+  // }
 
   let epilog = []
 

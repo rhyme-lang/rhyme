@@ -307,9 +307,9 @@ test("testZipNestedRec3", () => {
 
 
 test("testGroup0", () => {
-  let query = {"data.*.key": rh`data.*.value`}
+  let query = rh`{data.*A.key: data.*A.value} | group *A`
 
-  let func = compile(query, {singleResult:false})
+  let func = compile(query, {newCodegen: true, enableOptimizations: false})
   let res = func({data, other})
 
 /* plausible groupings:
@@ -322,6 +322,8 @@ test("testGroup0", () => {
 
   (but here we don't group ...)
 */
+
+console.log(func.explain.code)
 
   expect(res).toEqual(
     {"A": {"U": 40}, "B": {"U": 20}, "C": {"V": 10}}

@@ -128,16 +128,8 @@ let emitHashMapValueInit = (buf, map, name, schema, sorted, prolog0) => {
 
   c.comment(buf)(`value of ${sym}: ${name}`)
   let res = { schema }
-  if (typing.isUnknown(schema)) {
-    if (map.tag == TAG.NESTED_HASHMAP) {
-      map.val.struct.addField("yyjson_val **", `${sym}_${name}`)
-    } else
-      allocateYYJSONBuffer(buf, `${sym}_${name}`, size, sorted, prolog0)
-    res.val = `${sym}_${name}`
-    res.tag = TAG.JSON
-  } else if (typing.isObject(schema)) {
-    // Nested hashmap
-    throw new Error("Nested hashmap not supported for now")
+  if (typing.isObject(schema)) {
+    throw new Error("Not supported for now")
   } else if (typing.isString(schema)) {
     if (map.tag == TAG.NESTED_HASHMAP) {
       map.val.struct.addField("const char **", `${sym}_${name}_str`)
@@ -153,6 +145,12 @@ let emitHashMapValueInit = (buf, map, name, schema, sorted, prolog0) => {
       allocatePrimitiveBuffer(buf, cType, `${sym}_${name}`, size, sorted, prolog0)
     res.val = `${sym}_${name}`
   }
+
+  if (map.tag == TAG.NESTED_HASHMAP) {
+    map.val.struct.addField("uint8_t *", `${sym}_${name}_defined`)
+  } else
+    allocatePrimitiveBuffer(buf, "uint8_t", `${sym}_${name}_defined`, size)
+  res.defined = `${sym}_${name}_defined`
 
   map.val.values ??= {}
   map.val.values[name] = res
@@ -171,7 +169,7 @@ let emitNestedHashMapKeyDecls = (struct, sym, keySchema) => {
       keys.push(value.string(schema, `${sym}_keys_str${i}`, `${sym}_keys_len${i}`))
     } else {
       let cType = utils.convertToCType(schema)
-      struct.addField(cType, `${sym}_keys${i}`)
+      struct.addField(cType + " *", `${sym}_keys${i}`)
       keys.push(value.primitive(schema, `${sym}_keys${i}`))
     }
   }
@@ -339,6 +337,8 @@ let emitHashLookUp = (buf, map, key) => {
   let sym = map.val.sym
 
   let pos = symbol.getSymbol("pos")
+  let keyPos1 = symbol.getSymbol("key_pos")
+
   c.declareULong(buf)(pos, c.binary(hashed, hashMask, "&"))
 
   let keyPos = `${map.val.htable}[${pos}]`
@@ -365,7 +365,6 @@ let emitHashLookUp = (buf, map, key) => {
       let comparison = c.ne(map.val.keys[i].val + indexing, key.val)
       compareKeys = compareKeys ? c.or(compareKeys, comparison) : comparison
     }
-
   }
 
   // increment the position until we find a match or an empty slot
@@ -376,7 +375,6 @@ let emitHashLookUp = (buf, map, key) => {
     }
   )
 
-  let keyPos1 = symbol.getSymbol("key_pos")
   c.declareInt(buf)(keyPos1, keyPos)
 
   return [pos, keyPos1]
@@ -484,6 +482,9 @@ let getValueAtIdx = (val, idx) => {
     } else {
       res.val[name].val += indexing
     }
+    // if (res.val[name].defined) {
+    //   res.val[name].cond = res.val[name].defined + indexing
+    // }
   }
 
   // If it is just a single value, don't return the object
