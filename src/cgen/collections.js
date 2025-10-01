@@ -180,7 +180,7 @@ let emitNestedHashMapInit = (buf, i, map, name, schema, keySchema) => {
   let sym = tmpSym(i)
   let res = { schema }
 
-  let ptr = tmpSym(map.val.sym) + name
+  let ptr = tmpSym(map.val.sym) + "_" + name
 
   let struct = c.struct(sym)
 
@@ -287,6 +287,7 @@ let hash = (buf, key) => {
     } else if (typing.isNumber(schema) || schema.typeSym == typeSyms.date) {
       c.declareULong(buf)(tmpHash, c.cast("unsigned long", key.val))
     } else {
+      console.log(key)
       throw new Error("Cannot hash key with type " + typing.prettyPrintType(schema))
     }
 
