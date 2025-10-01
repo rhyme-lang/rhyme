@@ -50,6 +50,7 @@ let nestedSchema = typing.parseType({
 let data = rh`loadJSON "./cgen-sql/json/se-basic/data.json" ${dataSchema}`
 let other = rh`loadJSON "./cgen-sql/json/se-basic/other.json" ${otherSchema}`
 let nested = rh`loadJSON "./cgen-sql/json/se-basic/nested.json" ${nestedSchema}`
+let nestedB = rh`loadJSON "./cgen-sql/json/se-basic/nestedB.json" ${nestedSchema}`
 
 //
 // ----- Tests from se-basic.test.js
@@ -168,21 +169,17 @@ test("testZipNested2", async () => {
 
 
 test("testZipNested3", async () => {
-  let query = rh`${nested}.*A.*B.value + ${nested}.*C.*B.value | group *C | group *B | group *A`
+  let query = rh`${nested}.*A.*B.value + ${nestedB}.*C.*B.value | group *C | group *B | group *A`
 
   let func = await compile(query, { backend: "c-new", outDir, outFile: "testZipNested3", enableOptimizations: false })
   let res = await func()
 
-  console.log(res)
-
-  // expect(JSON.parse(res)).toEqual({ // restrict inner to A,B,D
-  //   U: { A: 110, B: 420 },
-  //   V: { B: 430 },
-  //   W: { D: 250 }
-  // })
+  // result is different from the same test in se-basic since cgen does not have support for group *ANY
+  expect(JSON.parse(res)).toEqual({
+    U: {}, V: { C: { X: 540, Y: 640 } }, W: {}
+  })
 })
 
-/* ----- testZipNested3: not supported ----- */
 /* ----- testZipNestedRec3: not supported ----- */
 /* ----- testGroup0: not supported ----- */
 
@@ -230,7 +227,7 @@ test("testMaybeSum", async () => {
 
 /* ----- testOuterJoin_pre1: not supported ----- */
 /* ----- testOuterJoin_pre2: not supported ----- */
-/* ----- testOuterJoin_pre3: not supported. Different || semantic ----- */
+/* ----- testOuterJoin_pre3: not supported ----- */
 
 /* ----- testLeftOuterJoin: not supported ----- */
 /* ----- testFullOuterJoin1: not supported ----- */
