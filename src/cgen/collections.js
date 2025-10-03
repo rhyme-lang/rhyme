@@ -287,7 +287,6 @@ let hash = (buf, key) => {
     } else if (typing.isNumber(schema) || schema.typeSym == typeSyms.date) {
       c.declareULong(buf)(tmpHash, c.cast("unsigned long", key.val))
     } else {
-      console.log(key)
       throw new Error("Cannot hash key with type " + typing.prettyPrintType(schema))
     }
 
@@ -439,7 +438,10 @@ let emitHashMapUpdate = (buf, map, key, pos, keyPos, update1, update2, checkExis
   lhs.cond = c.eq(keyPos, "-1")
 
   if (checkExistance) {
-    c.if(buf)(c.eq(keyPos, "-1"), buf1 => {
+    let cond = c.eq(keyPos, "-1")
+    // if (key.cond)
+    //   cond = c.and(cond, c.not(key.cond))
+    c.if(buf)(cond, buf1 => {
       emitHashMapInsert(buf1, map, key, pos, keyPos, lhs, update1)
     })
   }
@@ -537,6 +539,8 @@ let getValueAtIdx = (val, idx) => {
     // }
   }
 
+  // console.log(val, val.val.values)
+
   // If it is just a single value, don't return the object
   // but the value directly
   if (Object.keys(val.val.values).length == 1 && Object.keys(val.val.values)[0] == "_DEFAULT_") {
@@ -610,8 +614,10 @@ let emitArrayValueInit = (buf, arr, name, schema, sorted, prolog0) => {
   let res = { schema }
   if (typing.isObject(schema)) {
     // Nested hashmap
-    throw new Error("Nested hashmap not supported for now")
-  } if (typing.isString(schema)) {
+    allocateYYJSONBuffer(buf, `${sym}_${name}`, arraySize)
+    res.val = `${sym}_${name}`
+    res.tag = TAG.JSON
+  } else if (typing.isString(schema)) {
     allocateStringBuffer(buf, `${sym}_${name}_str`, `${sym}_${name}_len`, arraySize, sorted, prolog0)
     res.val = { str: `${sym}_${name}_str`, len: `${sym}_${name}_len` }
   } else {
@@ -694,7 +700,7 @@ let getArrayLoopTxt = (f, arr) => () => {
   }
 }
 
-let getHashMapLoopTxt = (f, map) => () => {
+let getHashMapLoopTxt = (f, map, data) => () => {
   let count = map.val.count
   let v = f.arg[1].op
 
@@ -710,7 +716,7 @@ let getHashMapLoopTxt = (f, map) => () => {
   boundsChecking.push(`if (${quoteVar(v)} >= ${count}) break;`)
 
   return {
-    info, data: [], initCursor, loopHeader, boundsChecking, rowScanning: []
+    info, data, initCursor, loopHeader, boundsChecking, rowScanning: []
   }
 }
 

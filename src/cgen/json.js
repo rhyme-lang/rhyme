@@ -11,7 +11,9 @@ const { quoteVar } = utils
 // It will otherwise try to convert to the expected type
 // Returns the original value if no schema is provided
 let convertJSONTo = (json, schema) => {
-  if (typing.isString(schema)) {
+  if (typing.isObject(schema)) {
+    return json
+  } else if (typing.isString(schema)) {
     let str = c.call("yyjson_get_str", json.val)
     let len = c.call("yyjson_get_len", json.val)
     let cond = c.not(c.call("yyjson_is_str", json.val))
@@ -33,7 +35,7 @@ let convertJSONTo = (json, schema) => {
     let cond = c.not(c.call(func2, json.val))
     return value.primitive(schema, val, undefined, cond)
   } else {
-    throw new Error("Cannot convert JSON val to type: ", typing.prettyPrintType(schema))
+    throw new Error("Cannot convert JSON val to type: " + typing.prettyPrintType(schema))
   }
 }
 
@@ -51,6 +53,27 @@ let emitLoadJSON = (buf, filename) => {
   return jsonVal
 }
 
+let emitLoadNDJSON = (buf, filename) => {
+  let mappedFile = symbol.getSymbol(`file_ndjson`)
+
+  let fd = symbol.getSymbol("fd")
+
+  let size = symbol.getSymbol("n")
+
+  c.declareInt(buf)(fd, c.open(filename))
+  c.if(buf)(c.binary(fd, "-1", "=="), buf1 => {
+    c.printErr(buf1)("Unable to open file %s\\n", filename)
+    c.return(buf1)("1")
+  })
+  c.declareInt(buf)(size, c.call("fsize", fd))
+  c.declareCharPtr(buf)(mappedFile, c.malloc("char", c.add(size, "YYJSON_PADDING_SIZE")))
+  c.stmt(buf)(c.call("read", fd, mappedFile, size))
+  c.stmt(buf)(c.call("memset", c.add(mappedFile, size), "0", "YYJSON_PADDING_SIZE"))
+  c.stmt(buf)(c.close(fd))
+
+  return { mappedFile, size }
+}
+
 let getJSONArrayLoopTxt = (f, json, data) => () => {
   let v = f.arg[1].op
   let info = [`// generator: ${v} <- ${pretty(f.arg[0])}`]
@@ -61,7 +84,7 @@ let getJSONArrayLoopTxt = (f, json, data) => () => {
   let iter = symbol.getSymbol("iter")
 
   let loopHeader = []
-  
+
   c.declareVar(loopHeader)("yyjson_arr_iter", iter, c.call("yyjson_arr_iter_with", json.val));
   loopHeader.push(`for (int ${v} = 0; ; ${v}++) {`)
 
@@ -82,7 +105,7 @@ let getJSONObjLoopTxt = (f, json, data) => () => {
   v = quoteVar(v)
   let initCursor = []
   let iter = symbol.getSymbol("iter")
-  
+
   let loopHeader = []
   c.declareVar(loopHeader)("yyjson_obj_iter", iter, c.call("yyjson_obj_iter_with", json.val));
   loopHeader.push(`for (yyjson_val *${v} = yyjson_obj_iter_next(&${iter}); ${v} != NULL; ${v} = yyjson_obj_iter_next(&${iter})) {`)
@@ -94,11 +117,48 @@ let getJSONObjLoopTxt = (f, json, data) => () => {
   }
 }
 
+let getNDJSONLoopTxt = (f, ndjson, data) => () => {
+  let v = f.arg[1].op
+  let info = [`// generator: ${v} <- ${pretty(f.arg[0])}`]
+
+  let { mappedFile, size } = ndjson.val
+
+  v = quoteVar(v)
+
+  let initCursor = []
+
+  let cursor = symbol.getSymbol("i")
+  c.declareInt(initCursor)(cursor, "0")
+
+  let loopHeader = [`for (int ${v} = 0; ${cursor} < ${size}; ${v}++) {`]
+  let rowScanning = []
+
+  let doc = symbol.getSymbol("tmp_doc")
+  c.declarePtr(rowScanning)("yyjson_doc", doc, c.call("yyjson_read_opts", c.add(mappedFile, cursor), c.sub(size, cursor), "YYJSON_READ_INSITU | YYJSON_READ_STOP_WHEN_DONE", "NULL", "NULL"))
+
+  c.if(rowScanning)(c.not(doc), buf1 => {
+    c.break(buf1)()
+  })
+
+  let jsonVal = v + "_gen"
+  c.declarePtr(rowScanning)("yyjson_val", jsonVal, c.call("yyjson_doc_get_root", doc))
+
+  c.stmt(rowScanning)(c.assign(cursor, c.add(cursor, c.call("yyjson_doc_get_read_size", doc))))
+
+  let boundsChecking = [`if (${cursor} >= ${size}) break;`]
+
+  return {
+    info, data: [], initCursor, loopHeader, boundsChecking, rowScanning
+  }
+}
+
 let json = {
   convertJSONTo,
   emitLoadJSON,
+  emitLoadNDJSON,
   getJSONObjLoopTxt,
-  getJSONArrayLoopTxt
+  getJSONArrayLoopTxt,
+  getNDJSONLoopTxt
 }
 
 module.exports = {
