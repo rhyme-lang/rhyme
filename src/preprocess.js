@@ -58,7 +58,8 @@ exports.resolveHole = resolveHole
 let inputFormat = {
   "csv": true,
   "tbl": true,
-  "json": true
+  "json": true,
+  "ndjson": true
 }
 
 let preproc = q => {

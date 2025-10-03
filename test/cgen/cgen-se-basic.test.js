@@ -24,7 +24,7 @@ beforeAll(async () => {
   await sh(`cp cgen-sql/yyjson.h ${outDir}`)
 })
 
-let key = typing.createKey(types.string);
+let key = typing.createKey(types.string)
 
 let dataSchema = typing.parseType({
   "-": typing.keyval(key, {

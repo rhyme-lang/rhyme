@@ -18,8 +18,9 @@ const TAG = {
   HASHMAP_VALUE: "hashmap_value",
   HASHMAP_BUCKET: "hashmap_bucket",
   OBJECT: "object",
-  CSV_FILE: "csv",
+  CSV: "csv",
   JSON: "json",
+  NDJSON: "ndjson",
   COMBINED_KEY: "combined_key",
   NESTED_HASHMAP: "nested_hashap"
 }
