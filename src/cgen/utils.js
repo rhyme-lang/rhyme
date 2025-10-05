@@ -119,7 +119,7 @@ c.declareStruct = (buf) => (struct) => {
   let { name, fields } = struct
   buf.push(`struct ${name} {`)
   for (let i in fields) {
-    let {type, name} = fields[i]
+    let { type, name } = fields[i]
     if (type.indexOf("*") >= 0)
       buf.push(`${type}${name};`)
     else
@@ -130,8 +130,8 @@ c.declareStruct = (buf) => (struct) => {
 
 c.struct = (name) => ({
   name, fields: [],
-  addField: function(type, name) {
-    this.fields.push({type, name})
+  addField: function (type, name) {
+    this.fields.push({ type, name })
   }
 })
 
@@ -253,6 +253,35 @@ let emitWildcardMatch = (buf, str, regex, name) => {
   emitWildcardStrSearch(buf, str, "0", parts, 0, strictStart, strictEnd, name)
 }
 
+const dataTypeLimits = {
+  // Floating point
+  f32: { min: "-3.402823466e+38F", max: "3.402823466e+38F" },
+  f64: { min: "-1.7976931348623157e+308", max: "1.7976931348623157e+308" },
+  
+  // Unsigned integers
+  u8: { min: "0", max: "255" },
+  u16: { min: "0", max: "65535" },
+  u32: { min: "0", max: "4294967295U" },
+  u64: { min: "0", max: "18446744073709551615ULL" },
+  
+  // Signed integers
+  i8: { min: "-128", max: "127" },
+  i16: { min: "-32768", max: "32767" },
+  i32: { min: "-2147483648", max: "2147483647" },
+  i64: { min: "-9223372036854775808LL", max: "9223372036854775807LL" }
+};
+
+let getDataTypeLimits = (type) => {
+  if (type.typeSym === "dynkey")
+    return getDataTypeLimits(type.keySupertype)
+  if (type.typeSym === "union")
+    throw new Error("Unable to get type specifier for union tpyes currently: " + typing.prettyPrintType(type))
+  if (type.typeSym in dataTypeLimits)
+    return dataTypeLimits[type.typeSym]
+  throw new Error("Unknown type: " + typing.prettyPrintType(type))
+}
+
+
 let utils = {
   tmpSym,
   quoteVar,
@@ -262,7 +291,8 @@ let utils = {
   getFormatSpecifier,
   convertToArrayOfSchema,
   isSimpleObject,
-  emitWildcardMatch
+  emitWildcardMatch,
+  getDataTypeLimits
 }
 
 module.exports = {

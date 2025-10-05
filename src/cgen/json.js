@@ -17,6 +17,7 @@ let convertJSONTo = (json, schema) => {
     let str = c.call("yyjson_get_str", json.val)
     let len = c.call("yyjson_get_len", json.val)
     let cond = c.not(c.call("yyjson_is_str", json.val))
+    if (json.cond) cond = c.or(json.cond, cond)
     return value.string(schema, str, len, undefined, cond)
   } else if (typing.isNumber(schema)) {
     // Assume number
@@ -33,6 +34,7 @@ let convertJSONTo = (json, schema) => {
     }
     let val = c.call(func1, json.val)
     let cond = c.not(c.call(func2, json.val))
+    if (json.cond) cond = c.or(json.cond, cond)
     return value.primitive(schema, val, undefined, cond)
   } else {
     throw new Error("Cannot convert JSON val to type: " + typing.prettyPrintType(schema))

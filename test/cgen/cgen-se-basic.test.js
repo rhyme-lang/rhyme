@@ -251,7 +251,7 @@ test("testEqualUndefined", async () => {
   let res = await func()
 
   // "undefined" is not valid JSON
-  expect(JSON.parse(res)).toEqual(false)
+  expect(res).toEqual("undefined")
 })
 
 test("testNotEqualTrue", async () => {
@@ -269,7 +269,7 @@ test("testNotEqualUndefined", async () => {
   let func = await compile(query, { backend: "c-new", outDir, outFile: "testNotEqualUndefined", enableOptimizations: false })
   let res = await func()
 
-  expect(JSON.parse(res)).toEqual(false)
+  expect(res).toEqual("undefined")
 })
 
 test("testLessThanTrue", async () => {
@@ -287,7 +287,7 @@ test("testLessThanUndefined", async () => {
   let func = await compile(query, { backend: "c-new", outDir, outFile: "testLessThanUndefined", enableOptimizations: false })
   let res = await func()
 
-  expect(JSON.parse(res)).toEqual(false)
+  expect(res).toEqual("undefined")
 })
 
 test("testLessThanOrEqualTrue", async () => {
@@ -305,7 +305,7 @@ test("testLessThanOrEqualUndefined", async () => {
   let func = await compile(query, { backend: "c-new", outDir, outFile: "testLessThanOrEqualUndefined", enableOptimizations: false })
   let res = await func()
 
-  expect(JSON.parse(res)).toEqual(false)
+  expect(res).toEqual("undefined")
 })
 
 test("testGreaterThanTrue", async () => {
@@ -323,7 +323,7 @@ test("testGreaterThanUndefined", async () => {
   let func = await compile(query, { backend: "c-new", outDir, outFile: "testGreaterThanUndefined", enableOptimizations: false })
   let res = await func()
 
-  expect(JSON.parse(res)).toEqual(false)
+  expect(res).toEqual("undefined")
 })
 
 test("testGreaterThanOrEqualTrue", async () => {
@@ -341,7 +341,7 @@ test("testGreaterThanOrEqualUndefined", async () => {
   let func = await compile(query, { backend: "c-new", outDir, outFile: "testGreaterThanOrEqualUndefined", enableOptimizations: false })
   let res = await func()
 
-  expect(JSON.parse(res)).toEqual(false)
+  expect(res).toEqual("undefined")
 })
 
 test("testAndTrue", async () => {
@@ -359,7 +359,7 @@ test("testAndUndefined", async () => {
   let func = await compile(query, { backend: "c-new", outDir, outFile: "testAndUndefined", enableOptimizations: false })
   let res = await func()
 
-  expect(JSON.parse(res)).toEqual(false)
+  expect(res).toEqual("undefined")
 })
 
 test("testAndAlsoTrue", async () => {
@@ -377,7 +377,7 @@ test("testAndAlsoUndefined", async () => {
   let func = await compile(query, { backend: "c-new", outDir, outFile: "testAndAlsoUndefined", enableOptimizations: false })
   let res = await func()
 
-  expect(JSON.parse(res)).toEqual(false)
+  expect(res).toEqual("undefined")
 })
 
 test("testOrElseTrue", async () => {
@@ -395,7 +395,7 @@ test("testOrElseUndefined", async () => {
   let func = await compile(query, { backend: "c-new", outDir, outFile: "testOrElseUndefined", enableOptimizations: false })
   let res = await func()
 
-  expect(JSON.parse(res)).toEqual(false)
+  expect(res).toEqual("undefined")
 })
 
 /* ----- testIfElseThenBranch: not supported ----- */

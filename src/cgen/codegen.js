@@ -246,9 +246,9 @@ let emitStatefulInit = (buf, q, lhs) => {
   } else if (q.op == "product") {
     c.stmt(buf)(c.assign(lhs.val, "1"))
   } else if (q.op == "min") {
-    c.stmt(buf)(c.assign(lhs.val, "INT_MAX"))
+    c.stmt(buf)(c.assign(lhs.val, utils.getDataTypeLimits(lhs.schema).max))
   } else if (q.op == "max") {
-    c.stmt(buf)(c.assign(lhs.val, "INT_MIN"))
+    c.stmt(buf)(c.assign(lhs.val, utils.getDataTypeLimits(lhs.schema).min))
   } else if (q.op == "array") {
     if (lhs.tag == TAG.HASHMAP_BUCKET) {
       // lhs passed will be the bucket object
@@ -381,7 +381,6 @@ let emitStateful = (q, i) => {
     let lookup = []
     if (q.fre.length > 0) {
       for (let k of q.fre) {
-        // console.log(q, map, tmpVars)
         let key = vars[k].val
         let [pos, keyPos] = hashmap.emitHashLookUp(lookup, map, key)
         map = hashmap.getHashMapValueEntry(map, pos, keyPos)
@@ -410,6 +409,10 @@ let emitStateful = (q, i) => {
       c.comment(buf)("update " + sym + "[" + q.fre[0] + "]" + (q.extraGroupPath ? "[" + q.extraGroupPath[0] + "]" : "") + " = " + pretty(q))
       // Extract the top-level condition for stateful operations
       let e = q.arg[0]
+      if (e.key == "pure" && e.op == "and") {
+        q.arg[0] = e.arg[1]
+      }
+      
       let update = (buf1) => hashmap.emitHashMapUpdate(buf1, map, key, pos, keyPos, update1, (buf2, lhs) => {
         currentGroupKey = { key: k, pos, keyPos }
         let cond = lhs.cond
@@ -422,8 +425,7 @@ let emitStateful = (q, i) => {
       }, true)
       if (e.key == "pure" && e.op == "and") {
         let cond = emitPath(buf, e.arg[0])
-        if (cond.cond) cond.val = c.and(c.not(cond.cond), cond.val)
-        c.if(buf)(cond.val, update)
+        c.if(buf)(c.not(cond.cond), update)
       } else {
         update(buf)
       }
@@ -436,9 +438,7 @@ let emitStateful = (q, i) => {
 
   let init = []
   if (q.fre.length > 0) {
-    console.log(vars, q.fre)
     for (let k of q.fre) {
-      console.log(k)
       let key = vars[k].val
       let [pos, keyPos] = hashmap.emitHashLookUp(init, map, key)
       map = hashmap.getHashMapValueEntry(map, pos, keyPos)
@@ -551,7 +551,7 @@ let emitLoadInput = (buf, q) => {
 
     if (q.op == "json") {
       let jsonVal = json.emitLoadJSON(buf1, filenameStr)
-      inputFiles[q.op][filename] = value.json(q.schema.type, jsonVal)
+      inputFiles[q.op][filename] = json.convertJSONTo(value.json(q.schema.type, jsonVal), q.schema.type)
     } else if (q.op == "ndjson") {
       let { mappedFile, size } = json.emitLoadNDJSON(buf1, filenameStr)
       inputFiles[q.op][filename] = value.primitive(q.schema.type, { mappedFile, size }, TAG.NDJSON)
@@ -655,7 +655,8 @@ let emitGet = (buf, q) => {
     c.declarePtr(buf)("yyjson_val", get, c.call("yyjson_obj_getn", v1.val, key.val.str, key.val.len))
     res.val = get
     res.cond = c.eq(get, "NULL")
-    return res
+    if (v1.cond) res.cond = c.or(v1.cond, res.cond)
+    return json.convertJSONTo(res, q.schema.type)
   }
 
   if (v1.tag == TAG.HASHMAP) {
@@ -681,7 +682,6 @@ let emitGet = (buf, q) => {
 
   // Then it has to be an object
   if (v1.tag != TAG.OBJECT) {
-    console.log(v1)
     throw new Error("Cannot perform get on non-object values")
   }
 
@@ -716,8 +716,49 @@ let emitPure = (buf, q) => {
     }
     return res
   } else if (q.op == "and") {
-    let [cond, res] = q.arg.map(e => emitPath(buf, e))
-    res.cond = c.not(cond.val)
+    let [e1, e2] = q.arg.map(e => emitPath(buf, e))
+    if (e1.cond && e2.cond) {
+      e2.cond = c.or(e1.cond, e2.cond)
+    } else if (e1.cond) {
+      e2.cond = e1.cond
+    } else {
+      e2.cond = e2.cond
+    }
+    return e2
+  } else if (q.op == "andAlso") {
+    let [e1, e2] = q.arg.map(e => emitPath(buf, e))
+    if (e1.cond && e2.cond) {
+      e2.cond = c.or(e1.cond, e2.cond)
+    } else if (e1.cond) {
+      e2.cond = e1.cond
+    } else {
+      e2.cond = e2.cond
+    }
+    return e2
+  } else if (q.op == "orElse") {
+    let [e1, e2] = q.arg.map(e => emitPath(buf, e))
+
+    res = { schema: q.schema.type }
+    if (typing.isString(e1.schema)) {
+      if (!typing.isString(e2.schema)) throw new Error("Expect both side to be string")
+      let tmpStr = symbol.getSymbol("tmp_or_str")
+      let tmpLen = symbol.getSymbol("tmp_or_len")
+      c.declareConstCharPtr(buf)(tmpStr, c.ternary(e1.cond, e2.val.str, e1.val.str))
+      c.declareInt(buf)(tmpLen, c.ternary(e1.cond, e2.val.len, e1.val.len))
+      res.val = { str: tmpStr, len: tmpLen }
+    } else {
+      let tmp = symbol.getSymbol("tmp_or")
+      c.declareConstCharPtr(buf)(tmp, c.ternary(e1.cond, e2.val, e1.val))
+      res.val = tmp
+    }
+
+    if (e1.cond && e2.cond) {
+      res.cond = c.and(e1.cond, e2.cond)
+    } else if (e1.cond) {
+      res.cond = c.and(e1.cond, "0")
+    } else {
+      res.cond = e2.cond
+    }
     return res
   } else if (q.op.startsWith("convert_")) {
     let e = emitPath(buf, q.arg[0])
@@ -740,12 +781,11 @@ let emitPure = (buf, q) => {
 
     let name = symbol.getSymbol("tmp_like")
     utils.emitWildcardMatch(buf, e, q.arg[1].op, name)
-
-    return value.primitive(q.schema.type, name, undefined, e.cond)
+    return value.primitive(q.schema.type, "1", undefined, c.not(name))
   } else if (q.op == "isUndef") {
     let e = emitPath(buf, q.arg[0])
     if (e.cond) {
-      return value.primitive(q.schema.type, e.cond)
+      return value.primitive(q.schema.type, "1", undefined, c.not(e.cond))
     } else {
       // Cannot be undefined, return the value
       return e
@@ -788,6 +828,14 @@ let emitPure = (buf, q) => {
     } else {
       res.cond = e2.cond
     }
+    if (q.op == "equal" || q.op == "notEqual" || q.op == "lessThan" || q.op == "greaterThan" || q.op == "lessThanOrEqual" || q.op == "greaterThanOrEqual") {
+      if (res.cond)
+        res.cond = c.or(res.cond, c.not(res.val))
+      else
+        res.cond = c.not(res.val)
+      res.val = "1"
+    }
+    
     return res
   } else {
     throw new Error("Pure operation not supported: " + pretty(q))
@@ -897,7 +945,6 @@ let collectRelevantStatefulInPath = (q, currentGroupPath) => {
       if (q.fre.length == 0) {
       } else {
         if (!same(q.fre, currentGroupPath.path)) {
-          console.log(q)
           throw new Error("Stateful op expected to have the same set of free variables as the current group path but got: " + q.fre + " and " + currentGroupPath.path)
         }
 
@@ -951,7 +998,6 @@ let addHashMapValue = (map, q, name, currentGroupPath) => {
     collectNestedHashMap(q, map, name, currentGroupPath)
   } else if (q1.key == "stateful" && q1.fre.length != 0) {
     if (!same(q1.fre, currentGroupPath.path)) {
-      console.log(currentGroupPath)
       throw new Error("Stateful op expected to have the same set of free variables as the current group path but got: " + q1.fre + " and " + currentGroupPath.path)
     }
     assignmentToSym[q.op] = currentGroupPath.sym
@@ -1082,7 +1128,6 @@ let collectArray = (q, i) => {
   tmpVars[i] = tmpVar
   let e = q.arg[0]
 
-  console.log(e.schema.type)
   if (!typing.isUnknown(e.schema.type) && typing.isObject(e.schema.type) && utils.isSimpleObject(e.schema.type)) {
     let values = utils.convertToArrayOfSchema(e.schema.type)
     for (let i in values) {
