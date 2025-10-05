@@ -625,7 +625,7 @@ test("q12", async () => {
 })
 
 test("q13", async () => {
-  let cond = rh`(like ${orders}.*o1.o_comment ".*special.*requests.*") == 0`
+  let cond = rh`isUndef (like ${orders}.*o1.o_comment ".*special.*requests.*")`
   let orders1 = rh`[${cond} & ${orders}.*o1.o_orderkey] | group ${orders}.*o1.o_custkey`
 
   let customer1 = rh`{
@@ -704,7 +704,7 @@ test("q16", async () => {
 
   let partsupp1 = rh`[${supplier1}.(${partsupp}.*ps1.ps_suppkey) == 0 & ${partsupp}.*ps1.ps_suppkey] | group ${partsupp}.*ps1.ps_partkey`
 
-  let cond1 = rh`${part}.*p1.p_brand != "Brand#45" && (like ${part}.*p1.p_type "MEDIUM POLISHED.*") == 0`
+  let cond1 = rh`${part}.*p1.p_brand != "Brand#45" && (isUndef (like ${part}.*p1.p_type "MEDIUM POLISHED.*"))`
   let cond2 = rh`${part}.*p1.p_size == 42 || ${part}.*p1.p_size == 14 || ${part}.*p1.p_size == 23 || ${part}.*p1.p_size == 45 ||
                  ${part}.*p1.p_size == 19 || ${part}.*p1.p_size == 3 || ${part}.*p1.p_size == 36 || ${part}.*p1.p_size == 9`
 
