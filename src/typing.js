@@ -803,7 +803,7 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
     } else if (q.key === "loadInput") {
         let argTups = q.arg.map($validateIRQuery);
         let t1 = argTups[0].type;
-        if (!isString(t1)) {
+        if (!isUnknown(t1) && !isString(t1)) {
             throw new Error("Filename in loadInput expected to be a string but got " + prettyPrintType(t1))
         }
         return {type: q.inputSchema, props: argTups[0].props};
