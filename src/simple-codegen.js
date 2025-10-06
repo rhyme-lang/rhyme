@@ -25,6 +25,7 @@ let hints
 let filters
 let assignments
 
+let inputFiles
 
 exports.setCodegenState = st => {
   settings = st.settings
@@ -132,9 +133,8 @@ let codegen = (q, scope) => {
   } else if (q.key == "input") {
     return "inp"
   } else if (q.key == "loadInput") {
-    console.error("op not implemented: ", pretty(q))
     let [e1] = q.arg.map(x => codegen(x,scope))
-    return `loadInput('${q.op}', ${e1})`
+    return "rt.load" + q.op.toUpperCase() + "(" + e1 + ")"
   } else if (q.key == "const") {
     return quoteConst(q.op)
   } else if (q.key == "var") {

@@ -1,3 +1,4 @@
+const fs = require("fs")
 
 // runtime support
 
@@ -16,6 +17,26 @@ rt.special.group = true
 rt.special.update = true
 rt.special.update_inplace = true
 rt.special.merge = rt.special.keyval = true
+
+// loadInput operations
+let inputFiles = {}
+rt.reset = () => {
+  inputFiles = {}
+}
+
+rt.loadJSON = (path) => {
+  if (!inputFiles[path]) {
+    inputFiles[path] = JSON.parse(fs.readFileSync(path))
+  }
+  return inputFiles[path]
+}
+
+rt.loadNDJSON = (path) => {
+  if (!inputFiles[path]) {
+    inputFiles[path] = fs.readFileSync(path, "utf8").trim().split("\n").map(JSON.parse)
+  }
+  return inputFiles[path]
+}
 
 // pure operations
 
