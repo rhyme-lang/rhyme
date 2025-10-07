@@ -52,6 +52,8 @@ let tmpVars
 
 let visitedAssignments
 
+let currentGroupPath
+
 let getDeps = q => [...q.fre, ...q.tmps.map(tmpSym)]
 
 // generator ir api: mirroring necessary bits from ir.js
@@ -74,14 +76,15 @@ let assign = (txt, lhs_root_sym, lhs_deps, rhs_deps) => {
   assignmentStms.push(e)
 }
 
-let addMkset = (e1, e2, data) => {
+let addMkset = (e1, e2, val, data) => {
   let a = getDeps(e1)
   let b = getDeps(e2)
   let e = expr("MKSET", ...a)
   e.sym = b[0]
   let info = [`// generator: ${e2.op} <- ${pretty(e1)}`]
+  let cond = val.cond ? c.not(val.cond) : "1"
   e.getLoopTxt = () => ({
-    info, data, initCursor: [], loopHeader: ["{", "// singleton value here"], boundsChecking: [], rowScanning: []
+    info, data, initCursor: [], loopHeader: [`if (${cond}) {`, "// singleton value here"], boundsChecking: [], rowScanning: []
   })
   generatorStms.push(e)
 }
@@ -269,6 +272,12 @@ let emitStatefulUpdate1 = (buf, q, lhs, rhs) => {
     let schema = q.op == "array" ? q.schema.type.objValue : q.schema.type
     rhs = json.convertJSONTo(rhs, schema)
   }
+  if (q.mode == "maybe") {
+    c.if(buf)(c.not(lhs.defined), (buf1) => {
+      c.stmt(buf)(c.assign(lhs.defined, "1"))
+      emitStatefulInit(buf1, q, lhs)
+    })
+  }
   if (q.op == "sum") {
     c.stmt(buf)(c.assign(lhs.val, c.binary(lhs.val, rhs.val, "+")))
   } else if (q.op == "count") {
@@ -280,6 +289,9 @@ let emitStatefulUpdate1 = (buf, q, lhs, rhs) => {
   } else if (q.op == "max") {
     c.stmt(buf)(`${lhs.val} = ${rhs.val} > ${lhs.val} ? ${rhs.val} : ${lhs.val}`)
   } else if (q.op == "single") {
+    c.if(buf)(c.not(lhs.defined), (buf1) => {
+      c.stmt(buf)(c.assign(lhs.defined, "1"))
+    })
     if (typing.isString(q.arg[0].schema.type)) {
       let { str: lhsStr, len: lhsLen } = lhs.val
       let { str: rhsStr, len: rhsLen } = rhs.val
@@ -412,7 +424,7 @@ let emitStateful = (q, i) => {
       if (e.key == "pure" && e.op == "and") {
         q.arg[0] = e.arg[1]
       }
-      
+
       let update = (buf1) => hashmap.emitHashMapUpdate(buf1, map, key, pos, keyPos, update1, (buf2, lhs) => {
         currentGroupKey = { key: k, pos, keyPos }
         let cond = lhs.cond
@@ -503,6 +515,105 @@ let emitStateful = (q, i) => {
       emitStatefulUpdate(buf, q, lhs)
     }, false)
     assign(update, sym, fv, deps)
+  }
+}
+
+let emitStateful1 = (q, map) => {
+  let i = q.op
+  q = assignments[q.op]
+
+  if (visitedAssignments[i]) return
+  visitedAssignments[i] = true
+
+  let sym = tmpSym(i)
+
+  if (q.key == "update") {
+    let [e0, e1, e2, e3] = q.arg
+    if (q.fre.length == 0) {
+      // Top level
+      let map = tmpVars[i]
+      let save = currentGroupPath
+      currentGroupPath = [e1]
+
+      if (e2.key == "pure" && e2.op == "mkTuple") {
+        let buf = []
+
+        hashmap.emitHashLookUpOrUpdate(buf, map, vars[e1.op].val, () => { })
+        assign(buf, sym, [e1.op], [])
+        for (let i = 0; i < e2.arg.length; i += 2) {
+          let key = e2.arg[i]
+          let val = e2.arg[i + 1]
+
+          currentGroupPath.push(key)
+          while (val.key == "pure" && val.op.startsWith("convert_")) {
+            val = val.arg[0]
+          }
+          emitStateful1(val, map)
+          currentGroupPath.pop()
+        }
+      } else {
+        while (val.key == "pure" && val.op.startsWith("convert_")) {
+          val = val.arg[0]
+        }
+        emitStateful1(q, map)
+      }
+
+      currentGroupPath = save
+    } else {
+      // nested
+      throw new Error("not implemented")
+    }
+
+  } else {
+    if (q.fre.length == 0) {
+      console.log("Stateful already emitted: ", pretty(q))
+      if (map) {
+        throw new Error("Need to assign, not implemented")
+      }
+    } else {
+      if (currentGroupPath.every((e) => e.key == "const" || q.fre.indexOf(e.op) >= 0)) {
+        console.log("correlated")
+      } else {
+        throw new Error("Not correlated")
+      }
+      map = map || tmpVars[i]
+      let rootSym = tmpSym(assignmentToSym[i])
+      if (initRequired(q)) {
+        let init = []
+        
+        let curr = map
+        if (!curr) throw new Error("Something went wrong")
+        for (let k of currentGroupPath) {
+          if (k.key == "const") {
+            curr = curr.val[k.op]
+          } else {
+            let key = vars[k.op].val
+            let [pos, keyPos] = hashmap.emitHashLookUp(init, curr, key)
+            curr = hashmap.getHashMapValueEntry(curr, pos, keyPos)
+          }
+        }
+        c.if(init)(c.not(curr.defined), (buf) => {
+          c.stmt(init)(c.assign(curr.defined, "1"))
+          emitStatefulInit(buf, q, curr)
+        })
+
+        assign(init, rootSym, q.fre, [])
+      }
+
+      let update = []
+      let curr = map
+      for (let k of currentGroupPath) {
+        if (k.key == "const") {
+          curr = curr.val[k.op]
+        } else {
+          let key = vars[k.op].val
+          let [pos, keyPos] = hashmap.emitHashLookUp(update, curr, key)
+          curr = hashmap.getHashMapValueEntry(curr, pos, keyPos)
+        }
+      }
+      emitStatefulUpdate(update, q, curr)
+      assign(update, rootSym, q.fre, [])
+    }
   }
 }
 
@@ -835,7 +946,7 @@ let emitPure = (buf, q) => {
         res.cond = c.not(res.val)
       res.val = "1"
     }
-    
+
     return res
   } else {
     throw new Error("Pure operation not supported: " + pretty(q))
@@ -852,7 +963,8 @@ let emitPath = (buf, q) => {
   } else if (q.key == "var") {
     return vars[q.op].val
   } else if (q.key == "ref") {
-    emitStateful(assignments[q.op], q.op)
+    // emitStateful(assignments[q.op], q.op)
+    emitStateful1(q)
     let q1 = assignments[q.op]
     let tmpVar = tmpVars[q.op]
 
@@ -951,7 +1063,7 @@ let collectRelevantStatefulInPath = (q, currentGroupPath) => {
         assignmentToSym[i] = currentGroupPath.sym
         updateOpsExtra[currentGroupPath.sym].push(i)
 
-        let dummy = { schema: { objValue: q.schema.type }, val: { sym } }
+        let dummy = { schema: { objValue: q.schema.type }, val: { sym: i } }
         hashmap.emitHashMapValueInit(prolog1, dummy, `_DEFAULT_`, q.schema.type)
         tmpVars[i] = dummy
       }
@@ -1158,6 +1270,8 @@ let collectOtherStatefulOps = () => {
       c.declareVar(prolog1)(utils.convertToCType(q.schema.type), sym)
       tmpVars[i] = value.primitive(q.schema.type, sym)
     }
+    tmpVars[i].defined = `${sym}_defined`
+    c.declareVar(prolog1)("uint8_t", `${sym}_defined`, "0")
   }
 }
 
@@ -1172,7 +1286,7 @@ let processFilters = () => {
       let data = []
       let val = emitPath(data, g1.arg[0])
       vars[v1] = { val }
-      addMkset(f.arg[0], f.arg[1], data)
+      addMkset(f.arg[0], f.arg[1], val, data)
     } else {
       let data = []
       let lhs = emitPath(data, g1)
@@ -1263,6 +1377,7 @@ let emitCode = (q, ir, settings) => {
   // // Different take on this backend
   // let res = path(epilog, q)
 
+  // currentGroupPath = { root: undefined, path: [] }
   let res = emitPath(epilog, q)
 
   if (res.cond) {

@@ -149,7 +149,7 @@ let emitHashMapValueInit = (buf, map, name, schema, sorted, prolog0) => {
   if (map.tag == TAG.NESTED_HASHMAP) {
     map.val.struct.addField("uint8_t *", `${sym}_${name}_defined`)
   } else
-    allocatePrimitiveBuffer(buf, "uint8_t", `${sym}_${name}_defined`, size)
+    c.declarePtr(buf)("uint8_t", `${sym}_${name}_defined`, c.cast(`uint8_t *`, c.calloc("uint8_t", size)))
   res.defined = `${sym}_${name}_defined`
 
   map.val.values ??= {}
@@ -534,9 +534,9 @@ let getValueAtIdx = (val, idx) => {
     } else {
       res.val[name].val += indexing
     }
-    // if (res.val[name].defined) {
-    //   res.val[name].cond = res.val[name].defined + indexing
-    // }
+    if (res.val[name].defined) {
+      res.val[name].defined += indexing
+    }
   }
 
   // console.log(val, val.val.values)
@@ -553,7 +553,14 @@ let getValueAtIdx = (val, idx) => {
 // Emit the code that gets the hashMap value for the key at keyPos
 let getHashMapValueEntry = (map, pos, keyPos) => {
   let res = getValueAtIdx(map, keyPos)
+  if (res.tag == TAG.OBJECT) {
+    for (let key in res.val) {
+      res.val[key].keyPos = keyPos
+      res.val[key].cond = c.eq(keyPos, "-1")
+    }
+  }
   res.keyPos = keyPos
+  res.cond = c.eq(keyPos, "-1")
 
   return res
 }
