@@ -172,6 +172,54 @@ rt.pure.ifElse = (c,tB,eB) => {
   return c !== undefined ? tB : eB
 }
 
+rt.pure.sort = (x1, ...x2) => {
+  // Parse arguments into field-order pair
+  if (x1 === undefined) return undefined
+  if (!Array.isArray(x1)) {
+    if (typeof x1 === 'object' && x1 !== null) {
+      x1 = Object.values(x1);
+    } else {
+      throw new Error('First argument must be an array or object');
+    }
+  }
+  
+  const sortCriteria = []
+  for (let i = 0; i < x2.length; i += 2) {
+    if (i + 1 < x2.length) {
+      sortCriteria.push({
+        field: x2[i],
+        descending: x2[i + 1] === 1
+      })
+    }
+  }
+
+  // Sort the array
+  return x1.sort((a, b) => {
+    for (const { field, descending } of sortCriteria) {
+      const valueA = a[field]
+      const valueB = b[field]
+      
+      let comparison = 0
+      
+      // Compare values
+      if (valueA < valueB) {
+        comparison = -1
+      } else if (valueA > valueB) {
+        comparison = 1
+      }
+      
+      // If values are different, return the comparison
+      if (comparison !== 0) {
+        return descending ? -comparison : comparison
+      }
+      
+      // If equal, continue to next sort criterion
+    }
+    
+    return 0 // All fields are equal
+  })
+}
+
 rt.pure.convert_u8 = (x) => x === undefined ? undefined : (Number(x) & 0xff);
 rt.pure.convert_u16 = (x) => x === undefined ? undefined : (Number(x) & 0xffff);
 rt.pure.convert_u32 = (x) => x === undefined ? undefined : (Number(x) & 0xffffffff);
