@@ -207,10 +207,10 @@ let emitNestedHashMapInit = (buf, i, map, name, schema, keySchema) => {
   res.tag = TAG.NESTED_HASHMAP
 
   if (map.tag == TAG.NESTED_HASHMAP) {
-    map.val.struct.addField("uint8_t *", `${sym}_${name}_defined`)
+    map.val.struct.addField("uint8_t *", `${ptr}_defined`)
   } else
-    c.declarePtr(buf)("uint8_t", `${sym}_${name}_defined`, c.cast(`uint8_t *`, c.calloc("uint8_t", hashSize)))
-  res.defined = `${sym}_${name}_defined`
+    c.declarePtr(buf)("uint8_t", `${ptr}_defined`, c.cast(`uint8_t *`, c.calloc("uint8_t", hashSize)))
+  res.defined = `${ptr}_defined`
 
   map.val.values ??= {}
   map.val.values[name] = res
@@ -249,6 +249,7 @@ let emitNestedHashMapAllocation = (buf, map) => {
       let cType = utils.convertToCType(value.schema)
       assign(value.val, c.cast(`${cType} *`, c.malloc(cType, hashSize)))
     }
+    assign(value.defined, c.cast("uint8_t *", c.calloc("uint8_t", hashSize)))
   }
 }
 
@@ -521,6 +522,7 @@ let getNestedHashmapAtIdx = (map, idx) => {
     } else {
       value.val = ptr + "->" + value.val
     }
+    value.defined = ptr + "->" + value.defined
   }
 }
 
@@ -550,8 +552,6 @@ let getValueAtIdx = (val, idx) => {
       res.val[name].defined += indexing
     }
   }
-
-  // console.log(val, val.val.values)
 
   // If it is just a single value, don't return the object
   // but the value directly

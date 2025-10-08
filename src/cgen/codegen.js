@@ -561,7 +561,56 @@ let emitStateful1 = (q, map) => {
       currentGroupPath = save
     } else {
       // nested
-      throw new Error("not implemented")
+      if (currentGroupPath.path.every((e) => e.key == "const" || q.fre.indexOf(e.op) >= 0)) {
+        // console.log("correlated")
+      } else {
+        throw new Error("Not correlated")
+      }
+      let rootSym = tmpSym(currentGroupPath.root)
+      if (!map) throw new Error("Something went wrong")
+
+      let getLhs = (buf, map) => {
+        let curr = map
+        let insertKey
+        for (let k of currentGroupPath.path) {
+          if (k.key == "const") {
+            curr = curr.val[k.op]
+            insertKey = undefined
+          } else {
+            let key = vars[k.op].val
+            let [pos, keyPos] = hashmap.emitHashLookUp(buf, curr, key)
+            insertKey = { key, map: curr, pos, keyPos }
+            curr = hashmap.getHashMapValueEntry(curr, pos, keyPos)
+          }
+        }
+        return { lhs: curr, insertKey }
+      }
+
+      let init = []
+      let { lhs, insertKey } = getLhs(init, map)
+      if (insertKey) {
+        let { key, map: insertMap, pos, keyPos } = insertKey
+        hashmap.emitHashMapUpdate(init, insertMap, key, pos, keyPos, () => { }, () => { }, true)
+      }
+
+      c.if(init)(c.not(lhs.defined), (buf) => {
+        c.stmt(init)(c.assign(lhs.defined, "1"))
+        emitStatefulInit(buf, q, lhs)
+      })
+
+      assign(init, rootSym, q.fre, [])
+
+      let [e0, e1, e2, e3] = q.arg
+      currentGroupPath.path.push(e1)
+      if (e2.key == "pure" && e2.op == "mkTuple") {
+        throw new Error("Not supported yet")
+      } else {
+        while (e2.key == "pure" && e2.op.startsWith("convert_")) {
+          e2 = e2.arg[0]
+        }
+        emitStateful1(e2, map)
+      }
+      currentGroupPath.path.pop()
     }
 
   } else {

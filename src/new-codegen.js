@@ -246,20 +246,16 @@ exports.generate = (ir, backend = "js") => {
   //
   let code = []
   let indent = 0
-  function emit(str) {
-    // Decrease indent for closing braces before adding the line
-    if (str.indexOf("}") == 0) indent--;
-    
-    // Add the line with current indentation
-    code.push("".padEnd(indent * 4, ' ') + str);
-    
-    // Check for opening braces and adjust indent for next line
-    if (str.indexOf("{") >= 0 && (str.indexOf("{") == 0 || str[str.indexOf("{") - 1] === " ")) {
-        let l_num = (str.match(/{/g) || []).length;
-        let r_num = (str.match(/}/g) || []).length;
-        if (l_num >= r_num) indent++;
-        // Remove this line - we already handled } at the start
-        // if (l_num < r_num) indent--;
+  function emit(line) {
+    if (line.trim().startsWith('}')) {
+      indent = Math.max(0, indent - 1);
+    }
+
+    const indentedLine = '    '.repeat(indent) + line;
+    code.push(indentedLine);
+
+    if (line.trim().endsWith('{')) {
+      indent++;
     }
   }
   function emitC(stmt) {
@@ -615,7 +611,7 @@ let scope = () => ({
     this.curr.subst[oldPos] = newPos
     this.curr.subst[oldKeyPos] = newKeyPos
   },
-  applySubst: function(str, scope) {
+  applySubst: function (str, scope) {
     for (let oldName in scope.subst) {
       let newName = scope.subst[oldName]
       str = str.replaceAll(oldName, newName)
