@@ -92,6 +92,12 @@ let emitHashMapBucketsInit = (buf, map, name, schema) => {
   res.val = { dataCount, bucketCount, buckets }
   res.tag = TAG.HASHMAP_BUCKET
 
+  if (map.tag == TAG.NESTED_HASHMAP) {
+    map.val.struct.addField("uint8_t *", `${sym}_${name}_defined`)
+  } else
+    c.declarePtr(buf)("uint8_t", `${sym}_${name}_defined`, c.cast(`uint8_t *`, c.calloc("uint8_t", hashSize)))
+  res.defined = `${sym}_${name}_defined`
+
   map.val.values ??= {}
   map.val.values[name] = res
 }
@@ -199,6 +205,12 @@ let emitNestedHashMapInit = (buf, i, map, name, schema, keySchema) => {
 
   res.val = { sym: i, ptr, struct, htable, count, keys }
   res.tag = TAG.NESTED_HASHMAP
+
+  if (map.tag == TAG.NESTED_HASHMAP) {
+    map.val.struct.addField("uint8_t *", `${sym}_${name}_defined`)
+  } else
+    c.declarePtr(buf)("uint8_t", `${sym}_${name}_defined`, c.cast(`uint8_t *`, c.calloc("uint8_t", hashSize)))
+  res.defined = `${sym}_${name}_defined`
 
   map.val.values ??= {}
   map.val.values[name] = res
@@ -556,7 +568,7 @@ let getHashMapValueEntry = (map, pos, keyPos) => {
   if (res.tag == TAG.OBJECT) {
     for (let key in res.val) {
       res.val[key].keyPos = keyPos
-      res.val[key].cond = c.eq(keyPos, "-1")
+      res.val[key].cond = c.or(c.eq(keyPos, "-1"), c.not(res.val[key].defined))
     }
   }
   res.keyPos = keyPos

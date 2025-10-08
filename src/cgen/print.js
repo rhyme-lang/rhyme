@@ -1,6 +1,6 @@
 const { c, utils } = require("./utils")
 const { TAG } = require("./value")
-const { hashmap, hashSize, bucketSize } = require("./collections")
+const { array, hashmap, hashSize, bucketSize } = require("./collections")
 
 const { tmpSym } = utils
 
@@ -183,7 +183,7 @@ let emitArrayPrintJSON = (buf, arr, settings) => {
 
   let loopVar = arr.val.sorted ? "i" : "idx"
 
-  let value = hashmap.getHashMapValueEntry(arr, undefined, "idx")
+  let value = array.getValueAtIdx(arr, "idx")
   emitValPrint(buf, value, settings)
 
   buf.push(`if (${loopVar} != ${limit} - 1) {`)
@@ -211,7 +211,8 @@ let emitArrayPrint = (buf, arr, settings) => {
 
   let loopVar = arr.val.sorted ? "i" : "idx"
 
-  let value = hashmap.getHashMapValueEntry(arr, undefined, "idx")
+  let value = array.getValueAtIdx(arr, "idx")
+  console.log(value)
   emitValPrint(buf, value, settings)
 
   buf.push(`if (${loopVar} != ${limit} - 1) {`)
@@ -227,7 +228,7 @@ let emitHashMapBucketPrint = (buf, bucket, settings) => {
   buf.push(`for (int j = 0; j < ${bucketCount}; j++) {`)
   buf.push(`int data_pos = ${buckets}[key_pos * ${bucketSize} + j];`)
 
-  let value = hashmap.getHashMapValueEntry(bucket, undefined, "data_pos")
+  let value = array.getValueAtIdx(bucket, "data_pos")
   emitValPrint(buf, value, settings)
 
   buf.push(`if (j != ${bucketCount} - 1) {`)
@@ -239,33 +240,45 @@ let emitHashMapBucketPrint = (buf, bucket, settings) => {
 
 let emitValPrint = (buf, val, settings) => {
   if (settings.format != "json" && settings.format != "csv") throw new Error("Unknown print format: " + settings.format)
-  if (val.tag == TAG.HASHMAP) {
-    c.comment(buf)("print hashmap")
-    emitHashMapPrint(buf, val, settings)
-  } else if (val.tag == TAG.ARRAY) {
-    c.comment(buf)("print array")
-    emitArrayPrint(buf, val, settings)
-  } else if (val.tag == TAG.JSON) {
-    c.comment(buf)("print json object")
-    c.printf(buf)("%s", c.call("yyjson_val_write", val.val, "0", "NULL"))
-  } else if (val.tag == TAG.OBJECT) {
-    c.comment(buf)("print object")
-    emitObjectPrint(buf, val, settings)
-  } else if (val.tag == TAG.HASHMAP_BUCKET) {
-    c.comment(buf)("print bucket")
-    emitHashMapBucketPrint(buf, val, settings)
-  } else if (val.tag == TAG.NESTED_HASHMAP) {
-    c.comment(buf)("print nested hashmap")
-    emitNestedHashMapPrint(buf, val, settings)
-  } else if (typing.isString(val.schema)) {
-    emitStringPrint(buf, val, settings)
-  } else if (val.schema.typeSym == typeSyms.date) {
-    buf.push(`print_date(${val.val});`)
-  } else if (val.schema.typeSym == typeSyms.boolean) {
-    c.printf(buf)(`%s`, c.ternary(val.val, `"true"`, `"false"`))
-  } else {
-    c.printf(buf)(`%${utils.getFormatSpecifier(val.schema)}`, val.val)
+  let f = (buf1) => {
+    if (val.tag == TAG.HASHMAP) {
+      c.comment(buf1)("print hashmap")
+      emitHashMapPrint(buf1, val, settings)
+    } else if (val.tag == TAG.ARRAY) {
+      c.comment(buf1)("print array")
+      emitArrayPrint(buf1, val, settings)
+    } else if (val.tag == TAG.JSON) {
+      c.comment(buf1)("print json object")
+      c.printf(buf1)("%s", c.call("yyjson_val_write", val.val, "0", "NULL"))
+    } else if (val.tag == TAG.OBJECT) {
+      c.comment(buf1)("print object")
+      emitObjectPrint(buf1, val, settings)
+    } else if (val.tag == TAG.HASHMAP_BUCKET) {
+      c.comment(buf1)("print bucket")
+      emitHashMapBucketPrint(buf1, val, settings)
+    } else if (val.tag == TAG.NESTED_HASHMAP) {
+      c.comment(buf1)("print nested hashmap")
+      emitNestedHashMapPrint(buf1, val, settings)
+    } else if (typing.isString(val.schema)) {
+      emitStringPrint(buf1, val, settings)
+    } else if (val.schema.typeSym == typeSyms.date) {
+      buf1.push(`print_date(${val.val});`)
+    } else if (val.schema.typeSym == typeSyms.boolean) {
+      c.printf(buf1)(`%s`, c.ternary(val.val, `"true"`, `"false"`))
+    } else {
+      c.printf(buf1)(`%${utils.getFormatSpecifier(val.schema)}`, val.val)
+    }
   }
+  if (val.cond) {
+    if (val.cond) {
+      c.if(buf)(val.cond, buf1 => {
+        c.printf(buf1)("null")
+      }, f)
+    }
+  } else {
+    f(buf)
+  }
+
 }
 
 let printEmitter = {

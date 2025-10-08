@@ -325,8 +325,8 @@ let emitStatefulUpdate1 = (buf, q, lhs, rhs) => {
 let emitStatefulUpdate = (buf, q, lhs) => {
   let e = q.arg[0]
   let rhs = emitPath(buf, e)
-  if (lhs.cond || rhs.cond) {
-    let cond = lhs.cond && rhs.cond ? c.or(lhs.cond, rhs.cond) : (lhs.cond ? lhs.cond : rhs.cond)
+  if (rhs.cond) {
+    let cond = rhs.cond
     c.if(buf)(c.not(cond), buf1 => {
       emitStatefulUpdate1(buf1, q, lhs, rhs)
     })
@@ -522,7 +522,7 @@ let emitStateful1 = (q, map) => {
   let i = q.op
   q = assignments[q.op]
 
-  if (visitedAssignments[i]) return
+  if (q.key == "update" && visitedAssignments[i]) return
   visitedAssignments[i] = true
 
   let sym = tmpSym(i)
@@ -533,7 +533,7 @@ let emitStateful1 = (q, map) => {
       // Top level
       let map = tmpVars[i]
       let save = currentGroupPath
-      currentGroupPath = [e1]
+      currentGroupPath = { root: i, path: [e1] }
 
       if (e2.key == "pure" && e2.op == "mkTuple") {
         let buf = []
@@ -544,18 +544,18 @@ let emitStateful1 = (q, map) => {
           let key = e2.arg[i]
           let val = e2.arg[i + 1]
 
-          currentGroupPath.push(key)
+          currentGroupPath.path.push(key)
           while (val.key == "pure" && val.op.startsWith("convert_")) {
             val = val.arg[0]
           }
           emitStateful1(val, map)
-          currentGroupPath.pop()
+          currentGroupPath.path.pop()
         }
       } else {
-        while (val.key == "pure" && val.op.startsWith("convert_")) {
-          val = val.arg[0]
+        while (e2.key == "pure" && e2.op.startsWith("convert_")) {
+          e2 = e2.arg[0]
         }
-        emitStateful1(q, map)
+        emitStateful1(e2, map)
       }
 
       currentGroupPath = save
@@ -566,53 +566,70 @@ let emitStateful1 = (q, map) => {
 
   } else {
     if (q.fre.length == 0) {
-      console.log("Stateful already emitted: ", pretty(q))
+      // console.log("Stateful already emitted: ", pretty(q))
       if (map) {
         throw new Error("Need to assign, not implemented")
       }
     } else {
-      if (currentGroupPath.every((e) => e.key == "const" || q.fre.indexOf(e.op) >= 0)) {
-        console.log("correlated")
+      if (currentGroupPath.path.every((e) => e.key == "const" || q.fre.indexOf(e.op) >= 0)) {
+        // console.log("correlated")
       } else {
         throw new Error("Not correlated")
       }
-      map = map || tmpVars[i]
-      let rootSym = tmpSym(assignmentToSym[i])
-      if (initRequired(q)) {
-        let init = []
-        
+      let rootSym = tmpSym(currentGroupPath.root)
+
+      let ignoreConsts = false
+      if (!map) {
+        map = tmpVars[i]
+        // console.log(q)
+        ignoreConsts = true
+      }
+      if (!map) throw new Error("Something went wrong")
+
+      let getLhs = (buf, map) => {
         let curr = map
-        if (!curr) throw new Error("Something went wrong")
-        for (let k of currentGroupPath) {
+        let insertKey
+        for (let k of currentGroupPath.path) {
           if (k.key == "const") {
-            curr = curr.val[k.op]
+            if (!ignoreConsts) curr = curr.val[k.op]
+            insertKey = undefined
           } else {
             let key = vars[k.op].val
-            let [pos, keyPos] = hashmap.emitHashLookUp(init, curr, key)
+            let [pos, keyPos] = hashmap.emitHashLookUp(buf, curr, key)
+            insertKey = { key, map: curr, pos, keyPos }
             curr = hashmap.getHashMapValueEntry(curr, pos, keyPos)
           }
         }
-        c.if(init)(c.not(curr.defined), (buf) => {
-          c.stmt(init)(c.assign(curr.defined, "1"))
-          emitStatefulInit(buf, q, curr)
+        return { lhs: curr, insertKey }
+      }
+
+      if (initRequired(q)) {
+        let init = []
+        let { lhs, insertKey } = getLhs(init, map)
+        if (insertKey) {
+          let { key, map: insertMap, pos, keyPos } = insertKey
+          hashmap.emitHashMapUpdate(init, insertMap, key, pos, keyPos, () => { }, () => { }, true)
+        }
+
+        c.if(init)(c.not(lhs.defined), (buf) => {
+          c.stmt(init)(c.assign(lhs.defined, "1"))
+          emitStatefulInit(buf, q, lhs)
         })
 
         assign(init, rootSym, q.fre, [])
       }
 
+      let getRoot = tmp => assignmentToSym[tmp] ? getRoot(assignmentToSym[tmp]) : tmp
+      let deps = [...union(q.fre, q.bnd), ...q.tmps.map(getRoot).map(tmpSym)]
+
       let update = []
-      let curr = map
-      for (let k of currentGroupPath) {
-        if (k.key == "const") {
-          curr = curr.val[k.op]
-        } else {
-          let key = vars[k.op].val
-          let [pos, keyPos] = hashmap.emitHashLookUp(update, curr, key)
-          curr = hashmap.getHashMapValueEntry(curr, pos, keyPos)
-        }
+      let { lhs, insertKey } = getLhs(update, map)
+      if (!initRequired(q) && insertKey) {
+        let { key, map: insertMap, pos, keyPos } = insertKey
+        hashmap.emitHashMapUpdate(update, insertMap, key, pos, keyPos, () => { }, () => { }, true)
       }
-      emitStatefulUpdate(update, q, curr)
-      assign(update, rootSym, q.fre, [])
+      emitStatefulUpdate(update, q, lhs)
+      assign(update, rootSym, q.fre, deps)
     }
   }
 }
@@ -904,7 +921,16 @@ let emitPure = (buf, q) => {
   } else if (q.op == "combine") {
     let keys = q.arg.map(e => emitPath(buf, e))
     let schema = keys.map(key => key.schema)
-    return value.combinedKey(schema, keys)
+    let cond
+    for (let key of keys) {
+      if (key.cond) {
+        if (cond)
+          cond = c.or(cond, key.cond)
+        else
+          cond = key.cond
+      }
+    }
+    return value.combinedKey(schema, keys, cond)
   } else if (utils.binaryOperators[q.op]) {
     // binary op
     let [e1, e2] = q.arg.map(e => emitPath(buf, e))
@@ -1063,8 +1089,9 @@ let collectRelevantStatefulInPath = (q, currentGroupPath) => {
         assignmentToSym[i] = currentGroupPath.sym
         updateOpsExtra[currentGroupPath.sym].push(i)
 
-        let dummy = { schema: { objValue: q.schema.type }, val: { sym: i } }
+        let dummy = { schema: { objValue: q.schema.type }, val: { ...tmpVars[currentGroupPath.sym].val, sym: i, values: {} } }
         hashmap.emitHashMapValueInit(prolog1, dummy, `_DEFAULT_`, q.schema.type)
+        dummy.val.sym = currentGroupPath.sym
         tmpVars[i] = dummy
       }
     }
@@ -1208,6 +1235,7 @@ let collectHashMap = (q) => {
   // Create hashmap
   let { htable, count, keys } = hashmap.emitHashMapInit(prolog1, i, keySchema)
   let tmpVar = value.hashmap(q.schema.type, i, htable, count, keys)
+  tmpVars[i] = tmpVar
 
   let currentGroupPath = { sym: i, path: [...q.fre, e1.op], keySchema }
   if (e2.key == "pure" && e2.op == "mkTuple") {
@@ -1219,8 +1247,6 @@ let collectHashMap = (q) => {
   } else {
     addHashMapValue(tmpVar, e2, "_DEFAULT_", currentGroupPath)
   }
-
-  tmpVars[i] = tmpVar
 }
 
 // Collect hashmaps required for the query
