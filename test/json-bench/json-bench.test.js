@@ -77,9 +77,9 @@ test("q2", async () => {
   let cond = rh`${bluesky}.*A.kind == "commit" && ${bluesky}.*A.commit.operation == "create"`
 
   let countDistinct = rh`{
-    ${bluesky}.*A.commit.collection: {
-      event: single(${cond} & (${bluesky}.*A.commit.collection)),
-      count: count(${cond} & ${bluesky}.*A),
+    ${cond} & ${bluesky}.*A.commit.collection: {
+      event: single(${bluesky}.*A.commit.collection),
+      count: count(${bluesky}.*A),
       dids: {
         ${bluesky}.*A.did: count?(${cond} & ${bluesky}.*A.did)
       }
