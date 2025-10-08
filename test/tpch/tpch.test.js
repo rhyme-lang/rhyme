@@ -154,21 +154,43 @@ beforeAll(async () => {
   }
 })
 
+test("q1-js", () => {
+  let cond = rh`lineitem.*.l_shipdate <= 19980902`
+
+  let query1 = rh`{
+    l_returnflag: single lineitem.*.l_returnflag,
+    l_linestatus: single lineitem.*.l_linestatus,
+    sum_qty: sum (lineitem.*.l_quantity),
+    sum_base_price: sum (lineitem.*.l_extendedprice),
+    sum_disc_price: sum ((lineitem.*.l_extendedprice * (1 - lineitem.*.l_discount))),
+    sum_charge: sum ((lineitem.*.l_extendedprice * (1 - lineitem.*.l_discount) * (1 + lineitem.*.l_tax))),
+    avg_qty: (sum (lineitem.*.l_quantity)) / (count (lineitem.*.l_quantity)),
+    avg_price: (sum (lineitem.*.l_extendedprice)) / (count (lineitem.*.l_extendedprice)),
+    avg_disc: (sum (lineitem.*.l_discount)) / (count (lineitem.*.l_discount)),
+    count_order: count (lineitem.*.l_orderkey)
+  } | group lineitem.*.l_linestatus`
+
+  let query = rh`sort ${query1} "l_returnflag" 0 "l_linestatus" 0`
+
+  let func = api.compileC1(query1)
+  console.log(func.explain.code)
+})
+
 test("q1-alt", async () => {
   let cond = rh`${lineitem}.*.l_shipdate <= 19980902`
 
   let query1 = rh`{
-    l_returnflag: ${lineitem}.*.l_returnflag,
-    l_linestatus: ${lineitem}.*.l_linestatus,
-    sum_qty: sum (${cond} & ${lineitem}.*.l_quantity),
-    sum_base_price: sum (${cond} & ${lineitem}.*.l_extendedprice),
-    sum_disc_price: sum (${cond} & (${lineitem}.*.l_extendedprice * (1 - ${lineitem}.*.l_discount))),
-    sum_charge: sum (${cond} & (${lineitem}.*.l_extendedprice * (1 - ${lineitem}.*.l_discount) * (1 + ${lineitem}.*.l_tax))),
-    avg_qty: (sum (${cond} & ${lineitem}.*.l_quantity)) / (count (${cond} & ${lineitem}.*.l_quantity)),
-    avg_price: (sum (${cond} & ${lineitem}.*.l_extendedprice)) / (count (${cond} & ${lineitem}.*.l_extendedprice)),
-    avg_disc: (sum (${cond} & ${lineitem}.*.l_discount)) / (count (${cond} & ${lineitem}.*.l_discount)),
-    count_order: count (${cond} & ${lineitem}.*.l_orderkey)
-  } | group [${lineitem}.*.l_returnflag, ${lineitem}.*.l_linestatus]`
+    l_returnflag: single ${lineitem}.*.l_returnflag,
+    l_linestatus: single ${lineitem}.*.l_linestatus,
+    sum_qty: sum (${lineitem}.*.l_quantity),
+    sum_base_price: sum ${lineitem}.*.l_extendedprice,
+    sum_disc_price: sum (${lineitem}.*.l_extendedprice * (1 - ${lineitem}.*.l_discount)),
+    sum_charge: sum (${lineitem}.*.l_extendedprice * (1 - ${lineitem}.*.l_discount) * (1 + ${lineitem}.*.l_tax)),
+    avg_qty: (sum ${lineitem}.*.l_quantity) / (count ${lineitem}.*.l_quantity),
+    avg_price: (sum ${lineitem}.*.l_extendedprice) / (count ${lineitem}.*.l_extendedprice),
+    avg_disc: (sum ${lineitem}.*.l_discount) / (count ${lineitem}.*.l_discount),
+    count_order: count ${lineitem}.*.l_orderkey
+  } | group [${cond} & ${lineitem}.*.l_returnflag, ${cond} & ${lineitem}.*.l_linestatus]`
 
   let query = rh`sort ${query1} "l_returnflag" 0 "l_linestatus" 0`
 
@@ -183,18 +205,18 @@ test("q1", async () => {
   let cond = rh`${lineitem}.*.l_shipdate <= 19980902`
 
   let lineitem1 = rh`{
-    l_returnflag: ${lineitem}.*.l_returnflag,
-    l_linestatus: ${lineitem}.*.l_linestatus,
-    sum_qty: sum (${cond} & ${lineitem}.*.l_quantity),
-    sum_base_price: sum (${cond} & ${lineitem}.*.l_extendedprice),
-    sum_disc_price: sum (${cond} & (${lineitem}.*.l_extendedprice * (1 - ${lineitem}.*.l_discount))),
-    sum_charge: sum (${cond} & (${lineitem}.*.l_extendedprice * (1 - ${lineitem}.*.l_discount) * (1 + ${lineitem}.*.l_tax))),
-    count_l_quantity: count (${cond} & ${lineitem}.*.l_quantity),
-    count_l_extendedprice: count (${cond} & ${lineitem}.*.l_extendedprice),
-    sum_l_discount: sum (${cond} & ${lineitem}.*.l_discount),
-    count_l_discount: count (${cond} & ${lineitem}.*.l_discount),
-    count_order: count (${cond} & ${lineitem}.*.l_orderkey)
-  } | group [${lineitem}.*.l_returnflag, ${lineitem}.*.l_linestatus]`
+    l_returnflag: single ${lineitem}.*.l_returnflag,
+    l_linestatus: single ${lineitem}.*.l_linestatus,
+    sum_qty: sum ${lineitem}.*.l_quantity,
+    sum_base_price: sum ${lineitem}.*.l_extendedprice,
+    sum_disc_price: sum (${lineitem}.*.l_extendedprice * (1 - ${lineitem}.*.l_discount)),
+    sum_charge: sum (${lineitem}.*.l_extendedprice * (1 - ${lineitem}.*.l_discount) * (1 + ${lineitem}.*.l_tax)),
+    count_l_quantity: count ${lineitem}.*.l_quantity,
+    count_l_extendedprice: count ${lineitem}.*.l_extendedprice,
+    sum_l_discount: sum ${lineitem}.*.l_discount,
+    count_l_discount: count ${lineitem}.*.l_discount,
+    count_order: count ${lineitem}.*.l_orderkey
+  } | group [${cond} & ${lineitem}.*.l_returnflag, ${cond} & ${lineitem}.*.l_linestatus]`
 
   let lineitem2 = rh`[{
     l_returnflag: ${lineitem1}.*.l_returnflag,
@@ -281,11 +303,11 @@ test("q3", async () => {
 
   let cond = rh`${lineitem}.*l1.l_shipdate > 19950315`
   let lineitem1 = rh`{
-    l_orderkey: (${cond} & ${lineitem}.*l1.l_orderkey),
-    revenue: sum (${cond} & (${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount))),
-    o_orderdate: (${cond} & ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.o_orderdate),
-    o_shippriority: (${cond} & ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.o_shippriority)
-  } | group [${lineitem}.*l1.l_orderkey, ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.o_orderdate, ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.o_shippriority]`
+    l_orderkey: ${lineitem}.*l1.l_orderkey,
+    revenue: sum (${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount)),
+    o_orderdate: ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.o_orderdate,
+    o_shippriority: ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.o_shippriority
+  } | group [${cond} & ${lineitem}.*l1.l_orderkey, ${cond} & ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.o_orderdate, ${cond} & ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.o_shippriority]`
 
   let query = rh`sort ${lineitem1} "revenue" 1 "o_orderdate" 0`
 
@@ -302,9 +324,9 @@ test("q4", async () => {
   let cond = rh`19930701 <= ${orders}.*.o_orderdate && ${orders}.*.o_orderdate < 19931001`
 
   let countL = rh`{
-    o_orderpriority: ${orders}.*.o_orderpriority,
-    order_count: count ((${cond} && ${countR}.(${orders}.*.o_orderkey) > 0) & ${orders}.*.o_orderkey)
-  } | group ${orders}.*.o_orderpriority`
+    o_orderpriority: single ${orders}.*.o_orderpriority,
+    order_count: count ${orders}.*.o_orderkey
+  } | group (${cond} && ${countR}.(${orders}.*.o_orderkey) > 0) & ${orders}.*.o_orderpriority`
   let query = rh`sort ${countL} "o_orderpriority" 0`
 
   let func = await compile(query, { ...settings, outFile: "q4" })
@@ -400,14 +422,14 @@ test("q7", async () => {
   let cond2 = rh`${lineitem}.*l1.l_shipdate >= 19950101 && ${lineitem}.*l1.l_shipdate <= 19961231 && ${supplier1}.(${lineitem}.*l1.l_suppkey).*s2 == ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.n1key`
 
   let lineitem1 = rh`{
-    supp_nation: ${cond2} & ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.supp_nation,
-    cust_nation: ${cond2} & ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.cust_nation,
-    l_year: ${cond2} & (year ${lineitem}.*l1.l_shipdate),
-    revenue: sum? (${cond2} & (${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount)))
+    supp_nation: single ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.supp_nation,
+    cust_nation: single ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.cust_nation,
+    l_year: year ${lineitem}.*l1.l_shipdate,
+    revenue: sum? (${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount))
   } | group [
-    ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.supp_nation,
-    ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.cust_nation,
-    year ${lineitem}.*l1.l_shipdate
+    ${cond2} & ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.supp_nation,
+    ${cond2} & ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.cust_nation,
+    ${cond2} & (year ${lineitem}.*l1.l_shipdate)
   ]`
 
   let query = rh`sort ${lineitem1} "supp_nation" 0 "cust_nation" 0 "l_year" 0`
@@ -416,6 +438,7 @@ test("q7", async () => {
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q7.out`).toString()
+  console.log(res)
   expect(res).toBe(answer)
 })
 
@@ -610,10 +633,10 @@ test("q12", async () => {
   let cond6 = rh`${orders1}.(${lineitem}.*l1.l_orderkey).*o2 != "1-URGENT" && ${orders1}.(${lineitem}.*l1.l_orderkey).*o2 != "2-HIGH"`
 
   let lineitem1 = rh`{
-    l_shipmode: (${cond} & ${lineitem}.*l1.l_shipmode),
-    high_line_count: count? ((${cond} && ${cond5}) & ${lineitem}.*l1),
-    low_line_count: count? ((${cond} && ${cond6}) & ${lineitem}.*l1)
-  } | group ${lineitem}.*l1.l_shipmode`
+    l_shipmode: single ${lineitem}.*l1.l_shipmode,
+    high_line_count: count? ${cond5} & ${lineitem}.*l1,
+    low_line_count: count? ${cond6} & ${lineitem}.*l1
+  } | group ${cond} & ${lineitem}.*l1.l_shipmode`
 
   let query = rh`sort ${lineitem1} "l_shipmode" 0`
 
@@ -711,15 +734,15 @@ test("q16", async () => {
   let cond = rh`${cond1} && ${cond2}`
 
   let part1 = rh`{
-    p_brand: single (${cond} & ${part}.*p1.p_brand),
-    p_type: single (${cond} & ${part}.*p1.p_type),
-    p_size: single (${cond} & ${part}.*p1.p_size),
-    ps_suppkey: single (${cond} & ${partsupp1}.(${part}.*p1.p_partkey).*ps2)
+    p_brand: single ${part}.*p1.p_brand,
+    p_type: single ${part}.*p1.p_type,
+    p_size: single ${part}.*p1.p_size,
+    ps_suppkey: single ${partsupp1}.(${part}.*p1.p_partkey).*ps2
   } | group [
-    ${part}.*p1.p_brand,
-    ${part}.*p1.p_type,
-    ${part}.*p1.p_size,
-    ${partsupp1}.(${part}.*p1.p_partkey).*ps2
+    ${cond} & ${part}.*p1.p_brand,
+    ${cond} & ${part}.*p1.p_type,
+    ${cond} & ${part}.*p1.p_size,
+    ${cond} & ${partsupp1}.(${part}.*p1.p_partkey).*ps2
   ]`
 
   let part2 = rh`{
@@ -904,9 +927,9 @@ test("q20", async () => {
   let cond5 = rh`${lineitem2}.(${supplier}.*s1.s_suppkey) > 0`
 
   let supplier1 = rh`{
-    s_name: ((${cond4} && ${cond5}) & ${supplier}.*s1.s_name),
-    s_address: ((${cond4} && ${cond5}) & ${supplier}.*s1.s_address)
-  } | group [${supplier}.*s1.s_name, ${supplier}.*s1.s_address]`
+    s_name: ${supplier}.*s1.s_name,
+    s_address: ${supplier}.*s1.s_address
+  } | group [(${cond4} && ${cond5}) & ${supplier}.*s1.s_name, (${cond4} && ${cond5}) & ${supplier}.*s1.s_address]`
 
   let query = rh`sort ${supplier1} "s_name" 0`
 
@@ -978,10 +1001,10 @@ test("q22", async () => {
 
   let cond6 = rh`(isUndef ${orders1}.(${customer}.*c2.c_custkey)) && ${cond4} && ${cond5}`
   let customer2 = rh`{
-    cntrycode: single (${cond6} & (substr ${customer}.*c2.c_phone 0 2)),
-    count_order: count? (${cond6} & ${customer}.*c2),
-    totalacctbal: sum? (${cond6} & ${customer}.*c2.c_acctbal)
-  } | group (substr ${customer}.*c2.c_phone 0 2)`
+    cntrycode: single (substr ${customer}.*c2.c_phone 0 2),
+    count_order: count? ${customer}.*c2,
+    totalacctbal: sum? ${customer}.*c2.c_acctbal
+  } | group (${cond6} & (substr ${customer}.*c2.c_phone 0 2))`
 
   let query = rh`sort ${customer2} "cntrycode" 0`
 

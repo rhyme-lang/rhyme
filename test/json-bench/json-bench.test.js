@@ -107,16 +107,16 @@ test("q3", async () => {
   let cond = rh`${cond1} && ${cond2}`
 
   let group = rh`{
-    ${bluesky}.*A.commit.collection: {
-      event: single(${cond} & ${bluesky}.*A.commit.collection),
-      time: single(${cond} & ${bluesky}.*A.time_us),
-      count: count?(${cond} & ${bluesky}.*A)
+    ${cond} & ${bluesky}.*A.commit.collection: {
+      event: single(${bluesky}.*A.commit.collection),
+      time: single(${bluesky}.*A.time_us),
+      count: count?(${bluesky}.*A)
     }
   }`
 
-  // let query = rh`sort ${group} "count" 1`
+  let query = rh`sort ${group} "count" 0`
 
-  let func = await compile(group, { ...settings, outFile: "q3" })
+  let func = await compile(query, { ...settings, outFile: "q3" })
   let res = await func()
 
   console.log(res)
@@ -129,15 +129,15 @@ test("q4", async () => {
   let cond = rh`${cond1} && ${cond2}`
 
   let group = rh`{
-    ${bluesky}.*A.did: {
-      first_post_date: min?(${cond} & (${bluesky}.*A.time_us)),
-      userid: single(${cond} & ${bluesky}.*A.did)
+    ${cond} & ${bluesky}.*A.did: {
+      user_id: single(${bluesky}.*A.did),
+      first_post_date: min?(${bluesky}.*A.time_us)
     }
   }`
 
   let query = rh`sort ${group} "first_post_date" 0`
 
-  let func = await compile(query, { ...settings, outFile: "q4", limit: 3 })
+  let func = await compile(group, { ...settings, outFile: "q4", limit: 3 })
   let res = await func()
 
   console.log(res)
@@ -150,16 +150,16 @@ test("q5", async () => {
   let cond = rh`${cond1} && ${cond2}`
 
   let group = rh`{
-    ${bluesky}.*A.did: {
-      first_post_date: min?(${cond} & (${bluesky}.*A.time_us)),
-      last_post_date: max?(${cond} & (${bluesky}.*A.time_us)),
-      userid: single(${cond} & ${bluesky}.*A.did)
+    ${cond} & ${bluesky}.*A.did: {
+      user_id: single(${bluesky}.*A.did),
+      first_post_date: min?(${bluesky}.*A.time_us),
+      last_post_date: max?(${bluesky}.*A.time_us)
     }
   }`
 
   let group1 = rh`{
-    ${group}.*B.userid: {
-      userid: single(${group}.*B.userid),
+    ${group}.*B.user_id: {
+      userid: single(${group}.*B.user_id),
       activity_span: single(${group}.*B.last_post_date - ${group}.*B.first_post_date)
     }
   }`

@@ -90,7 +90,7 @@ test("groupByTest", async () => {
     ${data}.*.key: sum(${data}.*.value)
   }`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "uncorrelatedAverageTest", enableOptimizations: false })
+  let func = await compile(query, { backend: "c-new", outDir, outFile: "groupByTest", enableOptimizations: false })
   let res = await func()
 
   // total is currectly ignored but it is constructed in the code
