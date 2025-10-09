@@ -65,9 +65,9 @@ test("q1", async () => {
     }
   }`
 
-  // let query = rh`sort ${group} "count" 1`
+  let query = rh`sort ${group} "count" 1`
 
-  let func = await compile(group, { ...settings, outFile: "q1" })
+  let func = await compile(query, { ...settings, outFile: "q1" })
   let res = await func()
 
   console.log(res)
@@ -114,7 +114,7 @@ test("q3", async () => {
     }
   }`
 
-  let query = rh`sort ${group} "count" 0`
+  let query = rh`sort ${group} "count" 1`
 
   let func = await compile(query, { ...settings, outFile: "q3" })
   let res = await func()
@@ -152,19 +152,11 @@ test("q5", async () => {
   let group = rh`{
     ${cond} & ${bluesky}.*A.did: {
       user_id: single(${bluesky}.*A.did),
-      first_post_date: min?(${bluesky}.*A.time_us),
-      last_post_date: max?(${bluesky}.*A.time_us)
+      activity_span: (max?(${bluesky}.*A.time_us) - min?(${bluesky}.*A.time_us)) / 1000
     }
   }`
 
-  let group1 = rh`{
-    ${group}.*B.user_id: {
-      userid: single(${group}.*B.user_id),
-      activity_span: single(${group}.*B.last_post_date - ${group}.*B.first_post_date)
-    }
-  }`
-
-  let query = rh`sort ${group1} "activity_span" 1`
+  let query = rh`sort ${group} "activity_span" 1`
 
   let func = await compile(query, { ...settings, outFile: "q5", limit: 3 })
   let res = await func()
