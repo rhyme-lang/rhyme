@@ -8,14 +8,14 @@ const readline = require("readline")
 let bluesky = rh`loadNDJSON "./cgen-sql/data/bluesky/file_0001.json" ${types.unknown}`
 
 let runQuery = (func, data, limit) => {
-  const N = 10
+  const N = 11
   for (let i = 0; i < N; i++) {
     let start = performance.now()
     let res = func(data)
     if (limit) res = Object.values(res).slice(0, limit)
     console.log(res)
     let end = performance.now()
-    console.log("Time elapsed: " + (end - start) + " ms")
+    console.error("Time elapsed: " + (end - start) + " ms")
   }
 }
 
@@ -32,8 +32,6 @@ let q1 = () => {
   let query = rh`sort ${group} "count" 1`
 
   let func = compile(query, { newCodegen: true })
-
-  console.log(func.explain.codeString)
 
   console.log("Running Q1")
   runQuery(func)

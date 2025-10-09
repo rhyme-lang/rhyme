@@ -25,7 +25,7 @@ for i in range(1, 23):
         result = subprocess.run([f"./{rhyme_exec}"], capture_output=True, text=True)
         time = re.findall("[0-9]+", result.stderr)
         print(time)
-        sum += int(time[1])
+        sum += int(time[1]) / 1000
     rhyme.append(sum / N)
 
     print("running flare generated query " + flare_exec)
@@ -36,7 +36,7 @@ for i in range(1, 23):
         result = subprocess.run([f"./{flare_exec}"], capture_output=True, text=True)
         time = re.findall("[0-9]+", result.stderr)
         print(time)
-        sum += int(time[1])
+        sum += int(time[1]) / 1000
     flare.append(sum / N)
 
 # Query labels
@@ -53,7 +53,7 @@ plt.bar(x + bar_width/2, flare, bar_width, label='Flare')
 
 # Formatting
 plt.xlabel('TPC-H Query')
-plt.ylabel('Runtime (microseconds)')
+plt.ylabel('Runtime (milliseconds)')
 plt.title('Rhyme vs Flare Runtime on TPC-H Queries')
 plt.xticks(x, [f'Q{i}' for i in queries], rotation=45)
 plt.legend()
