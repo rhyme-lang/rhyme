@@ -7,7 +7,21 @@ const readline = require("readline")
 
 let bluesky = rh`loadNDJSON "./cgen-sql/data/bluesky/file_0001.json" ${types.unknown}`
 
+let runQuery = (func, data, limit) => {
+  const N = 10
+  for (let i = 0; i < N; i++) {
+    let start = performance.now()
+    let res = func(data)
+    if (limit) res = Object.values(res).slice(0, limit)
+    console.log(res)
+    let end = performance.now()
+    console.log("Time elapsed: " + (end - start) + " ms")
+  }
+}
+
 let q1 = () => {
+  rt.reset()
+
   let group = rh`{
     ${bluesky}.*A.commit.collection || "(null)": {
       event: single(${bluesky}.*A.commit.collection || "(null)"),
@@ -17,13 +31,17 @@ let q1 = () => {
 
   let query = rh`sort ${group} "count" 1`
 
-  let func = compile(query)
-  let res = func()
+  let func = compile(query, { newCodegen: true })
 
-  console.log(res)
+  console.log(func.explain.codeString)
+
+  console.log("Running Q1")
+  runQuery(func)
 }
 
 let q2 = () => {
+  rt.reset()
+
   let cond = rh`${bluesky}.*A.kind == "commit" && ${bluesky}.*A.commit.operation == "create"`
 
   let countDistinct = rh`{
@@ -45,12 +63,12 @@ let q2 = () => {
   let query = rh`sort ${group} "count" 1`
 
   let func = compile(query)
-  let res = func()
-
-  console.log(res)
+  runQuery(func)
 }
 
 let q3 = () => {
+  rt.reset()
+
   let udf = {
     extractHour: (time) => {
       const date = new Date(time / 1000);
@@ -76,13 +94,13 @@ let q3 = () => {
 
   let query = rh`sort ${group} "hour_of_day" 0 "event" 0`
 
-  let func = compile(group)
-  let res = func({ udf })
-
-  console.log(res)
+  let func = compile(query)
+  runQuery(func, { udf })
 }
 
 let q4 = () => {
+  rt.reset()
+
   let cond1 = rh`${bluesky}.*A.kind == "commit" && ${bluesky}.*A.commit.operation == "create"`
   let cond2 = rh`${bluesky}.*A.commit.collection == "app.bsky.feed.post"`
 
@@ -91,19 +109,21 @@ let q4 = () => {
   let group = rh`{
     ${bluesky}.*A.did: {
       first_post_date: min?(${cond} & (${bluesky}.*A.time_us)),
-      userid: single(${cond} & ${bluesky}.*A.did)
+      user_id: single(${cond} & ${bluesky}.*A.did)
     }
   }`
 
   let query = rh`sort ${group} "first_post_date" 0`
 
+  console.log("Running Q4")
   let func = compile(query)
   let res = func()
-
-  console.log(Object.values(res).slice(0, 3))
+  runQuery(func, {}, 3)
 }
 
 let q5 = () => {
+  rt.reset()
+
   let cond1 = rh`${bluesky}.*A.kind == "commit" && ${bluesky}.*A.commit.operation == "create"`
   let cond2 = rh`${bluesky}.*A.commit.collection == "app.bsky.feed.post"`
 
@@ -111,17 +131,16 @@ let q5 = () => {
 
   let group = rh`{
     ${bluesky}.*A.did: {
-      userid: single(${cond} & ${bluesky}.*A.did),
+      user_id: single(${cond} & ${bluesky}.*A.did),
       activity_span: max?(${cond} & (${bluesky}.*A.time_us)) - min?(${cond} & (${bluesky}.*A.time_us))
     }
   }`
 
   let query = rh`sort ${group} "activity_span" 1`
 
+  console.log("Running Q5")
   let func = compile(query)
-  let res = func()
-
-  console.log(Object.values(res).slice(0, 3))
+  runQuery(func, {}, 3)
 }
 
 q1()
