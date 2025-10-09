@@ -925,7 +925,8 @@ let emitPure = (buf, q) => {
       res.val = { str: tmpStr, len: tmpLen }
     } else {
       let tmp = symbol.getSymbol("tmp_or")
-      c.declareConstCharPtr(buf)(tmp, c.ternary(e1.cond, e2.val, e1.val))
+      let cType = utils.convertToCType(e2.schema)
+      c.declareVar(buf)(cType, tmp, c.ternary(e1.cond, e2.val, e1.val))
       res.val = tmp
     }
 
