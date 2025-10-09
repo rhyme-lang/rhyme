@@ -4,7 +4,7 @@ const { symbol } = require("./symbol")
 let cTypes = {
   // any:  "rh",
   // never:"rh",
-  // boolean:  "rh",
+  boolean:  "int",
   // string:"rh",
   u8: "uint8_t",
   u16: "uint16_t",
