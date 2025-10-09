@@ -154,27 +154,27 @@ beforeAll(async () => {
   }
 })
 
-test("q1-js", () => {
-  let cond = rh`lineitem.*.l_shipdate <= 19980902`
+// test("q1-js", () => {
+//   let cond = rh`lineitem.*.l_shipdate <= 19980902`
 
-  let query1 = rh`{
-    l_returnflag: single lineitem.*.l_returnflag,
-    l_linestatus: single lineitem.*.l_linestatus,
-    sum_qty: sum (lineitem.*.l_quantity),
-    sum_base_price: sum (lineitem.*.l_extendedprice),
-    sum_disc_price: sum ((lineitem.*.l_extendedprice * (1 - lineitem.*.l_discount))),
-    sum_charge: sum ((lineitem.*.l_extendedprice * (1 - lineitem.*.l_discount) * (1 + lineitem.*.l_tax))),
-    avg_qty: (sum (lineitem.*.l_quantity)) / (count (lineitem.*.l_quantity)),
-    avg_price: (sum (lineitem.*.l_extendedprice)) / (count (lineitem.*.l_extendedprice)),
-    avg_disc: (sum (lineitem.*.l_discount)) / (count (lineitem.*.l_discount)),
-    count_order: count (lineitem.*.l_orderkey)
-  } | group lineitem.*.l_linestatus`
+//   let query1 = rh`{
+//     l_returnflag: single lineitem.*.l_returnflag,
+//     l_linestatus: single lineitem.*.l_linestatus,
+//     sum_qty: sum (lineitem.*.l_quantity),
+//     sum_base_price: sum (lineitem.*.l_extendedprice),
+//     sum_disc_price: sum ((lineitem.*.l_extendedprice * (1 - lineitem.*.l_discount))),
+//     sum_charge: sum ((lineitem.*.l_extendedprice * (1 - lineitem.*.l_discount) * (1 + lineitem.*.l_tax))),
+//     avg_qty: (sum (lineitem.*.l_quantity)) / (count (lineitem.*.l_quantity)),
+//     avg_price: (sum (lineitem.*.l_extendedprice)) / (count (lineitem.*.l_extendedprice)),
+//     avg_disc: (sum (lineitem.*.l_discount)) / (count (lineitem.*.l_discount)),
+//     count_order: count (lineitem.*.l_orderkey)
+//   } | group lineitem.*.l_linestatus`
 
-  let query = rh`sort ${query1} "l_returnflag" 0 "l_linestatus" 0`
+//   let query = rh`sort ${query1} "l_returnflag" 0 "l_linestatus" 0`
 
-  let func = api.compileC1(query1)
-  console.log(func.explain.code)
-})
+//   let func = api.compileC1(query1)
+//   console.log(func.explain.code)
+// })
 
 test("q1-alt", async () => {
   let cond = rh`${lineitem}.*.l_shipdate <= 19980902`
@@ -438,7 +438,6 @@ test("q7", async () => {
   let res = await func()
 
   let answer = fs.readFileSync(`${answersDir}/q7.out`).toString()
-  console.log(res)
   expect(res).toBe(answer)
 })
 

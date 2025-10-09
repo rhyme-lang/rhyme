@@ -1414,6 +1414,19 @@ let processFilters = () => {
   }
 }
 
+// Emit code that gets the current time
+let emitGetTime = (buf) => {
+  let timeval = symbol.getSymbol("timeval")
+  c.stmt(buf)(`struct timeval ${timeval}`)
+
+  c.stmt(buf)(c.call("gettimeofday", `&${timeval}`, "NULL"))
+
+  let time = symbol.getSymbol("t")
+  c.declareLong(buf)(time, c.add(c.mul(`${timeval}.tv_sec`, "1000000L"), `${timeval}.tv_usec`))
+
+  return time
+}
+
 let emitCode = (q, ir, settings) => {
   reset(settings)
 
@@ -1427,6 +1440,8 @@ let emitCode = (q, ir, settings) => {
   // Get the used filters to optimize CSV reading
   collectUsedAndSortedCols(q)
 
+  let t0 = emitGetTime(prolog1)
+
   // Collect hashmaps needed for the query and relevant stateful ops
   // collectHashMaps()
   collectHashMapsInPath(q)
@@ -1434,6 +1449,8 @@ let emitCode = (q, ir, settings) => {
   // Before we process the filters, we need to collect the arrays
   // We can also collect other stateful ops here
   collectOtherStatefulOps()
+
+  let t1 = emitGetTime(prolog1)
 
   // Process filters
   processFilters()
@@ -1466,6 +1483,10 @@ let emitCode = (q, ir, settings) => {
     printEmitter.emitValPrint(epilog, res, settings)
 
   // Return and close the main function
+  c.stmt(epilog)(c.call("fflush", "stdout"))
+  let t2 = emitGetTime(epilog)
+
+  c.printErr(epilog)(`\\n\\nTiming:\\n\\tInitializaton:\\t%ld μs\\n\\tRuntime:\\t%ld μs\\n\\tTotal:\\t\\t%ld μs\\n`, c.sub(t1, t0), c.sub(t2, t1), c.sub(t2, t0))
   c.return(epilog)("0")
   epilog.push("}")
 
