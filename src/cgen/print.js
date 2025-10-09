@@ -212,7 +212,6 @@ let emitArrayPrint = (buf, arr, settings) => {
   let loopVar = arr.val.sorted ? "i" : "idx"
 
   let value = array.getValueAtIdx(arr, "idx")
-  console.log(value)
   emitValPrint(buf, value, settings)
 
   buf.push(`if (${loopVar} != ${limit} - 1) {`)
