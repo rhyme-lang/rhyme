@@ -6,6 +6,8 @@ const os = require('child_process')
 
 let outDir = "cgen-sql/out/json-bench"
 
+let answersDir = "cgen-sql/answers/json-bench"
+
 let sh = (cmd) => {
   return new Promise((resolve, reject) => {
     os.exec(cmd, (err, stdout) => {
@@ -70,7 +72,8 @@ test("q1", async () => {
   let func = await compile(query, { ...settings, outFile: "q1" })
   let res = await func()
 
-  console.log(res)
+  let answer = fs.readFileSync(`${answersDir}/q1.out`).toString()
+  expect(res).toBe(answer)
 })
 
 test("q2", async () => {
@@ -97,7 +100,8 @@ test("q2", async () => {
   let func = await compile(query, { ...settings, outFile: "q2" })
   let res = await func()
 
-  console.log(res)
+  let answer = fs.readFileSync(`${answersDir}/q2.out`).toString()
+  expect(res).toBe(answer)
 })
 
 test("q3", async () => {
@@ -119,7 +123,8 @@ test("q3", async () => {
   let func = await compile(query, { ...settings, outFile: "q3" })
   let res = await func()
 
-  console.log(res)
+  let answer = fs.readFileSync(`${answersDir}/q3.out`).toString()
+  expect(res).toBe(answer)
 })
 
 test("q4", async () => {
@@ -140,7 +145,8 @@ test("q4", async () => {
   let func = await compile(group, { ...settings, outFile: "q4", limit: 3 })
   let res = await func()
 
-  console.log(res)
+  let answer = fs.readFileSync(`${answersDir}/q4.out`).toString()
+  expect(res).toBe(answer)
 })
 
 test("q5", async () => {
@@ -161,5 +167,6 @@ test("q5", async () => {
   let func = await compile(query, { ...settings, outFile: "q5", limit: 3 })
   let res = await func()
 
-  console.log(res)
+  let answer = fs.readFileSync(`${answersDir}/q5.out`).toString()
+  expect(res).toBe(answer)
 })
