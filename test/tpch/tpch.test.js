@@ -281,10 +281,8 @@ test("q2", async () => {
 
   let query = rh`sort ${partsupp2} "s_acctbal" 1 "n_name" 0 "s_name" 0 "p_partkey" 0`
 
-  let func = await compile(region1, { ...settings, outFile: "q2", limit: 100 })
+  let func = await compile(query, { ...settings, outFile: "q2", limit: 100 })
   let res = await func()
-
-  console.log(res)
 
   let answer = fs.readFileSync(`${answersDir}/q2.out`).toString()
   expect(res).toBe(answer)
