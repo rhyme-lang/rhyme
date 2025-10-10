@@ -421,7 +421,7 @@ test("undefinedTest", async () => {
 
   let q = rh`${query}.C.avg`
 
-  let func = await compile(q, { backend: "c-new", outDir, outFile: "groupByAverageTest1", schema: types.never })
+  let func = await compile(q, { backend: "c-new", outDir, outFile: "undefinedTest", schema: types.never })
 
   let res = await func()
   expect(res).toBe("undefined")

@@ -221,8 +221,8 @@ let emitNestedHashMapAllocation = (buf, map) => {
 
   assign(map.val.ptr, c.cast(`struct ${map.val.struct.name} *`, c.malloc(`struct ${map.val.struct.name}`, 1)))
   assign(map.val.count, "0")
-  assign(map.val.htable, c.cast("int *", c.malloc("int", hashSize)))
-  c.stmt(buf)(c.call("memset", map.val.htable, "-1", `sizeof(int) * ${hashSize}`))
+  assign(map.val.htable, c.cast("int *", c.calloc("int", hashSize)))
+  // c.stmt(buf)(c.call("memset", map.val.htable, "-1", `sizeof(int) * ${hashSize}`))
 
   for (let i in map.val.keys) {
     let key = map.val.keys[i]
@@ -270,11 +270,11 @@ let emitHashMapInit = (buf, i, keySchema) => {
 
   // htable
   c.comment(buf)(`hash table for ${sym}`)
-  c.declareIntPtr(buf)(htable, c.cast("int *", c.malloc("int", hashSize)))
+  c.declareIntPtr(buf)(htable, c.cast("int *", c.calloc("int", hashSize)))
 
   // init htable entries to -1
-  c.comment(buf)(`init hash table entries to -1 for ${sym}`)
-  c.stmt(buf)(c.call("memset", htable, "-1", `sizeof(int) * ${hashSize}`))
+  // c.comment(buf)(`init hash table entries to -1 for ${sym}`)
+  // c.stmt(buf)(c.call("memset", htable, "-1", `sizeof(int) * ${hashSize}`))
 
   return { htable, count, keys }
 }
@@ -311,8 +311,8 @@ let hash = (buf, key) => {
 }
 
 let emitHashMapInsert = (buf, map, key, pos, keyPos, lhs, init) => {
-  c.stmt(buf)(c.assign(keyPos, map.val.count))
   c.stmt(buf)(c.inc(map.val.count))
+  c.stmt(buf)(c.assign(keyPos, map.val.count))
 
   c.stmt(buf)(c.assign(map.val.htable + "[" + pos + "]", keyPos))
 
@@ -389,7 +389,7 @@ let emitHashLookUp = (buf, map, key) => {
 
       // increment the position until we find a match or an empty slot
       c.while(buf)(
-        c.and(c.ne(keyPos, "-1"), compareKeys),
+        c.and(c.ne(keyPos, "0"), compareKeys),
         buf1 => {
           c.stmt(buf1)(c.assign(pos, c.binary(c.add(pos, "1"), hashMask, "&")))
         }
@@ -448,10 +448,10 @@ let emitHashMapUpdate = (buf, map, key, pos, keyPos, update1, update2, checkExis
   let sym = map.val.sym
   let lhs = getHashMapValueEntry(map, pos, keyPos)
 
-  lhs.cond = c.eq(keyPos, "-1")
+  lhs.cond = c.eq(keyPos, "0")
 
   if (checkExistance) {
-    let cond = c.eq(keyPos, "-1")
+    let cond = c.eq(keyPos, "0")
     // if (key.cond)
     //   cond = c.and(cond, c.not(key.cond))
     c.if(buf)(cond, buf1 => {
@@ -568,11 +568,11 @@ let getHashMapValueEntry = (map, pos, keyPos) => {
   if (res.tag == TAG.OBJECT) {
     for (let key in res.val) {
       res.val[key].keyPos = keyPos
-      res.val[key].cond = c.or(c.eq(keyPos, "-1"), c.not(res.val[key].defined))
+      res.val[key].cond = c.or(c.eq(keyPos, "0"), c.not(res.val[key].defined))
     }
   }
   res.keyPos = keyPos
-  res.cond = c.eq(keyPos, "-1")
+  res.cond = c.eq(keyPos, "0")
 
   return res
 }
@@ -729,10 +729,10 @@ let getHashMapLoopTxt = (f, map, data) => () => {
 
   let loopHeader = []
 
-  loopHeader.push(`for (int ${quoteVar(v)} = 0; ${quoteVar(v)} < ${count}; ${quoteVar(v)}++) {`)
+  loopHeader.push(`for (int ${quoteVar(v)} = 1; ${quoteVar(v)} <= ${count}; ${quoteVar(v)}++) {`)
 
   let boundsChecking = []
-  boundsChecking.push(`if (${quoteVar(v)} >= ${count}) break;`)
+  boundsChecking.push(`if (${quoteVar(v)} > ${count}) break;`)
 
   return {
     info, data, initCursor, loopHeader, boundsChecking, rowScanning: []

@@ -236,7 +236,7 @@ let emitHashMapSorting = (buf, q, map) => {
   emitCompareFunc(prolog0, compareFunc, vals, orders)
 
   c.declareIntPtr(buf)(sym, c.cast("int *", c.malloc("int", count)))
-  c.stmt(buf)(`for (int i = 0; i < ${count}; i++) ${sym}[i] = i`)
+  c.stmt(buf)(`for (int i = 0; i < ${count}; i++) ${sym}[i] = i + 1`)
 
   c.stmt(buf)(c.call("qsort", sym, count, "sizeof(int)", c.cast("__compar_fn_t", compareFunc)))
 
@@ -840,11 +840,11 @@ let emitGet = (buf, q) => {
     // HashMap lookup
     let key = emitPath(buf, e2)
     let [pos, keyPos] = hashmap.emitHashLookUp(buf, v1, key)
-    // The value is undefined if keyPos == -1
+    // The value is undefined if keyPos == 0
     // emitPath will not handle undefined values
     // It is up to the top-level caller of emitPath how undefined is handled
     let value = hashmap.getHashMapValueEntry(v1, pos, keyPos)
-    value.cond = c.eq(keyPos, "-1")
+    // value.cond = c.eq(keyPos, "-1")
     return value
   }
 
@@ -923,6 +923,8 @@ let emitPure = (buf, q) => {
       c.declareConstCharPtr(buf)(tmpStr, c.ternary(e1.cond, e2.val.str, e1.val.str))
       c.declareInt(buf)(tmpLen, c.ternary(e1.cond, e2.val.len, e1.val.len))
       res.val = { str: tmpStr, len: tmpLen }
+    } else if (e2.schema.typeSym == typeSyms.boolean) {
+      res.val = "1"
     } else {
       let tmp = symbol.getSymbol("tmp_or")
       let cType = utils.convertToCType(e2.schema)
@@ -997,7 +999,7 @@ let emitPure = (buf, q) => {
           if (q.arg[0].key == "const") {
             lhs = utils.stringToHexBytes(q.arg[0].op)
           } else {
-            lhs = "(*(" + c.cast("uint64_t *", str1) + ") & 0x" + "00".repeat(8 - q.arg[1].op.length) + "FF".repeat(q.arg[1].op.length)+ ")"
+            lhs = "(*(" + c.cast("uint64_t *", str1) + ") & 0x" + "00".repeat(8 - q.arg[1].op.length) + "FF".repeat(q.arg[1].op.length) + ")"
           }
           if (q.arg[1].key == "const") {
             rhs = utils.stringToHexBytes(q.arg[1].op)
