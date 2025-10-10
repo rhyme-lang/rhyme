@@ -4,7 +4,7 @@ const { symbol } = require("./symbol")
 let cTypes = {
   // any:  "rh",
   // never:"rh",
-  boolean:  "int",
+  boolean: "int",
   // string:"rh",
   u8: "uint8_t",
   u16: "uint16_t",
@@ -257,13 +257,13 @@ const dataTypeLimits = {
   // Floating point
   f32: { min: "-3.402823466e+38F", max: "3.402823466e+38F" },
   f64: { min: "-1.7976931348623157e+308", max: "1.7976931348623157e+308" },
-  
+
   // Unsigned integers
   u8: { min: "0", max: "255" },
   u16: { min: "0", max: "65535" },
   u32: { min: "0", max: "4294967295U" },
   u64: { min: "0", max: "18446744073709551615ULL" },
-  
+
   // Signed integers
   i8: { min: "-128", max: "127" },
   i16: { min: "-32768", max: "32767" },
@@ -281,6 +281,18 @@ let getDataTypeLimits = (type) => {
   throw new Error("Unknown type: " + typing.prettyPrintType(type))
 }
 
+let stringToHexBytes = (str) => {
+  let hex = "0x"
+
+  // Convert each character to its hex value in reverse order
+  for (let i = str.length - 1; i >= 0; i--) {
+    const charCode = str.charCodeAt(i)
+    hex += charCode.toString(16).padStart(2, '0').toUpperCase()
+  }
+
+  return hex
+}
+
 
 let utils = {
   tmpSym,
@@ -292,7 +304,8 @@ let utils = {
   convertToArrayOfSchema,
   isSimpleObject,
   emitWildcardMatch,
-  getDataTypeLimits
+  getDataTypeLimits,
+  stringToHexBytes
 }
 
 module.exports = {
