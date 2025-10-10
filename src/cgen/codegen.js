@@ -991,15 +991,31 @@ let emitPure = (buf, q) => {
       if (typing.isString(e1.schema) && typing.isString(e2.schema)) {
         let { str: str1, len: len1 } = e1.val
         let { str: str2, len: len2 } = e2.val
+        if (q.op == "equal" && ((q.arg[0].key == "const" && q.arg[0].op.length <= 8) || (q.arg[1].key == "const" && q.arg[1].op.length <= 8))) {
+          let lhs
+          let rhs
+          if (q.arg[0].key == "const") {
+            lhs = utils.stringToHexBytes(q.arg[0].op)
+          } else {
+            lhs = "(*(" + c.cast("uint64_t *", str1) + ") & 0x" + "00".repeat(8 - q.arg[1].op.length) + "FF".repeat(q.arg[1].op.length)+ ")"
+          }
+          if (q.arg[1].key == "const") {
+            rhs = utils.stringToHexBytes(q.arg[1].op)
+          } else {
+            rhs = "*(" + c.cast("uint64_t *", str2) + ") & 0x" + "00".repeat(8 - q.arg[1].op.length) + "FF".repeat(q.arg[1].op.length)
+          }
+          res = value.primitive(q.schema.type, c.ternary(c.eq(len1, len2), c.eq(lhs, rhs), "0"))
+        } else {
+          let name = symbol.getSymbol("tmp_cmpstr")
+          // let curr = symbol.getSymbol("tmp_cursor")
+          // let minLen = symbol.getSymbol("min_len")
 
-        let name = symbol.getSymbol("tmp_cmpstr")
-        // let curr = symbol.getSymbol("tmp_cursor")
-        // let minLen = symbol.getSymbol("min_len")
+          c.declareInt(buf)(name, c.call("strncmp", str1, str2, c.ternary(c.lt(len1, len2), len1, len2)))
+          c.stmt(buf)(c.assign(name, c.ternary(c.eq(name, "0"), c.sub(len1, len2), name)))
 
-        c.declareInt(buf)(name, c.call("strncmp", str1, str2, c.ternary(c.lt(len1, len2), len1, len2)))
-        c.stmt(buf)(c.assign(name, c.ternary(c.eq(name, "0"), c.sub(len1, len2), name)))
+          res = value.primitive(q.schema.type, c.binary(name, "0", op))
+        }
 
-        res = value.primitive(q.schema.type, c.binary(name, "0", op))
       } else {
         res = value.primitive(q.schema.type, c.binary(e1.val, e2.val, op))
       }
