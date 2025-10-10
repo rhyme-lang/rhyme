@@ -48,12 +48,13 @@ let emitHashMapPrintJSON = (buf, map, settings) => {
 
   c.printf(buf)("{")
 
+  buf.push(`for (int i = 0; i < ${limit}; i++) {`)
   if (map.val.sorted) {
-    buf.push(`for (int i = 0; i < ${limit}; i++) {`)
     buf.push(`int key_pos = ${sym}[i];`)
   } else {
-    buf.push(`for (int key_pos = 0; key_pos < ${limit}; key_pos++) {`)
+    buf.push(`int key_pos = i + 1;`)
   }
+
 
   let loopVar = map.val.sorted ? "i" : "key_pos"
 
@@ -81,7 +82,7 @@ let emitHashMapPrintJSON = (buf, map, settings) => {
   let value = hashmap.getHashMapValueEntry(map, undefined, "key_pos")
   emitValPrint(buf, value, settings)
 
-  buf.push(`if (${loopVar} != ${limit} - 1) {`)
+  buf.push(`if (i != ${limit} - 1) {`)
   c.printf(buf)(",")
   buf.push(`}`)
 
@@ -99,21 +100,20 @@ let emitHashMapPrint = (buf, map, settings) => {
   let sym = tmpSym(map.val.sym)
   let count = map.val.count
   let limit = settings.limit || count
+
+  buf.push(`for (int i = 0; i < ${limit}; i++) {`)
   if (map.val.sorted) {
-    buf.push(`for (int i = 0; i < ${limit}; i++) {`)
     buf.push(`int key_pos = ${sym}[i];`)
   } else {
-    buf.push(`for (int key_pos = 0; key_pos < ${limit}; key_pos++) {`)
+    buf.push(`int key_pos = i + 1;`)
   }
-
-  let loopVar = map.val.sorted ? "i" : "key_pos"
 
   buf.push(`// print value`)
 
   let value = hashmap.getHashMapValueEntry(map, undefined, "key_pos")
   emitValPrint(buf, value, settings)
 
-  buf.push(`if (${loopVar} != ${limit} - 1) {`)
+  buf.push(`if (i != ${limit} - 1) {`)
   c.printf(buf)("\\n")
   buf.push(`}`)
 
@@ -132,7 +132,7 @@ let emitNestedHashMapPrint = (buf, map, settings) => {
   c.printf(buf)("{")
 
   let loopVar = symbol.getSymbol("key_pos")
-  buf.push(`for (int ${loopVar} = 0; ${loopVar} < ${limit}; ${loopVar}++) {`)
+  buf.push(`for (int ${loopVar} = 1; ${loopVar} <= ${limit}; ${loopVar}++) {`)
 
   buf.push(`// print key`)
   let indexing = `[${loopVar}]`
@@ -159,7 +159,7 @@ let emitNestedHashMapPrint = (buf, map, settings) => {
   let value = hashmap.getHashMapValueEntry(map, undefined, loopVar)
   emitValPrint(buf, value, settings)
 
-  buf.push(`if (${loopVar} != ${limit} - 1) {`)
+  buf.push(`if (${loopVar} != ${limit}) {`)
   c.printf(buf)(",")
   buf.push(`}`)
 
