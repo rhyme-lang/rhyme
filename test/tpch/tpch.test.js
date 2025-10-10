@@ -240,7 +240,7 @@ test("q1", async () => {
 })
 
 test("q2", async () => {
-  let region1 = rh`${region}.*r1.r_name == "EUROPE" & ${region}.*r1.r_regionkey | group ${region}.*r1.r_regionkey`
+  let region1 = rh`[${region}.*r1.r_name == "EUROPE" & ${region}.*r1.r_regionkey] | group ${region}.*r1.r_regionkey`
 
   let nation1 = rh`[{
     r_regionkey: ${region1}.(${nation}.*n1.n_regionkey).*r2,
