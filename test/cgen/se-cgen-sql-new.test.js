@@ -22,7 +22,7 @@ let outDir = "cgen-sql/out/sql-new"
 beforeAll(async () => {
   await sh(`rm -rf ${outDir}`)
   await sh(`mkdir -p ${outDir}`)
-  await sh(`cp cgen-sql/rhyme-sql.h ${outDir}`)
+  await sh(`cp cgen-sql/rhyme-c.h ${outDir}`)
 });
 
 test("testTrivial", async () => {

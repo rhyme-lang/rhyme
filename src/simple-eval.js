@@ -8,7 +8,6 @@ const { runtime } = require('./simple-runtime')
 const { pretty, setEmitPseudoState, emitPseudo } = require('./prettyprint')
 const { generateC } = require('./cgen/codegen')
 const { generateCSql } = require('./sql-codegen')
-const { generateCSqlNew } = require('./sql-newcodegen')
 const { typing, types, typeSyms } = require('./typing')
 const { optimizer } = require('./optimizer')
 
@@ -1006,11 +1005,6 @@ let compile = (q,userSettings={}) => {
   if (settings.backend == "c-sql") {
     let ir = {filters, assignments, vars, order, pseudo}
     return generateCSql(q, ir)
-  }
-
-  if (settings.backend == "c-sql-new") {
-    let ir = {filters, assignments, vars, order, pseudo}
-    return generateCSqlNew(q, ir, settings)
   }
 
   let code = emitCode(q,order)

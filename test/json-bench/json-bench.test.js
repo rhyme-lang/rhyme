@@ -24,7 +24,7 @@ beforeAll(async () => {
   try {
     await sh(`rm -rf ${outDir}`)
     await sh(`mkdir -p ${outDir}`)
-    await sh(`cp cgen-sql/rhyme-sql.h ${outDir}`)
+    await sh(`cp cgen-sql/rhyme-c.h ${outDir}`)
   } catch (error) {
     console.log(error)
   }
