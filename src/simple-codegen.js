@@ -7,7 +7,6 @@ const { preproc } = require('./preprocess')
 const { runtime } = require('./simple-runtime')
 const { pretty } = require('./prettyprint')
 const { generateCSql } = require('./sql-codegen')
-const { generateCSqlNew } = require('./sql-newcodegen')
 const { typing, types, typeSyms } = require('./typing')
 
 const { unique, union, intersect, diff, subset, same } = sets

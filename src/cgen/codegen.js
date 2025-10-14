@@ -126,7 +126,7 @@ let reset = (settings) => {
 }
 
 let initializeProlog = () => {
-  prolog0.push(`#include "rhyme-sql.h"`)
+  prolog0.push(`#include "rhyme-c.h"`)
   prolog0.push(`typedef int (*__compar_fn_t)(const void *, const void *);`)
   prolog1.push("int main() {")
 }
