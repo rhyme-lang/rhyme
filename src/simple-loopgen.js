@@ -198,7 +198,7 @@ let emitFilters2 = (scope, trueFree, iter, disjunctToDrop) => body => {
     let v1 = f.arg[1].op
     let g1 = f.arg[0]
 
-    if (g1.mode == "maybe" && Number(i) != disjunctToDrop)
+    if (f.mode == "maybe" && Number(i) != disjunctToDrop)
       continue // disregard outer join! data.*A? --> unless requested!
 
     if (vars[v1]) // not interested in this? skip
