@@ -563,6 +563,35 @@ let getValueAtIdx = (val, idx) => {
 }
 
 // Emit the code that gets the hashMap value for the key at keyPos
+let getHashMapKeyEntry = (map, keyPos) => {
+  let res = {}
+  let indexing = "[" + keyPos + "]"
+
+  res.schema = []
+  res.tag = TAG.COMBINED_KEY
+  res.val = { keys: [] }
+
+  for (let i in map.val.keys) {
+    let key = map.val.keys[i]
+    // Deep copy
+    res.val.keys.push(JSON.parse(JSON.stringify(key)))
+    res.schema.push(key.schema)
+    if (typing.isString(key.schema)) {
+      res.val.keys[i].val.str += indexing
+      res.val.keys[i].val.len += indexing
+    } else {
+      res.val.keys[i].val += indexing
+    }
+  }
+
+  if (map.val.keys.length == 1) {
+    res = res.val.keys[0]
+  }
+
+  return res
+}
+
+// Emit the code that gets the hashMap value for the key at keyPos
 let getHashMapValueEntry = (map, pos, keyPos) => {
   let res = getValueAtIdx(map, keyPos)
   if (res.tag == TAG.OBJECT) {
@@ -776,6 +805,7 @@ let hashmap = {
   emitHashLookUpOrUpdate,
   emitHashLookUpAndUpdate,
   emitHashLookUpAndUpdateCust,
+  getHashMapKeyEntry,
   getHashMapValueEntry,
   emitHashMapUpdate,
   emitHashLookUp,
