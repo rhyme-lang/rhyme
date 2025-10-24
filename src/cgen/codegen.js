@@ -460,10 +460,32 @@ let emitStateful1 = (q, map) => {
     }
 
   } else {
+    let getLhs = (buf, map, ignoreConsts) => {
+      let curr = map
+      let insertKey
+      for (let k of currentGroupPath.path) {
+        if (k.key == "const") {
+          if (!ignoreConsts) curr = curr.val[k.op]
+          insertKey = undefined
+        } else {
+          let key = vars[k.op].val
+          let [pos, keyPos] = hashmap.emitHashLookUp(buf, curr, key)
+          insertKey = { key, map: curr, pos, keyPos }
+          curr = hashmap.getHashMapValueEntry(curr, pos, keyPos)
+        }
+      }
+      return { lhs: curr, insertKey }
+    }
     if (q.fre.length == 0) {
       // console.log("Stateful already emitted: ", pretty(q))
       if (map) {
-        throw new Error("Need to assign, not implemented")
+        let buf = []
+        let { lhs, insertKey } = getLhs(buf, map, false)
+        if (insertKey) {
+          let { key, map: insertMap, pos, keyPos } = insertKey
+          hashmap.emitHashMapUpdate(buf, insertMap, key, pos, keyPos, () => { }, () => { }, true)
+        }
+        throw new Error("Need to assign, not fully implemented")
       }
     } else {
       if (currentGroupPath.path.every((e) => e.key == "const" || q.fre.indexOf(e.op) >= 0)) {
@@ -481,26 +503,9 @@ let emitStateful1 = (q, map) => {
       }
       if (!map) throw new Error("Something went wrong")
 
-      let getLhs = (buf, map) => {
-        let curr = map
-        let insertKey
-        for (let k of currentGroupPath.path) {
-          if (k.key == "const") {
-            if (!ignoreConsts) curr = curr.val[k.op]
-            insertKey = undefined
-          } else {
-            let key = vars[k.op].val
-            let [pos, keyPos] = hashmap.emitHashLookUp(buf, curr, key)
-            insertKey = { key, map: curr, pos, keyPos }
-            curr = hashmap.getHashMapValueEntry(curr, pos, keyPos)
-          }
-        }
-        return { lhs: curr, insertKey }
-      }
-
       if (initRequired(q)) {
         let init = []
-        let { lhs, insertKey } = getLhs(init, map)
+        let { lhs, insertKey } = getLhs(init, map, ignoreConsts)
         if (insertKey) {
           let { key, map: insertMap, pos, keyPos } = insertKey
           hashmap.emitHashMapUpdate(init, insertMap, key, pos, keyPos, () => { }, () => { }, true)
@@ -518,7 +523,7 @@ let emitStateful1 = (q, map) => {
       let deps = [...union(q.fre, q.bnd), ...q.tmps.map(getRoot).map(tmpSym)]
 
       let update = []
-      let { lhs, insertKey } = getLhs(update, map)
+      let { lhs, insertKey } = getLhs(update, map, ignoreConsts)
       if (!initRequired(q) && insertKey) {
         let { key, map: insertMap, pos, keyPos } = insertKey
         hashmap.emitHashMapUpdate(update, insertMap, key, pos, keyPos, () => { }, () => { }, true)
