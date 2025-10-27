@@ -222,15 +222,13 @@ let emitArrayPrint = (buf, arr, settings) => {
 
 let emitHashMapBucketPrint = (buf, bucket, settings) => {
   let bucketCount = bucket.val.bucketCount
-  let buckets = bucket.val.buckets
   c.printf(buf)("[")
-  buf.push(`for (int j = 0; j < ${bucketCount}; j++) {`)
-  buf.push(`int data_pos = ${buckets}[key_pos * ${bucketSize} + j];`)
+  buf.push(`for (int idx = 0; idx < ${bucketCount}; idx++) {`)
 
-  let value = array.getValueAtIdx(bucket, "data_pos")
+  let value = array.getValueAtIdx(bucket, "idx")
   emitValPrint(buf, value, settings)
 
-  buf.push(`if (j != ${bucketCount} - 1) {`)
+  buf.push(`if (idx != ${bucketCount} - 1) {`)
   c.printf(buf)(",")
   buf.push(`}`)
   buf.push(`}`)

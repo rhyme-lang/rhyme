@@ -253,13 +253,8 @@ let emitStatefulInit = (buf, q, lhs) => {
   } else if (q.op == "max") {
     c.stmt(buf)(c.assign(lhs.val, utils.getDataTypeLimits(lhs.schema).min))
   } else if (q.op == "array") {
-    if (lhs.tag == TAG.HASHMAP_BUCKET) {
-      // lhs passed will be the bucket object
-      c.stmt(buf)(c.assign(lhs.val.bucketCount, "0"))
-    } else {
-      // lhs passed will be the array object
-      c.stmt(buf)(c.assign(lhs.val.count, "0"))
-    }
+    // lhs passed will be the array object
+    c.stmt(buf)(c.assign(lhs.val.count, "0"))
   } else if (q.key == "update") {
     hashmap.emitNestedHashMapAllocation(buf, lhs)
   } else {
@@ -301,15 +296,8 @@ let emitStatefulUpdate1 = (buf, q, lhs, rhs) => {
       c.stmt(buf)(c.assign(lhs.val, rhs.val))
     }
   } else if (q.op == "array") {
-    // lhs passed will be the bucket info object
-    if (lhs.tag == TAG.HASHMAP_BUCKET) {
-      // lhs passed will be the bucket object
-      hashmap.emitHashBucketInsert(buf, lhs, rhs)
-    } else {
-      // lhs passed will be the array object
-      array.emitArrayInsert(buf, lhs, rhs)
-    }
-
+    // lhs passed will be the array object
+    array.emitArrayInsert(buf, lhs, rhs)
   } else if (q.op == "print") {
     if (typing.isString(q.arg[0].schema.type)) {
       let { str, len } = rhs.val
@@ -659,13 +647,6 @@ let emitGet = (buf, q) => {
       // If we are iterating over a hashMap,
       // get the entry directly using the var
       return hashmap.getHashMapValueEntry(g1, undefined, quoteVar(e2.op))
-    } else if (g1.tag == TAG.HASHMAP_BUCKET) {
-      // If we are iterating over a hashMap bucket,
-      // get the stored loop info
-      // We don't need to check existance of the bucket here
-      // since it is checked before the loop executes
-      let dataPos = `${g1.val.buckets}[${c.add(c.mul(g1.keyPos, bucketSize), quoteVar(e2.op))}]`
-      return array.getValueAtIdx(g1, dataPos)
     } else {
       throw new Error("Cannot get var from non-iterable object")
     }
@@ -722,6 +703,68 @@ let emitGet = (buf, q) => {
   return { ...v1.val[e2.op], cond }
 }
 
+let emitOrElse = (buf, q) => {
+  let [e1, e2] = q.arg.map(e => emitPath(buf, e))
+
+  let emitSelect = (cond, e1, e2, res) => {
+    if (typing.isString(e1.schema)) {
+      if (!typing.isString(e2.schema)) throw new Error("Expect both side to be string")
+      let tmpStr = symbol.getSymbol("tmp_or_str")
+      let tmpLen = symbol.getSymbol("tmp_or_len")
+      c.declareConstCharPtr(buf)(tmpStr, c.ternary(cond, e2.val.str, e1.val.str))
+      c.declareInt(buf)(tmpLen, c.ternary(cond, e2.val.len, e1.val.len))
+      res.val = { str: tmpStr, len: tmpLen }
+    } else if (e2.schema.typeSym == typeSyms.boolean) {
+      res.val = "1"
+    } else {
+      let tmp = symbol.getSymbol("tmp_or")
+      let cType = utils.convertToCType(e2.schema)
+      c.declareVar(buf)(cType, tmp, c.ternary(cond, e2.val, e1.val))
+      res.val = tmp
+    }
+  }
+
+  res = { schema: q.schema.type }
+  if (e1.tag == TAG.ARRAY) {
+    if (e2.tag != TAG.ARRAY) throw new Error("Expect both side to be array")
+    let tmpCount = symbol.getSymbol("tmp_or_count")
+    c.declareInt(buf)(tmpCount, c.ternary(e1.cond, e2.val.count, e1.val.count))
+    res.val = { count: tmpCount, values: {} }
+    for (let name in e1.val.values) {
+      let value1 = e1.val.values[name]
+      let value2 = e2.val.values[name]
+
+      res.val.values[name] = { schema: value1.schema }
+
+      if (typing.isString(value1.schema)) {
+        if (!typing.isString(value2.schema)) throw new Error("Expect both side to be string")
+        let tmpStr = symbol.getSymbol("tmp_or_str")
+        let tmpLen = symbol.getSymbol("tmp_or_len")
+        c.declareCharPtrPtr(buf)(tmpStr, c.ternary(e1.cond, value2.val.str, value1.val.str))
+        c.declareIntPtr(buf)(tmpLen, c.ternary(e1.cond, value2.val.len, value1.val.len))
+        res.val.values[name].val = { str: tmpStr, len: tmpLen }
+      } else {
+        let tmp = symbol.getSymbol("tmp_or")
+        let cType = utils.convertToCType(value1.schema)
+        c.declarePtr(buf)(cType, tmp, c.ternary(e1.cond, value2.val, value1.val))
+        res.val.values[name].val = tmp
+      }
+    }
+    res.tag = TAG.ARRAY
+  } else {
+    emitSelect(e1.cond, e1, e2, res)
+  }
+
+  if (e1.cond && e2.cond) {
+    res.cond = c.and(e1.cond, e2.cond)
+  } else if (e1.cond) {
+    res.cond = c.and(e1.cond, "0")
+  } else {
+    res.cond = e2.cond
+  }
+  return res
+}
+
 let emitPure = (buf, q) => {
   if (q.op == "sort") {
     let e = emitPath(buf, q.arg[0])
@@ -764,33 +807,7 @@ let emitPure = (buf, q) => {
     }
     return e2
   } else if (q.op == "orElse") {
-    let [e1, e2] = q.arg.map(e => emitPath(buf, e))
-
-    res = { schema: q.schema.type }
-    if (typing.isString(e1.schema)) {
-      if (!typing.isString(e2.schema)) throw new Error("Expect both side to be string")
-      let tmpStr = symbol.getSymbol("tmp_or_str")
-      let tmpLen = symbol.getSymbol("tmp_or_len")
-      c.declareConstCharPtr(buf)(tmpStr, c.ternary(e1.cond, e2.val.str, e1.val.str))
-      c.declareInt(buf)(tmpLen, c.ternary(e1.cond, e2.val.len, e1.val.len))
-      res.val = { str: tmpStr, len: tmpLen }
-    } else if (e2.schema.typeSym == typeSyms.boolean) {
-      res.val = "1"
-    } else {
-      let tmp = symbol.getSymbol("tmp_or")
-      let cType = utils.convertToCType(e2.schema)
-      c.declareVar(buf)(cType, tmp, c.ternary(e1.cond, e2.val, e1.val))
-      res.val = tmp
-    }
-
-    if (e1.cond && e2.cond) {
-      res.cond = c.and(e1.cond, e2.cond)
-    } else if (e1.cond) {
-      res.cond = c.and(e1.cond, "0")
-    } else {
-      res.cond = e2.cond
-    }
-    return res
+    return emitOrElse(buf, q)
   } else if (q.op.startsWith("convert_")) {
     let e = emitPath(buf, q.arg[0])
     return value.primitive(q.schema.type, c.cast(utils.cTypes[q.op.substring("convert_".length)], e.val), undefined, e.cond)
@@ -1265,7 +1282,7 @@ let processFilters = () => {
           addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
         }
       } else if (lhs.tag == TAG.ARRAY) {
-        let getLoopTxtFunc = array.getArrayLoopTxt(f, lhs)
+        let getLoopTxtFunc = array.getArrayLoopTxt(f, lhs, data)
         addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
       } else if (lhs.tag == TAG.HASHMAP) {
         let key = hashmap.getHashMapKeyEntry(lhs, quoteVar(v1))
@@ -1276,9 +1293,6 @@ let processFilters = () => {
         addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
       } else if (lhs.tag == TAG.NESTED_HASHMAP) {
         let getLoopTxtFunc = hashmap.getHashMapLoopTxt(f, lhs, data)
-        addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
-      } else if (lhs.tag == TAG.HASHMAP_BUCKET) {
-        let getLoopTxtFunc = hashmap.getHashBucketLoopTxt(f, lhs, data)
         addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
       } else {
         throw new Error("Cannot have generator on non-iterable objects: " + lhs.tag)
@@ -1421,7 +1435,7 @@ let generateC = (q, ir, settings) => {
     await fs.writeFile(cFile, codeNew)
     if (inputFiles["json"] || inputFiles["ndjson"]) cFlags += " -Lcgen-sql -lyyjson"
     let cmd = `gcc ${cFile} -o ${out} ${cFlags}`
-    console.log("Executing:", cmd)
+    // console.log("Executing:", cmd)
     await sh(cmd)
     return func
   }

@@ -29,8 +29,8 @@ let convertJSONTo = (json, schema) => {
       func2 = "yyjson_is_uint"
     } else if (schema.typeSym == typeSyms.i8 || schema.typeSym == typeSyms.i16 ||
       schema.typeSym == typeSyms.i32 || schema.typeSym == typeSyms.i64) {
-      func1 = "yyjson_get_sint"
-      func2 = "yyjson_is_sint"
+      func1 = "yyjson_get_int"
+      func2 = "yyjson_is_int"
     }
     let val = c.call(func1, json.val)
     let cond = c.not(c.call(func2, json.val))

@@ -81,15 +81,11 @@ let emitHashMapBucketsInit = (buf, map, name, schema) => {
   let sym = tmpSym(map.val.sym)
   let res = { schema }
 
-  let dataCount = `${sym}_${name}_count`
-  let bucketCount = `${sym}_${name}_bucket_counts`
-  let buckets = `${sym}_${name}_buckets`
-  c.declareInt(buf)(dataCount, "0")
+  let count = `${sym}_${name}_bucket_counts`
 
-  c.declareIntPtr(buf)(buckets, c.cast("int *", c.malloc("int", dataSize)))
-  c.declareIntPtr(buf)(bucketCount, c.cast("int *", c.malloc("int", hashSize)))
+  c.declareIntPtr(buf)(count, c.cast("int *", c.malloc("int", hashSize)))
 
-  res.val = { dataCount, bucketCount, buckets }
+  res.val = { count }
   res.tag = TAG.HASHMAP_BUCKET
 
   if (map.tag == TAG.NESTED_HASHMAP) {
@@ -541,7 +537,17 @@ let getValueAtIdx = (val, idx) => {
     if (value.tag == TAG.NESTED_HASHMAP) {
       getNestedHashmapAtIdx(res.val[name], idx)
     } else if (value.tag == TAG.HASHMAP_BUCKET) {
-      res.val[name].val.bucketCount += indexing
+      res.val[name].val.count += indexing
+      for (let n in res.val[name].val.values) {
+        let v = res.val[name].val.values[n]
+        if (typing.isString(v.schema)) {
+          v.val.str = c.add(v.val.str, c.mul(idx, bucketSize))
+          v.val.len = c.add(v.val.len, c.mul(idx, bucketSize))
+        } else {
+          v.val = c.add(v.val, c.mul(idx, bucketSize))
+        }
+      }
+      res.val[name].tag = TAG.ARRAY
     } else if (typing.isString(value.schema)) {
       res.val[name].val.str += indexing
       res.val[name].val.len += indexing
@@ -606,55 +612,6 @@ let getHashMapValueEntry = (map, pos, keyPos) => {
   return res
 }
 
-// Emit the code that insertes a value into a hashmap bucket
-let emitHashBucketInsert = (buf, bucket, value) => {
-  c.if(buf)(c.eq(bucket.val.bucketCount, bucketSize), (buf2) => {
-    c.printErr(buf2)("hashmap bucket size reached its full capacity\\n")
-    c.return(buf2)("1")
-  })
-
-  let dataPos = symbol.getSymbol("data_pos")
-  c.declareInt(buf)(dataPos, bucket.val.dataCount)
-
-  c.stmt(buf)(c.inc(bucket.val.dataCount))
-
-  let bucketPos = symbol.getSymbol("bucket_pos")
-
-  c.declareInt(buf)(bucketPos, bucket.val.bucketCount)
-  c.stmt(buf)(c.assign(bucket.val.bucketCount, c.add(bucketPos, "1")))
-
-  let idx = c.add(c.mul(bucket.keyPos, bucketSize), bucketPos)
-  c.stmt(buf)(c.assign(`${bucket.val.buckets}[${idx}]`, dataPos))
-
-  let lhs = getHashMapValueEntry(bucket, undefined, dataPos)
-
-  if (value.tag == TAG.OBJECT) {
-    for (let key in value.val) {
-      let val = value.val[key]
-
-      if (typing.isObject(val.schema)) {
-        throw new Error("Not supported")
-      }
-
-      if (val.tag == TAG.JSON) {
-        val = json.convertJSONTo(val, val.schema)
-      }
-
-      if (typing.isString(val.schema)) {
-        c.stmt(buf)(c.assign(lhs.val[key].val.str, val.val.str))
-        c.stmt(buf)(c.assign(lhs.val[key].val.len, val.val.len))
-      } else {
-        c.stmt(buf)(c.assign(lhs.val[key].val, val.val))
-      }
-    }
-  } else if (typing.isString(value.schema)) {
-    c.stmt(buf)(c.assign(lhs.val.str, value.val.str))
-    c.stmt(buf)(c.assign(lhs.val.len, value.val.len))
-  } else {
-    c.stmt(buf)(c.assign(lhs.val, value.val))
-  }
-}
-
 let emitArrayValueInit = (buf, arr, name, schema, sorted, prolog0) => {
   let sym = arr.val.sym
 
@@ -662,9 +619,7 @@ let emitArrayValueInit = (buf, arr, name, schema, sorted, prolog0) => {
   let res = { schema }
   if (typing.isObject(schema)) {
     // Nested hashmap
-    allocateYYJSONBuffer(buf, `${sym}_${name}`, arraySize)
-    res.val = `${sym}_${name}`
-    res.tag = TAG.JSON
+    throw new Error("Not supported")
   } else if (typing.isString(schema)) {
     allocateStringBuffer(buf, `${sym}_${name}_str`, `${sym}_${name}_len`, arraySize, sorted, prolog0)
     res.val = { str: `${sym}_${name}_str`, len: `${sym}_${name}_len` }
@@ -697,7 +652,7 @@ let emitArrayInsert = (buf, arr, value) => {
 
   let dataPos = arr.val.count
 
-  let lhs = getHashMapValueEntry(arr, undefined, dataPos)
+  let lhs = getValueAtIdx(arr, dataPos)
 
   if (value.tag == TAG.OBJECT) {
     for (let key in value.val) {
@@ -728,7 +683,7 @@ let emitArrayInsert = (buf, arr, value) => {
   c.stmt(buf)(c.assign(arr.val.count, c.binary(arr.val.count, "1", "+")))
 }
 
-let getArrayLoopTxt = (f, arr) => () => {
+let getArrayLoopTxt = (f, arr, data) => () => {
   let count = arr.val.count
   let v = f.arg[1].op
 
@@ -738,13 +693,13 @@ let getArrayLoopTxt = (f, arr) => () => {
 
   let loopHeader = []
 
-  loopHeader.push(`for (int ${quoteVar(v)} = 0; ${quoteVar(v)} < ${count}; ${quoteVar(v)}++) {`)
+  loopHeader.push((arr.cond ? `if (!${arr.cond}) ` : "") + `for (int ${quoteVar(v)} = 0; ${quoteVar(v)} < ${count}; ${quoteVar(v)}++) {`)
 
   let boundsChecking = []
   boundsChecking.push(`if (${quoteVar(v)} >= ${count}) break;`)
 
   return {
-    info, data: [], initCursor, loopHeader, boundsChecking, rowScanning: []
+    info, data, initCursor, loopHeader, boundsChecking, rowScanning: []
   }
 }
 
@@ -765,26 +720,6 @@ let getHashMapLoopTxt = (f, map, data) => () => {
 
   return {
     info, data, initCursor, loopHeader, boundsChecking, rowScanning: []
-  }
-}
-
-let getHashBucketLoopTxt = (f, bucket, dataBuf) => () => {
-  let v = f.arg[1].op
-
-  let initCursor = []
-
-  let info = [`// generator: ${v} <- ${pretty(f.arg[0])}`]
-
-  let loopHeader = []
-
-  loopHeader.push(`if (!${bucket.cond}) for (int ${quoteVar(v)} = 0; ${quoteVar(v)} < ${bucket.val.bucketCount}; ${quoteVar(v)}++) {`)
-
-  let boundsChecking = []
-
-  boundsChecking.push(`if (${quoteVar(v)} >= ${bucket.val.bucketCount}) break;`)
-
-  return {
-    info, data: dataBuf, initCursor, loopHeader, boundsChecking, rowScanning: []
   }
 }
 
@@ -809,10 +744,8 @@ let hashmap = {
   getHashMapValueEntry,
   emitHashMapUpdate,
   emitHashLookUp,
-  emitHashBucketInsert,
   emitHashMapBucketValuesInit,
   getHashMapLoopTxt,
-  getHashBucketLoopTxt,
   emitNestedHashMapInit,
   emitNestedHashMapAllocation
 }
