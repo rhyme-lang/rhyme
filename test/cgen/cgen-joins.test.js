@@ -24,8 +24,8 @@ beforeAll(async () => {
   await sh(`cp cgen-sql/yyjson.h ${outDir}`)
 })
 
-let customerSchema = typing.parseType("{*u32: {id: u32, name: string}}")
-let ordersSchema = typing.parseType("{*u32: {id: u32, description: string, customerID: u32}}")
+let customerSchema = typing.parseType("{*u32: {id: i16, name: string}}")
+let ordersSchema = typing.parseType("{*u32: {id: i16, description: string, customerID: i16}}")
 let dummySchema = types.u32
 
 let customers = rh`loadJSON "./cgen-sql/json/joins/customers.json" ${customerSchema}`
@@ -42,21 +42,21 @@ let innerJoinExpected = [
 let leftJoinExpected = [
   { custID: 1, name: 'customer1', orderID: 1, orderDesc: 'order1' },
   { custID: 1, name: 'customer1', orderID: 3, orderDesc: 'order3' },
-  { custID: 2, name: 'customer2', orderID: null, orderDesc: null },
+  { custID: 2, name: 'customer2', orderID: 0, orderDesc: "null" },
   { custID: 3, name: 'customer3', orderID: 2, orderDesc: 'order2' },
   { custID: 3, name: 'customer3', orderID: 5, orderDesc: 'order5' },
-  { custID: 4, name: 'customer4', orderID: null, orderDesc: null },
+  { custID: 4, name: 'customer4', orderID: 0, orderDesc: "null" },
   { custID: 5, name: 'customer5', orderID: 4, orderDesc: 'order4' }
 ]
 let fullOuterJoinExpected = [
   { custID: 1, name: 'customer1', orderID: 1, orderDesc: 'order1' },
   { custID: 1, name: 'customer1', orderID: 3, orderDesc: 'order3' },
-  { custID: 2, name: 'customer2', orderID: null, orderDesc: null },
+  { custID: 2, name: 'customer2', orderID: 0, orderDesc: "null" },
   { custID: 3, name: 'customer3', orderID: 2, orderDesc: 'order2' },
   { custID: 3, name: 'customer3', orderID: 5, orderDesc: 'order5' },
-  { custID: 4, name: 'customer4', orderID: null, orderDesc: null },
+  { custID: 4, name: 'customer4', orderID: 0, orderDesc: "null" },
   { custID: 5, name: 'customer5', orderID: 4, orderDesc: 'order4' },
-  { custID: null, name: null, orderID: 6, orderDesc: 'order6' }
+  { custID: 0, name: "null", orderID: 6, orderDesc: 'order6' }
 ]
 
 test("innerJoin1", async () => {
@@ -79,15 +79,24 @@ test("innerJoin1", async () => {
   expect(JSON.parse(res)).toEqual(innerJoinExpected)
 })
 
-test("tmp", async () => {
-  let dummy = rh`[0]`
-  let orderDefault = rh`{
-    id: ${dummy}.*,
-    description: "null"
-  } | group ${dummy}.*`
+test("leftJoin", async () => {
+  let orderDefault = rh`[{ id: 0, description: "null" }]`
 
-  let func = await compile(orderDefault, { backend: "c-new", outDir, outFile: "tmp", enableOptimizations: false })
+  let phase1 = rh`{
+    ${orders}.*o1.customerID: [{
+      id: ${orders}.*o1.id,
+      description: ${orders}.*o1.description
+    }]
+  }`
+  let phase2 = rh`[{
+    custID: ${customers}.*c.id,
+    name: ${customers}.*c.name,
+    orderID: (${phase1}.(${customers}.*c.id) || ${orderDefault}).*o2.id,
+    orderDesc: (${phase1}.(${customers}.*c.id) || ${orderDefault}).*o2.description
+  }]`
+
+  let func = await compile(phase2, { backend: "c-new", outDir, outFile: "tmp", enableOptimizations: false })
   let res = await func()
 
-  console.log(JSON.parse(res))
+  expect(JSON.parse(res)).toEqual(leftJoinExpected)
 })
