@@ -125,6 +125,8 @@ let emitHashMapBucketValuesInit = (buf, map, bucket, name, schema) => {
 }
 
 let emitHashMapValueInit = (buf, map, name, schema, sorted, prolog0) => {
+  if (name == "_DEFAULT_" && map.val.values?.[name]) return
+
   let sym = tmpSym(map.val.sym)
   let size = hashSize
 
