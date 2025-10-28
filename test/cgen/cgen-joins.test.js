@@ -26,7 +26,7 @@ beforeAll(async () => {
 
 let customerSchema = typing.parseType("{*u32: {id: i16, name: string}}")
 let ordersSchema = typing.parseType("{*u32: {id: i16, description: string, customerID: i16}}")
-let dummySchema = types.u32
+let dummySchema = typing.parseType("{*u32: u32}")
 
 let customers = rh`loadJSON "./cgen-sql/json/joins/customers.json" ${customerSchema}`
 let orders = rh`loadJSON "./cgen-sql/json/joins/orders.json" ${ordersSchema}`
@@ -79,7 +79,7 @@ test("innerJoin1", async () => {
   expect(JSON.parse(res)).toEqual(innerJoinExpected)
 })
 
-test("leftJoin", async () => {
+test("leftOuterJoin", async () => {
   let orderDefault = rh`[{ id: 0, description: "null" }]`
 
   let phase1 = rh`{
@@ -95,8 +95,44 @@ test("leftJoin", async () => {
     orderDesc: (${phase1}.(${customers}.*c.id) || ${orderDefault}).*o2.description
   }]`
 
-  let func = await compile(phase2, { backend: "c-new", outDir, outFile: "tmp", enableOptimizations: false })
+  let func = await compile(phase2, { backend: "c-new", outDir, outFile: "leftOuterJoin", enableOptimizations: false })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual(leftJoinExpected)
+})
+
+test("fullOuterJoin", async () => {
+  let customerDefault = rh`[{ id: 0, name: "null" }]`
+  let orderDefault = rh`[{ id: 0, description: "null" }]`
+
+  let phase1 = rh`{
+    ${customers}.*c1.id: single ${customers}.*c1.id,
+    ${orders}.*o1.customerID: single ${orders}.*o1.customerID
+  }`
+
+  let ordersMap = rh`{
+    ${orders}.*o1.customerID: [{
+      id: ${orders}.*o1.id,
+      description: ${orders}.*o1.description
+    }]
+  }`
+
+  let customersMap = rh`{
+    ${customers}.*c1.id: [{
+      id: ${customers}.*c1.id,
+      name: ${customers}.*c1.name
+    }]
+  }`
+
+  let phase2 = rh`[{
+    custID: (${customersMap}.(${phase1}.*) || ${customerDefault}).*.id,
+    name: (${customersMap}.(${phase1}.*) || ${customerDefault}).*.name,
+    orderID: (${ordersMap}.(${phase1}.*) || ${orderDefault}).*.id,
+    orderDesc: (${ordersMap}.(${phase1}.*) || ${orderDefault}).*.description
+  }]`
+
+  let func = await compile(phase2, { backend: "c-new", outDir, outFile: "fullOuterJoin", enableOptimizations: false })
+  let res = await func()
+
+  expect(JSON.parse(res)).toEqual(fullOuterJoinExpected)
 })

@@ -42,7 +42,6 @@ let sortedCols
 // Stores the assignments that are grouped into the same hashmap
 let assignmentToSym
 let updateOps
-let updateOpsExtra
 
 // Stores mapping from vars to their binded values
 let vars
@@ -116,7 +115,6 @@ let reset = (settings) => {
 
   assignmentToSym = {}
   updateOps = {}
-  updateOpsExtra = {}
 
   vars = {}
 
@@ -135,12 +133,13 @@ let initializeProlog = () => {
 let finalizeProlog = () => {
   let prolog = [...prolog0, ...prolog1]
   if (inputFiles["json"] || inputFiles["ndjson"]) {
+    // include necessary header if we loaded in any JSON file
     prolog = ["#include \"yyjson.h\"", ...prolog]
   }
   return prolog
 }
 
-// Emit the comapre function for the qsort
+// Emit the comapre function for qsort
 let emitCompareFunc = (buf, name, valPairs, orders) => {
   buf.push(`int ${name}(int *i, int *j) {`)
   for (let i in valPairs) {
@@ -297,6 +296,7 @@ let emitStatefulUpdate1 = (buf, q, lhs, rhs) => {
     }
   } else if (q.op == "array") {
     // lhs passed will be the array object
+    console.log(lhs, rhs)
     array.emitArrayInsert(buf, lhs, rhs)
   } else if (q.op == "print") {
     if (typing.isString(q.arg[0].schema.type)) {
@@ -363,6 +363,9 @@ let emitStateful1 = (q, map) => {
 
   if (q.key == "update") {
     let [e0, e1, e2, e3] = q.arg
+    if (e0.key != "const") {
+      emitStateful1(e0, map)
+    }
     if (q.fre.length == 0) {
       // Top level
       let map = tmpVars[i]
@@ -465,7 +468,7 @@ let emitStateful1 = (q, map) => {
       return { lhs: curr, insertKey }
     }
     if (q.fre.length == 0) {
-      // console.log("Stateful already emitted: ", pretty(q))
+      emitStatefulInPath(i)
       if (map) {
         let buf = []
         let { lhs, insertKey } = getLhs(buf, map, false)
@@ -496,13 +499,16 @@ let emitStateful1 = (q, map) => {
         let { lhs, insertKey } = getLhs(init, map, ignoreConsts)
         if (insertKey) {
           let { key, map: insertMap, pos, keyPos } = insertKey
-          hashmap.emitHashMapUpdate(init, insertMap, key, pos, keyPos, () => { }, () => { }, true)
+          hashmap.emitHashMapUpdate(init, insertMap, key, pos, keyPos, () => {
+            c.stmt(init)(c.assign(lhs.defined, "1"))
+            emitStatefulInit(init, q, lhs)
+          }, () => { }, true)
+        } else {
+          c.if(init)(c.not(lhs.defined), (buf) => {
+            c.stmt(buf)(c.assign(lhs.defined, "1"))
+            emitStatefulInit(buf, q, lhs)
+          })
         }
-
-        c.if(init)(c.not(lhs.defined), (buf) => {
-          c.stmt(init)(c.assign(lhs.defined, "1"))
-          emitStatefulInit(buf, q, lhs)
-        })
 
         assign(init, rootSym, q.fre, [])
       }
@@ -1023,7 +1029,6 @@ let collectRelevantStatefulInPath = (q, currentGroupPath) => {
         }
 
         assignmentToSym[i] = currentGroupPath.sym
-        updateOpsExtra[currentGroupPath.sym].push(i)
 
         let dummy = { schema: { objValue: q.schema.type }, val: { ...tmpVars[currentGroupPath.sym].val, sym: i, values: {} } }
         hashmap.emitHashMapValueInit(prolog1, dummy, `_DEFAULT_`, q.schema.type)
@@ -1069,7 +1074,6 @@ let addHashMapValue = (map, q, name, currentGroupPath) => {
     assignmentToSym[q.op] = currentGroupPath.sym
     updateOps[map.val.sym].push(q.op)
     q1.root = currentGroupPath.sym
-    if (name != "_DEFAULT_") q1.extraGroupPath = name
     collectNestedHashMap(q, map, name, currentGroupPath)
   } else if (q1.key == "stateful" && q1.fre.length != 0) {
     if (!same(q1.fre, currentGroupPath.path)) {
@@ -1078,8 +1082,6 @@ let addHashMapValue = (map, q, name, currentGroupPath) => {
     assignmentToSym[q.op] = currentGroupPath.sym
     updateOps[map.val.sym].push(q.op)
     q1.root = currentGroupPath.sym
-
-    if (name != "_DEFAULT_") q1.extraGroupPath = name
 
     let sym = tmpSym(map.val.sym)
     if (q1.op == "array") {
@@ -1124,7 +1126,6 @@ let collectNestedHashMap = (q, map, name, currentGroupPath) => {
   let struct = nestedMap.val.struct
 
   updateOps[i] = []
-  updateOpsExtra[i] = []
 
   let iOld = currentGroupPath.sym
   // currentGroupPath.sym = i
@@ -1165,24 +1166,44 @@ let collectHashMap = (q) => {
     collectHashMapsInPath(e3)
   }
 
-  updateOps[i] = []
-  updateOpsExtra[i] = []
-
   // Create hashmap
   let { htable, count, keys } = hashmap.emitHashMapInit(prolog1, i, keySchema)
   let tmpVar = value.hashmap(q.schema.type, i, htable, count, keys)
   tmpVars[i] = tmpVar
 
-  let currentGroupPath = { sym: i, path: [...q.fre, e1.op], keySchema }
-  if (e2.key == "pure" && e2.op == "mkTuple") {
-    for (let j = 0; j < e2.arg.length; j += 2) {
-      let key = e2.arg[j]
-      let val = e2.arg[j + 1]
-      addHashMapValue(tmpVar, val, key.op, currentGroupPath)
-    }
-  } else {
-    addHashMapValue(tmpVar, e2, "_DEFAULT_", currentGroupPath)
+  let keyList = [e1]
+  let valList = [e2]
+  let curr = e0
+  while (curr.key != "const") {
+    if (curr.key != "ref" && assignments[curr.op].key != "update")
+      throw new Error("Can only extend result of another group op")
+    let q1 = assignments[curr.op]
+    tmpVars[curr.op] = tmpVar
+    keyList.push(q1.arg[1])
+    valList.push(q1.arg[2])
+    if (q1.arg[3])
+      collectHashMapsInPath(q1.arg[3])
+
+    curr = q1.arg[0]
   }
+
+  updateOps[i] = []
+
+  for (let j in keyList) {
+    let e1 = keyList[j]
+    let e2 = valList[j]
+    let currentGroupPath = { sym: i, path: [...q.fre, e1.op], keySchema }
+    if (e2.key == "pure" && e2.op == "mkTuple") {
+      for (let j = 0; j < e2.arg.length; j += 2) {
+        let key = e2.arg[j]
+        let val = e2.arg[j + 1]
+        addHashMapValue(tmpVar, val, key.op, currentGroupPath)
+      }
+    } else {
+      addHashMapValue(tmpVar, e2, "_DEFAULT_", currentGroupPath)
+    }
+  }
+
 }
 
 // Collect hashmaps required for the query
@@ -1320,7 +1341,6 @@ let emitCode = (q, ir, settings) => {
 
   filters = ir.filters
   assignments = ir.assignments
-  irVars = ir.vars
 
   // Fill with default prolog
   initializeProlog()
@@ -1343,21 +1363,8 @@ let emitCode = (q, ir, settings) => {
   // Process filters
   processFilters()
 
-  // Emit the stateful ops that are not captured by update ops
-  for (let i in assignments) {
-    let q = assignments[i]
-
-    if (q.key == "update" || assignmentToSym[i]) continue
-
-    emitStatefulInPath(i)
-  }
-
   let epilog = []
 
-  // // Different take on this backend
-  // let res = path(epilog, q)
-
-  // currentGroupPath = { root: undefined, path: [] }
   let res = emitPath(epilog, q)
 
   if (res.cond) {
@@ -1435,7 +1442,7 @@ let generateC = (q, ir, settings) => {
     await fs.writeFile(cFile, codeNew)
     if (inputFiles["json"] || inputFiles["ndjson"]) cFlags += " -Lcgen-sql -lyyjson"
     let cmd = `gcc ${cFile} -o ${out} ${cFlags}`
-    // console.log("Executing:", cmd)
+    console.log("Executing:", cmd)
     await sh(cmd)
     return func
   }
