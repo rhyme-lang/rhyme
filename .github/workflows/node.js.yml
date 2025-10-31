@@ -25,7 +25,7 @@ jobs:
       run: |
         git clone https://github.com/nlohmann/json.git
         sudo cp -r json/include/* /usr/include/
-    - name: Generate TPCH data files
+    - name: Generate TPCH datasets
       run: |
         git clone https://github.com/electrum/tpch-dbgen.git
         make -C tpch-dbgen
@@ -33,6 +33,10 @@ jobs:
         chmod 664 *.tbl
         mkdir -v -p cgen-sql/data/SF1
         mv -v *.tbl cgen-sql/data/SF1
+    - name: Get JSONBench data
+      run: |
+        wget --progress=dot:giga --directory-prefix cgen-sql/data/bluesky "https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz"
+        gzip -d cgen-sql/data/bluesky/file_0001.json.gz
     - name: Use Node.js ${{ matrix.node-version }}
       uses: actions/setup-node@v3
       with:
