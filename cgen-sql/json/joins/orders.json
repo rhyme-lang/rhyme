@@ -1,8 +1,8 @@
 [
-  { "id": 1, "description": "order1", "customerID": 1 },
-  { "id": 2, "description": "order2", "customerID": 3 },
-  { "id": 3, "description": "order3", "customerID": 1 },
-  { "id": 4, "description": "order4", "customerID": 5 },
-  { "id": 5, "description": "order5", "customerID": 3 },
-  { "id": 6, "description": "order6", "customerID": 100 }
+  { "id": 1, "item": "order1", "customerId": 1 },
+  { "id": 2, "item": "order2", "customerId": 3 },
+  { "id": 3, "item": "order3", "customerId": 1 },
+  { "id": 4, "item": "order4", "customerId": 5 },
+  { "id": 5, "item": "order5", "customerId": 3 },
+  { "id": 6, "item": "order6", "customerId": 100 }
 ]

@@ -25,52 +25,52 @@ beforeAll(async () => {
 })
 
 let customerSchema = typing.parseType("{*u32: {id: i16, name: string}}")
-let ordersSchema = typing.parseType("{*u32: {id: i16, description: string, customerID: i16}}")
+let ordersSchema = typing.parseType("{*u32: {id: i16, item: string, customerId: i16}}")
 let dummySchema = typing.parseType("{*u32: u32}")
 
 let customers = rh`loadJSON "./cgen-sql/json/joins/customers.json" ${customerSchema}`
 let orders = rh`loadJSON "./cgen-sql/json/joins/orders.json" ${ordersSchema}`
 let dummy = rh`loadJSON "./cgen-sql/json/joins/dummy.json" ${dummySchema}`
 
-let innerJoinExpected = [
-  { custID: 1, name: 'customer1', orderID: 1, orderDesc: 'order1' },
-  { custID: 1, name: 'customer1', orderID: 3, orderDesc: 'order3' },
-  { custID: 3, name: 'customer3', orderID: 2, orderDesc: 'order2' },
-  { custID: 3, name: 'customer3', orderID: 5, orderDesc: 'order5' },
-  { custID: 5, name: 'customer5', orderID: 4, orderDesc: 'order4' }
+  let innerJoinExpected = [
+  { custId: 1, name: 'customer1', orderId: 1, orderitem: 'order1' },
+  { custId: 1, name: 'customer1', orderId: 3, orderitem: 'order3' },
+  { custId: 3, name: 'customer3', orderId: 2, orderitem: 'order2' },
+  { custId: 3, name: 'customer3', orderId: 5, orderitem: 'order5' },
+  { custId: 5, name: 'customer5', orderId: 4, orderitem: 'order4' }
 ]
 let leftJoinExpected = [
-  { custID: 1, name: 'customer1', orderID: 1, orderDesc: 'order1' },
-  { custID: 1, name: 'customer1', orderID: 3, orderDesc: 'order3' },
-  { custID: 2, name: 'customer2', orderID: 0, orderDesc: "null" },
-  { custID: 3, name: 'customer3', orderID: 2, orderDesc: 'order2' },
-  { custID: 3, name: 'customer3', orderID: 5, orderDesc: 'order5' },
-  { custID: 4, name: 'customer4', orderID: 0, orderDesc: "null" },
-  { custID: 5, name: 'customer5', orderID: 4, orderDesc: 'order4' }
+  { custId: 1, name: 'customer1', orderId: 1, orderitem: 'order1' },
+  { custId: 1, name: 'customer1', orderId: 3, orderitem: 'order3' },
+  { custId: 2, name: 'customer2', orderId: 0, orderitem: "null" },
+  { custId: 3, name: 'customer3', orderId: 2, orderitem: 'order2' },
+  { custId: 3, name: 'customer3', orderId: 5, orderitem: 'order5' },
+  { custId: 4, name: 'customer4', orderId: 0, orderitem: "null" },
+  { custId: 5, name: 'customer5', orderId: 4, orderitem: 'order4' }
 ]
 let fullOuterJoinExpected = [
-  { custID: 1, name: 'customer1', orderID: 1, orderDesc: 'order1' },
-  { custID: 1, name: 'customer1', orderID: 3, orderDesc: 'order3' },
-  { custID: 2, name: 'customer2', orderID: 0, orderDesc: "null" },
-  { custID: 3, name: 'customer3', orderID: 2, orderDesc: 'order2' },
-  { custID: 3, name: 'customer3', orderID: 5, orderDesc: 'order5' },
-  { custID: 4, name: 'customer4', orderID: 0, orderDesc: "null" },
-  { custID: 5, name: 'customer5', orderID: 4, orderDesc: 'order4' },
-  { custID: 0, name: "null", orderID: 6, orderDesc: 'order6' }
+  { custId: 1, name: 'customer1', orderId: 1, orderitem: 'order1' },
+  { custId: 1, name: 'customer1', orderId: 3, orderitem: 'order3' },
+  { custId: 2, name: 'customer2', orderId: 0, orderitem: "null" },
+  { custId: 3, name: 'customer3', orderId: 2, orderitem: 'order2' },
+  { custId: 3, name: 'customer3', orderId: 5, orderitem: 'order5' },
+  { custId: 4, name: 'customer4', orderId: 0, orderitem: "null" },
+  { custId: 5, name: 'customer5', orderId: 4, orderitem: 'order4' },
+  { custId: 0, name: "null", orderId: 6, orderitem: 'order6' }
 ]
 
 test("innerJoin1", async () => {
   let phase1 = rh`{
-    ${orders}.*o1.customerID: [{
+    ${orders}.*o1.customerId: [{
       id: ${orders}.*o1.id,
-      description: ${orders}.*o1.description
+      item: ${orders}.*o1.item
     }]
   }`
   let phase2 = rh`[{
-    custID: ${customers}.*c.id,
+    custId: ${customers}.*c.id,
     name: ${customers}.*c.name,
-    orderID: ${phase1}.(${customers}.*c.id).*o2.id,
-    orderDesc: ${phase1}.(${customers}.*c.id).*o2.description
+    orderId: ${phase1}.(${customers}.*c.id).*o2.id,
+    orderitem: ${phase1}.(${customers}.*c.id).*o2.item
   }]`
 
   let func = await compile(phase2, { backend: "c-new", outDir, outFile: "innerJoin1" })
@@ -80,19 +80,19 @@ test("innerJoin1", async () => {
 })
 
 test("leftOuterJoin", async () => {
-  let orderDefault = rh`[{ id: 0, description: "null" }]`
+  let orderDefault = rh`[{ id: 0, item: "null" }]`
 
   let phase1 = rh`{
-    ${orders}.*o1.customerID: [{
+    ${orders}.*o1.customerId: [{
       id: ${orders}.*o1.id,
-      description: ${orders}.*o1.description
+      item: ${orders}.*o1.item
     }]
   }`
   let phase2 = rh`[{
-    custID: ${customers}.*c.id,
+    custId: ${customers}.*c.id,
     name: ${customers}.*c.name,
-    orderID: (${phase1}.(${customers}.*c.id) || ${orderDefault}).*o2.id,
-    orderDesc: (${phase1}.(${customers}.*c.id) || ${orderDefault}).*o2.description
+    orderId: (${phase1}.(${customers}.*c.id) || ${orderDefault}).*o2.id,
+    orderitem: (${phase1}.(${customers}.*c.id) || ${orderDefault}).*o2.item
   }]`
 
   let func = await compile(phase2, { backend: "c-new", outDir, outFile: "leftOuterJoin", enableOptimizations: false })
@@ -103,17 +103,17 @@ test("leftOuterJoin", async () => {
 
 test("fullOuterJoin", async () => {
   let customerDefault = rh`[{ id: 0, name: "null" }]`
-  let orderDefault = rh`[{ id: 0, description: "null" }]`
+  let orderDefault = rh`[{ id: 0, item: "null" }]`
 
   let phase1 = rh`{
     ${customers}.*c1.id: single ${customers}.*c1.id,
-    ${orders}.*o1.customerID: single ${orders}.*o1.customerID
+    ${orders}.*o1.customerId: single ${orders}.*o1.customerId
   }`
 
   let ordersMap = rh`{
-    ${orders}.*o1.customerID: [{
+    ${orders}.*o1.customerId: [{
       id: ${orders}.*o1.id,
-      description: ${orders}.*o1.description
+      item: ${orders}.*o1.item
     }]
   }`
 
@@ -125,10 +125,10 @@ test("fullOuterJoin", async () => {
   }`
 
   let phase2 = rh`[{
-    custID: (${customersMap}.(${phase1}.*) || ${customerDefault}).*.id,
+    custId: (${customersMap}.(${phase1}.*) || ${customerDefault}).*.id,
     name: (${customersMap}.(${phase1}.*) || ${customerDefault}).*.name,
-    orderID: (${ordersMap}.(${phase1}.*) || ${orderDefault}).*.id,
-    orderDesc: (${ordersMap}.(${phase1}.*) || ${orderDefault}).*.description
+    orderId: (${ordersMap}.(${phase1}.*) || ${orderDefault}).*.id,
+    orderitem: (${ordersMap}.(${phase1}.*) || ${orderDefault}).*.item
   }]`
 
   let func = await compile(phase2, { backend: "c-new", outDir, outFile: "fullOuterJoin", enableOptimizations: false })

@@ -296,7 +296,6 @@ let emitStatefulUpdate1 = (buf, q, lhs, rhs) => {
     }
   } else if (q.op == "array") {
     // lhs passed will be the array object
-    console.log(lhs, rhs)
     array.emitArrayInsert(buf, lhs, rhs)
   } else if (q.op == "print") {
     if (typing.isString(q.arg[0].schema.type)) {
