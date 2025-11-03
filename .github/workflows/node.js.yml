@@ -39,8 +39,7 @@ jobs:
         gzip -d cgen-sql/data/bluesky/file_0001.json.gz
     - name: Compile yyjson
       run: |
-        gcc -O3 -c -o ./cgen-sql/yyjson.o ./cgen-sql/yyjson.c
-        ar rcs ./cgen-sql/libyyjson.a ./cgen-sql/yyjson.o
+        make -C third-party/yyjson
     - name: Use Node.js ${{ matrix.node-version }}
       uses: actions/setup-node@v3
       with:
