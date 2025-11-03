@@ -21,7 +21,7 @@ let outDir = "cgen-sql/out/se-basic"
 beforeAll(async () => {
   await sh(`rm -rf ${outDir}`)
   await sh(`mkdir -p ${outDir}`)
-  await sh(`cp cgen-sql/yyjson.h ${outDir}`)
+  // await sh(`cp cgen-sql/yyjson.h ${outDir}`)
 })
 
 let key = typing.createKey(types.string)

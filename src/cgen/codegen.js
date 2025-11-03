@@ -1439,7 +1439,7 @@ let generateC = (q, ir, settings) => {
 
   let writeAndCompile = async () => {
     await fs.writeFile(cFile, codeNew)
-    if (inputFiles["json"] || inputFiles["ndjson"]) cFlags += " -Lcgen-sql -lyyjson"
+    if (inputFiles["json"] || inputFiles["ndjson"]) cFlags += " -Ithird-party/yyjson -Lthird-party/yyjson/out -lyyjson"
     let cmd = `gcc ${cFile} -o ${out} ${cFlags}`
     await sh(cmd)
     return func
