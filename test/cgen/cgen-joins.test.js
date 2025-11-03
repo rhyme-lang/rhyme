@@ -21,7 +21,7 @@ let outDir = "cgen-sql/out/joins"
 beforeAll(async () => {
   await sh(`rm -rf ${outDir}`)
   await sh(`mkdir -p ${outDir}`)
-  await sh(`cp cgen-sql/yyjson.h ${outDir}`)
+  // await sh(`cp cgen-sql/yyjson.h ${outDir}`)
 })
 
 let customerSchema = typing.parseType("{*u32: {id: i16, name: string}}")
