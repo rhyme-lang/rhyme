@@ -28,7 +28,7 @@ for i in range(1, 6):
     c.append(sum / N)
 
 print("running js backend queries")
-result = subprocess.run(["node", "./json-bench.js"], capture_output=True, text=True)
+result = subprocess.run(["node", "./bench/js/json-bench.js"], capture_output=True, text=True)
 time = re.findall("[0-9]+.[0-9]+", result.stderr)
 print(time, len(time))
 
