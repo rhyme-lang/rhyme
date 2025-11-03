@@ -1,7 +1,7 @@
-const { rh, api } = require("../src/rhyme")
-const { compile } = require("../src/simple-eval")
-const { typing, types } = require("../src/typing")
-const { runtime: rt } = require("../src/simple-runtime")
+const { rh, api } = require("../../src/rhyme")
+const { compile } = require("../../src/simple-eval")
+const { typing, types } = require("../../src/typing")
+const { runtime: rt } = require("../../src/simple-runtime")
 
 let bluesky = rh`loadNDJSON "./cgen-sql/data/bluesky/file_0001.json" ${types.unknown}`
 
