@@ -19,7 +19,7 @@ let emitLoadCSV = (buf, filename, ext) => {
     c.printErr(buf1)("Unable to open file %s\\n", filename)
     c.return(buf1)("1")
   })
-  c.declareInt(buf)(size, c.call("fsize", fd))
+  c.declareSize(buf)(size, c.call("fsize", fd))
   c.declareCharPtr(buf)(mappedFile, c.mmap(fd, size))
   c.stmt(buf)(c.close(fd))
 
@@ -223,7 +223,7 @@ let getCSVLoopTxt = (f, file, loadInput, usedCols) => () => {
 
   let loopHeader = []
   // c.stmt(loopHeader)(c.assign(quoteVar(v), "-1"))
-  loopHeader.push(`for (int ${v} = 0; ${cursor} < ${size}; ${v}++) {`)
+  loopHeader.push(`for (size_t ${v} = 0; ${cursor} < ${size}; ${v}++) {`)
   // c.stmt(loopHeader)(c.inc(quoteVar(v)))
 
   let boundsChecking = [`if (${cursor} >= ${size}) break;`]

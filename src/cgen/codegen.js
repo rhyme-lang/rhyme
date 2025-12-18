@@ -1441,6 +1441,7 @@ let generateC = (q, ir, settings) => {
     await fs.writeFile(cFile, codeNew)
     if (inputFiles["json"] || inputFiles["ndjson"]) cFlags += " -Ithird-party/yyjson -Lthird-party/yyjson/out -lyyjson"
     let cmd = `gcc ${cFile} -o ${out} ${cFlags}`
+    console.log("Executing: " + cmd)
     await sh(cmd)
     return func
   }

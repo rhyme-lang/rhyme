@@ -129,17 +129,7 @@ exports.parserImpl = (strings, holes) => {
       if (input[pos] == '"') pos++ // consume closing
         peek = "str"
     } else if (input[pos] == '\n') { // NOT HIT ANYMORE!
-      // while (input[pos] == '\n') {
-      peek = input[pos++]
-      // let save = indent
-      indent = whitespace(true)
-      /*if (input[pos] == '\n') {
-        indent = save // blank line, treat as prev indent
-      } else*/ if (input[pos] == '-' && input[pos+1] == ' ') {
-        pos += 2; bullet = true; indent+=2
-      } else bullet = false
-        // }      
-      next() // XXX TODO: treat as whitespace for now ...
+      error("unexpected newline")
     } else if (input[pos] === '\0') {
       pos += 1
       hole += 1
@@ -160,10 +150,11 @@ exports.parserImpl = (strings, holes) => {
     //   while (input[pos] && input[pos] != '\n') ++pos
     //   //if (input[pos] == '\n') ++pos
     // } else
-    if (input[pos] == '#') {
+    while (input[pos] == '#') {
       pos += 1
       while (input[pos] && input[pos] != '\n') ++pos
       //if (input[pos] == '\n') ++pos
+      while (input[pos] == ' ' || input[pos] == '\n') ++pos
     }
     // todo: multiple single-line comments (?)
     //       --> maybe not!

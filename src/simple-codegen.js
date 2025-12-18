@@ -1469,7 +1469,8 @@ let translateToNewCodegen = q => {
         let init_deps = []
         if (q.key == "update") {
           let init_arg = q.arg[0]
-          init_deps = [...union(init_arg.fre, init_arg.bnd),...init_arg.tmps.map(tmpSym)]
+          // init_deps = [...union(init_arg.fre, init_arg.bnd),...init_arg.tmps.map(tmpSym)]
+          init_deps = [...init_arg.fre, ...init_arg.tmps.map(tmpSym)]
         }
 
         let scope = { vars: q.fre, filters: [], buf: [] } // XXX filters?

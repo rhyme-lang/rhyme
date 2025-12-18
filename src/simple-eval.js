@@ -975,7 +975,7 @@ let compile = (q,userSettings={}) => {
       code = emitCodeCPP(q,order)
       cc = "g++"
       filename = "test.cpp"
-      flags = "-std=c++17 -Ithirdparty/json/include"
+      flags = "-std=c++17 -Ithird-party/json/include"
     }
 
     let func = (async () => {
