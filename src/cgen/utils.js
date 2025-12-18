@@ -106,6 +106,7 @@ c.declareArr = (buf) => (type, name, len, init, constant = false) => buf.push((c
 c.declarePtr = (buf) => (type, name, init, constant = false) => buf.push((constant ? "const " : "") + `${type} *${name}` + (init ? ` = ${init};` : ";"))
 c.declarePtrPtr = (buf) => (type, name, init, constant = false) => buf.push((constant ? "const " : "") + `${type} **${name}` + (init ? ` = ${init};` : ";"))
 
+c.declareSize = (buf) => (name, init) => c.declareVar(buf)("size_t", name, init)
 c.declareInt = (buf) => (name, init) => c.declareVar(buf)("int", name, init)
 c.declareLong = (buf) => (name, init) => c.declareVar(buf)("long", name, init)
 c.declareULong = (buf) => (name, init) => c.declareVar(buf)("unsigned long", name, init)

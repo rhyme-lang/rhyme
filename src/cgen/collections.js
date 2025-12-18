@@ -695,7 +695,7 @@ let getArrayLoopTxt = (f, arr, data) => () => {
 
   let loopHeader = []
 
-  loopHeader.push((arr.cond ? `if (!${arr.cond}) ` : "") + `for (int ${quoteVar(v)} = 0; ${quoteVar(v)} < ${count}; ${quoteVar(v)}++) {`)
+  loopHeader.push((arr.cond ? `if (!${arr.cond}) ` : "") + `for (size_t ${quoteVar(v)} = 0; ${quoteVar(v)} < ${count}; ${quoteVar(v)}++) {`)
 
   let boundsChecking = []
   boundsChecking.push(`if (${quoteVar(v)} >= ${count}) break;`)
@@ -715,7 +715,7 @@ let getHashMapLoopTxt = (f, map, data) => () => {
 
   let loopHeader = []
 
-  loopHeader.push(`for (int ${quoteVar(v)} = 1; ${quoteVar(v)} <= ${count}; ${quoteVar(v)}++) {`)
+  loopHeader.push(`for (size_t ${quoteVar(v)} = 1; ${quoteVar(v)} <= ${count}; ${quoteVar(v)}++) {`)
 
   let boundsChecking = []
   boundsChecking.push(`if (${quoteVar(v)} > ${count}) break;`)
