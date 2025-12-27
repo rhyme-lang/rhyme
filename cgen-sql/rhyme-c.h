@@ -9,9 +9,9 @@
 #include <sys/time.h>
 #include <string.h>
 
-int fsize(int fd) {
+size_t fsize(int fd) {
     struct stat stat;
-    int res = fstat(fd, &stat);
+    size_t res = fstat(fd, &stat);
     return stat.st_size;
 }
 

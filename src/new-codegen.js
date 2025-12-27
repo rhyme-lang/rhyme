@@ -612,9 +612,13 @@ let scope = () => ({
     this.curr.subst[oldKeyPos] = newKeyPos
   },
   applySubst: function (str, scope) {
-    for (let oldName in scope.subst) {
-      let newName = scope.subst[oldName]
-      str = str.replaceAll(oldName, newName)
+    let tmp = this.curr
+    while (tmp) {
+      for (let oldName in tmp.subst) {
+        let newName = tmp.subst[oldName]
+        str = str.replaceAll(oldName, newName)
+      }
+      tmp = tmp.parent
     }
     return str
   },
