@@ -37,12 +37,12 @@ let scanColumn = (buf, mappedFile, cursor, size, delim) => {
 
 // Scan the column and store the start and end position
 let scanString = (buf, mappedFile, cursor, size, delim, start, end) => {
-  c.declareInt(buf)(start, cursor)
+  c.declareSize(buf)(start, cursor)
   c.while1(buf)(
     c.ne(`${mappedFile}[${cursor}]`, delim),
     c.inc(cursor)
   )
-  c.declareInt(buf)(end, cursor)
+  c.declareSize(buf)(end, cursor)
   c.stmt(buf)(c.inc(cursor))
 }
 
@@ -207,7 +207,7 @@ let getCSVLoopTxt = (f, file, loadInput, usedCols) => () => {
   v = quoteVar(v)
 
   let cursor = symbol.getSymbol("i")
-  c.declareInt(initCursor)(cursor, "0")
+  c.declareSize(initCursor)(cursor, "0")
 
   // for csv files, skip the schema line
   if (format == "csv") {

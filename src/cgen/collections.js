@@ -549,6 +549,7 @@ let getValueAtIdx = (val, idx) => {
           v.val = c.add(v.val, c.mul(idx, bucketSize))
         }
       }
+      res.val[name].val.capacity = bucketSize
       res.val[name].tag = TAG.ARRAY
     } else if (typing.isString(value.schema)) {
       res.val[name].val.str += indexing
@@ -647,7 +648,9 @@ let emitArrayInit = (buf, sym) => {
 
 // Emit code that inserts a value into the array
 let emitArrayInsert = (buf, arr, value) => {
-  c.if(buf)(c.eq(arr.val.count, arraySize), (buf1) => {
+  // console.log(arr)
+  let capacity = arr.val.capacity || arraySize
+  c.if(buf)(c.eq(arr.val.count, capacity), (buf1) => {
     c.printErr(buf1)("array size reached its full capacity\\n")
     c.return(buf1)("1")
   })

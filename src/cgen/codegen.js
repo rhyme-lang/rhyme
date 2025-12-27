@@ -866,7 +866,7 @@ let emitPure = (buf, q) => {
       if (typing.isString(e1.schema) && typing.isString(e2.schema)) {
         let { str: str1, len: len1 } = e1.val
         let { str: str2, len: len2 } = e2.val
-        if (q.op == "equal" && ((q.arg[0].key == "const" && q.arg[0].op.length <= 8) || (q.arg[1].key == "const" && q.arg[1].op.length <= 8))) {
+        if ((q.op == "equal" || q.op == "notEqual") && ((q.arg[0].key == "const" && q.arg[0].op.length <= 8) || (q.arg[1].key == "const" && q.arg[1].op.length <= 8))) {
           let lhs
           let rhs
           if (q.arg[0].key == "const") {
@@ -879,7 +879,11 @@ let emitPure = (buf, q) => {
           } else {
             rhs = "*(" + c.cast("uint64_t *", str2) + ") & 0x" + "00".repeat(8 - q.arg[1].op.length) + "FF".repeat(q.arg[1].op.length)
           }
-          res = value.primitive(q.schema.type, c.ternary(c.eq(len1, len2), c.eq(lhs, rhs), "0"))
+          if (q.op == "equal") {
+            res = value.primitive(q.schema.type, c.ternary(c.eq(len1, len2), c.eq(lhs, rhs), "0"))
+          } else {
+            res = value.primitive(q.schema.type, c.ternary(c.ne(len1, len2), "1", c.ne(lhs, rhs)))
+          }
         } else {
           let name = symbol.getSymbol("tmp_cmpstr")
           // let curr = symbol.getSymbol("tmp_cursor")
