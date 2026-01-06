@@ -48,6 +48,7 @@ createType("f64");
 //types["emptyObject"] = [];
 
 createType("date");
+createType("char");
 
 let numberTypes = [
     types.u8, types.u16, types.u32, types.u64,
@@ -628,7 +629,7 @@ let isKey = (type) => {
         return isKey(type.intersectSet[0]);
     if (type.typeSym === typeSyms.dynkey)
         return isKey(type.keySupertype);
-    return isUnknown(type) || isNumber(type) || isString(type) || type.typeSym == typeSyms.date;
+    return isUnknown(type) || isNumber(type) || isString(type) || type.typeSym == typeSyms.char || type.typeSym == typeSyms.date;
 }
 typing.isKey = isKey;
 

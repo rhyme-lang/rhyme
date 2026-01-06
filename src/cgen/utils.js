@@ -16,6 +16,7 @@ let cTypes = {
   i64: "int64_t",
   f32: "float",
   f64: "double",
+  char: "char",
   date: "int32_t",
 }
 
@@ -34,6 +35,7 @@ let formatSpecifierMap = {
   i64: "ld",
   f32: ".3f",
   f64: ".4lf",
+  char: "c",
   date: "d"
 }
 

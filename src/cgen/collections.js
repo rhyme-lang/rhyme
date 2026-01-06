@@ -295,14 +295,14 @@ let hash = (buf, key) => {
 
     if (typing.isString(schema)) {
       c.declareULong(buf)(tmpHash, c.call("hash", key.val.str, key.val.len))
-    } else if (typing.isNumber(schema) || schema.typeSym == typeSyms.date) {
+    } else if (typing.isNumber(schema) || schema.typeSym == typeSyms.char || schema.typeSym == typeSyms.date) {
       c.declareULong(buf)(tmpHash, c.cast("unsigned long", key.val))
     } else {
       throw new Error("Cannot hash key with type " + typing.prettyPrintType(schema))
     }
 
     c.stmt(buf)(c.assign(hashed, c.binary(hashed, "8", "<<")))
-    c.stmt(buf)(c.assign(hashed, c.binary(hashed, tmpHash, "+=")))
+    c.stmt(buf)(c.assign(hashed, c.binary(hashed, tmpHash, "|=")))
   }
 
   return hashed
