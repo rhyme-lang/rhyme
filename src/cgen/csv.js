@@ -192,6 +192,8 @@ let emitRowScanning = (f, file, cursor, schema, usedCols, first = true) => {
     } else {
       scanString(buf, mappedFile, cursor, size, delim, start, end)
     }
+  } else if (type.typeSym == typeSyms.char) {
+    c.stmt(buf)(c.assign(cursor, c.binary(cursor, "2", "+")))
   } else if (type.typeSym == typeSyms.date) {
     c.stmt(buf)(c.assign(cursor, c.binary(cursor, "11", "+")))
   } else {
