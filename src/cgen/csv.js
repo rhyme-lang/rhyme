@@ -144,6 +144,12 @@ let scanDate = (buf, mappedFile, cursor, size, delim, name) => {
   c.stmt(buf)(c.assign(cursor, c.binary(cursor, "11", "+")))
 }
 
+// Scan the column and calculate the date value
+let scanChar = (buf, mappedFile, cursor, size, delim, name) => {
+  c.declareVar(buf)("char", name, `${mappedFile}[${cursor}]`);
+  c.stmt(buf)(c.assign(cursor, c.binary(cursor, "2", "+")))
+}
+
 // Emit code that scans through each row in the CSV file.
 // Will extract the value of a column if the column is used by the query.
 let emitRowScanning = (f, file, cursor, schema, usedCols, first = true) => {
@@ -181,6 +187,8 @@ let emitRowScanning = (f, file, cursor, schema, usedCols, first = true) => {
       scanDecimal(buf, mappedFile, cursor, size, delim, name, type)
     } else if (type.typeSym == typeSyms.date) {
       scanDate(buf, mappedFile, cursor, size, delim, name)
+    } else if (type.typeSym == typeSyms.char) {
+      scanChar(buf, mappedFile, cursor, size, delim, name)
     } else {
       scanString(buf, mappedFile, cursor, size, delim, start, end)
     }

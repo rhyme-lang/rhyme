@@ -37,8 +37,8 @@ let lineitemSchema = typing.objBuilder()
     l_extendedprice: types.f64,
     l_discount: types.f64,
     l_tax: types.f64,
-    l_returnflag: types.string,
-    l_linestatus: types.string,
+    l_returnflag: types.char,
+    l_linestatus: types.char,
     l_shipdate: types.date,
     l_commitdate: types.date,
     l_receiptdate: types.date,
@@ -59,7 +59,7 @@ let ordersSchema = typing.objBuilder()
   .add(typing.createKey(types.u32), typing.createSimpleObject({
     o_orderkey: types.i32,
     o_custkey: types.i32,
-    o_orderstatus: types.string,
+    o_orderstatus: types.char,
     o_totalprice: types.f64,
     o_orderdate: types.date,
     o_orderpriority: types.string,
@@ -157,7 +157,7 @@ async function q1() {
   }]`
   let query = rh`sort ${lineitem2} "l_returnflag" 0 "l_linestatus" 0`
 
-  await compile(query, { ...settings, outFile: "q1", hashSize: 256, arraySize: 4 })
+  await compile(query, { ...settings, outFile: "q1", hashSize: 8, arraySize: 4 })
 }
 
 async function q2() {
@@ -435,7 +435,7 @@ async function q10() {
       c_comment: ${customer}.*c1.c_comment
     }] | group ${orders1}.(${customer}.*c1.c_custkey) & ${orders1}.(${customer}.*c1.c_custkey).*o2`
 
-  let cond = rh`${lineitem}.*l1.l_returnflag == "R"`
+  let cond = rh`${lineitem}.*l1.l_returnflag == 82`
   let lineitem1 = rh`{
     c_custkey: ${customer1}.(${lineitem}.*l1.l_orderkey).*c2.c_custkey,
     c_name: ${customer1}.(${lineitem}.*l1.l_orderkey).*c2.c_name,
@@ -796,13 +796,13 @@ async function q21() {
   let count = rh`{
     countL2: count (${condL2} & ${orders}.*o1),
     countL3: count (${condL3} & ${orders}.*o1)
-  } | group ${orders}.*o1.o_orderstatus == "F" & ${orders}.*o1.o_orderkey`
+  } | group ${orders}.*o1.o_orderstatus == 70 & ${orders}.*o1.o_orderkey`
 
   let cond = rh`${count}.(${orders}.*o2.o_orderkey) && ${count}.(${orders}.*o2.o_orderkey).countL2 != 0 && ${count}.(${orders}.*o2.o_orderkey).countL3 == 0`
   let orders2 = rh`{
     s_name: single (${lineitem1}.(${orders}.*o2.o_orderkey).*l7.s_name),
     numwait: count (${orders}.*o2.o_orderkey)
-  } | group (${orders}.*o2.o_orderstatus == "F" && ${cond} && ${lineitem1}.(${orders}.*o2.o_orderkey)) & ${lineitem1}.(${orders}.*o2.o_orderkey).*l7.s_name`
+  } | group (${orders}.*o2.o_orderstatus == 70 && ${cond} && ${lineitem1}.(${orders}.*o2.o_orderkey)) & ${lineitem1}.(${orders}.*o2.o_orderkey).*l7.s_name`
 
   let query = rh`sort ${orders2} "numwait" 1 "s_name" 0`
 
@@ -843,26 +843,21 @@ q1()
 q2()
 q3()
 q4()
-
 q5()
 q6()
 q7()
 q8()
-
 q9()
 q10()
 q11()
 q12()
-
 q13()
 q14()
 q15()
 q16()
-
 q17()
 q18()
 q19()
 q20()
-
 q21()
 q22()
