@@ -302,7 +302,7 @@ let hash = (buf, key) => {
     }
 
     c.stmt(buf)(c.assign(hashed, c.binary(hashed, "8", "<<")))
-    c.stmt(buf)(c.assign(hashed, c.binary(hashed, tmpHash, "|=")))
+    c.stmt(buf)(c.assign(hashed, c.binary(hashed, tmpHash, "+=")))
   }
 
   return hashed
