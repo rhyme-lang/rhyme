@@ -381,17 +381,17 @@ async function q8() {
 async function q9() {
   let nation1 = rh`single ${nation}.*n1.n_name | group ${nation}.*n1.n_nationkey`
 
-  let supplier1 = rh`[{
-    s_suppkey: ${supplier}.*s1.s_suppkey,
-    n_name: ${nation1}.(${supplier}.*s1.s_nationkey)
-  }] | group ${supplier}.*s1.s_suppkey`
+  let supplier1 = rh`{
+    s_suppkey: single ${supplier}.*s1.s_suppkey,
+    n_name: single ${nation1}.(${supplier}.*s1.s_nationkey)
+  } | group ${supplier}.*s1.s_suppkey`
 
   let part1 = rh`single ${part}.*p1.p_partkey | group (like ${part}.*p1.p_name ".*green.*") & ${part}.*p1.p_partkey`
 
   let partsupp1 = rh`[{
     p_partkey: ${part1}.(${partsupp}.*ps1.ps_partkey),
-    s_suppkey: ${supplier1}.(${partsupp}.*ps1.ps_suppkey).*s2.s_suppkey,
-    n_name: ${supplier1}.(${partsupp}.*ps1.ps_suppkey).*s2.n_name,
+    s_suppkey: ${supplier1}.(${partsupp}.*ps1.ps_suppkey).s_suppkey,
+    n_name: ${supplier1}.(${partsupp}.*ps1.ps_suppkey).n_name,
     ps_supplycost: ${partsupp}.*ps1.ps_supplycost
   }] | group ${part1}.(${partsupp}.*ps1.ps_partkey) & ${partsupp}.*ps1.ps_partkey`
 
@@ -635,15 +635,9 @@ async function q16() {
 async function q17() {
   let part1 = rh`single ${part}.*p1.p_partkey | group (${part}.*p1.p_brand == "Brand#23" && ${part}.*p1.p_container == "MED BOX") & ${part}.*p1.p_partkey`
 
-  let avgMap1 = rh`{
-    l_partkey: single ${lineitem}.*l1.l_partkey,
-    sum: sum (${lineitem}.*l1.l_quantity),
-    count: count (${lineitem}.*l1.l_quantity)
-  } | group ${lineitem}.*l1.l_partkey`
+  let avgMap = rh`single 0.2 * sum(${lineitem}.*l1.l_quantity) / count(${lineitem}.*l1.l_quantity) | group ${lineitem}.*l1.l_partkey`
 
-  let avgMap = rh`0.2 * ${avgMap1}.*.sum / ${avgMap1}.*.count | group ${avgMap1}.*.l_partkey`
-
-  let cond = rh`${part1}.(${lineitem}.*l2.l_partkey) && ${part1}.(${lineitem}.*l2.l_partkey) == ${lineitem}.*l2.l_partkey && ${lineitem}.*l2.l_quantity < ${avgMap}.(${lineitem}.*l2.l_partkey)`
+  let cond = rh`${part1}.(${lineitem}.*l2.l_partkey) && ${lineitem}.*l2.l_quantity < ${avgMap}.(${lineitem}.*l2.l_partkey)`
   let query = rh`(sum (${cond} & ${lineitem}.*l2.l_extendedprice)) / 7.0`
 
   await compile(query, { ...settings, outFile: "q17" })
@@ -693,9 +687,8 @@ async function q18() {
   await compile(query, { ...settings, outFile: "q18", limit: 100 })
 }
 
-async function q19() {
+async function q19Old() {
   let part1 = rh`{
-    p_partkey: single ${part}.*p1.p_partkey,
     p_brand: single ${part}.*p1.p_brand,
     p_size: single ${part}.*p1.p_size,
     p_container: single ${part}.*p1.p_container
@@ -734,6 +727,54 @@ async function q19() {
   let cond = rh`${condLineitem} && ${part1}.(${lineitem}.*l1.l_partkey) && (${condA} || ${condB} || ${condC})`
 
   let query = rh`sum (${cond} & (${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount)))`
+
+  await compile(query, { ...settings, outFile: "q19" })
+}
+
+async function q19() {
+  let condLineitem1 = rh`${lineitem}.*l1.l_shipmode == "AIR" || ${lineitem}.*l1.l_shipmode == "AIR REG"`
+  let condLineitem2 = rh`${lineitem}.*l1.l_shipinstruct == "DELIVER IN PERSON"`
+
+  let condLineitem = rh`${condLineitem1} && ${condLineitem2}`
+
+  let lineitem1 = rh`[{
+    l_quantity: ${lineitem}.*l1.l_quantity,
+    l_extendedprice: ${lineitem}.*l1.l_extendedprice,
+    l_discount: ${lineitem}.*l1.l_discount
+  }] | group ${condLineitem} & ${lineitem}.*l1.l_partkey`
+
+  let pBrand = rh`${part}.*p1.p_brand`
+  let pSize = rh`${part}.*p1.p_size`
+  let pContainer = rh`${part}.*p1.p_container`
+
+  let lQuantity = rh`${lineitem1}.(${part}.*p1.p_partkey).*l2.l_quantity`
+  let lExtendedPrice = rh`${lineitem1}.(${part}.*p1.p_partkey).*l2.l_extendedprice`
+  let lDiscount = rh`${lineitem1}.(${part}.*p1.p_partkey).*l2.l_discount`
+
+  let condA1 = rh`${pBrand} == "Brand#12"`
+  let condA2 = rh`${pContainer} == "SM CASE" || ${pContainer} == "SM BOX" || ${pContainer} == "SM PACK" || ${pContainer} == "SM PKG"`
+  let condA3 = rh`${lQuantity} <= 11 && ${lQuantity} >= 1`
+  let condA4 = rh`${pSize} <= 5`
+
+  let condA = rh`${condA4} && ${condA3} && ${condA1} && ${condA2}`
+
+  let condB1 = rh`${pBrand} == "Brand#23"`
+  let condB2 = rh`${pContainer} == "MED BAG" || ${pContainer} == "MED BOX" || ${pContainer} == "MED PKG" || ${pContainer} == "MED PACK"`
+  let condB3 = rh` ${lQuantity} <= 20 && ${lQuantity} >= 10`
+  let condB4 = rh`${pSize} <= 10`
+
+  let condB = rh`${condB4} && ${condB3} && ${condB1} && ${condB2}`
+
+  let condC1 = rh`${pBrand} == "Brand#34"`
+  let condC2 = rh`${pContainer} == "LG CASE" || ${pContainer} == "LG BOX" || ${pContainer} == "LG PACK" || ${pContainer} == "LG PKG"`
+  let condC3 = rh`${lQuantity} <= 30 && ${lQuantity} >= 20`
+  let condC4 = rh`${pSize} <= 15`
+
+  let condC = rh`${condC4} && ${condC3} && ${condC1} && ${condC2}`
+
+  let cond = rh`${part}.*p1.p_size >= 1 && (${condA} || ${condB} || ${condC})`
+
+  let query = rh`sum ((${cond} & ${lExtendedPrice} * (1 - ${lDiscount})))`
 
   await compile(query, { ...settings, outFile: "q19" })
 }

@@ -301,8 +301,10 @@ let hash = (buf, key) => {
       throw new Error("Cannot hash key with type " + typing.prettyPrintType(schema))
     }
 
-    c.stmt(buf)(c.assign(hashed, c.binary(hashed, "8", "<<")))
-    c.stmt(buf)(c.assign(hashed, c.binary(hashed, tmpHash, "+=")))
+    if (i != 0) {
+      c.stmt(buf)(c.assign(hashed, c.binary(hashed, "31", "*")))
+    }
+    c.stmt(buf)(c.assign(hashed, c.binary(hashed, tmpHash, "+")))
   }
 
   return hashed
