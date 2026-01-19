@@ -351,7 +351,7 @@ let emitStatefulInPath = (i) => {
   assign(buf, sym, fv, deps)
 }
 
-let emitStateful1 = (q, map) => {
+let emitStateful1 = (q, map, insertKeyBuf) => {
   let i = q.op
   q = assignments[q.op]
 
@@ -374,19 +374,21 @@ let emitStateful1 = (q, map) => {
       if (e2.key == "pure" && e2.op == "mkTuple") {
         let buf = []
 
-        hashmap.emitHashLookUpOrUpdate(buf, map, vars[e1.op].val, () => { })
         assign(buf, sym, [e1.op], [])
-        for (let i = 0; i < e2.arg.length; i += 2) {
-          let key = e2.arg[i]
-          let val = e2.arg[i + 1]
+        hashmap.emitHashLookUpOrUpdate(buf, map, vars[e1.op].val, (buf1) => {
+          for (let i = 0; i < e2.arg.length; i += 2) {
+            let key = e2.arg[i]
+            let val = e2.arg[i + 1]
 
-          currentGroupPath.path.push(key)
-          while (val.key == "pure" && val.op.startsWith("convert_")) {
-            val = val.arg[0]
+            currentGroupPath.path.push(key)
+            while (val.key == "pure" && val.op.startsWith("convert_")) {
+              val = val.arg[0]
+            }
+            emitStateful1(val, map, buf1)
+            currentGroupPath.path.pop()
           }
-          emitStateful1(val, map)
-          currentGroupPath.path.pop()
-        }
+        })
+
       } else {
         while (e2.key == "pure" && e2.op.startsWith("convert_")) {
           e2 = e2.arg[0]
@@ -396,7 +398,7 @@ let emitStateful1 = (q, map) => {
 
       currentGroupPath = save
     } else {
-      // nested
+      // nested hashmap
       if (currentGroupPath.path.every((e) => e.key == "const" || q.fre.indexOf(e.op) >= 0)) {
         // console.log("correlated")
       } else {
@@ -426,15 +428,19 @@ let emitStateful1 = (q, map) => {
       let { lhs, insertKey } = getLhs(init, map)
       if (insertKey) {
         let { key, map: insertMap, pos, keyPos } = insertKey
-        hashmap.emitHashMapUpdate(init, insertMap, key, pos, keyPos, () => { }, () => { }, true)
+        hashmap.emitHashMapUpdate(init, insertMap, key, pos, keyPos, (buf1) => {
+          // c.stmt(buf1)(c.assign(lhs.defined, "1"))
+          emitStatefulInit(buf1, q, lhs)
+        }, () => { }, true)
+
+        assign(init, rootSym, q.fre, [])
+      } else {
+        insertKeyBuf.push(...init)
+        // c.stmt(insertKeyBuf)(c.assign(lhs.defined, "1"))
+        emitStatefulInit(insertKeyBuf, q, lhs)
       }
-
-      c.if(init)(c.not(lhs.defined), (buf) => {
-        c.stmt(init)(c.assign(lhs.defined, "1"))
-        emitStatefulInit(buf, q, lhs)
-      })
-
-      assign(init, rootSym, q.fre, [])
+      // c.if(init)(c.not(lhs.defined), (buf) => {
+      // })
 
       let [e0, e1, e2, e3] = q.arg
       currentGroupPath.path.push(e1)
@@ -448,7 +454,6 @@ let emitStateful1 = (q, map) => {
       }
       currentGroupPath.path.pop()
     }
-
   } else {
     let getLhs = (buf, map, ignoreConsts) => {
       let curr = map
@@ -488,7 +493,6 @@ let emitStateful1 = (q, map) => {
       let ignoreConsts = false
       if (!map) {
         map = tmpVars[i]
-        // console.log(q)
         ignoreConsts = true
       }
       if (!map) throw new Error("Something went wrong")
@@ -499,17 +503,24 @@ let emitStateful1 = (q, map) => {
         if (insertKey) {
           let { key, map: insertMap, pos, keyPos } = insertKey
           hashmap.emitHashMapUpdate(init, insertMap, key, pos, keyPos, () => {
-            c.stmt(init)(c.assign(lhs.defined, "1"))
+            // c.stmt(init)(c.assign(lhs.defined, "1"))
             emitStatefulInit(init, q, lhs)
           }, () => { }, true)
-        } else {
-          c.if(init)(c.not(lhs.defined), (buf) => {
-            c.stmt(buf)(c.assign(lhs.defined, "1"))
-            emitStatefulInit(buf, q, lhs)
-          })
-        }
 
-        assign(init, rootSym, q.fre, [])
+          assign(init, rootSym, q.fre, [])
+        } else {
+          if (ignoreConsts) {
+            // insertKeyBuf.push(...init)
+            c.if(init)(c.not(lhs.defined), (buf) => {
+              c.stmt(init)(c.assign(lhs.defined, "1"))
+              emitStatefulInit(init, q, lhs)
+            })
+            assign(init, rootSym, q.fre, [])
+          } else {
+            insertKeyBuf.push(...init)
+            emitStatefulInit(insertKeyBuf, q, lhs)
+          }
+        }
       }
 
       let getRoot = tmp => assignmentToSym[tmp] ? getRoot(assignmentToSym[tmp]) : tmp
@@ -940,8 +951,6 @@ let emitPath = (buf, q) => {
     let tmpVar = tmpVars[q.op]
 
     if (q1.fre.length > 0) {
-      // We can directly use the pos and keyPos
-      // without doing a hash lookup
       let keys = q1.fre.map(f => vars[f].val)
       if (keys.length > 1) throw new Error("Multi level lookup not supported")
       let rootMap = tmpVars[assignmentToSym[q.op]]
@@ -1034,7 +1043,8 @@ let collectRelevantStatefulInPath = (q, currentGroupPath) => {
         assignmentToSym[i] = currentGroupPath.sym
 
         let dummy = { schema: { objValue: q.schema.type }, val: { ...tmpVars[currentGroupPath.sym].val, sym: i, values: {} } }
-        hashmap.emitHashMapValueInit(prolog1, dummy, `_DEFAULT_`, q.schema.type)
+        // console.log("here")
+        hashmap.emitHashMapValueInit(prolog1, dummy, `_DEFAULT_`, q.schema.type, false)
         dummy.val.sym = currentGroupPath.sym
         tmpVars[i] = dummy
       }
@@ -1091,7 +1101,7 @@ let addHashMapValue = (map, q, name, currentGroupPath) => {
       // We cannot sort on an array column
       addHashMapBucket(map, q1, name, currentGroupPath)
     } else {
-      hashmap.emitHashMapValueInit(prolog1, map, name, q.schema.type, sortedCols?.[sym]?.[name], prolog0)
+      hashmap.emitHashMapValueInit(prolog1, map, name, q.schema.type, initRequired(q1), sortedCols?.[sym]?.[name], prolog0)
     }
     collectRelevantStatefulInPath(q1.arg[0], currentGroupPath)
   }

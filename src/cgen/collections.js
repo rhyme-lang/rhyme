@@ -124,7 +124,7 @@ let emitHashMapBucketValuesInit = (buf, map, bucket, name, schema) => {
   bucket.val.values[name] = res
 }
 
-let emitHashMapValueInit = (buf, map, name, schema, sorted, prolog0) => {
+let emitHashMapValueInit = (buf, map, name, schema, defined, sorted, prolog0) => {
   if (name == "_DEFAULT_" && map.val.values?.[name]) return
 
   let sym = tmpSym(map.val.sym)
@@ -150,11 +150,13 @@ let emitHashMapValueInit = (buf, map, name, schema, sorted, prolog0) => {
     res.val = `${sym}_${name}`
   }
 
-  if (map.tag == TAG.NESTED_HASHMAP) {
-    map.val.struct.addField("uint8_t *", `${sym}_${name}_defined`)
-  } else
-    c.declarePtr(buf)("uint8_t", `${sym}_${name}_defined`, c.cast(`uint8_t *`, c.calloc("uint8_t", size)))
-  res.defined = `${sym}_${name}_defined`
+  if (!defined) {
+    if (map.tag == TAG.NESTED_HASHMAP) {
+      map.val.struct.addField("uint8_t *", `${sym}_${name}_defined`)
+    } else
+      c.declarePtr(buf)("uint8_t", `${sym}_${name}_defined`, c.cast(`uint8_t *`, c.calloc("uint8_t", size)))
+    res.defined = `${sym}_${name}_defined`
+  }
 
   map.val.values ??= {}
   map.val.values[name] = res
@@ -247,7 +249,9 @@ let emitNestedHashMapAllocation = (buf, map) => {
       let cType = utils.convertToCType(value.schema)
       assign(value.val, c.cast(`${cType} *`, c.malloc(cType, hashSize)))
     }
-    assign(value.defined, c.cast("uint8_t *", c.calloc("uint8_t", hashSize)))
+    if (value.defined) {
+      assign(value.defined, c.cast("uint8_t *", c.calloc("uint8_t", hashSize)))
+    }
   }
 }
 
@@ -522,7 +526,9 @@ let getNestedHashmapAtIdx = (map, idx) => {
     } else {
       value.val = ptr + "->" + value.val
     }
-    value.defined = ptr + "->" + value.defined
+    if (value.defined) {
+      value.defined = ptr + "->" + value.defined
+    }
   }
 }
 
@@ -608,7 +614,11 @@ let getHashMapValueEntry = (map, pos, keyPos) => {
   if (res.tag == TAG.OBJECT) {
     for (let key in res.val) {
       res.val[key].keyPos = keyPos
-      res.val[key].cond = c.or(c.eq(keyPos, "0"), c.not(res.val[key].defined))
+      if (res.val[key].defined) {
+        res.val[key].cond = c.or(c.eq(keyPos, "0"), c.not(res.val[key].defined))
+      } else {
+        res.val[key].cond = c.eq(keyPos, "0")
+      }
     }
   }
   res.keyPos = keyPos
