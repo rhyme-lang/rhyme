@@ -597,13 +597,36 @@ async function q16() {
   await compile(query, { ...settings, outFile: "q16" })
 }
 
-async function q17() {
+async function q17Old() {
   let part1 = rh`single ${part}.*p1.p_partkey | group (${part}.*p1.p_brand == "Brand#23" && ${part}.*p1.p_container == "MED BOX") & ${part}.*p1.p_partkey`
 
   let avgMap = rh`single 0.2 * sum(${lineitem}.*l1.l_quantity) / count(${lineitem}.*l1.l_quantity) | group ${lineitem}.*l1.l_partkey`
 
   let cond = rh`${part1}.(${lineitem}.*l2.l_partkey) && ${lineitem}.*l2.l_quantity < ${avgMap}.(${lineitem}.*l2.l_partkey)`
   let query = rh`(sum (${cond} & ${lineitem}.*l2.l_extendedprice)) / 7.0`
+
+  await compile(query, { ...settings, outFile: "q17" })
+}
+
+async function q17() {
+  let lineitem1 = rh`[{
+    l_quantity: ${lineitem}.*l1.l_quantity,
+    l_extendedprice: ${lineitem}.*l1.l_extendedprice
+  }] | group ${lineitem}.*l1.l_partkey`
+
+  let part1 = rh`[{
+    l_quantity: ${lineitem1}.(${part}.*p1.p_partkey).*l2.l_quantity,
+    l_extendedprice: ${lineitem1}.(${part}.*p1.p_partkey).*l2.l_extendedprice
+  }] | group ${lineitem1}.(${part}.*p1.p_partkey) && (${part}.*p1.p_brand == "Brand#23" && ${part}.*p1.p_container == "MED BOX") & ${part}.*p1.p_partkey`
+
+  let avgMap = rh`{
+    l_partkey: single ${lineitem}.*l3.l_partkey,
+    avg: single 0.2 * sum(${lineitem}.*l3.l_quantity) / count(${lineitem}.*l3.l_quantity)
+  } | group ${part1}.(${lineitem}.*l3.l_partkey) & ${lineitem}.*l3.l_partkey`
+
+  let cond = rh`${part1}.(${avgMap}.*.l_partkey).*p2.l_quantity < ${avgMap}.*.avg`
+
+  let query = rh`(sum (${cond} & ${part1}.(${avgMap}.*.l_partkey).*p2.l_extendedprice)) / 7.0`
 
   await compile(query, { ...settings, outFile: "q17" })
 }
