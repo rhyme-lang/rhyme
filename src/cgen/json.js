@@ -67,7 +67,7 @@ let emitLoadNDJSON = (buf, filename) => {
     c.printErr(buf1)("Unable to open file %s\\n", filename)
     c.return(buf1)("1")
   })
-  c.declareInt(buf)(size, c.call("fsize", fd))
+  c.declareSize(buf)(size, c.call("fsize", fd))
   c.declareCharPtr(buf)(mappedFile, c.malloc("char", c.add(size, "YYJSON_PADDING_SIZE")))
   c.stmt(buf)(c.call("read", fd, mappedFile, size))
   c.stmt(buf)(c.call("memset", c.add(mappedFile, size), "0", "YYJSON_PADDING_SIZE"))
@@ -130,7 +130,7 @@ let getNDJSONLoopTxt = (f, ndjson, data) => () => {
   let initCursor = []
 
   let cursor = symbol.getSymbol("i")
-  c.declareInt(initCursor)(cursor, "0")
+  c.declareSize(initCursor)(cursor, "0")
 
   let loopHeader = [`for (int ${v} = 0; ${cursor} < ${size}; ${v}++) {`]
   let rowScanning = []
