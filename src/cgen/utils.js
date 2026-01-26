@@ -70,7 +70,7 @@ c.inc = (expr) => expr + "++"
 c.binary = (lhs, rhs, op) => `(${lhs} ${op} ${rhs})`
 c.ternary = (cond, tVal, fVal) => `(${cond} ? ${tVal} : ${fVal})`
 
-c.assign = (lhs, rhs) => `${lhs} = ${rhs}`
+c.assign = (lhs, rhs) => `(${lhs} = ${rhs})`
 
 c.add = (lhs, rhs) => c.binary(lhs, rhs, "+")
 c.sub = (lhs, rhs) => c.binary(lhs, rhs, "-")

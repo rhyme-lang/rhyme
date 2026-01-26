@@ -67,9 +67,21 @@ let emitLoadNDJSON = (buf, filename) => {
     c.printErr(buf1)("Unable to open file %s\\n", filename)
     c.return(buf1)("1")
   })
+  // c.declareSize(buf)(size, c.call("fsize", fd))
+  // c.declareCharPtr(buf)(mappedFile, c.mmap(fd, size))
+  // c.stmt(buf)(c.close(fd))
   c.declareSize(buf)(size, c.call("fsize", fd))
   c.declareCharPtr(buf)(mappedFile, c.malloc("char", c.add(size, "YYJSON_PADDING_SIZE")))
-  c.stmt(buf)(c.call("read", fd, mappedFile, size))
+  // c.stmt(buf)(c.call("read", fd, mappedFile, size))
+
+  let off = symbol.getSymbol("off")
+  let r = symbol.getSymbol("r")
+  c.declareSize(buf)(off, "0")
+  c.declareSize(buf)(r)
+  c.while(buf)(c.and(c.lt(off, size), c.assign(r, c.call("read", fd, c.add(mappedFile, off), c.sub(size, off)))), buf1 => {
+    c.stmt(buf)(c.assign(off, c.add(off, r)))
+  })
+
   c.stmt(buf)(c.call("memset", c.add(mappedFile, size), "0", "YYJSON_PADDING_SIZE"))
   c.stmt(buf)(c.close(fd))
 
