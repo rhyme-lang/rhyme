@@ -578,7 +578,7 @@ let emitLoadInput = (buf, q) => {
 
   // If this is the first time we see this loadInput, load the file
   if (inputFiles[q.op]?.[filename] == undefined) {
-    inputFiles[q.op] = {}
+    inputFiles[q.op] ??= {}
     let filenameStr = emitFilenameStr(buf1, file)
 
     if (q.op == "json") {
