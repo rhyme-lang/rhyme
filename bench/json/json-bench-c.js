@@ -46,4 +46,87 @@ async function q1() {
   let func = await compile(query, { ...settings, outFile: "q1" })
 }
 
+async function q2() {
+  let cond = rh`${bluesky}.*A.kind == "commit" && ${bluesky}.*A.commit.operation == "create"`
+
+  let countDistinct = rh`{
+    ${cond} & ${bluesky}.*A.commit.collection: {
+      event: single(${bluesky}.*A.commit.collection),
+      count: count(${bluesky}.*A),
+      dids: {
+        ${bluesky}.*A.did: count?(${cond} & ${bluesky}.*A.did)
+      }
+    }
+  }`
+
+  let group = rh`{
+    event: single ${countDistinct}.*B.event,
+    count: single ${countDistinct}.*B.count,
+    users: count ${countDistinct}.*B.dids.*C
+  } | group ${countDistinct}.*B.event`
+
+  let query = rh`sort ${group} "count" 1`
+
+  let func = await compile(query, { ...settings, outFile: "q2" })
+}
+
+async function q3() {
+  let cond1 = rh`${bluesky}.*A.kind == "commit" && ${bluesky}.*A.commit.operation == "create"`
+  let cond2 = rh`${bluesky}.*A.commit.collection == "app.bsky.feed.post" || ${bluesky}.*A.commit.collection == "app.bsky.feed.repost" || ${bluesky}.*A.commit.collection == "app.bsky.feed.like"`
+
+  let cond = rh`${cond1} && ${cond2}`
+
+  let group = rh`{
+    ${cond} & ${bluesky}.*A.commit.collection: {
+      event: single(${bluesky}.*A.commit.collection),
+      time: single(${bluesky}.*A.time_us),
+      count: count?(${bluesky}.*A)
+    }
+  }`
+
+  let query = rh`sort ${group} "count" 1`
+
+  let func = await compile(query, { ...settings, outFile: "q3" })
+}
+
+async function q4() {
+  let cond1 = rh`${bluesky}.*A.kind == "commit" && ${bluesky}.*A.commit.operation == "create"`
+  let cond2 = rh`${bluesky}.*A.commit.collection == "app.bsky.feed.post"`
+
+  let cond = rh`${cond1} && ${cond2}`
+
+  let group = rh`{
+    ${cond} & ${bluesky}.*A.did: {
+      user_id: single(${bluesky}.*A.did),
+      first_post_date: min?(${bluesky}.*A.time_us)
+    }
+  }`
+
+  let query = rh`sort ${group} "first_post_date" 0`
+
+  let func = await compile(query, { ...settings, outFile: "q4", limit: 3 })
+}
+
+async function q5() {
+  let cond1 = rh`${bluesky}.*A.kind == "commit" && ${bluesky}.*A.commit.operation == "create"`
+  let cond2 = rh`${bluesky}.*A.commit.collection == "app.bsky.feed.post"`
+
+  let cond = rh`${cond1} && ${cond2}`
+
+  let group = rh`{
+    ${cond} & ${bluesky}.*A.did: {
+      user_id: single(${bluesky}.*A.did),
+      activity_span: (max?(${bluesky}.*A.time_us) - min?(${bluesky}.*A.time_us)) / 1000
+    }
+  }`
+
+  let query = rh`sort ${group} "activity_span" 1`
+
+  let func = await compile(query, { ...settings, outFile: "q5", limit: 3 })
+}
+
 q1()
+q2()
+q3()
+q4()
+q5()
