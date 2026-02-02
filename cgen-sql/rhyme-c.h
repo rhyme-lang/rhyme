@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <sys/time.h>
+#include <time.h>
 #include <string.h>
 
 size_t fsize(int fd) {

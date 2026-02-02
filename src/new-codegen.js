@@ -381,8 +381,9 @@ exports.generate = (ir, backend = "js") => {
       emit(e.loopTxt)
       // TODO: support multiple filters
     } else if (backend == "c-sql") {
+      gensBySym[s] = gensBySym[s].map(x => ({ ...x, loopTxt: x.getLoopTxt() }))
       let loops = gensBySym[s]
-      let loopTxts = loops.map(x => x.getLoopTxt())
+      let loopTxts = loops.map(x => x.loopTxt)
       for (let loopTxt of loopTxts) {
         loopTxt.data.map(emitC)
       }
@@ -426,6 +427,10 @@ exports.generate = (ir, backend = "js") => {
   }
   function emitLoopEpilog() {
     l = openedLoops.pop()
+    let loops = gensBySym[l]
+    for (let loop of loops) {
+      if (backend == "c-sql" && loop.loopTxt.epilog) loop.loopTxt.epilog.map(emitC)
+    }
     emit("}")
     scopeTable.exit()
     // XXX could be optimized by a two-directional map

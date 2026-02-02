@@ -67,7 +67,7 @@ async function q2() {
 
   let query = rh`sort ${group} "count" 1`
 
-  let func = await compile(query, { ...settings, outFile: "q2" })
+  let func = await compile(query, { ...settings, outFile: "q2", nestedHashSize: 1048576 })
 }
 
 async function q3() {
@@ -77,14 +77,14 @@ async function q3() {
   let cond = rh`${cond1} && ${cond2}`
 
   let group = rh`{
-    ${cond} & ${bluesky}.*A.commit.collection: {
+    [${cond} & ${bluesky}.*A.commit.collection, hour ${bluesky}.*A.time_us]: {
       event: single(${bluesky}.*A.commit.collection),
-      time: single(${bluesky}.*A.time_us),
-      count: count?(${bluesky}.*A)
+      hour_of_day: single(hour ${bluesky}.*A.time_us),
+      count: count(${bluesky}.*A)
     }
   }`
 
-  let query = rh`sort ${group} "count" 1`
+  let query = rh`sort ${group} "hour_of_day" 0 "count" 1`
 
   let func = await compile(query, { ...settings, outFile: "q3" })
 }
@@ -98,13 +98,13 @@ async function q4() {
   let group = rh`{
     ${cond} & ${bluesky}.*A.did: {
       user_id: single(${bluesky}.*A.did),
-      first_post_date: min?(${bluesky}.*A.time_us)
+      first_post_date: min(${bluesky}.*A.time_us)
     }
   }`
 
   let query = rh`sort ${group} "first_post_date" 0`
 
-  let func = await compile(query, { ...settings, outFile: "q4", limit: 3 })
+  let func = await compile(query, { ...settings, outFile: "q4", hashSize: 1048576, limit: 3 })
 }
 
 async function q5() {
@@ -122,7 +122,7 @@ async function q5() {
 
   let query = rh`sort ${group} "activity_span" 1`
 
-  let func = await compile(query, { ...settings, outFile: "q5", limit: 3 })
+  let func = await compile(query, { ...settings, outFile: "q5", hashSize: 1048576, limit: 3 })
 }
 
 q1()

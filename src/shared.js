@@ -54,6 +54,7 @@ ops.pure.vars = true
 ops.pure.ifElse = true
 
 ops.pure.year = true
+ops.pure.hour = true
 
 ops.pure.sort = true
 ops.pure.like = true
