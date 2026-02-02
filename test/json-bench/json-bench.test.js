@@ -55,6 +55,7 @@ let settings = {
   schema: types.never,
   outDir,
   hashSize: 524288,
+  nestedHashSize: 524288,
   enableOptimizations: false,
   format: "csv"
 }

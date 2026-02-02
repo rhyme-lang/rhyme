@@ -830,6 +830,11 @@ let emitPure = (buf, q) => {
   } else if (q.op == "year") {
     let e = emitPath(buf, q.arg[0])
     return value.primitive(q.schema.type, c.div(e.val, "10000"), undefined, e.cond)
+  } else if (q.op == "hour") {
+    let e = emitPath(buf, q.arg[0])
+    let time = symbol.getSymbol("tmp_time")
+    c.declareVar(buf)("time_t", time, c.div(e.val, 1000000))
+    return value.primitive(q.schema.type, c.call("gmtime", "&" + time) + "->tm_hour", undefined, e.cond)
   } else if (q.op == "substr") {
     let [e1, e2, e3] = q.arg.map(e => emitPath(buf, e))
     console.assert(typing.isString(e1.schema))

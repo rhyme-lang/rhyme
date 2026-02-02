@@ -8,21 +8,27 @@ const { pretty } = require('../prettyprint')
 
 const { tmpSym, quoteVar } = utils
 
-let hashSize = 256
+let hashSize
+let nestedHashSize
 
-let bucketSize = 64
-let dataSize = hashSize * bucketSize
+let bucketSize
+let dataSize
 
-let hashMask = hashSize - 1
+let hashMask
 
-let arraySize = 2048
+let arraySize
+
+let checkOutOfBounds
 
 let reset = (settings) => {
   hashSize = settings.hashSize || 256
+  nestedHashSize = settings.nestedHashSize || 256
   bucketSize = settings.bucketSize || 64
   arraySize = settings.arraySize || 2048
 
   dataSize = hashSize * bucketSize
+
+  checkOutOfBounds = settings.checkOutOfBounds
 
   hashMask = hashSize - 1
 }
@@ -203,14 +209,14 @@ let emitNestedHashMapInit = (buf, i, map, name, schema, keySchema) => {
   struct.addField("int *", htable)
   struct.addField("int", count)
 
-  res.val = { sym: i, ptr, struct, htable, count, keys }
+  res.val = { sym: i, ptr, struct, htable, count, keys, capacity: nestedHashSize }
   res.tag = TAG.NESTED_HASHMAP
 
-  if (map.tag == TAG.NESTED_HASHMAP) {
-    map.val.struct.addField("uint8_t *", `${ptr}_defined`)
-  } else
-    c.declarePtr(buf)("uint8_t", `${ptr}_defined`, c.cast(`uint8_t *`, c.calloc("uint8_t", hashSize)))
-  res.defined = `${ptr}_defined`
+  // if (map.tag == TAG.NESTED_HASHMAP) {
+  //   map.val.struct.addField("uint8_t *", `${ptr}_defined`)
+  // } else
+  //   c.declarePtr(buf)("uint8_t", `${ptr}_defined`, c.cast(`uint8_t *`, c.calloc("uint8_t", hashSize)))
+  // res.defined = `${ptr}_defined`
 
   map.val.values ??= {}
   map.val.values[name] = res
@@ -221,17 +227,17 @@ let emitNestedHashMapAllocation = (buf, map) => {
 
   assign(map.val.ptr, c.cast(`struct ${map.val.struct.name} *`, c.malloc(`struct ${map.val.struct.name}`, 1)))
   assign(map.val.count, "0")
-  assign(map.val.htable, c.cast("int *", c.calloc("int", hashSize)))
+  assign(map.val.htable, c.cast("int *", c.calloc("int", nestedHashSize)))
   // c.stmt(buf)(c.call("memset", map.val.htable, "-1", `sizeof(int) * ${hashSize}`))
 
   for (let i in map.val.keys) {
     let key = map.val.keys[i]
     if (typing.isString(key.schema)) {
-      assign(key.val.str, c.cast("const char **", c.malloc("const char *", hashSize)))
-      assign(key.val.len, c.cast("int *", c.malloc("int", hashSize)))
+      assign(key.val.str, c.cast("const char **", c.malloc("const char *", nestedHashSize)))
+      assign(key.val.len, c.cast("int *", c.malloc("int", nestedHashSize)))
     } else {
       let cType = utils.convertToCType(key.schema)
-      assign(key.val, c.cast(`${cType} *`, c.malloc(cType, hashSize)))
+      assign(key.val, c.cast(`${cType} *`, c.malloc(cType, nestedHashSize)))
     }
   }
 
@@ -243,14 +249,14 @@ let emitNestedHashMapAllocation = (buf, map) => {
     } else if (value.tag == TAG.HASHMAP_BUCKET) {
       throw new Error("Not implemented yet")
     } else if (typing.isString(value.schema)) {
-      assign(value.val.str, c.cast("const char **", c.malloc("const char *", hashSize)))
-      assign(value.val.len, c.cast("int *", c.malloc("int", hashSize)))
+      assign(value.val.str, c.cast("const char **", c.malloc("const char *", nestedHashSize)))
+      assign(value.val.len, c.cast("int *", c.malloc("int", nestedHashSize)))
     } else {
       let cType = utils.convertToCType(value.schema)
-      assign(value.val, c.cast(`${cType} *`, c.malloc(cType, hashSize)))
+      assign(value.val, c.cast(`${cType} *`, c.malloc(cType, nestedHashSize)))
     }
     if (value.defined) {
-      assign(value.defined, c.cast("uint8_t *", c.calloc("uint8_t", hashSize)))
+      assign(value.defined, c.cast("uint8_t *", c.calloc("uint8_t", nestedHashSize)))
     }
   }
 }
@@ -350,6 +356,7 @@ let emitHashMapInsert = (buf, map, key, pos, keyPos, lhs, init) => {
 // The actual storage of the values / data does not affect the lookup
 let emitHashLookUp = (buf, map, key) => {
   let sym = map.val.sym
+  let mask = map.val.capacity ? map.val.capacity - 1 : hashMask
 
   let pos = symbol.getSymbol("tmp_pos") + "$" // aid cse
   let keyPos1 = symbol.getSymbol("key_pos") + "$"
@@ -362,7 +369,7 @@ let emitHashLookUp = (buf, map, key) => {
       let hashed = hash(buf, key)
 
       let [pos, keyPos1] = this.out
-      c.declareULong(buf)(pos, c.binary(hashed, hashMask, "&"))
+      c.declareULong(buf)(pos, c.binary(hashed, mask, "&"))
 
       let keyPos = `${map.val.htable}[${pos}]`
       let indexing = "[" + keyPos + "]"
@@ -395,7 +402,7 @@ let emitHashLookUp = (buf, map, key) => {
       c.while(buf)(
         c.and(c.ne(keyPos, "0"), compareKeys),
         buf1 => {
-          c.stmt(buf1)(c.assign(pos, c.binary(c.add(pos, "1"), hashMask, "&")))
+          c.stmt(buf1)(c.assign(pos, c.binary(c.add(pos, "1"), mask, "&")))
         }
       )
 
@@ -483,7 +490,7 @@ let emitHashLookUpAndUpdate = (buf, map, key, update, checkExistance) =>
   emitHashLookUpAndUpdateCust(buf, map, key, () => { }, update, checkExistance)
 
 let emitHashLookUpAndUpdateCust = (buf, map, key, update1, update2, checkExistance) => {
-  if (checkExistance) {
+  if (checkOutOfBounds && checkExistance) {
     // We might insert a new key into the map, check size
     c.if(buf)(c.eq(map.val.count, hashSize), buf1 => {
       c.printErr(buf1)("hashmap size reached its full capacity\\n")
@@ -662,10 +669,12 @@ let emitArrayInit = (buf, sym) => {
 let emitArrayInsert = (buf, arr, value) => {
   // console.log(arr)
   let capacity = arr.val.capacity || arraySize
-  c.if(buf)(c.eq(arr.val.count, capacity), (buf1) => {
+  if (checkOutOfBounds) {
+    c.if(buf)(c.eq(arr.val.count, capacity), (buf1) => {
     c.printErr(buf1)("array size reached its full capacity\\n")
     c.return(buf1)("1")
   })
+}
 
   let dataPos = arr.val.count
 

@@ -161,8 +161,10 @@ let getNDJSONLoopTxt = (f, ndjson, data) => () => {
 
   let boundsChecking = [`if (${cursor} >= ${size}) break;`]
 
+  let epilog = [`yyjson_doc_free(${doc});`]
+
   return {
-    info, data: [], initCursor, loopHeader, boundsChecking, rowScanning
+    info, data: [], initCursor, loopHeader, boundsChecking, rowScanning, epilog
   }
 }
 
