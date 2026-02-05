@@ -54,7 +54,7 @@ async function q2() {
       event: single(${bluesky}.*A.commit.collection),
       count: count(${bluesky}.*A),
       dids: {
-        ${bluesky}.*A.did: count?(${cond} & ${bluesky}.*A.did)
+        ${cond} & ${bluesky}.*A.did: count(${bluesky}.*A.did)
       }
     }
   }`
@@ -116,7 +116,7 @@ async function q5() {
   let group = rh`{
     ${cond} & ${bluesky}.*A.did: {
       user_id: single(${bluesky}.*A.did),
-      activity_span: (max?(${bluesky}.*A.time_us) - min?(${bluesky}.*A.time_us)) / 1000
+      activity_span: (max(${bluesky}.*A.time_us) - min(${bluesky}.*A.time_us)) / 1000
     }
   }`
 
