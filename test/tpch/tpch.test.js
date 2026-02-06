@@ -261,7 +261,7 @@ test("q2", async () => {
   let joinCond = rh`${supplier1}.(${partsupp}.*ps1.ps_suppkey).*s2.s_suppkey == ${partsupp}.*ps1.ps_suppkey`
   let partsupp1 = rh`min (${joinCond} & ${partsupp}.*ps1.ps_supplycost) | group ${partsupp}.*ps1.ps_partkey`
 
-  let part1 = rh`[${part}.*p1.p_size == 15 && (like ${part}.*p1.p_type ".*BRASS") & {
+  let part1 = rh`[${part}.*p1.p_size == 15 && (like ${part}.*p1.p_type "%BRASS") & {
     p_partkey: ${part}.*p1.p_partkey,
     p_mfgr: ${part}.*p1.p_mfgr,
     min_cost: ${partsupp1}.(${part}.*p1.p_partkey)
@@ -506,7 +506,7 @@ test("q9", async () => {
     n_name: ${nation1}.(${supplier}.*s1.s_nationkey).*n2
   }] | group ${supplier}.*s1.s_suppkey`
 
-  let part1 = rh`[(like ${part}.*p1.p_name ".*green.*") & ${part}.*p1.p_partkey] | group ${part}.*p1.p_partkey`
+  let part1 = rh`[(like ${part}.*p1.p_name "%green%") & ${part}.*p1.p_partkey] | group ${part}.*p1.p_partkey`
 
   let partsupp1 = rh`[{
     p_partkey: ${part1}.(${partsupp}.*ps1.ps_partkey).*p2,
@@ -650,7 +650,7 @@ test("q12", async () => {
 })
 
 test("q13", async () => {
-  let cond = rh`isUndef (like ${orders}.*o1.o_comment ".*special.*requests.*")`
+  let cond = rh`isUndef (like ${orders}.*o1.o_comment "%special%requests%")`
   let orders1 = rh`[${cond} & ${orders}.*o1.o_orderkey] | group ${orders}.*o1.o_custkey`
 
   let customer1 = rh`{
@@ -679,7 +679,7 @@ test("q14", async () => {
     l_discount: ${lineitem}.*l1.l_discount
   }] | group ${lineitem}.*l1.l_partkey`
 
-  let cond2 = rh`like ${part}.*p1.p_type "PROMO.*"`
+  let cond2 = rh`like ${part}.*p1.p_type "PROMO%"`
 
   let revenue = rh`${lineitem1}.(${part}.*p1.p_partkey).*l2.l_extendedprice * (1 - ${lineitem1}.(${part}.*p1.p_partkey).*l2.l_discount)`
   let sum1 = rh`sum (${cond2} & ${revenue})`
@@ -725,11 +725,11 @@ test("q15", async () => {
 })
 
 test("q16", async () => {
-  let supplier1 = rh`count ((like ${supplier}.*s1.s_comment ".*Customer.*Complaints.*") & ${supplier}.*s1) | group ${supplier}.*s1.s_suppkey`
+  let supplier1 = rh`count ((like ${supplier}.*s1.s_comment "%Customer%Complaints%") & ${supplier}.*s1) | group ${supplier}.*s1.s_suppkey`
 
   let partsupp1 = rh`[${supplier1}.(${partsupp}.*ps1.ps_suppkey) == 0 & ${partsupp}.*ps1.ps_suppkey] | group ${partsupp}.*ps1.ps_partkey`
 
-  let cond1 = rh`${part}.*p1.p_brand != "Brand#45" && (isUndef (like ${part}.*p1.p_type "MEDIUM POLISHED.*"))`
+  let cond1 = rh`${part}.*p1.p_brand != "Brand#45" && (isUndef (like ${part}.*p1.p_type "MEDIUM POLISHED%"))`
   let cond2 = rh`${part}.*p1.p_size == 42 || ${part}.*p1.p_size == 14 || ${part}.*p1.p_size == 23 || ${part}.*p1.p_size == 45 ||
                  ${part}.*p1.p_size == 19 || ${part}.*p1.p_size == 3 || ${part}.*p1.p_size == 36 || ${part}.*p1.p_size == 9`
 
@@ -907,7 +907,7 @@ test("q19", async () => {
 test("q20", async () => {
   let nation1 = rh`[${nation}.*n1.n_name == "CANADA" & ${nation}.*n1.n_nationkey] | group ${nation}.*n1.n_nationkey`
 
-  let part1 = rh`count ((like ${part}.*p1.p_name "forest.*") & ${part}.*p1) | group ${part}.*p1.p_partkey`
+  let part1 = rh`count ((like ${part}.*p1.p_name "forest%") & ${part}.*p1) | group ${part}.*p1.p_partkey`
   let partsupp1 = rh`[${part1}.(${partsupp}.*ps1.ps_partkey) > 0 & {
     ps_partkey: ${partsupp}.*ps1.ps_partkey,
     ps_suppkey: ${partsupp}.*ps1.ps_suppkey,

@@ -186,7 +186,7 @@ async function q2() {
     p_partkey: single ${part}.*p1.p_partkey,
     p_mfgr: single ${part}.*p1.p_mfgr,
     min_cost: single ${partsupp1}.(${part}.*p1.p_partkey)
-  } | group (${partsupp1}.(${part}.*p1.p_partkey) && ${part}.*p1.p_size == 15 && (like ${part}.*p1.p_type ".*BRASS") & ${part}.*p1.p_partkey)`
+  } | group (${partsupp1}.(${part}.*p1.p_partkey) && ${part}.*p1.p_size == 15 && (like ${part}.*p1.p_type "%BRASS") & ${part}.*p1.p_partkey)`
 
   let joinCond2 = rh`${part1}.(${partsupp}.*ps2.ps_partkey) && ${part1}.(${partsupp}.*ps2.ps_partkey).min_cost == ${partsupp}.*ps2.ps_supplycost`
   let partsupp2 = rh`[${joinCond2} & {
@@ -376,7 +376,7 @@ async function q9() {
     n_name: single ${nation1}.(${supplier}.*s1.s_nationkey)
   } | group ${supplier}.*s1.s_suppkey`
 
-  let part1 = rh`single ${part}.*p1.p_partkey | group (like ${part}.*p1.p_name ".*green.*") & ${part}.*p1.p_partkey`
+  let part1 = rh`single ${part}.*p1.p_partkey | group (like ${part}.*p1.p_name "%green%") & ${part}.*p1.p_partkey`
 
   let partsupp1 = rh`[{
     s_suppkey: ${supplier1}.(${partsupp}.*ps1.ps_suppkey).s_suppkey,
@@ -499,7 +499,7 @@ async function q12() {
 }
 
 async function q13() {
-  let cond = rh`isUndef (like ${orders}.*o1.o_comment ".*special.*requests.*")`
+  let cond = rh`isUndef (like ${orders}.*o1.o_comment "%special%requests%")`
   let orders1 = rh`[${orders}.*o1.o_orderkey] | group ${cond} & ${orders}.*o1.o_custkey`
 
   let customer1 = rh`count ${orders1}.(${customer}.*c1.c_custkey).*o2 | group ${customer}.*c1.c_custkey`
@@ -521,7 +521,7 @@ async function q14() {
     l_discount: ${lineitem}.*l1.l_discount
   }] | group ${cond1} & ${lineitem}.*l1.l_partkey`
 
-  let cond2 = rh`like ${part}.*p1.p_type "PROMO.*"`
+  let cond2 = rh`like ${part}.*p1.p_type "PROMO%"`
 
   let revenue = rh`${lineitem1}.(${part}.*p1.p_partkey).*l2.l_extendedprice * (1 - ${lineitem1}.(${part}.*p1.p_partkey).*l2.l_discount)`
   let sum1 = rh`sum (${cond2} & ${revenue})`
@@ -559,11 +559,11 @@ async function q15() {
 }
 
 async function q16() {
-  let supplier1 = rh`count (${supplier}.*s1) | group (like ${supplier}.*s1.s_comment ".*Customer.*Complaints.*") & ${supplier}.*s1.s_suppkey`
+  let supplier1 = rh`count (${supplier}.*s1) | group (like ${supplier}.*s1.s_comment "%Customer%Complaints%") & ${supplier}.*s1.s_suppkey`
 
   let partsupp1 = rh`[${partsupp}.*ps1.ps_suppkey] | group (isUndef ${supplier1}.(${partsupp}.*ps1.ps_suppkey)) & ${partsupp}.*ps1.ps_partkey`
 
-  let cond1 = rh`${part}.*p1.p_brand != "Brand#45" && (isUndef (like ${part}.*p1.p_type "MEDIUM POLISHED.*"))`
+  let cond1 = rh`${part}.*p1.p_brand != "Brand#45" && (isUndef (like ${part}.*p1.p_type "MEDIUM POLISHED%"))`
   let cond2 = rh`${part}.*p1.p_size == 42 || ${part}.*p1.p_size == 14 || ${part}.*p1.p_size == 23 || ${part}.*p1.p_size == 45 ||
                  ${part}.*p1.p_size == 19 || ${part}.*p1.p_size == 3 || ${part}.*p1.p_size == 36 || ${part}.*p1.p_size == 9`
 
@@ -768,7 +768,7 @@ async function q19() {
 }
 
 async function q20() {
-  let part1 = rh`count ${part}.*p1 | group (like ${part}.*p1.p_name "forest.*") & ${part}.*p1.p_partkey`
+  let part1 = rh`count ${part}.*p1 | group (like ${part}.*p1.p_name "forest%") & ${part}.*p1.p_partkey`
   let partsupp1 = rh`[{
     ps_suppkey: ${partsupp}.*ps1.ps_suppkey,
     ps_availqty: ${partsupp}.*ps1.ps_availqty
@@ -852,7 +852,7 @@ async function q22() {
                   (substr ${customer}.*c2.c_phone 0 2) == "30" || (substr ${customer}.*c2.c_phone 0 2) == "18" ||
                   (substr ${customer}.*c2.c_phone 0 2) == "17"`
 
-  let cond6 = rh`${cond4} && ${cond5} && (isUndef ${orders1}.(${customer}.*c2.c_custkey))`
+  let cond6 = rh`(isUndef ${orders1}.(${customer}.*c2.c_custkey)) && ${cond4} && ${cond5}`
   let customer2 = rh`{
     cntrycode: single (substr ${customer}.*c2.c_phone 0 2),
     count_order: count ${customer}.*c2,
@@ -864,25 +864,25 @@ async function q22() {
   await compile(query, { ...settings, outFile: "q22" })
 }
 
-q1()
-q2()
-q3()
-q4()
-q5()
-q6()
-q7()
-q8()
-q9()
-q10()
-q11()
-q12()
-q13()
+// q1()
+// q2()
+// q3()
+// q4()
+// q5()
+// q6()
+// q7()
+// q8()
+// q9()
+// q10()
+// q11()
+// q12()
+// q13()
 q14()
-q15()
-q16()
-q17()
-q18()
-q19()
-q20()
-q21()
-q22()
+// q15()
+// q16()
+// q17()
+// q18()
+// q19()
+// q20()
+// q21()
+// q22()

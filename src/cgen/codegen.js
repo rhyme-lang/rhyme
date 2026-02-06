@@ -882,13 +882,10 @@ let emitPure = (buf, q) => {
           let rhs
           if (q.arg[0].key == "const") {
             lhs = utils.stringToHexBytes(q.arg[0].op)
+            rhs = "(*(" + c.cast("uint64_t *", str1) + ") & 0x" + "00".repeat(8 - q.arg[0].op.length) + "FF".repeat(q.arg[0].op.length) + ")"
           } else {
             lhs = "(*(" + c.cast("uint64_t *", str1) + ") & 0x" + "00".repeat(8 - q.arg[1].op.length) + "FF".repeat(q.arg[1].op.length) + ")"
-          }
-          if (q.arg[1].key == "const") {
             rhs = utils.stringToHexBytes(q.arg[1].op)
-          } else {
-            rhs = "*(" + c.cast("uint64_t *", str2) + ") & 0x" + "00".repeat(8 - q.arg[1].op.length) + "FF".repeat(q.arg[1].op.length)
           }
           if (q.op == "equal") {
             res = value.primitive(q.schema.type, c.ternary(c.eq(len1, len2), c.eq(lhs, rhs), "0"))
@@ -1043,7 +1040,6 @@ let collectRelevantStatefulInPath = (q, currentGroupPath) => {
         assignmentToSym[i] = currentGroupPath.sym
 
         let dummy = { schema: { objValue: q.schema.type }, val: { ...tmpVars[currentGroupPath.sym].val, sym: i, values: {} } }
-        // console.log("here")
         hashmap.emitHashMapValueInit(prolog1, dummy, `_DEFAULT_`, q.schema.type, false)
         dummy.val.sym = currentGroupPath.sym
         tmpVars[i] = dummy

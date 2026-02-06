@@ -235,10 +235,24 @@ let emitWildcardStrSearch = (buf, str, currIdx, parts, partIdx, strictStart, str
   })
 }
 
-// Only works for regex that have .*
+// Only works for %
 let emitWildcardMatch = (buf, str, regex, name) => {
   // get the constant parts
-  let parts = regex.split(".*")
+  let parts = regex.split("%")
+
+  if (parts.length == 2 &&
+      parts[0].length > 0 && parts[0].length <= 8 &&
+      parts[1].length == 0) {
+    let prefix = parts[0]
+    let lhs = "(*(" + c.cast("uint64_t *", str.val.str) + ") & 0x" + "00".repeat(8 - prefix.length) + "FF".repeat(prefix.length) + ")"
+    let rhs = stringToHexBytes(prefix)
+
+    c.declareInt(buf)(name, c.ternary(c.ge(str.val.len, prefix.length), c.eq(lhs, rhs), "0"))
+
+    return
+  }
+
+  
   c.declareInt(buf)(name)
 
   let strictStart = true
