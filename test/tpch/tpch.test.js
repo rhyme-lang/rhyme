@@ -41,8 +41,8 @@ let lineitemSchema = typing.objBuilder()
     l_extendedprice: types.f64,
     l_discount: types.f64,
     l_tax: types.f64,
-    l_returnflag: types.string,
-    l_linestatus: types.string,
+    l_returnflag: types.char,
+    l_linestatus: types.char,
     l_shipdate: types.date,
     l_commitdate: types.date,
     l_receiptdate: types.date,
@@ -63,7 +63,7 @@ let ordersSchema = typing.objBuilder()
   .add(typing.createKey(types.u32), typing.createSimpleObject({
     o_orderkey: types.i32,
     o_custkey: types.i32,
-    o_orderstatus: types.string,
+    o_orderstatus: types.char,
     o_totalprice: types.f64,
     o_orderdate: types.date,
     o_orderpriority: types.string,
@@ -216,7 +216,7 @@ test("q1", async () => {
     sum_l_discount: sum ${lineitem}.*.l_discount,
     count_l_discount: count ${lineitem}.*.l_discount,
     count_order: count ${lineitem}.*.l_orderkey
-  } | group [${cond} & ${lineitem}.*.l_returnflag, ${cond} & ${lineitem}.*.l_linestatus]`
+  } | group [${cond} & ${lineitem}.*.l_returnflag, ${lineitem}.*.l_linestatus]`
 
   let lineitem2 = rh`[{
     l_returnflag: ${lineitem1}.*.l_returnflag,
@@ -240,43 +240,43 @@ test("q1", async () => {
 })
 
 test("q2", async () => {
-  let region1 = rh`[${region}.*r1.r_name == "EUROPE" & ${region}.*r1.r_regionkey] | group ${region}.*r1.r_regionkey`
+  let region1 = rh`single ${region}.*r1.r_regionkey | group (${region}.*r1.r_name == "EUROPE" & ${region}.*r1.r_regionkey)`
+  
+  let nation1 = rh`{
+    r_regionkey: single ${region1}.(${nation}.*n1.n_regionkey),
+    n_nationkey: single ${nation}.*n1.n_nationkey,
+    n_name: single ${nation}.*n1.n_name
+  } | group (${region1}.(${nation}.*n1.n_regionkey) & ${nation}.*n1.n_nationkey)`
 
-  let nation1 = rh`[{
-    r_regionkey: ${region1}.(${nation}.*n1.n_regionkey).*r2,
-    n_nationkey: ${nation}.*n1.n_nationkey,
-    n_name: ${nation}.*n1.n_name
-  }] | group ${nation}.*n1.n_nationkey`
+  let supplier1 = rh`{
+    n_name: single ${nation1}.(${supplier}.*s1.s_nationkey).n_name,
+    s_suppkey: single ${supplier}.*s1.s_suppkey,
+    s_name: single ${supplier}.*s1.s_name,
+    s_address: single ${supplier}.*s1.s_address,
+    s_phone: single ${supplier}.*s1.s_phone,
+    s_acctbal: single ${supplier}.*s1.s_acctbal,
+    s_comment: single ${supplier}.*s1.s_comment
+  } | group (${nation1}.(${supplier}.*s1.s_nationkey) & ${supplier}.*s1.s_suppkey)`
 
-  let supplier1 = rh`[{
-    n_name: ${nation1}.(${supplier}.*s1.s_nationkey).*n2.n_name,
-    s_suppkey: ${supplier}.*s1.s_suppkey,
-    s_name: ${supplier}.*s1.s_name,
-    s_address: ${supplier}.*s1.s_address,
-    s_phone: ${supplier}.*s1.s_phone,
-    s_acctbal: ${supplier}.*s1.s_acctbal,
-    s_comment: ${supplier}.*s1.s_comment
-  }] | group ${supplier}.*s1.s_suppkey`
+  // let joinCond = rh`${supplier1}.(${partsupp}.*ps1.ps_suppkey).*s2.s_suppkey == ${partsupp}.*ps1.ps_suppkey`
+  let partsupp1 = rh`min ${partsupp}.*ps1.ps_supplycost | group (${supplier1}.(${partsupp}.*ps1.ps_suppkey) & ${partsupp}.*ps1.ps_partkey)`
 
-  let joinCond = rh`${supplier1}.(${partsupp}.*ps1.ps_suppkey).*s2.s_suppkey == ${partsupp}.*ps1.ps_suppkey`
-  let partsupp1 = rh`min (${joinCond} & ${partsupp}.*ps1.ps_supplycost) | group ${partsupp}.*ps1.ps_partkey`
+  let part1 = rh`{
+    p_partkey: single ${part}.*p1.p_partkey,
+    p_mfgr: single ${part}.*p1.p_mfgr,
+    min_cost: single ${partsupp1}.(${part}.*p1.p_partkey)
+  } | group (${partsupp1}.(${part}.*p1.p_partkey) && ${part}.*p1.p_size == 15 && (like ${part}.*p1.p_type "%BRASS") & ${part}.*p1.p_partkey)`
 
-  let part1 = rh`[${part}.*p1.p_size == 15 && (like ${part}.*p1.p_type "%BRASS") & {
-    p_partkey: ${part}.*p1.p_partkey,
-    p_mfgr: ${part}.*p1.p_mfgr,
-    min_cost: ${partsupp1}.(${part}.*p1.p_partkey)
-  }] | group ${part}.*p1.p_partkey`
-
-  let joinCond2 = rh`${part1}.(${partsupp}.*ps2.ps_partkey).*p2.min_cost == ${partsupp}.*ps2.ps_supplycost`
+  let joinCond2 = rh`${part1}.(${partsupp}.*ps2.ps_partkey) && ${part1}.(${partsupp}.*ps2.ps_partkey).min_cost == ${partsupp}.*ps2.ps_supplycost`
   let partsupp2 = rh`[${joinCond2} & {
-    s_acctbal: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).*s3.s_acctbal,
-    s_name: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).*s3.s_name,
-    n_name: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).*s3.n_name,
+    s_acctbal: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).s_acctbal,
+    s_name: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).s_name,
+    n_name: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).n_name,
     p_partkey: ${partsupp}.*ps2.ps_partkey,
-    p_mfgr: ${part1}.(${partsupp}.*ps2.ps_partkey).*p2.p_mfgr,
-    s_address: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).*s3.s_address,
-    s_phone: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).*s3.s_phone,
-    s_comment: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).*s3.s_comment
+    p_mfgr: ${part1}.(${partsupp}.*ps2.ps_partkey).p_mfgr,
+    s_address: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).s_address,
+    s_phone: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).s_phone,
+    s_comment: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).s_comment
   }]`
 
   let query = rh`sort ${partsupp2} "s_acctbal" 1 "n_name" 0 "s_name" 0 "p_partkey" 0`
@@ -289,27 +289,22 @@ test("q2", async () => {
 })
 
 test("q3", async () => {
-  let customer1 = rh`[${customer}.*c1.c_mktsegment == "BUILDING" & ${customer}.*c1.c_custkey] | group ${customer}.*c1.c_custkey`
+  let customer1 = rh`single ${customer}.*c1.c_custkey | group (${customer}.*c1.c_mktsegment == "BUILDING" & ${customer}.*c1.c_custkey)`
+  
+  let orders1 = rh`{
+    o_orderdate: single ${orders}.*o1.o_orderdate,
+    o_shippriority: single ${orders}.*o1.o_shippriority
+  } | group (${customer1}.(${orders}.*o1.o_custkey) && ${orders}.*o1.o_orderdate < 19950315 & ${orders}.*o1.o_orderkey)`
 
-  let orders1 = rh`[
-    ${orders}.*o1.o_orderdate < 19950315 & {
-      c: ${customer1}.(${orders}.*o1.o_custkey).*c2,
-      o_orderkey: ${orders}.*o1.o_orderkey,
-      o_custkey: ${orders}.*o1.o_custkey,
-      o_orderdate: ${orders}.*o1.o_orderdate,
-      o_shippriority: ${orders}.*o1.o_shippriority
-    }
-  ] | group ${orders}.*o1.o_orderkey`
-
-  let cond = rh`${lineitem}.*l1.l_shipdate > 19950315`
+  let cond = rh`${orders1}.(${lineitem}.*l1.l_orderkey) && ${lineitem}.*l1.l_shipdate > 19950315`
   let lineitem1 = rh`{
     l_orderkey: ${lineitem}.*l1.l_orderkey,
     revenue: sum (${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount)),
-    o_orderdate: ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.o_orderdate,
-    o_shippriority: ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.o_shippriority
+    o_orderdate: ${orders1}.(${lineitem}.*l1.l_orderkey).o_orderdate,
+    o_shippriority: ${orders1}.(${lineitem}.*l1.l_orderkey).o_shippriority
   } | group [${cond} & ${lineitem}.*l1.l_orderkey,
-    ${cond} & ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.o_orderdate,
-    ${cond} & ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.o_shippriority
+    ${orders1}.(${lineitem}.*l1.l_orderkey).o_orderdate,
+    ${orders1}.(${lineitem}.*l1.l_orderkey).o_shippriority
   ]`
 
   let query = rh`sort ${lineitem1} "revenue" 1 "o_orderdate" 0`
@@ -322,14 +317,14 @@ test("q3", async () => {
 })
 
 test("q4", async () => {
-  let countR = rh`count (${lineitem}.*l.l_commitdate < ${lineitem}.*l.l_receiptdate) & ${lineitem}.*l.l_orderkey | group ${lineitem}.*l.l_orderkey`
-
+  let countR = rh`count ${lineitem}.*l.l_orderkey | group (${lineitem}.*l.l_commitdate < ${lineitem}.*l.l_receiptdate) & ${lineitem}.*l.l_orderkey`
+  
   let cond = rh`19930701 <= ${orders}.*.o_orderdate && ${orders}.*.o_orderdate < 19931001`
 
   let countL = rh`{
     o_orderpriority: single ${orders}.*.o_orderpriority,
     order_count: count ${orders}.*.o_orderkey
-  } | group (${cond} && ${countR}.(${orders}.*.o_orderkey) > 0) & ${orders}.*.o_orderpriority`
+  } | group (${countR}.(${orders}.*.o_orderkey) && ${cond}) & ${orders}.*.o_orderpriority`
   let query = rh`sort ${countL} "o_orderpriority" 0`
 
   let func = await compile(query, { ...settings, outFile: "q4" })
@@ -340,38 +335,29 @@ test("q4", async () => {
 })
 
 test("q5", async () => {
-  let region1 = rh`[${region}.*r1.r_name == "ASIA" & ${region}.*r1.r_regionkey] | group ${region}.*r1.r_regionkey`
-  let nation1 = rh`[
-    {
-      r: ${region1}.(${nation}.*n1.n_regionkey).*r2,
-      n_nationkey: ${nation}.*n1.n_nationkey,
-      n_name: ${nation}.*n1.n_name
-    }
-  ] | group ${nation}.*n1.n_nationkey`
+  let region1 = rh`single ${region}.*r1.r_regionkey | (group ${region}.*r1.r_name == "ASIA" & ${region}.*r1.r_regionkey)`
+  let nation1 = rh`{
+    n_nationkey: single ${nation}.*n1.n_nationkey,
+    n_name: single ${nation}.*n1.n_name
+  } | group ${region1}.(${nation}.*n1.n_regionkey) & ${nation}.*n1.n_nationkey`
 
-  let customer1 = rh`[
-    {
-      n_nationkey: ${nation1}.(${customer}.*c1.c_nationkey).*n2.n_nationkey,
-      n_name: ${nation1}.(${customer}.*c1.c_nationkey).*n2.n_name
-    }
-  ] | group ${customer}.*c1.c_custkey`
+  let customer1 = rh`{
+    n_nationkey: single ${nation1}.(${customer}.*c1.c_nationkey).n_nationkey,
+    n_name: single ${nation1}.(${customer}.*c1.c_nationkey).n_name
+  } | group ${nation1}.(${customer}.*c1.c_nationkey) & ${customer}.*c1.c_custkey`
 
-  let orders1 = rh`[
-    (19940101 <= ${orders}.*o1.o_orderdate && ${orders}.*o1.o_orderdate < 19950101) & {
-      n_nationkey: ${customer1}.(${orders}.*o1.o_custkey).*c2.n_nationkey,
-      n_name: ${customer1}.(${orders}.*o1.o_custkey).*c2.n_name
-    }
-  ] | group ${orders}.*o1.o_orderkey`
+  let orders1 = rh`{
+    n_nationkey: single ${customer1}.(${orders}.*o1.o_custkey).n_nationkey,
+    n_name: single ${customer1}.(${orders}.*o1.o_custkey).n_name
+  } | group (${customer1}.(${orders}.*o1.o_custkey) && 19940101 <= ${orders}.*o1.o_orderdate && ${orders}.*o1.o_orderdate < 19950101) & ${orders}.*o1.o_orderkey`
 
-  let supplier1 = rh`[
-    ${supplier}.*s1.s_nationkey
-  ] | group ${supplier}.*s1.s_suppkey`
+  let supplier1 = rh`single ${supplier}.*s1.s_nationkey | group ${supplier}.*s1.s_suppkey`
 
-  let cond = rh`${orders1}.(${lineitem}.*l1.l_orderkey).*o2.n_nationkey == ${supplier1}.(${lineitem}.*l1.l_suppkey).*s2`
+  let cond = rh`${orders1}.(${lineitem}.*l1.l_orderkey) && ${orders1}.(${lineitem}.*l1.l_orderkey).n_nationkey == ${supplier1}.(${lineitem}.*l1.l_suppkey)`
   let lineitem1 = rh`{
-    n_name: ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.n_name,
+    n_name: ${orders1}.(${lineitem}.*l1.l_orderkey).n_name,
     revenue: sum (${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount))
-  } | group ${cond} & ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.n_name`
+  } | group ${cond} & ${orders1}.(${lineitem}.*l1.l_orderkey).n_name`
 
   let query = rh`sort ${lineitem1} "revenue" 1`
 
@@ -400,39 +386,37 @@ test("q6", async () => {
 
 test("q7", async () => {
   let cond1 = rh`${nation}.*n1.n_name == "FRANCE" && ${nation}.*n2.n_name == "GERMANY" || ${nation}.*n1.n_name == "GERMANY" && ${nation}.*n2.n_name == "FRANCE"`
-  let nation1 = rh`[${cond1} & {
-    supp_nation: ${nation}.*n1.n_name,
-    cust_nation: ${nation}.*n2.n_name,
-    n1key: ${nation}.*n1.n_nationkey
-  }] | group ${nation}.*n2.n_nationkey`
+  let nation1 = rh`{
+    supp_nation: single ${nation}.*n1.n_name,
+    cust_nation: single ${nation}.*n2.n_name,
+    n1key: single ${nation}.*n1.n_nationkey
+  } | group ${cond1} & ${nation}.*n2.n_nationkey`
 
-  let customer1 = rh`[{
-    supp_nation: ${nation1}.(${customer}.*c1.c_nationkey).*n3.supp_nation,
-    cust_nation: ${nation1}.(${customer}.*c1.c_nationkey).*n3.cust_nation,
-    n1key: ${nation1}.(${customer}.*c1.c_nationkey).*n3.n1key
-  }] | group ${customer}.*c1.c_custkey`
+  let customer1 = rh`{
+    supp_nation: single ${nation1}.(${customer}.*c1.c_nationkey).supp_nation,
+    cust_nation: single ${nation1}.(${customer}.*c1.c_nationkey).cust_nation,
+    n1key: single ${nation1}.(${customer}.*c1.c_nationkey).n1key
+  } | group ${nation1}.(${customer}.*c1.c_nationkey) & ${customer}.*c1.c_custkey`
 
-  let orders1 = rh`[{
-    supp_nation: ${customer1}.(${orders}.*o1.o_custkey).*c2.supp_nation,
-    cust_nation: ${customer1}.(${orders}.*o1.o_custkey).*c2.cust_nation,
-    n1key: ${customer1}.(${orders}.*o1.o_custkey).*c2.n1key
-  }] | group ${orders}.*o1.o_orderkey`
+  let orders1 = rh`{
+    supp_nation: single ${customer1}.(${orders}.*o1.o_custkey).supp_nation,
+    cust_nation: single ${customer1}.(${orders}.*o1.o_custkey).cust_nation,
+    n1key: single ${customer1}.(${orders}.*o1.o_custkey).n1key
+  } | group ${customer1}.(${orders}.*o1.o_custkey) & ${orders}.*o1.o_orderkey`
 
-  let supplier1 = rh`[
-    ${supplier}.*s1.s_nationkey
-  ] | group ${supplier}.*s1.s_suppkey`
+  let supplier1 = rh`single ${supplier}.*s1.s_nationkey | group ${supplier}.*s1.s_suppkey`
 
-  let cond2 = rh`${lineitem}.*l1.l_shipdate >= 19950101 && ${lineitem}.*l1.l_shipdate <= 19961231 && ${supplier1}.(${lineitem}.*l1.l_suppkey).*s2 == ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.n1key`
+  let cond2 = rh`${orders1}.(${lineitem}.*l1.l_orderkey) && ${lineitem}.*l1.l_shipdate >= 19950101 && ${lineitem}.*l1.l_shipdate <= 19961231 && ${supplier1}.(${lineitem}.*l1.l_suppkey) == ${orders1}.(${lineitem}.*l1.l_orderkey).n1key`
 
   let lineitem1 = rh`{
-    supp_nation: single ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.supp_nation,
-    cust_nation: single ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.cust_nation,
+    supp_nation: single ${orders1}.(${lineitem}.*l1.l_orderkey).supp_nation,
+    cust_nation: single ${orders1}.(${lineitem}.*l1.l_orderkey).cust_nation,
     l_year: year ${lineitem}.*l1.l_shipdate,
-    revenue: sum? (${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount))
+    revenue: sum (${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount))
   } | group [
-    ${cond2} & ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.supp_nation,
-    ${cond2} & ${orders1}.(${lineitem}.*l1.l_orderkey).*o2.cust_nation,
-    ${cond2} & (year ${lineitem}.*l1.l_shipdate)
+    ${cond2} & ${orders1}.(${lineitem}.*l1.l_orderkey).supp_nation,
+    ${orders1}.(${lineitem}.*l1.l_orderkey).cust_nation,
+    (year ${lineitem}.*l1.l_shipdate)
   ]`
 
   let query = rh`sort ${lineitem1} "supp_nation" 0 "cust_nation" 0 "l_year" 0`
@@ -445,49 +429,41 @@ test("q7", async () => {
 })
 
 test("q8", async () => {
-  let region1 = rh`[${region}.*r1.r_name == "AMERICA" & ${region}.*r1.r_regionkey] | group ${region}.*r1.r_regionkey`
-  let nation1 = rh`[{
-    r: ${region1}.(${nation}.*n1.n_regionkey).*r2,
-    n_nationkey: ${nation}.*n1.n_nationkey
-  }] | group ${nation}.*n1.n_nationkey`
+  let region1 = rh`single ${region}.*r1.r_regionkey | group ${region}.*r1.r_name == "AMERICA" & ${region}.*r1.r_regionkey`
+  let nation1 = rh`single ${nation}.*n1.n_nationkey | group ${region1}.(${nation}.*n1.n_regionkey) & ${nation}.*n1.n_nationkey`
 
-  let part1 = rh`[${part}.*p1.p_type == "ECONOMY ANODIZED STEEL" & ${part}.*p1.p_partkey] | group ${part}.*p1.p_partkey`
+  let part1 = rh`single ${part}.*p1.p_partkey | group ${part}.*p1.p_type == "ECONOMY ANODIZED STEEL" & ${part}.*p1.p_partkey`
 
   let lineitem1 = rh`[{
-    p_partkey: ${part1}.(${lineitem}.*l1.l_partkey).*p2,
     l_suppkey: ${lineitem}.*l1.l_suppkey,
     l_extendedprice: ${lineitem}.*l1.l_extendedprice,
     l_discount: ${lineitem}.*l1.l_discount
-  }] | group ${lineitem}.*l1.l_orderkey`
+  }] | group ${part1}.(${lineitem}.*l1.l_partkey) & ${lineitem}.*l1.l_orderkey`
 
-  let orders1 = rh`[${orders}.*o1.o_orderdate >= 19950101 && ${orders}.*o1.o_orderdate <= 19961231 & {
+  let orders1 = rh`[{
     l_suppkey: ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.l_suppkey,
     l_extendedprice: ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.l_extendedprice,
     l_discount: ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.l_discount,
     o_orderdate: ${orders}.*o1.o_orderdate
-  }] | group ${orders}.*o1.o_custkey`
+  }] | group ${lineitem1}.(${orders}.*o1.o_orderkey) && ${orders}.*o1.o_orderdate >= 19950101 && ${orders}.*o1.o_orderdate <= 19961231 & ${orders}.*o1.o_custkey`
 
   let customer1 = rh`[{
-    l_suppkey: ${orders1}.(${customer}.*c1.c_custkey).*o2.l_suppkey,
     l_extendedprice: ${orders1}.(${customer}.*c1.c_custkey).*o2.l_extendedprice,
     l_discount: ${orders1}.(${customer}.*c1.c_custkey).*o2.l_discount,
-    o_orderdate: ${orders1}.(${customer}.*c1.c_custkey).*o2.o_orderdate,
-    n_nationkey: ${nation1}.(${customer}.*c1.c_nationkey).*n3.n_nationkey
-  }] | group ${orders1}.(${customer}.*c1.c_custkey).*o2.l_suppkey`
+    o_orderdate: ${orders1}.(${customer}.*c1.c_custkey).*o2.o_orderdate
+  }] | group ${orders1}.(${customer}.*c1.c_custkey) && ${nation1}.(${customer}.*c1.c_nationkey) & ${orders1}.(${customer}.*c1.c_custkey).*o2.l_suppkey`
 
-  let nation2 = rh`[{
-    n_name: ${nation}.*n2.n_name
-  }] | group ${nation}.*n2.n_nationkey`
+  let nation2 = rh`single ${nation}.*n2.n_name | group ${nation}.*n2.n_nationkey`
 
   let sumTotal = rh`sum (${customer1}.(${supplier}.*s1.s_suppkey).*c2.l_extendedprice * (1 - ${customer1}.(${supplier}.*s1.s_suppkey).*c2.l_discount))`
 
-  let cond = rh`${nation2}.(${supplier}.*s1.s_nationkey).*n4.n_name == "BRAZIL"`
+  let cond = rh`${nation2}.(${supplier}.*s1.s_nationkey) == "BRAZIL"`
   let sumBrazil = rh`sum (${cond} & ${customer1}.(${supplier}.*s1.s_suppkey).*c2.l_extendedprice * (1 - ${customer1}.(${supplier}.*s1.s_suppkey).*c2.l_discount))`
 
   let supplier1 = rh`{
     year: (year ${customer1}.(${supplier}.*s1.s_suppkey).*c2.o_orderdate),
     mkt_share: (${sumBrazil} / ${sumTotal})
-  } | group (year ${customer1}.(${supplier}.*s1.s_suppkey).*c2.o_orderdate)`
+  } | group ${customer1}.(${supplier}.*s1.s_suppkey) & (year ${customer1}.(${supplier}.*s1.s_suppkey).*c2.o_orderdate)`
 
   let query = rh`sort ${supplier1} "year" 0`
 
@@ -499,31 +475,29 @@ test("q8", async () => {
 })
 
 test("q9", async () => {
-  let nation1 = rh`[${nation}.*n1.n_name] | group ${nation}.*n1.n_nationkey`
+  let nation1 = rh`single ${nation}.*n1.n_name | group ${nation}.*n1.n_nationkey`
+  
+  let supplier1 = rh`{
+    s_suppkey: single ${supplier}.*s1.s_suppkey,
+    n_name: single ${nation1}.(${supplier}.*s1.s_nationkey)
+  } | group ${supplier}.*s1.s_suppkey`
 
-  let supplier1 = rh`[{
-    s_suppkey: ${supplier}.*s1.s_suppkey,
-    n_name: ${nation1}.(${supplier}.*s1.s_nationkey).*n2
-  }] | group ${supplier}.*s1.s_suppkey`
-
-  let part1 = rh`[(like ${part}.*p1.p_name "%green%") & ${part}.*p1.p_partkey] | group ${part}.*p1.p_partkey`
+  let part1 = rh`single ${part}.*p1.p_partkey | group (like ${part}.*p1.p_name "%green%") & ${part}.*p1.p_partkey`
 
   let partsupp1 = rh`[{
-    p_partkey: ${part1}.(${partsupp}.*ps1.ps_partkey).*p2,
-    s_suppkey: ${supplier1}.(${partsupp}.*ps1.ps_suppkey).*s2.s_suppkey,
-    n_name: ${supplier1}.(${partsupp}.*ps1.ps_suppkey).*s2.n_name,
+    s_suppkey: ${supplier1}.(${partsupp}.*ps1.ps_suppkey).s_suppkey,
+    n_name: ${supplier1}.(${partsupp}.*ps1.ps_suppkey).n_name,
     ps_supplycost: ${partsupp}.*ps1.ps_supplycost
-  }] | group ${partsupp}.*ps1.ps_partkey`
+  }] | group ${part1}.(${partsupp}.*ps1.ps_partkey) & ${partsupp}.*ps1.ps_partkey`
 
   let joinCond = rh`${partsupp1}.(${lineitem}.*l1.l_partkey).*ps2.s_suppkey == ${lineitem}.*l1.l_suppkey`
-  let lineitem1 = rh`[${joinCond} & {
+  let lineitem1 = rh`[{
     nation: ${partsupp1}.(${lineitem}.*l1.l_partkey).*ps2.n_name,
     ps_supplycost: ${partsupp1}.(${lineitem}.*l1.l_partkey).*ps2.ps_supplycost,
-    l_orderkey: ${lineitem}.*l1.l_orderkey,
     l_quantity: ${lineitem}.*l1.l_quantity,
     l_extendedprice: ${lineitem}.*l1.l_extendedprice,
     l_discount: ${lineitem}.*l1.l_discount
-  }] | group ${lineitem}.*l1.l_orderkey`
+  }] | group ${partsupp1}.(${lineitem}.*l1.l_partkey) && ${joinCond} & ${lineitem}.*l1.l_orderkey`
 
   let amount = rh`${lineitem1}.(${orders}.*o1.o_orderkey).*l2.l_extendedprice * (1 - ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.l_discount) - ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.ps_supplycost * ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.l_quantity`
   let orders1 = rh`{
@@ -531,7 +505,7 @@ test("q9", async () => {
     o_year: (year ${orders}.*o1.o_orderdate),
     sum_profit: sum ${amount}
   } | group [
-    ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.nation,
+    ${lineitem1}.(${orders}.*o1.o_orderkey) & ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.nation,
     (year ${orders}.*o1.o_orderdate)
   ]`
 
@@ -545,38 +519,38 @@ test("q9", async () => {
 })
 
 test("q10", async () => {
-  let nation1 = rh`[${nation}.*n1.n_name] | group ${nation}.*n1.n_nationkey`
-  let orders1 = rh`[(${orders}.*o1.o_orderdate >= 19931001 && ${orders}.*o1.o_orderdate < 19940101) & ${orders}.*o1.o_orderkey] | group ${orders}.*o1.o_custkey`
+  let nation1 = rh`single ${nation}.*n1.n_name | group ${nation}.*n1.n_nationkey`
+  let orders1 = rh`[${orders}.*o1.o_orderkey] | group (${orders}.*o1.o_orderdate >= 19931001 && ${orders}.*o1.o_orderdate < 19940101) & ${orders}.*o1.o_custkey`
 
-  let customer1 = rh`[{
-    n_name: ${nation1}.(${customer}.*c1.c_nationkey).*n2,
-    o_orderkey: ${orders1}.(${customer}.*c1.c_custkey).*o2,
-    c_custkey: ${customer}.*c1.c_custkey,
-    c_name: ${customer}.*c1.c_name,
-    c_address: ${customer}.*c1.c_address,
-    c_phone: ${customer}.*c1.c_phone,
-    c_acctbal: ${customer}.*c1.c_acctbal,
-    c_comment: ${customer}.*c1.c_comment
-  }] | group ${orders1}.(${customer}.*c1.c_custkey).*o2`
+  let customer1 = rh`{
+      n_name: single ${nation1}.(${customer}.*c1.c_nationkey),
+      o_orderkey: single ${orders1}.(${customer}.*c1.c_custkey).*o2,
+      c_custkey: single ${customer}.*c1.c_custkey,
+      c_name: single ${customer}.*c1.c_name,
+      c_address: single ${customer}.*c1.c_address,
+      c_phone: single ${customer}.*c1.c_phone,
+      c_acctbal: single ${customer}.*c1.c_acctbal,
+      c_comment: single ${customer}.*c1.c_comment
+    } | group ${orders1}.(${customer}.*c1.c_custkey) & ${orders1}.(${customer}.*c1.c_custkey).*o2`
 
-  let cond = rh`${lineitem}.*l1.l_returnflag == "R"`
+  let cond = rh`${lineitem}.*l1.l_returnflag == 82`
   let lineitem1 = rh`{
-    c_custkey: ${customer1}.(${lineitem}.*l1.l_orderkey).*c2.c_custkey,
-    c_name: ${customer1}.(${lineitem}.*l1.l_orderkey).*c2.c_name,
-    revenue: sum (${cond} & (${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount))),
-    c_acctbal: ${customer1}.(${lineitem}.*l1.l_orderkey).*c2.c_acctbal,
-    n_name: ${customer1}.(${lineitem}.*l1.l_orderkey).*c2.n_name,
-    c_address: ${customer1}.(${lineitem}.*l1.l_orderkey).*c2.c_address,
-    c_phone: ${customer1}.(${lineitem}.*l1.l_orderkey).*c2.c_phone,
-    c_comment: ${customer1}.(${lineitem}.*l1.l_orderkey).*c2.c_comment
+    c_custkey: ${customer1}.(${lineitem}.*l1.l_orderkey).c_custkey,
+    c_name: ${customer1}.(${lineitem}.*l1.l_orderkey).c_name,
+    revenue: sum (${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount)),
+    c_acctbal: ${customer1}.(${lineitem}.*l1.l_orderkey).c_acctbal,
+    n_name: ${customer1}.(${lineitem}.*l1.l_orderkey).n_name,
+    c_address: ${customer1}.(${lineitem}.*l1.l_orderkey).c_address,
+    c_phone: ${customer1}.(${lineitem}.*l1.l_orderkey).c_phone,
+    c_comment: ${customer1}.(${lineitem}.*l1.l_orderkey).c_comment
   } | group [
-    ${customer1}.(${lineitem}.*l1.l_orderkey).*c2.c_custkey,
-    ${customer1}.(${lineitem}.*l1.l_orderkey).*c2.c_name,
-    ${customer1}.(${lineitem}.*l1.l_orderkey).*c2.c_acctbal,
-    ${customer1}.(${lineitem}.*l1.l_orderkey).*c2.c_phone,
-    ${customer1}.(${lineitem}.*l1.l_orderkey).*c2.n_name,
-    ${customer1}.(${lineitem}.*l1.l_orderkey).*c2.c_address,
-    ${customer1}.(${lineitem}.*l1.l_orderkey).*c2.c_comment
+    ${cond} & ${customer1}.(${lineitem}.*l1.l_orderkey) & ${customer1}.(${lineitem}.*l1.l_orderkey).c_custkey,
+    ${customer1}.(${lineitem}.*l1.l_orderkey).c_name,
+    ${customer1}.(${lineitem}.*l1.l_orderkey).c_acctbal,
+    ${customer1}.(${lineitem}.*l1.l_orderkey).c_phone,
+    ${customer1}.(${lineitem}.*l1.l_orderkey).n_name,
+    ${customer1}.(${lineitem}.*l1.l_orderkey).c_address,
+    ${customer1}.(${lineitem}.*l1.l_orderkey).c_comment
   ]`
 
   let query = rh`sort ${lineitem1} "revenue" 1`
@@ -589,21 +563,20 @@ test("q10", async () => {
 })
 
 test("q11", async () => {
-  let nation1 = rh`[${nation}.*n1.n_name == "GERMANY" & ${nation}.*n1.n_nationkey] | group ${nation}.*n1.n_nationkey`
+  let nation1 = rh`single ${nation}.*n1.n_nationkey | group ${nation}.*n1.n_name == "GERMANY" & ${nation}.*n1.n_nationkey`
+  
+  let supplier1 = rh`{
+    n_nationkey: single ${nation1}.(${supplier}.*s1.s_nationkey),
+    s_suppkey: single ${supplier}.*s1.s_suppkey
+  } | group ${nation1}.(${supplier}.*s1.s_nationkey) & ${supplier}.*s1.s_suppkey`
 
-  let supplier1 = rh`[{
-    n_nationkey: ${nation1}.(${supplier}.*s1.s_nationkey).*n2,
-    s_suppkey: ${supplier}.*s1.s_suppkey
-  }] | group ${supplier}.*s1.s_suppkey`
-
-  // redundant condition, just to make *s2 a dependency for the sum
-  let cond = rh`${supplier1}.(${partsupp}.*ps1.ps_suppkey).*s2.s_suppkey == ${partsupp}.*ps1.ps_suppkey`
+  let cond = rh`${supplier1}.(${partsupp}.*ps1.ps_suppkey)`
   let sum = rh`(sum (${cond} & (${partsupp}.*ps1.ps_supplycost * ${partsupp}.*ps1.ps_availqty))) * 0.0001`
 
   let partsupp1 = rh`{
     ps_partkey: single ${partsupp}.*ps1.ps_partkey,
     sum: sum? (${partsupp}.*ps1.ps_supplycost * ${partsupp}.*ps1.ps_availqty)
-  } | group ${cond} & ${partsupp}.*ps1.ps_partkey`
+  } | group ${supplier1}.(${partsupp}.*ps1.ps_suppkey).s_suppkey == ${partsupp}.*ps1.ps_suppkey & ${partsupp}.*ps1.ps_partkey`
 
   let partsupp2 = rh`[${partsupp1}.*.sum > ${sum} & {
     ps_partkey: ${partsupp1}.*.ps_partkey,
@@ -620,10 +593,8 @@ test("q11", async () => {
 })
 
 test("q12", async () => {
-  let orders1 = rh`[
-    ${orders}.*o1.o_orderpriority
-  ] | group ${orders}.*o1.o_orderkey`
-
+  let orders1 = rh`single ${orders}.*o1.o_orderpriority | group ${orders}.*o1.o_orderkey`
+  
   let cond1 = rh`${lineitem}.*l1.l_shipmode == "MAIL" || ${lineitem}.*l1.l_shipmode == "SHIP"`
   let cond2 = rh`${lineitem}.*l1.l_commitdate < ${lineitem}.*l1.l_receiptdate`
   let cond3 = rh`${lineitem}.*l1.l_shipdate < ${lineitem}.*l1.l_commitdate`
@@ -631,13 +602,13 @@ test("q12", async () => {
 
   let cond = rh`${cond1} && ${cond2} && ${cond3} && ${cond4}`
 
-  let cond5 = rh`${orders1}.(${lineitem}.*l1.l_orderkey).*o2 == "1-URGENT" || ${orders1}.(${lineitem}.*l1.l_orderkey).*o2 == "2-HIGH"`
-  let cond6 = rh`${orders1}.(${lineitem}.*l1.l_orderkey).*o2 != "1-URGENT" && ${orders1}.(${lineitem}.*l1.l_orderkey).*o2 != "2-HIGH"`
+  let cond5 = rh`${orders1}.(${lineitem}.*l1.l_orderkey) == "1-URGENT" || ${orders1}.(${lineitem}.*l1.l_orderkey) == "2-HIGH"`
+  let cond6 = rh`${orders1}.(${lineitem}.*l1.l_orderkey) != "1-URGENT" && ${orders1}.(${lineitem}.*l1.l_orderkey) != "2-HIGH"`
 
   let lineitem1 = rh`{
     l_shipmode: single ${lineitem}.*l1.l_shipmode,
-    high_line_count: count? ${cond5} & ${lineitem}.*l1,
-    low_line_count: count? ${cond6} & ${lineitem}.*l1
+    high_line_count: count ${cond5} & ${lineitem}.*l1,
+    low_line_count: count ${cond6} & ${lineitem}.*l1
   } | group ${cond} & ${lineitem}.*l1.l_shipmode`
 
   let query = rh`sort ${lineitem1} "l_shipmode" 0`
@@ -651,17 +622,14 @@ test("q12", async () => {
 
 test("q13", async () => {
   let cond = rh`isUndef (like ${orders}.*o1.o_comment "%special%requests%")`
-  let orders1 = rh`[${cond} & ${orders}.*o1.o_orderkey] | group ${orders}.*o1.o_custkey`
+  let orders1 = rh`[${orders}.*o1.o_orderkey] | group ${cond} & ${orders}.*o1.o_custkey`
 
-  let customer1 = rh`{
-    c_custkey: single ${customer}.*c1.c_custkey,
-    c_count: count ${orders1}.(${customer}.*c1.c_custkey).*o2
-  } | group ${customer}.*c1.c_custkey`
+  let customer1 = rh`count ${orders1}.(${customer}.*c1.c_custkey).*o2 | group ${customer}.*c1.c_custkey`
 
   let customer2 = rh`{
-    c_count: single ${customer1}.*c2.c_count,
+    c_count: single ${customer1}.*c2,
     custdist: count ${customer1}.*c2
-  } | group ${customer1}.*c2.c_count`
+  } | group ${customer1}.*c2`
 
   let query = rh`sort ${customer2} "custdist" 1 "c_count" 1`
 
@@ -674,10 +642,10 @@ test("q13", async () => {
 
 test("q14", async () => {
   let cond1 = rh`${lineitem}.*l1.l_shipdate >= 19950901 && ${lineitem}.*l1.l_shipdate < 19951001`
-  let lineitem1 = rh`[${cond1} & {
+  let lineitem1 = rh`[{
     l_extendedprice: ${lineitem}.*l1.l_extendedprice,
     l_discount: ${lineitem}.*l1.l_discount
-  }] | group ${lineitem}.*l1.l_partkey`
+  }] | group ${cond1} & ${lineitem}.*l1.l_partkey`
 
   let cond2 = rh`like ${part}.*p1.p_type "PROMO%"`
 
@@ -695,25 +663,25 @@ test("q14", async () => {
 })
 
 test("q15", async () => {
-  let supplier1 = rh`[{
-    s_name: ${supplier}.*s1.s_name,
-    s_address: ${supplier}.*s1.s_address,
-    s_phone: ${supplier}.*s1.s_phone
-  }] | group ${supplier}.*s1.s_suppkey`
+  let supplier1 = rh`{
+    s_name: single ${supplier}.*s1.s_name,
+    s_address: single ${supplier}.*s1.s_address,
+    s_phone: single ${supplier}.*s1.s_phone
+  } | group ${supplier}.*s1.s_suppkey`
 
   let cond1 = rh`${lineitem}.*l1.l_shipdate >= 19960101 && ${lineitem}.*l1.l_shipdate < 19960401`
   let sumMap = rh`{
     supplier_no: ${lineitem}.*l1.l_suppkey,
     total_revenue: sum (${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount))
-  } | group ${cond1} &  ${lineitem}.*l1.l_suppkey`
+  } | group ${cond1} & ${lineitem}.*l1.l_suppkey`
 
   let maxRevenue = rh`max ${sumMap}.*max.total_revenue`
 
   let query = rh`[${sumMap}.*.total_revenue == ${maxRevenue} & {
     s_suppkey: ${sumMap}.*.supplier_no,
-    s_name: ${supplier1}.(${sumMap}.*.supplier_no).*s2.s_name,
-    s_address: ${supplier1}.(${sumMap}.*.supplier_no).*s2.s_address,
-    s_phone: ${supplier1}.(${sumMap}.*.supplier_no).*s2.s_phone,
+    s_name: ${supplier1}.(${sumMap}.*.supplier_no).s_name,
+    s_address: ${supplier1}.(${sumMap}.*.supplier_no).s_address,
+    s_phone: ${supplier1}.(${sumMap}.*.supplier_no).s_phone,
     total_revenue: ${sumMap}.*.total_revenue
   }]`
 
@@ -725,15 +693,15 @@ test("q15", async () => {
 })
 
 test("q16", async () => {
-  let supplier1 = rh`count ((like ${supplier}.*s1.s_comment "%Customer%Complaints%") & ${supplier}.*s1) | group ${supplier}.*s1.s_suppkey`
-
-  let partsupp1 = rh`[${supplier1}.(${partsupp}.*ps1.ps_suppkey) == 0 & ${partsupp}.*ps1.ps_suppkey] | group ${partsupp}.*ps1.ps_partkey`
+  let supplier1 = rh`count (${supplier}.*s1) | group (like ${supplier}.*s1.s_comment "%Customer%Complaints%") & ${supplier}.*s1.s_suppkey`
+  
+  let partsupp1 = rh`[${partsupp}.*ps1.ps_suppkey] | group (isUndef ${supplier1}.(${partsupp}.*ps1.ps_suppkey)) & ${partsupp}.*ps1.ps_partkey`
 
   let cond1 = rh`${part}.*p1.p_brand != "Brand#45" && (isUndef (like ${part}.*p1.p_type "MEDIUM POLISHED%"))`
   let cond2 = rh`${part}.*p1.p_size == 42 || ${part}.*p1.p_size == 14 || ${part}.*p1.p_size == 23 || ${part}.*p1.p_size == 45 ||
-                 ${part}.*p1.p_size == 19 || ${part}.*p1.p_size == 3 || ${part}.*p1.p_size == 36 || ${part}.*p1.p_size == 9`
+                  ${part}.*p1.p_size == 19 || ${part}.*p1.p_size == 3 || ${part}.*p1.p_size == 36 || ${part}.*p1.p_size == 9`
 
-  let cond = rh`${cond1} && ${cond2}`
+  let cond = rh`${partsupp1}.(${part}.*p1.p_partkey) && ${cond1} && ${cond2}`
 
   let part1 = rh`{
     p_brand: single ${part}.*p1.p_brand,
@@ -742,9 +710,9 @@ test("q16", async () => {
     ps_suppkey: single ${partsupp1}.(${part}.*p1.p_partkey).*ps2
   } | group [
     ${cond} & ${part}.*p1.p_brand,
-    ${cond} & ${part}.*p1.p_type,
-    ${cond} & ${part}.*p1.p_size,
-    ${cond} & ${partsupp1}.(${part}.*p1.p_partkey).*ps2
+    ${part}.*p1.p_type,
+    ${part}.*p1.p_size,
+    ${partsupp1}.(${part}.*p1.p_partkey).*ps2
   ]`
 
   let part2 = rh`{
@@ -768,20 +736,24 @@ test("q16", async () => {
 })
 
 test("q17", async () => {
-  let part1 = rh`[
-    (${part}.*p1.p_brand == "Brand#23" && ${part}.*p1.p_container == "MED BOX") & ${part}.*p1.p_partkey
-  ] | group ${part}.*p1.p_partkey`
+  let lineitem1 = rh`[{
+    l_quantity: ${lineitem}.*l1.l_quantity,
+    l_extendedprice: ${lineitem}.*l1.l_extendedprice
+  }] | group ${lineitem}.*l1.l_partkey`
 
-  let avgMap1 = rh`{
-    l_partkey: single ${lineitem}.*l1.l_partkey,
-    sum: sum (${lineitem}.*l1.l_quantity),
-    count: count (${lineitem}.*l1.l_quantity)
-  } | group ${lineitem}.*l1.l_partkey`
+  let part1 = rh`[{
+    l_quantity: ${lineitem1}.(${part}.*p1.p_partkey).*l2.l_quantity,
+    l_extendedprice: ${lineitem1}.(${part}.*p1.p_partkey).*l2.l_extendedprice
+  }] | group ${lineitem1}.(${part}.*p1.p_partkey) && (${part}.*p1.p_brand == "Brand#23" && ${part}.*p1.p_container == "MED BOX") & ${part}.*p1.p_partkey`
 
-  let avgMap = rh`0.2 * ${avgMap1}.*.sum / ${avgMap1}.*.count | group ${avgMap1}.*.l_partkey`
+  let avgMap = rh`{
+    l_partkey: single ${lineitem}.*l3.l_partkey,
+    avg: single 0.2 * sum(${lineitem}.*l3.l_quantity) / count(${lineitem}.*l3.l_quantity)
+  } | group ${part1}.(${lineitem}.*l3.l_partkey) & ${lineitem}.*l3.l_partkey`
 
-  let cond = rh`${part1}.(${lineitem}.*l2.l_partkey).*p2 == ${lineitem}.*l2.l_partkey && ${lineitem}.*l2.l_quantity < ${avgMap}.(${lineitem}.*l2.l_partkey)`
-  let query = rh`(sum (${cond} & ${lineitem}.*l2.l_extendedprice)) / 7.0`
+  let cond = rh`${part1}.(${avgMap}.*.l_partkey).*p2.l_quantity < ${avgMap}.*.avg`
+
+  let query = rh`(sum (${cond} & ${part1}.(${avgMap}.*.l_partkey).*p2.l_extendedprice)) / 7.0`
 
   let func = await compile(query, { ...settings, outFile: "q17" })
   let res = await func()
@@ -808,42 +780,42 @@ test("q17-alt", async () => {
 })
 
 test("q18", async () => {
-  let customer1 = rh`[{
-    c_custkey: ${customer}.*c1.c_custkey,
-    c_name: ${customer}.*c1.c_name
-  }] | group ${customer}.*c1.c_custkey`
+  let customer1 = rh`{
+    c_custkey: single ${customer}.*c1.c_custkey,
+    c_name: single ${customer}.*c1.c_name
+  } | group ${customer}.*c1.c_custkey`
 
   let lineitem1 = rh`{
     l_orderkey: single ${lineitem}.*l1.l_orderkey,
     sum: sum ${lineitem}.*l1.l_quantity
   } | group ${lineitem}.*l1.l_orderkey`
 
-  let lineitem2 = rh`[${lineitem1}.*l2.sum > 300 & {
+  let lineitem2 = rh`[{
     l_orderkey: ${lineitem1}.*l2.l_orderkey,
     sum: ${lineitem1}.*l2.sum
-  }] | group ${lineitem1}.*l2.l_orderkey`
+  }] | group ${lineitem1}.*l2.sum > 300 & ${lineitem1}.*l2.l_orderkey`
 
-  let orders1 = rh`[{
-    o_orderkey: ${lineitem2}.(${orders}.*o1.o_orderkey).*l3.l_orderkey,
-    c_custkey: ${customer1}.(${orders}.*o1.o_custkey).*c2.c_custkey,
-    c_name: ${customer1}.(${orders}.*o1.o_custkey).*c2.c_name,
-    o_totalprice: ${orders}.*o1.o_totalprice,
-    o_orderdate: ${orders}.*o1.o_orderdate
-  }] | group ${orders}.*o1.o_orderkey`
+  let orders1 = rh`{
+    o_orderkey: single ${lineitem2}.(${orders}.*o1.o_orderkey).*l3.l_orderkey,
+    c_custkey: single ${customer1}.(${orders}.*o1.o_custkey).c_custkey,
+    c_name: single ${customer1}.(${orders}.*o1.o_custkey).c_name,
+    o_totalprice: single ${orders}.*o1.o_totalprice,
+    o_orderdate: single ${orders}.*o1.o_orderdate
+  } | group ${lineitem2}.(${orders}.*o1.o_orderkey) & ${orders}.*o1.o_orderkey`
 
   let lineitem3 = rh`{
-    c_name: single ${orders1}.(${lineitem}.*l4.l_orderkey).*o2.c_name,
-    c_custkey: single ${orders1}.(${lineitem}.*l4.l_orderkey).*o2.c_custkey,
-    o_orderkey: single ${orders1}.(${lineitem}.*l4.l_orderkey).*o2.o_orderkey,
-    o_orderdate: single ${orders1}.(${lineitem}.*l4.l_orderkey).*o2.o_orderdate,
-    o_totalprice: single ${orders1}.(${lineitem}.*l4.l_orderkey).*o2.o_totalprice,
+    c_name: single ${orders1}.(${lineitem}.*l4.l_orderkey).c_name,
+    c_custkey: single ${orders1}.(${lineitem}.*l4.l_orderkey).c_custkey,
+    o_orderkey: single ${orders1}.(${lineitem}.*l4.l_orderkey).o_orderkey,
+    o_orderdate: single ${orders1}.(${lineitem}.*l4.l_orderkey).o_orderdate,
+    o_totalprice: single ${orders1}.(${lineitem}.*l4.l_orderkey).o_totalprice,
     sum_l_quantity: sum (${lineitem}.*l4.l_quantity)
   } | group [
-    ${orders1}.(${lineitem}.*l4.l_orderkey).*o2.c_name,
-    ${orders1}.(${lineitem}.*l4.l_orderkey).*o2.c_custkey,
-    ${orders1}.(${lineitem}.*l4.l_orderkey).*o2.o_orderkey,
-    ${orders1}.(${lineitem}.*l4.l_orderkey).*o2.o_orderdate,
-    ${orders1}.(${lineitem}.*l4.l_orderkey).*o2.o_totalprice
+    ${orders1}.(${lineitem}.*l4.l_orderkey) & ${orders1}.(${lineitem}.*l4.l_orderkey).c_name,
+    ${orders1}.(${lineitem}.*l4.l_orderkey).c_custkey,
+    ${orders1}.(${lineitem}.*l4.l_orderkey).o_orderkey,
+    ${orders1}.(${lineitem}.*l4.l_orderkey).o_orderdate,
+    ${orders1}.(${lineitem}.*l4.l_orderkey).o_totalprice
   ]`
 
   let query = rh`sort ${lineitem3} "o_totalprice" 1 "o_orderdate" 0`
@@ -856,46 +828,49 @@ test("q18", async () => {
 })
 
 test("q19", async () => {
-  let part1 = rh`[${part}.*p1.p_size >= 1 & {
-    p_partkey: ${part}.*p1.p_partkey,
-    p_brand: ${part}.*p1.p_brand,
-    p_size: ${part}.*p1.p_size,
-    p_container: ${part}.*p1.p_container
-  }] | group ${part}.*p1.p_partkey`
-
   let condLineitem1 = rh`${lineitem}.*l1.l_shipmode == "AIR" || ${lineitem}.*l1.l_shipmode == "AIR REG"`
   let condLineitem2 = rh`${lineitem}.*l1.l_shipinstruct == "DELIVER IN PERSON"`
 
   let condLineitem = rh`${condLineitem1} && ${condLineitem2}`
 
-  let pBrand = rh`${part1}.(${lineitem}.*l1.l_partkey).*p2.p_brand`
-  let pSize = rh`${part1}.(${lineitem}.*l1.l_partkey).*p2.p_size`
-  let pContainer = rh`${part1}.(${lineitem}.*l1.l_partkey).*p2.p_container`
+  let lineitem1 = rh`[{
+    l_quantity: ${lineitem}.*l1.l_quantity,
+    l_extendedprice: ${lineitem}.*l1.l_extendedprice,
+    l_discount: ${lineitem}.*l1.l_discount
+  }] | group ${condLineitem} & ${lineitem}.*l1.l_partkey`
+
+  let pBrand = rh`${part}.*p1.p_brand`
+  let pSize = rh`${part}.*p1.p_size`
+  let pContainer = rh`${part}.*p1.p_container`
+
+  let lQuantity = rh`${lineitem1}.(${part}.*p1.p_partkey).*l2.l_quantity`
+  let lExtendedPrice = rh`${lineitem1}.(${part}.*p1.p_partkey).*l2.l_extendedprice`
+  let lDiscount = rh`${lineitem1}.(${part}.*p1.p_partkey).*l2.l_discount`
 
   let condA1 = rh`${pBrand} == "Brand#12"`
   let condA2 = rh`${pContainer} == "SM CASE" || ${pContainer} == "SM BOX" || ${pContainer} == "SM PACK" || ${pContainer} == "SM PKG"`
-  let condA3 = rh`${lineitem}.*l1.l_quantity >= 1 && ${lineitem}.*l1.l_quantity <= 11`
+  let condA3 = rh`${lQuantity} <= 11 && ${lQuantity} >= 1`
   let condA4 = rh`${pSize} <= 5`
 
-  let condA = rh`${condA1} && ${condA2} && ${condA3} && ${condA4}`
+  let condA = rh`${condA4} && ${condA3} && ${condA1} && ${condA2}`
 
   let condB1 = rh`${pBrand} == "Brand#23"`
   let condB2 = rh`${pContainer} == "MED BAG" || ${pContainer} == "MED BOX" || ${pContainer} == "MED PKG" || ${pContainer} == "MED PACK"`
-  let condB3 = rh`${lineitem}.*l1.l_quantity >= 10 && ${lineitem}.*l1.l_quantity <= 20`
+  let condB3 = rh` ${lQuantity} <= 20 && ${lQuantity} >= 10`
   let condB4 = rh`${pSize} <= 10`
 
-  let condB = rh`${condB1} && ${condB2} && ${condB3} && ${condB4}`
+  let condB = rh`${condB4} && ${condB3} && ${condB1} && ${condB2}`
 
   let condC1 = rh`${pBrand} == "Brand#34"`
   let condC2 = rh`${pContainer} == "LG CASE" || ${pContainer} == "LG BOX" || ${pContainer} == "LG PACK" || ${pContainer} == "LG PKG"`
-  let condC3 = rh`${lineitem}.*l1.l_quantity >= 20 && ${lineitem}.*l1.l_quantity <= 30`
+  let condC3 = rh`${lQuantity} <= 30 && ${lQuantity} >= 20`
   let condC4 = rh`${pSize} <= 15`
 
-  let condC = rh`${condC1} && ${condC2} && ${condC3} && ${condC4}`
+  let condC = rh`${condC4} && ${condC3} && ${condC1} && ${condC2}`
 
-  let cond = rh`${condLineitem} && (${condA} || ${condB} || ${condC})`
+  let cond = rh`${part}.*p1.p_size >= 1 && (${condA} || ${condB} || ${condC})`
 
-  let query = rh`sum (${cond} & (${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount)))`
+  let query = rh`sum ((${cond} & ${lExtendedPrice} * (1 - ${lDiscount})))`
 
   let func = await compile(query, { ...settings, outFile: "q19" })
   let res = await func()
@@ -905,33 +880,32 @@ test("q19", async () => {
 })
 
 test("q20", async () => {
-  let nation1 = rh`[${nation}.*n1.n_name == "CANADA" & ${nation}.*n1.n_nationkey] | group ${nation}.*n1.n_nationkey`
-
-  let part1 = rh`count ((like ${part}.*p1.p_name "forest%") & ${part}.*p1) | group ${part}.*p1.p_partkey`
-  let partsupp1 = rh`[${part1}.(${partsupp}.*ps1.ps_partkey) > 0 & {
-    ps_partkey: ${partsupp}.*ps1.ps_partkey,
+  let part1 = rh`count ${part}.*p1 | group (like ${part}.*p1.p_name "forest%") & ${part}.*p1.p_partkey`
+  let partsupp1 = rh`[{
     ps_suppkey: ${partsupp}.*ps1.ps_suppkey,
     ps_availqty: ${partsupp}.*ps1.ps_availqty
-  }] | group ${partsupp}.*ps1.ps_partkey`
+  }] | group ${part1}.(${partsupp}.*ps1.ps_partkey) & ${partsupp}.*ps1.ps_partkey`
 
   let cond1 = rh`${lineitem}.*l1.l_shipdate >= 19940101 && ${lineitem}.*l1.l_shipdate < 19950101`
   let lineitem1 = rh`{
     l_partkey: single (${lineitem}.*l1.l_partkey),
     l_suppkey: single (${lineitem}.*l1.l_suppkey),
-    sum: sum? (${lineitem}.*l1.l_quantity)
-  } | group [${cond1} & ${lineitem}.*l1.l_partkey, ${cond1} & ${lineitem}.*l1.l_suppkey]`
+    sum: sum (${lineitem}.*l1.l_quantity)
+  } | group [${cond1} & ${lineitem}.*l1.l_partkey, ${lineitem}.*l1.l_suppkey]`
 
   let cond2 = rh`${partsupp1}.(${lineitem1}.*l2.l_partkey).*ps2.ps_suppkey == ${lineitem1}.*l2.l_suppkey`
   let cond3 = rh`${partsupp1}.(${lineitem1}.*l2.l_partkey).*ps2.ps_availqty > 0.5 * ${lineitem1}.*l2.sum`
-  let lineitem2 = rh`count ((${cond2} && ${cond3}) & ${lineitem1}.*l2) | group ${partsupp1}.(${lineitem1}.*l2.l_partkey).*ps2.ps_suppkey`
+  let lineitem2 = rh`count (${lineitem1}.*l2) | group (${partsupp1}.(${lineitem1}.*l2.l_partkey) && ${cond2} && ${cond3}) & ${partsupp1}.(${lineitem1}.*l2.l_partkey).*ps2.ps_suppkey`
 
-  let cond4 = rh`${nation1}.(${supplier}.*s1.s_nationkey).*n2 == ${supplier}.*s1.s_nationkey`
-  let cond5 = rh`${lineitem2}.(${supplier}.*s1.s_suppkey) > 0`
+  let nation1 = rh`single ${nation}.*n1.n_nationkey | group ${nation}.*n1.n_name == "CANADA" & ${nation}.*n1.n_nationkey`
+
+  let cond4 = rh`${nation1}.(${supplier}.*s1.s_nationkey)`
+  let cond5 = rh`${lineitem2}.(${supplier}.*s1.s_suppkey)`
 
   let supplier1 = rh`{
     s_name: ${supplier}.*s1.s_name,
     s_address: ${supplier}.*s1.s_address
-  } | group [(${cond4} && ${cond5}) & ${supplier}.*s1.s_name, (${cond4} && ${cond5}) & ${supplier}.*s1.s_address]`
+  } | group [(${cond4} && ${cond5}) & ${supplier}.*s1.s_name, ${supplier}.*s1.s_address]`
 
   let query = rh`sort ${supplier1} "s_name" 0`
 
@@ -943,22 +917,19 @@ test("q20", async () => {
 })
 
 test("q21", async () => {
-  let nation1 = rh`[${nation}.*n1.n_name == "SAUDI ARABIA" & ${nation}.*n1.n_nationkey] | group ${nation}.*n1.n_nationkey`
-  let supplier1 = rh`[{
-    n_nationkey: ${nation1}.(${supplier}.*s1.s_nationkey).*n2,
-    s_name: ${supplier}.*s1.s_name
-  }] | group ${supplier}.*s1.s_suppkey`
+  let nation1 = rh`single ${nation}.*n1.n_nationkey | group ${nation}.*n1.n_name == "SAUDI ARABIA" & ${nation}.*n1.n_nationkey`
+  let supplier1 = rh`single ${supplier}.*s1.s_name | group ${nation1}.(${supplier}.*s1.s_nationkey) & ${supplier}.*s1.s_suppkey`
 
   let cond1 = rh`${lineitem}.*l1.l_receiptdate > ${lineitem}.*l1.l_commitdate`
-  let lineitem1 = rh`[${cond1} & {
-    s_name: ${supplier1}.(${lineitem}.*l1.l_suppkey).*s2.s_name,
+  let lineitem1 = rh`[{
+    s_name: ${supplier1}.(${lineitem}.*l1.l_suppkey),
     l_suppkey: ${lineitem}.*l1.l_suppkey
-  }] | group ${lineitem}.*l1.l_orderkey`
+  }] | group ${supplier1}.(${lineitem}.*l1.l_suppkey) && ${cond1} & ${lineitem}.*l1.l_orderkey`
 
-  let lineitem2 = rh`[${lineitem}.*l2.l_suppkey] | group ${lineitem}.*l2.l_orderkey`
+  let lineitem2 = rh`[${lineitem}.*l1.l_suppkey] | group ${lineitem}.*l1.l_orderkey`
 
-  let cond2 = rh`${lineitem}.*l3.l_receiptdate > ${lineitem}.*l3.l_commitdate`
-  let lineitem3 = rh`[${cond2} & ${lineitem}.*l3.l_suppkey] | group ${lineitem}.*l3.l_orderkey`
+  let cond2 = rh`${lineitem}.*l1.l_receiptdate > ${lineitem}.*l1.l_commitdate`
+  let lineitem3 = rh`[${cond2} & ${lineitem}.*l1.l_suppkey] | group ${lineitem}.*l1.l_orderkey`
 
   let condL2 = rh`${lineitem2}.(${orders}.*o1.o_orderkey).*l5 != ${lineitem1}.(${orders}.*o1.o_orderkey).*l4.l_suppkey`
   let condL3 = rh`${lineitem3}.(${orders}.*o1.o_orderkey).*l6 != ${lineitem1}.(${orders}.*o1.o_orderkey).*l4.l_suppkey`
@@ -966,13 +937,13 @@ test("q21", async () => {
   let count = rh`{
     countL2: count (${condL2} & ${orders}.*o1),
     countL3: count (${condL3} & ${orders}.*o1)
-  } | group ${orders}.*o1.o_orderstatus == "F" & ${orders}.*o1.o_orderkey`
+  } | group ${orders}.*o1.o_orderstatus == 70 & ${orders}.*o1.o_orderkey`
 
-  let cond = rh`${count}.(${orders}.*o2.o_orderkey).countL2 != 0 && ${count}.(${orders}.*o2.o_orderkey).countL3 == 0`
+  let cond = rh`${count}.(${orders}.*o2.o_orderkey) && ${count}.(${orders}.*o2.o_orderkey).countL2 != 0 && ${count}.(${orders}.*o2.o_orderkey).countL3 == 0`
   let orders2 = rh`{
     s_name: single (${lineitem1}.(${orders}.*o2.o_orderkey).*l7.s_name),
     numwait: count (${orders}.*o2.o_orderkey)
-  } | group (${orders}.*o2.o_orderstatus == "F" && ${cond}) & ${lineitem1}.(${orders}.*o2.o_orderkey).*l7.s_name`
+  } | group (${orders}.*o2.o_orderstatus == 70 && ${cond} && ${lineitem1}.(${orders}.*o2.o_orderkey)) & ${lineitem1}.(${orders}.*o2.o_orderkey).*l7.s_name`
 
   let query = rh`sort ${orders2} "numwait" 1 "s_name" 0`
 
@@ -986,9 +957,9 @@ test("q21", async () => {
 test("q22", async () => {
   let cond1 = rh`${customer}.*c1.c_acctbal > 0`
   let cond2 = rh`(substr ${customer}.*c1.c_phone 0 2) == "13" || (substr ${customer}.*c1.c_phone 0 2) == "31" ||
-                 (substr ${customer}.*c1.c_phone 0 2) == "23" || (substr ${customer}.*c1.c_phone 0 2) == "29" ||
-                 (substr ${customer}.*c1.c_phone 0 2) == "30" || (substr ${customer}.*c1.c_phone 0 2) == "18" ||
-                 (substr ${customer}.*c1.c_phone 0 2) == "17"`
+                  (substr ${customer}.*c1.c_phone 0 2) == "23" || (substr ${customer}.*c1.c_phone 0 2) == "29" ||
+                  (substr ${customer}.*c1.c_phone 0 2) == "30" || (substr ${customer}.*c1.c_phone 0 2) == "18" ||
+                  (substr ${customer}.*c1.c_phone 0 2) == "17"`
 
   let cond3 = rh`${cond1} && ${cond2}`
   let customer1 = rh`(sum (${cond3} & ${customer}.*c1.c_acctbal)) / (count (${cond3} & ${customer}.*c1.c_acctbal))`
@@ -997,15 +968,15 @@ test("q22", async () => {
 
   let cond4 = rh`${customer}.*c2.c_acctbal > ${customer1}`
   let cond5 = rh`(substr ${customer}.*c2.c_phone 0 2) == "13" || (substr ${customer}.*c2.c_phone 0 2) == "31" ||
-                 (substr ${customer}.*c2.c_phone 0 2) == "23" || (substr ${customer}.*c2.c_phone 0 2) == "29" ||
-                 (substr ${customer}.*c2.c_phone 0 2) == "30" || (substr ${customer}.*c2.c_phone 0 2) == "18" ||
-                 (substr ${customer}.*c2.c_phone 0 2) == "17"`
+                  (substr ${customer}.*c2.c_phone 0 2) == "23" || (substr ${customer}.*c2.c_phone 0 2) == "29" ||
+                  (substr ${customer}.*c2.c_phone 0 2) == "30" || (substr ${customer}.*c2.c_phone 0 2) == "18" ||
+                  (substr ${customer}.*c2.c_phone 0 2) == "17"`
 
   let cond6 = rh`(isUndef ${orders1}.(${customer}.*c2.c_custkey)) && ${cond4} && ${cond5}`
   let customer2 = rh`{
     cntrycode: single (substr ${customer}.*c2.c_phone 0 2),
-    count_order: count? ${customer}.*c2,
-    totalacctbal: sum? ${customer}.*c2.c_acctbal
+    count_order: count ${customer}.*c2,
+    totalacctbal: sum ${customer}.*c2.c_acctbal
   } | group (${cond6} & (substr ${customer}.*c2.c_phone 0 2))`
 
   let query = rh`sort ${customer2} "cntrycode" 0`
