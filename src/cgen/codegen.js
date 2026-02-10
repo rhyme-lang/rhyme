@@ -439,13 +439,28 @@ let emitStateful1 = (q, map, insertKeyBuf) => {
         // c.stmt(insertKeyBuf)(c.assign(lhs.defined, "1"))
         emitStatefulInit(insertKeyBuf, q, lhs)
       }
-      // c.if(init)(c.not(lhs.defined), (buf) => {
-      // })
 
       let [e0, e1, e2, e3] = q.arg
       currentGroupPath.path.push(e1)
       if (e2.key == "pure" && e2.op == "mkTuple") {
-        throw new Error("Not supported yet")
+        let buf = []
+
+        assign(buf, sym, [...q.fre, e1.op], [])
+        hashmap.emitHashLookUpOrUpdate(buf, lhs, vars[e1.op].val, (buf1) => {
+          for (let i = 0; i < e2.arg.length; i += 2) {
+            let key = e2.arg[i]
+            let val = e2.arg[i + 1]
+
+            currentGroupPath.path.push(key)
+            while (val.key == "pure" && val.op.startsWith("convert_")) {
+              val = val.arg[0]
+            }
+            emitStateful1(val, map, buf1)
+            currentGroupPath.path.pop()
+          }
+        })
+        // console.log(buf)
+        // throw new Error("Not supported yet")
       } else {
         while (e2.key == "pure" && e2.op.startsWith("convert_")) {
           e2 = e2.arg[0]
@@ -1084,7 +1099,6 @@ let addHashMapValue = (map, q, name, currentGroupPath) => {
   }
   let q1 = assignments[q.op]
   if (q1.key == "update") {
-    // We cannot sort on a nested hashamp column
     assignmentToSym[q.op] = currentGroupPath.sym
     updateOps[map.val.sym].push(q.op)
     q1.root = currentGroupPath.sym
@@ -1099,7 +1113,6 @@ let addHashMapValue = (map, q, name, currentGroupPath) => {
 
     let sym = tmpSym(map.val.sym)
     if (q1.op == "array") {
-      // We cannot sort on an array column
       addHashMapBucket(map, q1, name, currentGroupPath)
     } else {
       hashmap.emitHashMapValueInit(prolog1, map, name, q.schema.type, initRequired(q1), sortedCols?.[sym]?.[name], prolog0)
@@ -1141,12 +1154,18 @@ let collectNestedHashMap = (q, map, name, currentGroupPath) => {
 
   updateOps[i] = []
 
-  let iOld = currentGroupPath.sym
-  // currentGroupPath.sym = i
   currentGroupPath.path.push(e1.op)
-  addHashMapValue(nestedMap, e2, "_DEFAULT_", currentGroupPath)
-  // currentGroupPath.sym = iOld
+  if (e2.key == "pure" && e2.op == "mkTuple") {
+    for (let j = 0; j < e2.arg.length; j += 2) {
+      let key = e2.arg[j]
+      let val = e2.arg[j + 1]
+      addHashMapValue(nestedMap, val, key.op, currentGroupPath)
+    }
+  } else {
+    addHashMapValue(nestedMap, e2, "_DEFAULT_", currentGroupPath)
+  }
   currentGroupPath.path.pop()
+  // addHashMapValue(nestedMap, e2, "_DEFAULT_", currentGroupPath)
 
   c.declareStruct(prolog0)(struct)
 }

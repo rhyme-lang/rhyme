@@ -410,44 +410,6 @@ let emitHashLookUp = (buf, map, key) => {
     }
   }
 
-  // c.declareULong(buf)(pos, c.binary(hashed, hashMask, "&"))
-
-  // let keyPos = `${map.val.htable}[${pos}]`
-  // let indexing = "[" + keyPos + "]"
-
-  // let compareKeys = undefined
-
-  // let keys = key.tag == TAG.COMBINED_KEY ? key.val.keys : [key]
-  // for (let i in keys) {
-  //   let key = keys[i]
-  //   let schema = key.schema
-  //   if (key.tag == TAG.JSON) {
-  //     key = json.convertJSONTo(key, schema)
-  //   }
-
-  //   if (typing.isString(schema)) {
-  //     let keyStr = map.val.keys[i].val.str + indexing
-  //     let keyLen = map.val.keys[i].val.len + indexing
-
-  //     let { str, len } = key.val
-  //     let comparison = c.ne(c.call("compare_str2", keyStr, keyLen, str, len), "0")
-  //     compareKeys = compareKeys ? c.or(compareKeys, comparison) : comparison
-  //   } else {
-  //     let comparison = c.ne(map.val.keys[i].val + indexing, key.val)
-  //     compareKeys = compareKeys ? c.or(compareKeys, comparison) : comparison
-  //   }
-  // }
-
-  // // increment the position until we find a match or an empty slot
-  // c.while(buf)(
-  //   c.and(c.ne(keyPos, "-1"), compareKeys),
-  //   buf1 => {
-  //     c.stmt(buf1)(c.assign(pos, c.binary(c.add(pos, "1"), hashMask, "&")))
-  //   }
-  // )
-
-  // c.declareInt(buf)(keyPos1, keyPos)
-
   buf.push(stmt)
 
   return [pos, keyPos1]
