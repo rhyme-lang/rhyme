@@ -18,6 +18,7 @@ let schema = typing.parseType(`
 {
   *u32: {
     *u32: {
+      sha: string,
       commit: {
         author: {
           name: string,
@@ -27,22 +28,26 @@ let schema = typing.parseType(`
           name: string,
           date: string
         }
+      },
+      parents: {
+        *u32: unknown
       }
     }
   }
 }`)
 let commits = rh`loadNDJSON "cgen-sql/data/linux_commits/commits.json" ${schema}`
 
+async function count() {
+  let query = rh`count ${commits}.*i.*j`
+
+  await compile(query, { ...settings, outFile: "count" })
+}
+
 async function q1() {
+  // Commit hour of day -> number of commits
   let query = rh`sort {
-    ${commits}.*i.*j.commit.author.name: {
-      name: single ${commits}.*i.*j.commit.author.name,
-      total_commits: count ${commits}.*i.*j,
-      monthly_activity: {
-        (substr ${commits}.*i.*j.commit.author.date 0 7): {
-          count: count ${commits}.*i.*j,
-        }
-      }
+    (substr ${commits}.*i.*j.commit.author.date 11 13): {
+      total_commits: count ${commits}.*i.*j
     }
   } "total_commits" 1`
 
@@ -50,18 +55,47 @@ async function q1() {
 }
 
 async function q2() {
+  // Author name -> commit month -> number of commits
   let query = rh`sort {
-    (substr ${commits}.*i.*j.commit.committer.date 0 7): {
-      month: (substr ${commits}.*i.*j.commit.committer.date 0 7),
+    ${commits}.*i.*j.commit.author.name: {
+      email: single ${commits}.*i.*j.commit.author.email,
       total_commits: count ${commits}.*i.*j,
-      author_activity: {
-        ${commits}.*i.*j.commit.author.name: count ${commits}.*i.*j
+      monthly_activity: {
+        (substr ${commits}.*i.*j.commit.author.date 0 7): {
+          total_commits: count ${commits}.*i.*j,
+          merge: count ((length ${commits}.*i.*j.parents) > 1) & ${commits}.*i.*j,
+          direct: count ((length ${commits}.*i.*j.parents) <= 1) & ${commits}.*i.*j
+        }
       }
     }
-  } "month" 0`
+  } "total_commits" 1`
 
-  await compile(query, { ...settings, outFile: "q2" })
+  await compile(query, { ...settings, outFile: "q2", limit: 10 })
 }
 
+async function q3() {
+  // Month -> author name -> number of commits
+  let q1 = rh`{
+    (substr ${commits}.*i.*j.commit.author.date 0 4): {
+      total_commits: count ${commits}.*i.*j,
+      monthly_activity: {
+        (substr ${commits}.*i.*j.commit.author.date 0 7): {
+          hour_heatmap: {
+            (substr ${commits}.*i.*j.commit.author.date 11 13): count ${commits}.*i.*j
+          }
+        }
+      }
+    }
+  }`
+
+  await compile(q1, {
+    ...settings, outFile: "q3",
+    hashSize: 64,
+    nestedHashSize: 64
+  })
+}
+
+// count()
 q1()
-// q2()
+q2()
+q3()

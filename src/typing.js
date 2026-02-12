@@ -1079,6 +1079,9 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
         } else if (q.op == "isUndef") {
             let {type: t1, props: p1} = argTups[0];
             return {type: types.boolean, props: union(p1, nothingSet)};
+        } else if (q.op == "length") {
+            let {type: t1, props: p1} = argTups[0];
+            return {type: types.u64, props: union(p1, nothingSet)};
         }
         throw new Error("Pure operation not implemented: " + q.op);
     } else if (q.key === "hint") {
@@ -1679,6 +1682,9 @@ let convertAST = (schema, q, completedMap, dontConvertVar = false) => {
             q.arg = q.arg.map($convertAST);
             return q;
         } else if (q.op === "like") {
+            q.arg = q.arg.map($convertAST);
+            return q;
+        } else if (q.op == "length") {
             q.arg = q.arg.map($convertAST);
             return q;
         } else if (q.op == "singleton") {

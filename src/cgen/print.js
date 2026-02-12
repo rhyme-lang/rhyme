@@ -127,7 +127,7 @@ let emitNestedHashMapPrint = (buf, map, settings) => {
   }
 
   let count = map.val.count
-  let limit = settings.limit || count
+  let limit = count
 
   c.printf(buf)("{")
 

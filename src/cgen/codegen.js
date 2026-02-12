@@ -661,7 +661,7 @@ let emitGet = (buf, q) => {
         // use yyjson_obj_iter_get_val
         // Only one possible lhs of this generator, use the iterator
         if (vars[e2.op].gen) {
-          return vars[e2.op].gen
+          return JSON.parse(JSON.stringify(vars[e2.op].gen))
         }
         return { schema: q.schema.type, val: c.call("yyjson_obj_iter_get_val", quoteVar(e2.op)), tag: TAG.JSON }
       } else {
@@ -873,6 +873,13 @@ let emitPure = (buf, q) => {
     } else {
       // Cannot be undefined, return the value
       return e
+    }
+  } else if (q.op == "length") {
+    let e = emitPath(buf, q.arg[0])
+    if (e.tag == TAG.JSON) {
+      return value.primitive(q.schema.type, c.call("yyjson_get_len", e.val), undefined, e.cond)
+    } else {
+      throw new Error("not implemented yet")
     }
   } else if (q.op == "combine") {
     let keys = q.arg.map(e => emitPath(buf, e))

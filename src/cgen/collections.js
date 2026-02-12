@@ -244,7 +244,7 @@ let emitNestedHashMapAllocation = (buf, map) => {
   for (let name in map.val.values) {
     let value = map.val.values[name]
     if (value.tag == TAG.NESTED_HASHMAP) {
-      assign(value.val.ptr, c.cast(`struct ${value.val.struct.name} **`, c.malloc(`struct ${value.val.struct.name} *`, 1)))
+      assign(value.val.ptr, c.cast(`struct ${value.val.struct.name} **`, c.malloc(`struct ${value.val.struct.name} *`, nestedHashSize)))
       // throw new Error("Not implemented yet")
     } else if (value.tag == TAG.HASHMAP_BUCKET) {
       throw new Error("Not implemented yet")
