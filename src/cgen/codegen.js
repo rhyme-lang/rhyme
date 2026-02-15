@@ -878,6 +878,10 @@ let emitPure = (buf, q) => {
     let e = emitPath(buf, q.arg[0])
     if (e.tag == TAG.JSON) {
       return value.primitive(q.schema.type, c.call("yyjson_get_len", e.val), undefined, e.cond)
+    } else if (e.tag == TAG.HASHMAP) {
+      return value.primitive(q.schema.type, e.val.count, undefined, e.cond)
+    } else if (e.tag == TAG.NESTED_HASHMAP) {
+      return value.primitive(q.schema.type, e.val.count, undefined, e.cond)
     } else {
       throw new Error("not implemented yet")
     }

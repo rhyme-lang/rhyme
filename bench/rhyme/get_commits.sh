@@ -7,7 +7,7 @@ fi
 
 TOKEN=$1
 
-DATA_DIR=./cgen-sql/data/linux_commits
+DATA_DIR=./cgen-sql/data/commits
 DATA_FILE=$DATA_DIR/commits.json
 URL=https://api.github.com/repos/torvalds/linux/commits
 
