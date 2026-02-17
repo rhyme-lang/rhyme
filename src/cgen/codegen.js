@@ -1084,7 +1084,7 @@ let collectRelevantStatefulInPath = (q, currentGroupPath) => {
 }
 
 let addHashMapBucket = (map, q, name, currentGroupPath) => {
-  hashmap.emitHashMapBucketsInit(prolog1, map, name, q.schema.type)
+  hashmap.emitHashMapBucketsInit(prolog1, map, name, q.schema.type, initRequired(q))
 
   let bucket = map.val.values[name]
   let e = q.arg[0]

@@ -14,8 +14,7 @@ let settings = {
   nestedHashSize: 2048
 }
 
-let schema = typing.parseType(`
-{
+let schema = typing.parseType(`{
   *u32: {
     *u32: {
       sha: string,
@@ -115,7 +114,6 @@ async function q3() {
 }
 
 async function q4() {
-  // Commit hour of day -> number of unique authors
   let query = rh`sort {
     ${commits}.*i.*j.commit.author.name: {
       email: single ${commits}.*i.*j.commit.author.email,
