@@ -282,9 +282,21 @@ let emitStatefulUpdate1 = (buf, q, lhs, rhs) => {
     c.stmt(buf)(`${lhs.val} = ${rhs.val} < ${lhs.val} ? ${rhs.val} : ${lhs.val}`)
   } else if (q.op == "max") {
     c.stmt(buf)(`${lhs.val} = ${rhs.val} > ${lhs.val} ? ${rhs.val} : ${lhs.val}`)
+  } else if (q.op == "first") {
+    c.if(buf)(c.not(lhs.defined), (buf1) => {
+      c.stmt(buf1)(c.assign(lhs.defined, "1"))
+      if (typing.isString(q.arg[0].schema.type)) {
+        let { str: lhsStr, len: lhsLen } = lhs.val
+        let { str: rhsStr, len: rhsLen } = rhs.val
+        c.stmt(buf1)(c.assign(lhsStr, rhsStr))
+        c.stmt(buf1)(c.assign(lhsLen, rhsLen))
+      } else {
+        c.stmt(buf1)(c.assign(lhs.val, rhs.val))
+      }
+    })
   } else if (q.op == "single") {
     c.if(buf)(c.not(lhs.defined), (buf1) => {
-      c.stmt(buf)(c.assign(lhs.defined, "1"))
+      c.stmt(buf1)(c.assign(lhs.defined, "1"))
     })
     if (typing.isString(q.arg[0].schema.type)) {
       let { str: lhsStr, len: lhsLen } = lhs.val
@@ -1459,7 +1471,7 @@ let generateC = (q, ir, settings) => {
 
   let sh = (cmd) => {
     return new Promise((resolve, reject) => {
-      os.exec(cmd, (err, stdout) => {
+      os.exec(cmd, (err, stdout, stderr) => {
         if (err) {
           reject(err)
         } else {
@@ -1480,14 +1492,16 @@ let generateC = (q, ir, settings) => {
     return stdout
   }
 
-  func.explain = func.explain
+  func.explain = {}
 
   let writeAndCompile = async () => {
     await fs.writeFile(cFile, codeNew)
     if (inputFiles["json"] || inputFiles["ndjson"]) cFlags += " -Ithird-party/yyjson -Lthird-party/yyjson/out -lyyjson"
     let cmd = `gcc ${cFile} -o ${out} ${cFlags}`
     console.log("Executing: " + cmd)
+    let time1 = performance.now()
     await sh(cmd)
+    func.explain.time = time1
     return func
   }
 

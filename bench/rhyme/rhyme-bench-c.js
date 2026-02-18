@@ -3,14 +3,15 @@ const { compile } = require("../../src/simple-eval")
 const { typing, types } = require("../../src/typing")
 const { runtime: rt } = require("../../src/simple-runtime")
 
-let settings = {
-  newCodegen: true
-}
+let outDir = "bench/out/rhyme-bench"
 
-let udf = {
-  substr: (s, l, r) => s.substring(l, r),
-  limit: (arr, n) => arr.slice(0, n),
-  size: o => Object.keys(o).length
+let settings = {
+  backend: "c-new",
+  schema: types.never,
+  outDir,
+  enableOptimizations: false,
+  hashSize: 65536,
+  nestedHashSize: 2048
 }
 
 let schema = typing.parseType(`{
@@ -35,47 +36,43 @@ let schema = typing.parseType(`{
 }`)
 let commits = rh`loadNDJSON "cgen-sql/data/commits/commits.json" ${schema}`
 
-function q1() {
+async function q1() {
   let t1 = performance.now()
 
   // author name -> year -> month -> commits
-  let query = rh`udf.limit (sort {
+  let query = rh`sort {
     ${commits}.*i.*j.commit.author.name: {
-      name: single ${commits}.*i.*j.commit.author.name,
       email: first ${commits}.*i.*j.commit.author.email,
       total_commits: count ${commits}.*i.*j,
       yearly_activity: {
-        (udf.substr ${commits}.*i.*j.commit.author.date 0 4): {
+        (substr ${commits}.*i.*j.commit.author.date 0 4): {
           total_commits: count ${commits}.*i.*j,
           monthly_activity: {
-            (udf.substr ${commits}.*i.*j.commit.author.date 0 7): {
+            (substr ${commits}.*i.*j.commit.author.date 0 7): {
               total_commits: count ${commits}.*i.*j
             }
           }
         }
       }
     }
-  } "total_commits" 1) 5`
+  } "total_commits" 1`
 
-  let func = compile(query, settings)
-
-  let t2 = performance.now()
-
-  let res = func({ udf })
-  
+  let f = await compile(query, {
+    ...settings, outFile: "q1",
+    hashSize: 65536,
+    nestedHashSize: 64,
+    limit: 5
+  })
   let t3 = performance.now()
-
-  console.error("Compilation: " + (t2 - t1) + " ms")
-  console.error("Query: " + (t3 - t2) + " ms")
+  let t2 = f.explain.time
+  console.log("Rhyme compilation: " + (t2 - t1) + " ms")
+  console.log("C compilation: " + (t3 - t2) + " ms")
 }
 
-function q2() {
-  let t1 = performance.now()
-
+async function q2() {
   // author name -> committer name -> commits
-  let query = rh`udf.limit (sort {
+  let query = rh`sort {
     ${commits}.*i.*j.commit.author.name: {
-      name: single ${commits}.*i.*j.commit.author.name,
       email: first ${commits}.*i.*j.commit.author.email,
       total_commits: count ${commits}.*i.*j,
       self_committed: count (${commits}.*i.*j.commit.committer.name == ${commits}.*i.*j.commit.author.name) & ${commits}.*i.*j,
@@ -86,27 +83,21 @@ function q2() {
         }
       }
     }
-  } "total_commits" 1) 5`
+  } "total_commits" 1`
 
-  let func = compile(query, settings)
-
-  let t2 = performance.now()
-
-  let res = func({ udf })
-  
-  let t3 = performance.now()
-
-  console.error("Compilation: " + (t2 - t1) + " ms")
-  console.error("Query: " + (t3 - t2) + " ms")
+  await compile(query, {
+    ...settings, outFile: "q2",
+    hashSize: 65536,
+    nestedHashSize: 1024,
+    limit: 5
+  })
 }
 
-function q3() {
-  let t1 = performance.now()
-
+async function q3() {
   // Commit hour of day -> number of unique authors
   let phase1 = rh`{
-    (udf.substr ${commits}.*i.*j.commit.author.date 11 13): {
-      hour: single (udf.substr ${commits}.*i.*j.commit.author.date 11 13),
+    (substr ${commits}.*i.*j.commit.author.date 11 13): {
+      hour: single (substr ${commits}.*i.*j.commit.author.date 11 13),
       total_commits: count ${commits}.*i.*j,
       unique_authors: {
         ${commits}.*i.*j.commit.author.name: count ${commits}.*i.*j
@@ -116,46 +107,32 @@ function q3() {
 
   let query = rh`sort {
     ${phase1}.*count.hour: {
-      hour: single ${phase1}.*count.hour,
       total_commits: single ${phase1}.*count.total_commits,
-      unique_authors: udf.size ${phase1}.*count.unique_authors
+      unique_authors: length ${phase1}.*count.unique_authors
     }
   } "unique_authors" 1`
 
-  let func = compile(query, settings)
-
-  let t2 = performance.now()
-
-  let res = func({ udf })
-  
-  let t3 = performance.now()
-
-  console.error("Compilation: " + (t2 - t1) + " ms")
-  console.error("Query: " + (t3 - t2) + " ms")
+  await compile(query, {
+    ...settings, outFile: "q3",
+    hashSize: 64,
+    nestedHashSize: 8192
+  })
 }
 
-function q4() {
-  let t1 = performance.now()
-
-  let query = rh`udf.limit (sort {
+async function q4() {
+  let query = rh`sort {
     ${commits}.*i.*j.commit.author.name: {
-      name: single ${commits}.*i.*j.commit.author.name,
       email: first ${commits}.*i.*j.commit.author.email,
       total_commits: count ${commits}.*i.*j,
-      merge_commits: count (udf.size ${commits}.*i.*j.parents) > 1 & ${commits}.*i.*j
+      merge_commits: count (length ${commits}.*i.*j.parents) > 1 & ${commits}.*i.*j
     }
-  } "merge_commits" 1) 20`
+  } "merge_commits" 1`
 
-  let func = compile(query, settings)
-
-  let t2 = performance.now()
-
-  let res = func({ udf })
-  
-  let t3 = performance.now()
-
-  console.error("Compilation: " + (t2 - t1) + " ms")
-  console.error("Query: " + (t3 - t2) + " ms")
+  await compile(query, {
+    ...settings, outFile: "q4",
+    hashSize: 65536,
+    limit: 20
+  })
 }
 
 // count()

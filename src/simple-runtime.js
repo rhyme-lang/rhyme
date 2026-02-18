@@ -25,6 +25,7 @@ rt.reset = () => {
 }
 
 rt.loadJSON = (path) => {
+  if (oath === undefined) return undefined
   if (!inputFiles[path]) {
     inputFiles[path] = JSON.parse(fs.readFileSync(path))
   }
@@ -32,9 +33,29 @@ rt.loadJSON = (path) => {
 }
 
 rt.loadNDJSON = (path) => {
+  if (path === undefined) return undefined
   if (!inputFiles[path]) {
-    inputFiles[path] = fs.readFileSync(path, "utf8").trim().split("\n").map(JSON.parse)
+    const fd = fs.openSync(path, 'r')
+    const chunkSize = 64 * 1024
+    const buf = Buffer.alloc(chunkSize)
+    const records = []
+    let leftover = ''
+    let bytesRead
+
+    while ((bytesRead = fs.readSync(fd, buf, 0, chunkSize)) > 0) {
+      const chunk = leftover + buf.toString('utf8', 0, bytesRead)
+      const lines = chunk.split('\n')
+      leftover = lines.pop() // last incomplete line
+      for (const line of lines) {
+        if (line.trim()) records.push(JSON.parse(line))
+      }
+    }
+
+    if (leftover.trim()) records.push(JSON.parse(leftover))
+    fs.closeSync(fd)
+    inputFiles[path] = records
   }
+
   return inputFiles[path]
 }
 
