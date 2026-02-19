@@ -37,17 +37,23 @@ let commits = rh`loadNDJSON "cgen-sql/data/commits/commits.json" ${schema}`
 
 let runQuery = (func) => {
   const N = 5
-
+  let time = []
   for (let i = 0; i < N; i++) {
     if (reset) rt.reset()
     let start = performance.now()
     let res = func({ udf })
     let end = performance.now()
     console.error("Time elapsed: " + (end - start) + " ms")
+    time.push(end - start)
   }
+  console.log("median: " + time.sort()[2])
 }
 
 function q1() {
+  console.log("==============================")
+  console.log("Q1")
+  console.log("==============================")
+
   let t1 = performance.now()
 
   // author name -> year -> month -> commits
@@ -80,6 +86,10 @@ function q1() {
 }
 
 function q2() {
+  console.log("==============================")
+  console.log("Q2")
+  console.log("==============================")
+
   let t1 = performance.now()
 
   // author name -> committer name -> commits
@@ -109,6 +119,10 @@ function q2() {
 }
 
 function q3() {
+  console.log("==============================")
+  console.log("Q3")
+  console.log("==============================")
+
   let t1 = performance.now()
 
   // Commit hour of day -> number of unique authors
@@ -141,6 +155,10 @@ function q3() {
 }
 
 function q4() {
+  console.log("==============================")
+  console.log("Q4")
+  console.log("==============================")
+
   let t1 = performance.now()
 
   let query = rh`udf.limit (sort {
