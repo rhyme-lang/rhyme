@@ -366,7 +366,7 @@ rt.stateful.single = x => s => { // error if more than one
   // e.g. count).
   if (JSON.stringify(s) !== JSON.stringify(x))
     console.error("single value expected but got two: "+s+", "+x)
-  return s
+  return x
 }
 
 rt.stateful.array_init = () => []
