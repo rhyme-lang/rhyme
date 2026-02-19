@@ -44,7 +44,7 @@ let emitObjectPrint = (buf, obj, settings) => {
 let emitHashMapPrintJSON = (buf, map, settings) => {
   let sym = tmpSym(map.val.sym)
   let count = map.val.count
-  let limit = settings.limit || count
+  let limit = settings.limit ? c.ternary(c.lt(settings.limit, count), settings.limit, count) : count
 
   c.printf(buf)("{")
 
@@ -99,7 +99,7 @@ let emitHashMapPrint = (buf, map, settings) => {
   }
   let sym = tmpSym(map.val.sym)
   let count = map.val.count
-  let limit = settings.limit || count
+  let limit = settings.limit ? c.ternary(c.lt(settings.limit, count), settings.limit, count) : count
 
   buf.push(`for (int i = 0; i < ${limit}; i++) {`)
   if (map.val.sorted) {
@@ -171,7 +171,7 @@ let emitNestedHashMapPrint = (buf, map, settings) => {
 let emitArrayPrintJSON = (buf, arr, settings) => {
   let sym = arr.val.sym
   let count = arr.val.count
-  let limit = settings.limit || count
+  let limit = settings.limit ? c.ternary(c.lt(settings.limit, count), settings.limit, count) : count
 
   c.printf(buf)("[")
   if (arr.val.sorted) {
@@ -200,7 +200,7 @@ let emitArrayPrint = (buf, arr, settings) => {
   }
   let sym = arr.val.sym
   let count = arr.val.count
-  let limit = settings.limit || count
+  let limit = settings.limit ? c.ternary(c.lt(settings.limit, count), settings.limit, count) : count
 
   if (arr.val.sorted) {
     buf.push(`for (int i = 0; i < ${limit}; i++) {`)

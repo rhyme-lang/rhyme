@@ -12,4 +12,5 @@ reduce (inputs | .[]) as $c (
   )
 | to_entries
 | sort_by(-.value.merge_commits)
+| .[0:20]
 | from_entries

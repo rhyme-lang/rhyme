@@ -65,8 +65,9 @@ async function q1() {
   })
   let t3 = performance.now()
   let t2 = f.explain.time
-  console.log("Rhyme compilation: " + (t2 - t1) + " ms")
-  console.log("C compilation: " + (t3 - t2) + " ms")
+  console.log("Q1 Rhyme compilation: " + (t2 - t1) + " ms")
+  console.log("Q1 C compilation: " + (t3 - t2) + " ms")
+  console.log("Q1 total compilation: " + (t3 - t1) + " ms")
 }
 
 async function q2() {
