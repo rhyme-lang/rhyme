@@ -35,6 +35,18 @@ let schema = typing.parseType(`{
 }`)
 let commits = rh`loadNDJSON "cgen-sql/data/commits/commits.json" ${schema}`
 
+let runQuery = (func) => {
+  const N = 5
+
+  for (let i = 0; i < N; i++) {
+    if (reset) rt.reset()
+    let start = performance.now()
+    let res = func({ udf })
+    let end = performance.now()
+    console.error("Time elapsed: " + (end - start) + " ms")
+  }
+}
+
 function q1() {
   let t1 = performance.now()
 
@@ -60,13 +72,11 @@ function q1() {
   let func = compile(query, settings)
 
   let t2 = performance.now()
+  console.error("Compilation: " + (t2 - t1) + " ms")
 
   let res = func({ udf })
-  
-  let t3 = performance.now()
 
-  console.error("Compilation: " + (t2 - t1) + " ms")
-  console.error("Query: " + (t3 - t2) + " ms")
+  runQuery(func)
 }
 
 function q2() {
@@ -91,13 +101,11 @@ function q2() {
   let func = compile(query, settings)
 
   let t2 = performance.now()
+  console.error("Compilation: " + (t2 - t1) + " ms")
 
   let res = func({ udf })
-  
-  let t3 = performance.now()
 
-  console.error("Compilation: " + (t2 - t1) + " ms")
-  console.error("Query: " + (t3 - t2) + " ms")
+  runQuery(func)
 }
 
 function q3() {
@@ -125,13 +133,11 @@ function q3() {
   let func = compile(query, settings)
 
   let t2 = performance.now()
+  console.error("Compilation: " + (t2 - t1) + " ms")
 
   let res = func({ udf })
-  
-  let t3 = performance.now()
 
-  console.error("Compilation: " + (t2 - t1) + " ms")
-  console.error("Query: " + (t3 - t2) + " ms")
+  runQuery(func)
 }
 
 function q4() {
@@ -149,17 +155,35 @@ function q4() {
   let func = compile(query, settings)
 
   let t2 = performance.now()
+  console.error("Compilation: " + (t2 - t1) + " ms")
 
   let res = func({ udf })
-  
-  let t3 = performance.now()
 
-  console.error("Compilation: " + (t2 - t1) + " ms")
-  console.error("Query: " + (t3 - t2) + " ms")
+  runQuery(func)
 }
 
+let args = process.argv
+
+let q = Number(args[2])
+let reset = args[3]
+
 // count()
-q1()
-// q2()
-// q3()
-// q4()
+switch (q) {
+  case 1:
+    q1()
+    break
+  case 2:
+    q2()
+    break
+  case 3:
+    q3()
+    break
+  case 4:
+    q4()
+    break
+  default:
+    q1()
+    q2()
+    q3()
+    q4()
+}
