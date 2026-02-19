@@ -70,6 +70,8 @@ async function q1() {
 }
 
 async function q2() {
+  let t1 = performance.now()
+
   // author name -> committer name -> commits
   let query = rh`sort {
     ${commits}.*i.*j.commit.author.name: {
@@ -85,15 +87,21 @@ async function q2() {
     }
   } "total_commits" 1`
 
-  await compile(query, {
+  let f = await compile(query, {
     ...settings, outFile: "q2",
     hashSize: 65536,
     nestedHashSize: 1024,
     limit: 5
   })
+  let t3 = performance.now()
+  let t2 = f.explain.time
+  console.log("Rhyme compilation: " + (t2 - t1) + " ms")
+  console.log("C compilation: " + (t3 - t2) + " ms")
 }
 
 async function q3() {
+  let t1 = performance.now()
+
   // Commit hour of day -> number of unique authors
   let phase1 = rh`{
     (substr ${commits}.*i.*j.commit.author.date 11 13): {
@@ -112,14 +120,20 @@ async function q3() {
     }
   } "unique_authors" 1`
 
-  await compile(query, {
+  let f = await compile(query, {
     ...settings, outFile: "q3",
     hashSize: 64,
     nestedHashSize: 8192
   })
+  let t3 = performance.now()
+  let t2 = f.explain.time
+  console.log("Rhyme compilation: " + (t2 - t1) + " ms")
+  console.log("C compilation: " + (t3 - t2) + " ms")
 }
 
 async function q4() {
+  let t1 = performance.now()
+
   let query = rh`sort {
     ${commits}.*i.*j.commit.author.name: {
       email: first ${commits}.*i.*j.commit.author.email,
@@ -128,15 +142,37 @@ async function q4() {
     }
   } "merge_commits" 1`
 
-  await compile(query, {
+  let f = await compile(query, {
     ...settings, outFile: "q4",
     hashSize: 65536,
     limit: 20
   })
+  let t3 = performance.now()
+  let t2 = f.explain.time
+  console.log("Rhyme compilation: " + (t2 - t1) + " ms")
+  console.log("C compilation: " + (t3 - t2) + " ms")
 }
 
-// count()
-q1()
-// q2()
-// q3()
-// q4()
+let args = process.argv
+
+let q = Number(args[2])
+
+switch (q) {
+  case 1:
+    q1()
+    break
+  case 2:
+    q2()
+    break
+  case 3:
+    q3()
+    break
+  case 4:
+    q4()
+    break
+  default:
+    q1()
+    q2()
+    q3()
+    q4()
+}
