@@ -36,7 +36,7 @@ rt.loadNDJSON = (path) => {
   if (path === undefined) return undefined
   if (!inputFiles[path]) {
     const fd = fs.openSync(path, 'r')
-    const chunkSize = 64 * 1024
+    const chunkSize = 256 * 1024 * 1024
     const buf = Buffer.alloc(chunkSize)
     const records = []
     let leftover = ''
