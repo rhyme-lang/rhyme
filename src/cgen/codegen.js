@@ -54,6 +54,7 @@ let visitedAssignments
 let currentGroupPath
 
 let preload
+let linkedBuckets
 
 let getDeps = q => [...q.fre, ...q.tmps.map(tmpSym)]
 
@@ -125,6 +126,7 @@ let reset = (settings) => {
   visitedAssignments = {}
 
   preload = settings.preload || false
+  linkedBuckets = settings.linkedBuckets || false
 }
 
 let initializeProlog = () => {
@@ -257,7 +259,11 @@ let emitStatefulInit = (buf, q, lhs) => {
     c.stmt(buf)(c.assign(lhs.val, utils.getDataTypeLimits(lhs.schema).min))
   } else if (q.op == "array") {
     // lhs passed will be the array object
-    c.stmt(buf)(c.assign(lhs.val.count, "0"))
+    if (lhs.tag == TAG.HASHMAP_LINKED_BUCKET) {
+      c.stmt(buf)(c.assign(lhs.val.head, "0"))
+    } else {
+      c.stmt(buf)(c.assign(lhs.val.count, "0"))
+    }
   } else if (q.key == "update") {
     hashmap.emitNestedHashMapAllocation(buf, lhs)
   } else {
@@ -475,7 +481,6 @@ let emitStateful1 = (q, map, insertKeyBuf) => {
             currentGroupPath.path.pop()
           }
         })
-        // console.log(buf)
         // throw new Error("Not supported yet")
       } else {
         while (e2.key == "pure" && e2.op.startsWith("convert_")) {
@@ -627,7 +632,6 @@ let emitLoadInput = (buf, q) => {
         let sym = symbol.getSymbol("preloaded")
 
         let filter = { key: "get", arg: [q, { key: "var", op: "preload_iter" }], schema: { type: q.schema.type.objValue } }
-        // console.log(usedCols)
         let getLoopTxtFunc = csv.getCSVLoopTxt(filter, fileValue, [], usedCols)
         let loopTxt = getLoopTxtFunc()
         let count = array.emitArrayInit(prolog1, sym)
@@ -722,7 +726,7 @@ let emitGet = (buf, q) => {
           return { schema: q.schema.type, val: c.call("yyjson_arr_get", g1.val, quoteVar(e2.op)), tag: TAG.JSON }
         return { schema: q.schema.type, val: c.call("yyjson_obj_getn", g1.val, c.call("yyjson_get_str", quoteVar(e2.op)), c.call("yyjson_get_len", quoteVar(e2.op))), tag: TAG.JSON }
       }
-    } else if (g1.tag == TAG.ARRAY) {
+    } else if (g1.tag == TAG.ARRAY || g1.tag == TAG.HASHMAP_LINKED_BUCKET) {
       // If we are iterating over a hashMap,
       // get the entry directly using the var
       return array.getValueAtIdx(g1, quoteVar(e2.op))
@@ -1142,20 +1146,22 @@ let collectRelevantStatefulInPath = (q, currentGroupPath) => {
 }
 
 let addHashMapBucket = (map, q, name, currentGroupPath) => {
-  hashmap.emitHashMapBucketsInit(prolog1, map, name, q.schema.type, initRequired(q))
+  let initF = linkedBuckets ? hashmap.emitHashMapLinkedBucketsInit : hashmap.emitHashMapBucketsInit
+  let valueInitF = linkedBuckets ? hashmap.emitHashMapLinkedBucketValuesInit : hashmap.emitHashMapBucketValuesInit
+  initF(prolog1, map, name, q.schema.type, initRequired(q))
 
   let bucket = map.val.values[name]
   let e = q.arg[0]
   if (typing.isUnknown(e.schema.type)) {
-    hashmap.emitHashMapBucketValuesInit(prolog1, map, bucket, "_DEFAULT_", e.schema.type)
+    valueInitF(prolog1, map, bucket, "_DEFAULT_", e.schema.type)
   } else if (typing.isObject(e.schema.type) && utils.isSimpleObject(e.schema.type)) {
     let values = utils.convertToArrayOfSchema(e.schema.type)
     for (let i in values) {
       let { name, schema } = values[i]
-      hashmap.emitHashMapBucketValuesInit(prolog1, map, bucket, name, schema)
+      valueInitF(prolog1, map, bucket, name, schema)
     }
   } else {
-    hashmap.emitHashMapBucketValuesInit(prolog1, map, bucket, "_DEFAULT_", e.schema.type)
+    valueInitF(prolog1, map, bucket, "_DEFAULT_", e.schema.type)
   }
 }
 
@@ -1406,6 +1412,9 @@ let processFilters = () => {
         }
       } else if (lhs.tag == TAG.ARRAY) {
         let getLoopTxtFunc = array.getArrayLoopTxt(f, lhs, data)
+        addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
+      } else if (lhs.tag == TAG.HASHMAP_LINKED_BUCKET) {
+        let getLoopTxtFunc = hashmap.getHashMapLinkedBucketLoopTxt(f, lhs, data)
         addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
       } else if (lhs.tag == TAG.HASHMAP) {
         let key = hashmap.getHashMapKeyEntry(lhs, quoteVar(v1))

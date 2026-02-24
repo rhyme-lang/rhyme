@@ -13,7 +13,8 @@ let settings = {
   hashSize: 16777216,
   enableOptimizations: false,
   format: "csv",
-  preload: true
+  preload: true,
+  linkedBuckets: true
 }
 
 let customerSchema = typing.objBuilder()

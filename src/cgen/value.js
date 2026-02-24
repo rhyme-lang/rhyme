@@ -17,6 +17,7 @@ const TAG = {
   HASHMAP: "hashmap",
   HASHMAP_VALUE: "hashmap_value",
   HASHMAP_BUCKET: "hashmap_bucket",
+  HASHMAP_LINKED_BUCKET: "hashmap_linked_bucket",
   OBJECT: "object",
   CSV: "csv",
   JSON: "json",

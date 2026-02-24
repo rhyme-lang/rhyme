@@ -235,6 +235,42 @@ let emitHashMapBucketPrint = (buf, bucket, settings) => {
   c.printf(buf)("]")
 }
 
+let emitHashMapLinkedBucketPrintJSON = (buf, bucket, settings) => {
+  if (settings.format == "json") {
+    emitArrayPrintJSON(buf, arr, settings)
+    return
+  }
+
+  c.printf(buf)("[")
+  buf.push(`for (int idx = ${bucket.val.head}; idx != 0; idx = ${bucket.val.prev}[idx]) {`)
+
+  let value = array.getValueAtIdx(bucket, "idx")
+  emitValPrint(buf, value, settings)
+
+  buf.push(`if (${bucket.val.prev}[idx] != 0) {`)
+  c.printf(buf)(",")
+  buf.push(`}`)
+  buf.push(`}`)
+  c.printf(buf)("]")
+}
+
+let emitHashMapLinkedBucketPrint = (buf, bucket, settings) => {
+  if (settings.format == "json") {
+    emitHashMapLinkedBucketPrintJSON(buf, arr, settings)
+    return
+  }
+
+  buf.push(`for (int idx = ${bucket.val.head}; idx != 0; idx = ${bucket.val.prev}[idx]) {`)
+
+  let value = array.getValueAtIdx(bucket, "idx")
+  emitValPrint(buf, value, settings)
+
+  buf.push(`if (${bucket.val.prev}[idx] != 0) {`)
+  c.printf(buf)("\\n")
+  buf.push(`}`)
+  buf.push(`}`)
+}
+
 let emitValPrint = (buf, val, settings) => {
   if (settings.format != "json" && settings.format != "csv") throw new Error("Unknown print format: " + settings.format)
   let f = (buf1) => {
@@ -253,6 +289,9 @@ let emitValPrint = (buf, val, settings) => {
     } else if (val.tag == TAG.HASHMAP_BUCKET) {
       c.comment(buf1)("print bucket")
       emitHashMapBucketPrint(buf1, val, settings)
+    } else if (val.tag == TAG.HASHMAP_LINKED_BUCKET) {
+      c.comment(buf1)("print linked bucket")
+      emitHashMapLinkedBucketPrint(buf1, val, settings)
     } else if (val.tag == TAG.NESTED_HASHMAP) {
       c.comment(buf1)("print nested hashmap")
       emitNestedHashMapPrint(buf1, val, settings)

@@ -14,6 +14,8 @@ let nestedHashSize
 let bucketSize
 let dataSize
 
+let linkedBucketsSize
+
 let hashMask
 
 let arraySize
@@ -24,6 +26,7 @@ let reset = (settings) => {
   hashSize = settings.hashSize || 256
   nestedHashSize = settings.nestedHashSize || 256
   bucketSize = settings.bucketSize || 64
+  linkedBucketsSize = hashSize * 8
   arraySize = settings.arraySize || 2048
 
   dataSize = hashSize * bucketSize
@@ -80,6 +83,61 @@ let emitHashMapKeyDecls = (buf, sym, keySchema, size = hashSize) => {
     }
   }
   return keys
+}
+
+let emitHashMapLinkedBucketsInit = (buf, map, name, schema, defined) => {
+  // stateful "array" op
+  let sym = tmpSym(map.val.sym)
+  let res = { schema }
+
+  let count = `${sym}_${name}_data_count`
+
+  let head = `${sym}_${name}_head`
+  let prev = `${sym}_${name}_prev`
+
+  c.declareInt(buf)(count, "0")
+  c.declareIntPtr(buf)(head, c.cast("int *", c.malloc("int", hashSize)))
+  c.declareIntPtr(buf)(prev, c.cast("int *", c.calloc("int", linkedBucketsSize)))
+
+  res.val = { count, head, prev }
+  res.tag = TAG.HASHMAP_LINKED_BUCKET
+
+  if (!defined) {
+    if (map.tag == TAG.NESTED_HASHMAP) {
+      map.val.struct.addField("uint8_t *", `${sym}_${name}_defined`)
+    } else
+      c.declarePtr(buf)("uint8_t", `${sym}_${name}_defined`, c.cast(`uint8_t *`, c.calloc("uint8_t", hashSize)))
+    res.defined = `${sym}_${name}_defined`
+  }
+
+  map.val.values ??= {}
+  map.val.values[name] = res
+}
+
+let emitHashMapLinkedBucketValuesInit = (buf, map, bucket, name, schema) => {
+  // stateful "array" op
+  let sym = tmpSym(map.val.sym)
+  let res = { schema }
+
+  if (typing.isUnknown(schema)) {
+    allocateYYJSONBuffer(buf, `${sym}_${name}`, linkedBucketsSize)
+    res.val = `${sym}_${name}`
+    res.tag = TAG.JSON
+  } else if (typing.isObject(schema)) {
+    // Nested hashmap
+    throw new Error("Nested hashmap not supported for now")
+  } else if (typing.isString(schema)) {
+    allocateStringBuffer(buf, `${sym}_${name}_str`, `${sym}_${name}_len`, linkedBucketsSize)
+    res.val = { str: `${sym}_${name}_str`, len: `${sym}_${name}_len` }
+  } else {
+    // let convertToCType report "type not supported" errors
+    let cType = utils.convertToCType(schema)
+    allocatePrimitiveBuffer(buf, cType, `${sym}_${name}`, linkedBucketsSize)
+    res.val = `${sym}_${name}`
+  }
+
+  bucket.val.values ??= {}
+  bucket.val.values[name] = res
 }
 
 let emitHashMapBucketsInit = (buf, map, name, schema, defined) => {
@@ -517,6 +575,8 @@ let getValueAtIdx = (val, idx) => {
     res.val[name] = JSON.parse(JSON.stringify(value))
     if (value.tag == TAG.NESTED_HASHMAP) {
       getNestedHashmapAtIdx(res.val[name], idx)
+    } else if (value.tag == TAG.HASHMAP_LINKED_BUCKET) {
+      res.val[name].val.head += indexing
     } else if (value.tag == TAG.HASHMAP_BUCKET) {
       res.val[name].val.count += indexing
       for (let n in res.val[name].val.values) {
@@ -629,16 +689,56 @@ let emitArrayInit = (buf, sym) => {
   return count
 }
 
+let emitHashMapLinkedBucketInsert = (buf, bucket, value) => {
+  c.stmt(buf)(c.inc(bucket.val.count))
+  // Set prev to old head
+  c.stmt(buf)(c.assign(bucket.val.prev + "[" + bucket.val.count + "]", bucket.val.head))
+  // Set new head to the current position
+  c.stmt(buf)(c.assign(bucket.val.head, bucket.val.count))
+
+  let lhs = getValueAtIdx(bucket, bucket.val.count)
+
+  if (value.tag == TAG.OBJECT) {
+    for (let key in value.val) {
+      let val = value.val[key]
+
+      if (typing.isObject(val.schema)) {
+        throw new Error("Not supported")
+      }
+
+      if (val.tag == TAG.JSON) {
+        val = json.convertJSONTo(val, val.schema)
+      }
+
+      if (typing.isString(val.schema)) {
+        c.stmt(buf)(c.assign(lhs.val[key].val.str, val.val.str))
+        c.stmt(buf)(c.assign(lhs.val[key].val.len, val.val.len))
+      } else {
+        c.stmt(buf)(c.assign(lhs.val[key].val, val.val))
+      }
+    }
+  } else if (typing.isString(value.schema)) {
+    c.stmt(buf)(c.assign(lhs.val.str, value.val.str))
+    c.stmt(buf)(c.assign(lhs.val.len, value.val.len))
+  } else {
+    c.stmt(buf)(c.assign(lhs.val, value.val))
+  }
+}
+
 // Emit code that inserts a value into the array
 let emitArrayInsert = (buf, arr, value) => {
-  // console.log(arr)
+  if (arr.tag == TAG.HASHMAP_LINKED_BUCKET) {
+    emitHashMapLinkedBucketInsert(buf, arr, value)
+    return
+  }
+
   let capacity = arr.val.capacity || arraySize
   if (checkOutOfBounds) {
     c.if(buf)(c.eq(arr.val.count, capacity), (buf1) => {
-    c.printErr(buf1)("array size reached its full capacity\\n")
-    c.return(buf1)("1")
-  })
-}
+      c.printErr(buf1)("array size reached its full capacity\\n")
+      c.return(buf1)("1")
+    })
+  }
 
   let dataPos = arr.val.count
 
@@ -693,6 +793,25 @@ let getArrayLoopTxt = (f, arr, data) => () => {
   }
 }
 
+let getHashMapLinkedBucketLoopTxt = (f, bucket, data) => () => {
+  let v = f.arg[1].op
+
+  let initCursor = []
+
+  let info = [`// generator: ${v} <- ${pretty(f.arg[0])}`]
+
+  let loopHeader = []
+
+  loopHeader.push((bucket.cond ? `if (!${bucket.cond}) ` : "") + `for (int ${quoteVar(v)} = ${bucket.val.head}; ${quoteVar(v)} != 0; ${quoteVar(v)} = ${bucket.val.prev}[${quoteVar(v)}]) {`)
+
+  let boundsChecking = []
+  boundsChecking.push(`if (${quoteVar(v)} == 0) break;`)
+
+  return {
+    info, data, initCursor, loopHeader, boundsChecking, rowScanning: []
+  }
+}
+
 let getHashMapLoopTxt = (f, map, data) => () => {
   let count = map.val.count
   let v = f.arg[1].op
@@ -737,7 +856,10 @@ let hashmap = {
   emitHashMapBucketValuesInit,
   getHashMapLoopTxt,
   emitNestedHashMapInit,
-  emitNestedHashMapAllocation
+  emitNestedHashMapAllocation,
+  emitHashMapLinkedBucketsInit,
+  emitHashMapLinkedBucketValuesInit,
+  getHashMapLinkedBucketLoopTxt
 }
 
 // let hashmapC1 = {
