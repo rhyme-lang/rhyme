@@ -1,6 +1,6 @@
-const { rh, api } = require('../src/rhyme')
-const { compile } = require('../src/simple-eval')
-const { typing, types } = require('../src/typing')
+const { rh, api } = require('../../src/rhyme')
+const { compile } = require('../../src/simple-eval')
+const { typing, types } = require('../../src/typing')
 
 // point to the data directory
 let dataDir = "cgen-sql/data/SF10"
@@ -12,7 +12,8 @@ let settings = {
   outDir,
   hashSize: 16777216,
   enableOptimizations: false,
-  format: "csv"
+  format: "csv",
+  preload: true
 }
 
 let customerSchema = typing.objBuilder()
@@ -157,7 +158,7 @@ async function q1() {
   }]`
   let query = rh`sort ${lineitem2} "l_returnflag" 0 "l_linestatus" 0`
 
-  await compile(query, { ...settings, outFile: "q1_stream", hashSize: 8, arraySize: 4 })
+  await compile(query, { ...settings, outFile: "q1", hashSize: 8, arraySize: 60000000 })
 }
 
 async function q2() {
@@ -202,7 +203,7 @@ async function q2() {
 
   let query = rh`sort ${partsupp2} "s_acctbal" 1 "n_name" 0 "s_name" 0 "p_partkey" 0`
 
-  await compile(query, { ...settings, outFile: "q2_stream", arraySize: 8092, limit: 100 })
+  await compile(query, { ...settings, outFile: "q2", arraySize: 8000000, limit: 100 })
 }
 
 async function q3() {
@@ -226,7 +227,7 @@ async function q3() {
 
   let query = rh`sort ${lineitem1} "revenue" 1 "o_orderdate" 0`
 
-  await compile(query, { ...settings, outFile: "q3_stream", limit: 10 })
+  await compile(query, { ...settings, outFile: "q3", arraySize: 60000000, limit: 10 })
 }
 
 async function q4() {
@@ -240,7 +241,7 @@ async function q4() {
   } | group (${countR}.(${orders}.*.o_orderkey) && ${cond}) & ${orders}.*.o_orderpriority`
   let query = rh`sort ${countL} "o_orderpriority" 0`
 
-  await compile(query, { ...settings, outFile: "q4_stream" })
+  await compile(query, { ...settings, outFile: "q4", arraySize: 60000000 })
 }
 
 // optimize group-bys
@@ -271,7 +272,7 @@ async function q5() {
 
   let query = rh`sort ${lineitem1} "revenue" 1`
 
-  await compile(query, { ...settings, outFile: "q5_stream" })
+  await compile(query, { ...settings, outFile: "q5", arraySize: 60000000 })
 }
 
 async function q6() {
@@ -283,7 +284,7 @@ async function q6() {
 
   let query = rh`sum (${cond}) & (${lineitem}.*.l_extendedprice * ${lineitem}.*.l_discount)`
 
-  await compile(query, { ...settings, outFile: "q6_stream" })
+  await compile(query, { ...settings, outFile: "q6", arraySize: 60000000 })
 }
 
 async function q7() {
@@ -323,7 +324,7 @@ async function q7() {
 
   let query = rh`sort ${lineitem1} "supp_nation" 0 "cust_nation" 0 "l_year" 0`
 
-  await compile(query, { ...settings, outFile: "q7_stream" })
+  await compile(query, { ...settings, outFile: "q7", arraySize: 60000000 })
 }
 
 async function q8() {
@@ -365,7 +366,7 @@ async function q8() {
 
   let query = rh`sort ${supplier1} "year" 0`
 
-  await compile(query, { ...settings, outFile: "q8_stream" })
+  await compile(query, { ...settings, outFile: "q8", arraySize: 60000000 })
 }
 
 async function q9() {
@@ -405,7 +406,7 @@ async function q9() {
 
   let query = rh`sort ${orders1} "nation" 0 "o_year" 1`
 
-  await compile(query, { ...settings, outFile: "q9_stream" })
+  await compile(query, { ...settings, outFile: "q9", arraySize: 60000000 })
 }
 
 async function q10() {
@@ -445,7 +446,7 @@ async function q10() {
 
   let query = rh`sort ${lineitem1} "revenue" 1`
 
-  await compile(query, { ...settings, outFile: "q10_stream", limit: 20 })
+  await compile(query, { ...settings, outFile: "q10", arraySize: 60000000, limit: 20 })
 }
 
 async function q11() {
@@ -471,7 +472,7 @@ async function q11() {
 
   let query = rh`sort ${partsupp2} "value" 1`
 
-  await compile(query, { ...settings, outFile: "q11_stream" })
+  await compile(query, { ...settings, outFile: "q11", arraySize: 8000000 })
 }
 
 async function q12() {
@@ -495,7 +496,7 @@ async function q12() {
 
   let query = rh`sort ${lineitem1} "l_shipmode" 0`
 
-  await compile(query, { ...settings, outFile: "q12_stream" })
+  await compile(query, { ...settings, outFile: "q12", arraySize: 60000000 })
 }
 
 async function q13() {
@@ -511,7 +512,7 @@ async function q13() {
 
   let query = rh`sort ${customer2} "custdist" 1 "c_count" 1`
 
-  await compile(query, { ...settings, outFile: "q13_stream" })
+  await compile(query, { ...settings, outFile: "q13", arraySize: 15000000 })
 }
 
 async function q14() {
@@ -529,7 +530,7 @@ async function q14() {
 
   let query = rh`100 * ${sum1} / ${sum2}`
 
-  await compile(query, { ...settings, outFile: "q14_stream" })
+  await compile(query, { ...settings, outFile: "q14", arraySize: 60000000 })
 }
 
 async function q15() {
@@ -555,7 +556,7 @@ async function q15() {
     total_revenue: ${sumMap}.*.total_revenue
   }]`
 
-  await compile(query, { ...settings, outFile: "q15_stream" })
+  await compile(query, { ...settings, outFile: "q15", arraySize: 60000000 })
 }
 
 async function q16() {
@@ -594,7 +595,7 @@ async function q16() {
 
   let query = rh`sort ${part2} "supplier_cnt" 1 "p_brand" 0 "p_type" 0 "p_size" 0`
 
-  await compile(query, { ...settings, outFile: "q16_stream" })
+  await compile(query, { ...settings, outFile: "q16", arraySize: 8000000 })
 }
 
 async function q17() {
@@ -617,7 +618,7 @@ async function q17() {
 
   let query = rh`(sum (${cond} & ${part1}.(${avgMap}.*.l_partkey).*p2.l_extendedprice)) / 7.0`
 
-  await compile(query, { ...settings, outFile: "q17_stream" })
+  await compile(query, { ...settings, outFile: "q17", arraySize: 60000000 })
 }
 
 async function q18() {
@@ -661,7 +662,7 @@ async function q18() {
 
   let query = rh`sort ${lineitem3} "o_totalprice" 1 "o_orderdate" 0`
 
-  await compile(query, { ...settings, outFile: "q18_stream", limit: 100 })
+  await compile(query, { ...settings, outFile: "q18", arraySize: 60000000, limit: 100 })
 }
 
 async function q19() {
@@ -709,7 +710,7 @@ async function q19() {
 
   let query = rh`sum ((${cond} & ${lExtendedPrice} * (1 - ${lDiscount})))`
 
-  await compile(query, { ...settings, outFile: "q19_stream" })
+  await compile(query, { ...settings, outFile: "q19", arraySize: 60000000 })
 }
 
 async function q20() {
@@ -742,7 +743,7 @@ async function q20() {
 
   let query = rh`sort ${supplier1} "s_name" 0`
 
-  await compile(query, { ...settings, outFile: "q20_stream" })
+  await compile(query, { ...settings, outFile: "q20", arraySize: 60000000 })
 }
 
 async function q21() {
@@ -776,7 +777,7 @@ async function q21() {
 
   let query = rh`sort ${orders2} "numwait" 1 "s_name" 0`
 
-  await compile(query, { ...settings, outFile: "q21_stream", limit: 100 })
+  await compile(query, { ...settings, outFile: "q21", arraySize: 60000000, limit: 100 })
 }
 
 async function q22() {
@@ -806,7 +807,7 @@ async function q22() {
 
   let query = rh`sort ${customer2} "cntrycode" 0`
 
-  await compile(query, { ...settings, outFile: "q22_stream" })
+  await compile(query, { ...settings, outFile: "q22", arraySize: 15000000 })
 }
 
 // Get command line argument

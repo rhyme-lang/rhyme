@@ -53,6 +53,8 @@ let visitedAssignments
 
 let currentGroupPath
 
+let preload
+
 let getDeps = q => [...q.fre, ...q.tmps.map(tmpSym)]
 
 // generator ir api: mirroring necessary bits from ir.js
@@ -121,6 +123,8 @@ let reset = (settings) => {
   tmpVars = {}
 
   visitedAssignments = {}
+
+  preload = settings.preload || false
 }
 
 let initializeProlog = () => {
@@ -616,7 +620,43 @@ let emitLoadInput = (buf, q) => {
       inputFiles[q.op][filename] = value.primitive(q.schema.type, { mappedFile, size }, TAG.NDJSON)
     } else if (q.op == "csv" || q.op == "tbl") {
       let { mappedFile, size } = csv.emitLoadCSV(buf1, filenameStr, q.op)
-      inputFiles[q.op][filename] = value.primitive(q.schema.type, { mappedFile, size, format: q.op }, TAG.CSV)
+      let fileValue = value.primitive(q.schema.type, { mappedFile, size, format: q.op }, TAG.CSV)
+      if (preload) {
+        // emit array
+        if (!isConstStr) throw new Error("File preloading not supported on non-constant file names")
+        let sym = symbol.getSymbol("preloaded")
+
+        let filter = { key: "get", arg: [q, { key: "var", op: "preload_iter" }], schema: { type: q.schema.type.objValue } }
+        // console.log(usedCols)
+        let getLoopTxtFunc = csv.getCSVLoopTxt(filter, fileValue, [], usedCols)
+        let loopTxt = getLoopTxtFunc()
+        let count = array.emitArrayInit(prolog1, sym)
+        c.stmt(prolog1)(c.assign(count, "0"))
+        let arr = value.array(q.schema.type, sym, count)
+        let prefix = pretty(q)
+        let val = {}
+        for (let field of utils.convertToArrayOfSchema(q.schema.type.objValue)) {
+          let { name, schema } = field
+          if (usedCols[prefix]["preload_iter"][name]) {
+            array.emitArrayValueInit(prolog1, arr, name, schema)
+            let valName = mappedFile + "_preload_iter_" + name
+            if (typing.isString(schema)) {
+              let start = valName + "_start"
+              let end = valName + "_end"
+              val[name] = { schema: schema, val: { str: c.add(mappedFile, start), len: c.sub(end, start) } }
+            } else {
+              val[name] = { schema: schema, val: valName }
+            }
+          }
+        }
+        prolog1.push(...loopTxt.info, ...loopTxt.initCursor, ...loopTxt.loopHeader, ...loopTxt.rowScanning)
+        array.emitArrayInsert(prolog1, arr, { schema: q.schema.type.objValue, val, tag: TAG.OBJECT })
+        prolog1.push("}")
+        inputFiles[q.op][filename] = arr
+      } else {
+        inputFiles[q.op][filename] = fileValue
+      }
+
     } else {
       throw new Error("Unknown file ext: " + q.op)
     }
@@ -1032,9 +1072,15 @@ let collectUsedAndSortedCols = q => {
     // extract used columns for the filename
     collectUsedAndSortedCols(e1.arg[0].arg[0])
 
-    let prefix = pretty(e1) // does this always work?
+    let prefix = pretty(e1.arg[0]) // does this always work?
+    let v = e1.arg[1].op
     usedCols[prefix] ??= {}
-    usedCols[prefix][e2.op] = true
+    usedCols[prefix][v] ??= {}
+    usedCols[prefix][v][e2.op] = true
+    if (preload) {
+      usedCols[prefix]["preload_iter"] ??= {}
+      usedCols[prefix]["preload_iter"][e2.op] = true
+    }
   } else if (q.key == "ref") {
     let q1 = assignments[q.op]
     collectUsedAndSortedCols(q1)
@@ -1414,8 +1460,6 @@ let emitCode = (q, ir, settings) => {
   // We can also collect other stateful ops here
   collectOtherStatefulOps()
 
-  let t1 = emitGetTime(prolog1)
-
   // Process filters
   processFilters()
 
@@ -1433,6 +1477,7 @@ let emitCode = (q, ir, settings) => {
   if (res.schema.typeSym != typeSyms.never)
     printEmitter.emitValPrint(epilog, res, settings)
 
+  let t1 = emitGetTime(prolog1)
   // Return and close the main function
   c.stmt(epilog)(c.call("fflush", "stdout"))
   let t2 = emitGetTime(epilog)
