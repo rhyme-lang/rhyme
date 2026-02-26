@@ -646,7 +646,7 @@ let emitLoadInput = (buf, q) => {
         })
 
         c.stmt(prolog1)(c.assign(`${sym}_${name}[preload_iter]`, c.call("yyjson_doc_get_root", doc)))
-        c.stmt(buf)(c.inc(count))
+        c.stmt(prolog1)(c.inc(count))
 
         c.stmt(prolog1)(c.assign(cursor, c.add(cursor, c.call("yyjson_doc_get_read_size", doc))))
         
