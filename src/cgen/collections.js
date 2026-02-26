@@ -58,11 +58,12 @@ let allocatePrimitiveBuffer = (buf, type, name, size, global, prolog0) => {
 }
 
 let allocateYYJSONBuffer = (buf, name, size, global, prolog0) => {
+  let size$ = size || arraySize
   if (global) {
     c.declarePtr(prolog0)("yyjson_val", name)
-    c.stmt(buf)(c.assign(name, c.cast("yyjson_val **", c.malloc("yyjson_val *", size))))
+    c.stmt(buf)(c.assign(name, c.cast("yyjson_val **", c.malloc("yyjson_val *", size$))))
   } else {
-    c.declarePtrPtr(buf)("yyjson_val", name, c.cast("yyjson_val **", c.malloc("yyjson_val *", size)))
+    c.declarePtrPtr(buf)("yyjson_val", name, c.cast("yyjson_val **", c.malloc("yyjson_val *", size$)))
   }
 }
 
@@ -837,7 +838,8 @@ let array = {
   emitArrayValueInit,
   emitArrayInsert,
   getValueAtIdx,
-  getArrayLoopTxt
+  getArrayLoopTxt,
+  allocateYYJSONBuffer
 }
 
 let hashmap = {
@@ -859,7 +861,7 @@ let hashmap = {
   emitNestedHashMapAllocation,
   emitHashMapLinkedBucketsInit,
   emitHashMapLinkedBucketValuesInit,
-  getHashMapLinkedBucketLoopTxt
+  getHashMapLinkedBucketLoopTxt,
 }
 
 // let hashmapC1 = {
@@ -870,5 +872,6 @@ module.exports = {
   array,
   hashmap,
   hashSize,
-  bucketSize
+  bucketSize,
+  arraySize
 }

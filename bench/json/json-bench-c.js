@@ -30,7 +30,9 @@ let settings = {
   schema: types.never,
   outDir,
   enableOptimizations: false,
-  format: "csv"
+  format: "csv",
+  preload: true,
+  arraySize: 1000000
 }
 
 async function q1() {

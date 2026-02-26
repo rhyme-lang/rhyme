@@ -1,5 +1,5 @@
 const { c, utils } = require("./utils")
-const { hashmap, array, bucketSize } = require("./collections")
+const { hashmap, array } = require("./collections")
 const { TAG, value } = require("./value")
 const { symbol } = require("./symbol")
 const { csv } = require("./csv")
@@ -622,7 +622,38 @@ let emitLoadInput = (buf, q) => {
       inputFiles[q.op][filename] = json.convertJSONTo(value.json(q.schema.type, jsonVal), q.schema.type)
     } else if (q.op == "ndjson") {
       let { mappedFile, size } = json.emitLoadNDJSON(buf1, filenameStr)
-      inputFiles[q.op][filename] = value.primitive(q.schema.type, { mappedFile, size }, TAG.NDJSON)
+
+      if (preload) {
+        if (!isConstStr) throw new Error("File preloading not supported on non-constant file names")
+        let sym = symbol.getSymbol("preloaded")
+
+        let cursor = symbol.getSymbol("i")
+        c.declareSize(prolog1)(cursor, "0")
+        let v = "preload_iter"
+        let count = array.emitArrayInit(prolog1, sym)
+        let arr = value.array(q.schema.type, sym, count)
+        let doc = symbol.getSymbol("tmp_doc")
+        let name = "_DEFAULT_"
+        arr.val.values ??= {}
+        arr.val.values[name] = { val: `${sym}_${name}`, schema: q.schema.type.objValue, tag: TAG.JSON }
+
+        array.allocateYYJSONBuffer(prolog1, `${sym}_${name}`)
+        prolog1.push(`for (int ${v} = 0; ${cursor} < ${size}; ${v}++) {`)
+        c.declarePtr(prolog1)("yyjson_doc", doc, c.call("yyjson_read_opts", c.add(mappedFile, cursor), c.sub(size, cursor), "YYJSON_READ_INSITU | YYJSON_READ_STOP_WHEN_DONE", "NULL", "NULL"))
+
+        c.if(prolog1)(c.not(doc), buf2 => {
+          c.break(buf2)()
+        })
+
+        c.stmt(prolog1)(c.assign(`${sym}_${name}[preload_iter]`, c.call("yyjson_doc_get_root", doc)))
+        c.stmt(prolog1)(c.assign(cursor, c.add(cursor, c.call("yyjson_doc_get_read_size", doc))))
+        
+        prolog1.push("}")
+        inputFiles[q.op][filename] = arr
+      } else {
+        inputFiles[q.op][filename] = value.primitive(q.schema.type, { mappedFile, size }, TAG.NDJSON)
+      }
+      
     } else if (q.op == "csv" || q.op == "tbl") {
       let { mappedFile, size } = csv.emitLoadCSV(buf1, filenameStr, q.op)
       let fileValue = value.primitive(q.schema.type, { mappedFile, size, format: q.op }, TAG.CSV)
