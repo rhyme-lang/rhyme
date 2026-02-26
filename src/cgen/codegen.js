@@ -629,8 +629,8 @@ let emitLoadInput = (buf, q) => {
 
         let cursor = symbol.getSymbol("i")
         c.declareSize(prolog1)(cursor, "0")
-        let v = "preload_iter"
         let count = array.emitArrayInit(prolog1, sym)
+        c.stmt(prolog1)(c.assign(count, "0"))
         let arr = value.array(q.schema.type, sym, count)
         let doc = symbol.getSymbol("tmp_doc")
         let name = "_DEFAULT_"
@@ -638,14 +638,14 @@ let emitLoadInput = (buf, q) => {
         arr.val.values[name] = { val: `${sym}_${name}`, schema: q.schema.type.objValue, tag: TAG.JSON }
 
         array.allocateYYJSONBuffer(prolog1, `${sym}_${name}`)
-        prolog1.push(`for (int ${v} = 0; ${cursor} < ${size}; ${v}++) {`)
+        prolog1.push(`while (${cursor} < ${size}) {`)
         c.declarePtr(prolog1)("yyjson_doc", doc, c.call("yyjson_read_opts", c.add(mappedFile, cursor), c.sub(size, cursor), "YYJSON_READ_INSITU | YYJSON_READ_STOP_WHEN_DONE", "NULL", "NULL"))
 
         c.if(prolog1)(c.not(doc), buf2 => {
           c.break(buf2)()
         })
 
-        c.stmt(prolog1)(c.assign(`${sym}_${name}[preload_iter]`, c.call("yyjson_doc_get_root", doc)))
+        c.stmt(prolog1)(c.assign(`${sym}_${name}[${count}]`, c.call("yyjson_doc_get_root", doc)))
         c.stmt(prolog1)(c.inc(count))
 
         c.stmt(prolog1)(c.assign(cursor, c.add(cursor, c.call("yyjson_doc_get_read_size", doc))))

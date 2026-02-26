@@ -32,7 +32,7 @@ let settings = {
   enableOptimizations: false,
   format: "csv",
   preload: true,
-  arraySize: 1000000
+  arraySize: 10000000
 }
 
 async function q1() {
