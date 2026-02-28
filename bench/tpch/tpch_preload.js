@@ -159,7 +159,7 @@ async function q1() {
   }]`
   let query = rh`sort ${lineitem2} "l_returnflag" 0 "l_linestatus" 0`
 
-  await compile(query, { ...settings, outFile: "q1", arraySize: 60000000 })
+  await compile(query, { ...settings, outFile: "q1", hashSize: 8, arraySize: 60000000 })
 }
 
 async function q2() {
