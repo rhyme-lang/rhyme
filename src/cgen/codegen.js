@@ -1572,7 +1572,8 @@ let generateC = (q, ir, settings) => {
   let out = joinPaths(outDir, outFile)
   let codeNew = emitCode(q, ir, settings)
 
-  let cFlags = "-Icgen-sql -O3"
+  let compiler = settings.compiler || "gcc"
+  let cFlags = settings.cFlags || "-Icgen-sql -O3"
 
   let func = async () => {
     let stdout = await sh(`./${out} `)
@@ -1584,7 +1585,7 @@ let generateC = (q, ir, settings) => {
   let writeAndCompile = async () => {
     await fs.writeFile(cFile, codeNew)
     if (inputFiles["json"] || inputFiles["ndjson"]) cFlags += " -Ithird-party/yyjson -Lthird-party/yyjson/out -lyyjson"
-    let cmd = `gcc ${cFile} -o ${out} ${cFlags}`
+    let cmd = `${compiler} ${cFile} -o ${out} ${cFlags}`
     console.log("Executing: " + cmd)
     let time1 = performance.now()
     await sh(cmd)
