@@ -169,8 +169,8 @@ let emitRowScanning = (f, file, cursor, schema, usedCols, first = true) => {
 
   let colName = schema.objKey
   let type = schema.objValue
-  let prefix = pretty(f)
-  let used = usedCols[prefix] && usedCols[prefix][colName]
+  let prefix = pretty(f.arg[0])
+  let used = usedCols[prefix]?.[v] && usedCols[prefix][v][colName]
 
   c.comment(buf)(`reading column ${colName}`)
 

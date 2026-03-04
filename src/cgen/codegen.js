@@ -1,5 +1,5 @@
 const { c, utils } = require("./utils")
-const { hashmap, array, bucketSize } = require("./collections")
+const { hashmap, array } = require("./collections")
 const { TAG, value } = require("./value")
 const { symbol } = require("./symbol")
 const { csv } = require("./csv")
@@ -52,6 +52,9 @@ let tmpVars
 let visitedAssignments
 
 let currentGroupPath
+
+let preload
+let linkedBuckets
 
 let getDeps = q => [...q.fre, ...q.tmps.map(tmpSym)]
 
@@ -121,6 +124,9 @@ let reset = (settings) => {
   tmpVars = {}
 
   visitedAssignments = {}
+
+  preload = settings.preload || false
+  linkedBuckets = settings.linkedBuckets || false
 }
 
 let initializeProlog = () => {
@@ -253,7 +259,11 @@ let emitStatefulInit = (buf, q, lhs) => {
     c.stmt(buf)(c.assign(lhs.val, utils.getDataTypeLimits(lhs.schema).min))
   } else if (q.op == "array") {
     // lhs passed will be the array object
-    c.stmt(buf)(c.assign(lhs.val.count, "0"))
+    if (lhs.tag == TAG.HASHMAP_LINKED_BUCKET) {
+      c.stmt(buf)(c.assign(lhs.val.head, "0"))
+    } else {
+      c.stmt(buf)(c.assign(lhs.val.count, "0"))
+    }
   } else if (q.key == "update") {
     hashmap.emitNestedHashMapAllocation(buf, lhs)
   } else {
@@ -471,7 +481,6 @@ let emitStateful1 = (q, map, insertKeyBuf) => {
             currentGroupPath.path.pop()
           }
         })
-        // console.log(buf)
         // throw new Error("Not supported yet")
       } else {
         while (e2.key == "pure" && e2.op.startsWith("convert_")) {
@@ -613,10 +622,78 @@ let emitLoadInput = (buf, q) => {
       inputFiles[q.op][filename] = json.convertJSONTo(value.json(q.schema.type, jsonVal), q.schema.type)
     } else if (q.op == "ndjson") {
       let { mappedFile, size } = json.emitLoadNDJSON(buf1, filenameStr)
-      inputFiles[q.op][filename] = value.primitive(q.schema.type, { mappedFile, size }, TAG.NDJSON)
+
+      if (preload) {
+        if (!isConstStr) throw new Error("File preloading not supported on non-constant file names")
+        let sym = symbol.getSymbol("preloaded")
+
+        let cursor = symbol.getSymbol("i")
+        c.declareSize(prolog1)(cursor, "0")
+        let count = array.emitArrayInit(prolog1, sym)
+        c.stmt(prolog1)(c.assign(count, "0"))
+        let arr = value.array(q.schema.type, sym, count)
+        let doc = symbol.getSymbol("tmp_doc")
+        let name = "_DEFAULT_"
+        arr.val.values ??= {}
+        arr.val.values[name] = { val: `${sym}_${name}`, schema: q.schema.type.objValue, tag: TAG.JSON }
+
+        array.allocateYYJSONBuffer(prolog1, `${sym}_${name}`)
+        prolog1.push(`while (${cursor} < ${size}) {`)
+        c.declarePtr(prolog1)("yyjson_doc", doc, c.call("yyjson_read_opts", c.add(mappedFile, cursor), c.sub(size, cursor), "YYJSON_READ_INSITU | YYJSON_READ_STOP_WHEN_DONE", "NULL", "NULL"))
+
+        c.if(prolog1)(c.not(doc), buf2 => {
+          c.break(buf2)()
+        })
+
+        c.stmt(prolog1)(c.assign(`${sym}_${name}[${count}]`, c.call("yyjson_doc_get_root", doc)))
+        c.stmt(prolog1)(c.inc(count))
+
+        c.stmt(prolog1)(c.assign(cursor, c.add(cursor, c.call("yyjson_doc_get_read_size", doc))))
+        
+        prolog1.push("}")
+        inputFiles[q.op][filename] = arr
+      } else {
+        inputFiles[q.op][filename] = value.primitive(q.schema.type, { mappedFile, size }, TAG.NDJSON)
+      }
+      
     } else if (q.op == "csv" || q.op == "tbl") {
       let { mappedFile, size } = csv.emitLoadCSV(buf1, filenameStr, q.op)
-      inputFiles[q.op][filename] = value.primitive(q.schema.type, { mappedFile, size, format: q.op }, TAG.CSV)
+      let fileValue = value.primitive(q.schema.type, { mappedFile, size, format: q.op }, TAG.CSV)
+      if (preload) {
+        // emit array
+        if (!isConstStr) throw new Error("File preloading not supported on non-constant file names")
+        let sym = symbol.getSymbol("preloaded")
+
+        let filter = { key: "get", arg: [q, { key: "var", op: "preload_iter" }], schema: { type: q.schema.type.objValue } }
+        let getLoopTxtFunc = csv.getCSVLoopTxt(filter, fileValue, [], usedCols)
+        let loopTxt = getLoopTxtFunc()
+        let count = array.emitArrayInit(prolog1, sym)
+        c.stmt(prolog1)(c.assign(count, "0"))
+        let arr = value.array(q.schema.type, sym, count)
+        let prefix = pretty(q)
+        let val = {}
+        for (let field of utils.convertToArrayOfSchema(q.schema.type.objValue)) {
+          let { name, schema } = field
+          if (usedCols[prefix]["preload_iter"][name]) {
+            array.emitArrayValueInit(prolog1, arr, name, schema)
+            let valName = mappedFile + "_preload_iter_" + name
+            if (typing.isString(schema)) {
+              let start = valName + "_start"
+              let end = valName + "_end"
+              val[name] = { schema: schema, val: { str: c.add(mappedFile, start), len: c.sub(end, start) } }
+            } else {
+              val[name] = { schema: schema, val: valName }
+            }
+          }
+        }
+        prolog1.push(...loopTxt.info, ...loopTxt.initCursor, ...loopTxt.loopHeader, ...loopTxt.rowScanning)
+        array.emitArrayInsert(prolog1, arr, { schema: q.schema.type.objValue, val, tag: TAG.OBJECT })
+        prolog1.push("}")
+        inputFiles[q.op][filename] = arr
+      } else {
+        inputFiles[q.op][filename] = fileValue
+      }
+
     } else {
       throw new Error("Unknown file ext: " + q.op)
     }
@@ -682,7 +759,7 @@ let emitGet = (buf, q) => {
           return { schema: q.schema.type, val: c.call("yyjson_arr_get", g1.val, quoteVar(e2.op)), tag: TAG.JSON }
         return { schema: q.schema.type, val: c.call("yyjson_obj_getn", g1.val, c.call("yyjson_get_str", quoteVar(e2.op)), c.call("yyjson_get_len", quoteVar(e2.op))), tag: TAG.JSON }
       }
-    } else if (g1.tag == TAG.ARRAY) {
+    } else if (g1.tag == TAG.ARRAY || g1.tag == TAG.HASHMAP_LINKED_BUCKET) {
       // If we are iterating over a hashMap,
       // get the entry directly using the var
       return array.getValueAtIdx(g1, quoteVar(e2.op))
@@ -1032,9 +1109,15 @@ let collectUsedAndSortedCols = q => {
     // extract used columns for the filename
     collectUsedAndSortedCols(e1.arg[0].arg[0])
 
-    let prefix = pretty(e1) // does this always work?
+    let prefix = pretty(e1.arg[0]) // does this always work?
+    let v = e1.arg[1].op
     usedCols[prefix] ??= {}
-    usedCols[prefix][e2.op] = true
+    usedCols[prefix][v] ??= {}
+    usedCols[prefix][v][e2.op] = true
+    if (preload) {
+      usedCols[prefix]["preload_iter"] ??= {}
+      usedCols[prefix]["preload_iter"][e2.op] = true
+    }
   } else if (q.key == "ref") {
     let q1 = assignments[q.op]
     collectUsedAndSortedCols(q1)
@@ -1096,20 +1179,22 @@ let collectRelevantStatefulInPath = (q, currentGroupPath) => {
 }
 
 let addHashMapBucket = (map, q, name, currentGroupPath) => {
-  hashmap.emitHashMapBucketsInit(prolog1, map, name, q.schema.type, initRequired(q))
+  let initF = linkedBuckets ? hashmap.emitHashMapLinkedBucketsInit : hashmap.emitHashMapBucketsInit
+  let valueInitF = linkedBuckets ? hashmap.emitHashMapLinkedBucketValuesInit : hashmap.emitHashMapBucketValuesInit
+  initF(prolog1, map, name, q.schema.type, initRequired(q))
 
   let bucket = map.val.values[name]
   let e = q.arg[0]
   if (typing.isUnknown(e.schema.type)) {
-    hashmap.emitHashMapBucketValuesInit(prolog1, map, bucket, "_DEFAULT_", e.schema.type)
+    valueInitF(prolog1, map, bucket, "_DEFAULT_", e.schema.type)
   } else if (typing.isObject(e.schema.type) && utils.isSimpleObject(e.schema.type)) {
     let values = utils.convertToArrayOfSchema(e.schema.type)
     for (let i in values) {
       let { name, schema } = values[i]
-      hashmap.emitHashMapBucketValuesInit(prolog1, map, bucket, name, schema)
+      valueInitF(prolog1, map, bucket, name, schema)
     }
   } else {
-    hashmap.emitHashMapBucketValuesInit(prolog1, map, bucket, "_DEFAULT_", e.schema.type)
+    valueInitF(prolog1, map, bucket, "_DEFAULT_", e.schema.type)
   }
 }
 
@@ -1361,6 +1446,9 @@ let processFilters = () => {
       } else if (lhs.tag == TAG.ARRAY) {
         let getLoopTxtFunc = array.getArrayLoopTxt(f, lhs, data)
         addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
+      } else if (lhs.tag == TAG.HASHMAP_LINKED_BUCKET) {
+        let getLoopTxtFunc = hashmap.getHashMapLinkedBucketLoopTxt(f, lhs, data)
+        addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
       } else if (lhs.tag == TAG.HASHMAP) {
         let key = hashmap.getHashMapKeyEntry(lhs, quoteVar(v1))
         if (firstSeen) {
@@ -1414,8 +1502,6 @@ let emitCode = (q, ir, settings) => {
   // We can also collect other stateful ops here
   collectOtherStatefulOps()
 
-  let t1 = emitGetTime(prolog1)
-
   // Process filters
   processFilters()
 
@@ -1433,6 +1519,7 @@ let emitCode = (q, ir, settings) => {
   if (res.schema.typeSym != typeSyms.never)
     printEmitter.emitValPrint(epilog, res, settings)
 
+  let t1 = emitGetTime(prolog1)
   // Return and close the main function
   c.stmt(epilog)(c.call("fflush", "stdout"))
   let t2 = emitGetTime(epilog)
@@ -1485,7 +1572,8 @@ let generateC = (q, ir, settings) => {
   let out = joinPaths(outDir, outFile)
   let codeNew = emitCode(q, ir, settings)
 
-  let cFlags = "-Icgen-sql -O3"
+  let compiler = settings.compiler || "gcc"
+  let cFlags = settings.cFlags || "-Icgen-sql -O3"
 
   let func = async () => {
     let stdout = await sh(`./${out} `)
@@ -1497,7 +1585,7 @@ let generateC = (q, ir, settings) => {
   let writeAndCompile = async () => {
     await fs.writeFile(cFile, codeNew)
     if (inputFiles["json"] || inputFiles["ndjson"]) cFlags += " -Ithird-party/yyjson -Lthird-party/yyjson/out -lyyjson"
-    let cmd = `gcc ${cFile} -o ${out} ${cFlags}`
+    let cmd = `${compiler} ${cFile} -o ${out} ${cFlags}`
     console.log("Executing: " + cmd)
     let time1 = performance.now()
     await sh(cmd)
