@@ -15,6 +15,8 @@ const { runtime } = require('../simple-runtime')
 const { unique, union, intersect, diff, subset, same } = sets
 const { tmpSym, quoteVar } = utils
 
+const { getSettings, resetSettings } = require("./settings")
+
 // Input simple-eval IR
 let filters
 let assignments
@@ -1542,6 +1544,8 @@ let emitCode = (q, ir, settings) => {
 }
 
 let generateC = (q, ir, settings) => {
+  resetSettings(settings)
+
   let { outDir, outFile } = settings
   const fs = require('fs').promises
   const os = require('child_process')
@@ -1570,7 +1574,7 @@ let generateC = (q, ir, settings) => {
 
   let cFile = joinPaths(outDir, outFile + ".c")
   let out = joinPaths(outDir, outFile)
-  let codeNew = emitCode(q, ir, settings)
+  let code = emitCode(q, ir, settings)
 
   let compiler = settings.compiler || "gcc"
   let cFlags = settings.cFlags || "-Icgen-sql -O3"
@@ -1583,7 +1587,7 @@ let generateC = (q, ir, settings) => {
   func.explain = {}
 
   let writeAndCompile = async () => {
-    await fs.writeFile(cFile, codeNew)
+    await fs.writeFile(cFile, code)
     if (inputFiles["json"] || inputFiles["ndjson"]) cFlags += " -Ithird-party/yyjson -Lthird-party/yyjson/out -lyyjson"
     let cmd = `${compiler} ${cFile} -o ${out} ${cFlags}`
     console.log("Executing: " + cmd)

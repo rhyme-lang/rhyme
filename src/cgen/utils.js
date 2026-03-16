@@ -310,6 +310,9 @@ let stringToHexBytes = (str) => {
   return hex
 }
 
+let internalError = (msg) => {
+  throw new Error("Internal: " + msg)
+}
 
 let utils = {
   tmpSym,
@@ -322,7 +325,8 @@ let utils = {
   isSimpleObject,
   emitWildcardMatch,
   getDataTypeLimits,
-  stringToHexBytes
+  stringToHexBytes,
+  internalError
 }
 
 module.exports = {
