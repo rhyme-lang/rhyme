@@ -9,7 +9,7 @@ exports.VAL_TAG = {
   CSV: "csv",
   JSON: "json",
   NDJSON: "ndjson",
-  COMBINED_KEY: "combined_key",
+  KEYS: "keys",
   NESTED_HASHMAP: "nested_hashap",
 }
 
@@ -19,5 +19,6 @@ exports.BUF_TAG = {
   OBJECT: "object_buffer",
   HASHMAP_BUCKET: "hash_bucket_buffer",
   HASHMAP_LINKED_BUCKET: "hash_linked_bucket_buffer",
+  KEYS: "keys",
   NESTED_HASHMAP: "nested_hashap",
 }

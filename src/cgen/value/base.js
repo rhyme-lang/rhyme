@@ -3,7 +3,7 @@
 
 const { VAL_TAG, BUF_TAG } = require("./tags")
 const { c, utils } = require("../utils")
-const { typing, types } = require("../../typing")
+const { typing, types, typeSyms } = require("../../typing")
 const { symbol } = require("../symbol")
 
 // C primitive values. e.g. int, char etc.
@@ -12,7 +12,6 @@ exports.primitive = (schema, val) => ({
   schema,
   val,
   assign(buf, rhs) {
-    console.log(rhs)
     c.stmt(buf)(c.assign(this.val, rhs.val))
   },
   hash(buf, hashed) {
@@ -25,6 +24,23 @@ exports.primitive = (schema, val) => ({
     }
     c.declareULong(buf)(hashed, c.cast("unsigned long", this.val))
     return hashed
+  },
+  compare(op, rhs) {
+    return c.binary(this.val, rhs.val, op)
+  },
+  printJSON(buf, quoted) {
+    if (this.schema.typeSym == typeSyms.date) {
+      if (quoted) c.printf(buf)("\\\"")
+      c.stmt(buf)(c.call("print_date", this.val))
+      if (quoted) c.printf(buf)("\\\"")
+    } else if (quoted) {
+      c.printf(buf)(`"%${utils.getFormatSpecifier(this.schema)}"`, this.val)
+    } else {
+      c.printf(buf)(`%${utils.getFormatSpecifier(this.schema)}`, this.val)
+    }
+  },
+  print(buf) {
+    this.printJSON(buf)
   }
 })
 
@@ -42,6 +58,84 @@ exports.string = (schema, str, len) => ({
     hashed = hashed || symbol.getSymbol("hash")
     c.declareULong(buf)(hashed, c.call("hash", this.str, this.len))
     return hashed
+  },
+  compare(op, rhs) {
+    let str1 = this.str
+    let len1 = this.len
+    let str2 = rhs.str
+    let len2 = rhs.len
+    return c.binary(
+      c.call("strncmp", str1, str2, c.ternary(c.lt(len1, len2), len1, len2)),
+      "0", op
+    )
+  },
+  printJSON(buf) {
+    c.printf(buf)(`\\"%.*s\\"`, this.len, this.str)
+  },
+  print(buf) {
+    c.printf(buf)(`%.*s`, this.len, this.str)
+  }
+})
+
+// Co with constant keys
+exports.keys = () => ({
+  tag: VAL_TAG.KEYS,
+  keys: [],
+  addKey(key) {
+    this.keys.push(key)
+  },
+  assign(buf, rhs) {
+    for (let i in this.keys) {
+      let key = this.keys[i]
+      key.assign(buf, rhs.keys[i])
+    }
+  },
+  hash(buf, hashed) {
+    hashed = hashed || symbol.getSymbol("hash")
+    let result
+    for (let i in this.keys) {
+      let key = this.keys[i]
+      let tmp = symbol.getSymbol("tmp_hash")
+      let tmpHash = key.hash(buf, tmp)
+      if (result) {
+        result = c.add(c.mul(result, "31"), tmpHash)
+      } else {
+        result = tmpHash
+      }
+    }
+    c.declareULong(buf)(hashed, result)
+    return hashed
+  },
+  compare(op, rhs) {
+    let res
+    for (let i in this.keys) {
+      let key = this.keys[i]
+      let cmp = key.compare(op, rhs.keys[i])
+      if (res) {
+        res = c.and(res, cmp)
+      } else {
+        res = cmp
+      }
+    }
+    return res
+  },
+  printJSON(buf) {
+    c.printf(buf)("\\\"");
+    for (let i in this.keys) {
+      let key = this.keys[i]
+      key.print(buf)
+      if (i != this.keys.length - 1) {
+        c.printf(buf)(",")
+      }
+    }
+    c.printf(buf)("\\\"");
+  },
+  print(buf) {
+    for (let i in this.keys) {
+      let key = this.keys[i]
+      key.print(buf)
+      c.printf(buf)("|");
+    }
   }
 })
 
@@ -50,6 +144,9 @@ exports.object = (schema) => ({
   tag: VAL_TAG.OBJECT,
   schema,
   values: {},
+  get(key) {
+    return this.values[key]
+  },
   assign(buf, rhs) {
     for (let key in this.values) {
       let value = this.values[key]
@@ -74,6 +171,26 @@ exports.object = (schema) => ({
     }
     c.declareULong(buf)(hashed, result)
     return hashed
+  },
+  printJSON(buf) {
+    c.printf(buf)("{");
+    for (let i in Object.keys(this.values)) {
+      let k = Object.keys(this.values)[i]
+      let v = this.values[k]
+      c.printf(buf)(`\\"${k}\\":`)
+      v.printJSON(buf)
+      if (i != Object.keys(this.values).length - 1) {
+        c.printf(buf)(",")
+      }
+    }
+    c.printf(buf)("}");
+  },
+  print(buf) {
+    for (let k in this.values) {
+      let v = this.values[k]
+      v.print(buf)
+      c.printf(buf)("|");
+    }
   }
 })
 
@@ -116,8 +233,8 @@ exports.stringBuffer = (schema, name, capacity) => ({
   },
   shift(offset) {
     let newBuffer = { ...this }
-    newBuffer.strBuf = c.add(newBuffer.valBuf, offset)
-    newBuffer.lenBuf = c.add(newBuffer.valBuf, offset)
+    newBuffer.strBuf = c.add(newBuffer.strBuf, offset)
+    newBuffer.lenBuf = c.add(newBuffer.lenBuf, offset)
     return newBuffer
   },
   allocate(buf) {
@@ -150,5 +267,34 @@ exports.objectBuffer = (schema) => ({
   },
   addBufferField(key, buffer) {
     this.buffers[key] = buffer
+  },
+  allocate(buf) {
+    for (let key in this.buffers) {
+      this.buffers[key].allocate(buf)
+    }
+  }
+})
+
+exports.keysBuffer = () => ({
+  tag: BUF_TAG.KEYS,
+  buffers: [],
+  get(idx) {
+    let res = exports.keys()
+    for (let i in this.buffers) {
+      let buffer = this.buffers[i]
+      res.addKey(buffer.get(idx))
+    }
+    return res
+  },
+  shift(offset) {
+    utils.internalError("not supported")
+  },
+  addBuffer(buffer) {
+    this.buffers.push(buffer)
+  },
+  allocate(buf) {
+    for (let i in this.buffers) {
+      this.buffers[i].allocate(buf)
+    }
   }
 })
