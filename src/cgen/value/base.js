@@ -211,6 +211,21 @@ exports.primitiveBuffer = (schema, name, capacity) => ({
     newBuffer.valBuf = c.add(newBuffer.valBuf, offset)
     return newBuffer
   },
+  derefFrom(ptr) {
+    let newBuffer = { ...this }
+    newBuffer.valBuf = `${ptr}->${newBuffer.valBuf}`
+    return newBuffer
+  },
+  addToStruct(struct) {
+    let cType = utils.convertToCType(this.schema)
+    struct.addField(cType + " *", this.valBuf)
+  },
+  allocateAssign(buf) {
+    // let convertToCType report "type not supported" errors
+    let cType = utils.convertToCType(this.schema)
+    c.stmt(buf)(c.assign(this.valBuf,
+      c.cast(`${cType} *`, c.malloc(cType, this.capacity))))
+  },
   allocate(buf) {
     // let convertToCType report "type not supported" errors
     let cType = utils.convertToCType(this.schema)
@@ -237,12 +252,28 @@ exports.stringBuffer = (schema, name, capacity) => ({
     newBuffer.lenBuf = c.add(newBuffer.lenBuf, offset)
     return newBuffer
   },
+  derefFrom(ptr) {
+    let newBuffer = { ...this }
+    newBuffer.strBuf = `${ptr}->${newBuffer.strBuf}`
+    newBuffer.lenBuf = `${ptr}->${newBuffer.lenBuf}`
+    return newBuffer
+  },
+  addToStruct(struct) {
+    struct.addField("const char **", this.strBuf)
+    struct.addField("int *", this.lenBuf)
+  },
   allocate(buf) {
     c.declareCharPtrPtr(buf)(this.strBuf,
       c.cast("const char **", c.malloc("const char *", this.capacity)))
     c.declareIntPtr(buf)(this.lenBuf,
       c.cast("int *", c.malloc("int", this.capacity)))
-  }
+  },
+  allocateAssign(buf) {
+    c.stmt(buf)(c.assign(this.strBuf,
+      c.cast("const char **", c.malloc("const char *", this.capacity))))
+    c.stmt(buf)(c.assign(this.lenBuf,
+      c.cast("int *", c.malloc("int", this.capacity))))
+  },
 })
 
 exports.objectBuffer = (schema) => ({
@@ -265,6 +296,19 @@ exports.objectBuffer = (schema) => ({
     }
     return newBuffer
   },
+  derefFrom(ptr) {
+    let newBuffer = exports.objectBuffer(this.schema)
+    for (let key in this.buffers) {
+      let buffer = this.buffers[key].derefFrom(ptr)
+      newBuffer.addBufferField(key, buffer)
+    }
+    return newBuffer
+  },
+  addToStruct(struct) {
+    for (let key in this.buffers) {
+      this.buffers[key].addToStruct(struct)
+    }
+  },
   addBufferField(key, buffer) {
     this.buffers[key] = buffer
   },
@@ -272,7 +316,12 @@ exports.objectBuffer = (schema) => ({
     for (let key in this.buffers) {
       this.buffers[key].allocate(buf)
     }
-  }
+  },
+  allocateAssign(buf) {
+    for (let key in this.buffers) {
+      this.buffers[key].allocateAssign(buf)
+    }
+  },
 })
 
 exports.keysBuffer = () => ({
@@ -289,6 +338,19 @@ exports.keysBuffer = () => ({
   shift(offset) {
     utils.internalError("not supported")
   },
+  derefFrom(ptr) {
+    let newBuffer = exports.keysBuffer()
+    for (let i in this.buffers) {
+      let buffer = this.buffers[i].derefFrom(ptr)
+      newBuffer.addBuffer(buffer)
+    }
+    return newBuffer
+  },
+  addToStruct(struct) {
+    for (let i in this.buffers) {
+      this.buffers[i].addToStruct(struct)
+    }
+  },
   addBuffer(buffer) {
     this.buffers.push(buffer)
   },
@@ -296,5 +358,10 @@ exports.keysBuffer = () => ({
     for (let i in this.buffers) {
       this.buffers[i].allocate(buf)
     }
-  }
+  },
+  allocateAssign(buf) {
+    for (let i in this.buffers) {
+      this.buffers[i].allocateAssign(buf)
+    }
+  },
 })

@@ -183,41 +183,54 @@ exports.nestedHashMapBuffer = (schema, sym, name, capacity, parentCapacity, tupl
   name,
   parentCapacity,
   capacity,
+  key: undefined,
+  buffer: tuple ? base.objectBuffer(schema.objValue) : undefined,
+  tuple,
   // buffer: tuple ? base.objectBuffer(schema.objValue) : undefined,
   tuple,
-  cstruct: c.struct(sym).addField("int *", this.htable).addField("int", this.size),
   get(idx) {
     // get the nested hashmap
-    utils.internalError("not implemented")
+    let ptr = `${this.name}[${idx}]`
+
+    let res = exports.hashMap(this.schema, sym, this.capacity, false, this.tuple)
+    res.htable = `${ptr}->${res.htable}`
+    res.size = `${ptr}->${res.size}`
+    res.key = this.key.derefFrom(ptr)
+    res.buffer = this.buffer.derefFrom(ptr)
+
+    return res
   },
-  addKeys(keySchema) {
-    for (let i in keySchema) {
-      let schema = keySchema[i]
-      let prefix = `${this.sym}_key${i}`
-      if (typing.isString(schema)) {
-        this.cstruct.addField("const char **", `${prefix}_str`)
-        this.cstruct.addField("int *", `${prefix}_len`)
-      } else {
-        let cType = utils.convertToCType(schema)
-        this.cstruct.addField(cType + " *", prefix)
-      }
-    }
+  addKey(keySchema) {
+    let bufferName = `${this.sym}_key`
+    let newBuffer = typing.isString(keySchema) ?
+      base.stringBuffer(keySchema, bufferName, this.capacity) :
+      base.primitiveBuffer(keySchema, bufferName, this.capacity)
+
+    this.key = newBuffer
   },
   addColumn(name, schema) {
-    if (typing.isString(schema)) {
-      this.cstruct.addField("const char **", `${name}_str`)
-      this.cstruct.addField("int *", `${name}_len`)
+    let bufferName = `${this.sym}_${name}`
+    let newBuffer = typing.isString(schema) ?
+      base.stringBuffer(schema, bufferName, this.capacity) :
+      base.primitiveBuffer(schema, bufferName, this.capacity)
+    if (this.tuple) {
+      this.buffer.addBufferField(name, newBuffer)
     } else {
-      let cType = utils.convertToCType(schema)
-      this.cstruct.addField(cType + " *", name)
+      this.buffer = newBuffer
     }
+    return newBuffer
   },
   declareStruct(buf) {
-    c.declareStruct(buf)(this.cstruct)
+    let struct = c.struct(this.sym)
+    struct.addField("int *", this.htable)
+    struct.addField("int", this.size)
+    this.key.addToStruct(struct)
+    this.buffer.addToStruct(struct)
+    c.declareStruct(buf)(struct)
   },
   allocate(buf) {
     c.declarePtrPtr(buf)(`struct ${sym}`, this.name,
-      c.cast(`struct ${sym} *`, c.malloc(`struct ${sym}`, this.parentCapacity)))
+      c.cast(`struct ${sym} **`, c.malloc(`struct ${sym} *`, this.parentCapacity)))
   }
 })
 
@@ -275,6 +288,12 @@ exports.hashMap = (schema, sym, capacity, multiKey, tuple) => ({
     c.comment(buf)(`values for hashmap "${this.sym}"`)
     this.buffer.allocate(buf)
   },
+  allocate(buf) {
+    c.comment(buf)(`keys for hashmap "${this.sym}"`)
+    this.key.allocateAssign(buf)
+    c.comment(buf)(`values for hashmap "${this.sym}"`)
+    this.buffer.allocateAssign(buf)
+  },
   addColumn(name, schema) {
     let bufferName = `${this.sym}_${name}`
     let newBuffer = typing.isString(schema) ?
@@ -305,7 +324,7 @@ exports.hashMap = (schema, sym, capacity, multiKey, tuple) => ({
     this.setOrAddBuffer(name, newBuffer)
     return newBuffer
   },
-  lookup(buf, key) {
+  find(buf, key) {
     let mask = this.capacity - 1
 
     let pos = symbol.getSymbol("tmp_pos") + "$" // aid cse
@@ -315,7 +334,7 @@ exports.hashMap = (schema, sym, capacity, multiKey, tuple) => ({
       map: this,
       key,
       out: [pos, keyPos],
-      emit: function (buf) {
+      emit(buf) {
         let hashed = key.hash(buf)
 
         let [pos, keyPos] = this.out
@@ -323,11 +342,10 @@ exports.hashMap = (schema, sym, capacity, multiKey, tuple) => ({
 
         let dynKeyPos = `${this.map.htable}[${pos}]`
         let keyAtPos = this.map.getKey(dynKeyPos)
-        let compareKeys = keyAtPos.compare("==", this.key)
 
         // increment the position until we find a match or an empty slot
         c.while(buf)(
-          c.and(c.ne(dynKeyPos, "0"), c.not(compareKeys)),
+          c.and(c.ne(dynKeyPos, "0"), c.not(keyAtPos.compare("==", this.key))),
           buf1 => {
             c.stmt(buf1)(c.assign(pos, c.binary(c.add(pos, "1"), mask, "&")))
           }
@@ -339,11 +357,42 @@ exports.hashMap = (schema, sym, capacity, multiKey, tuple) => ({
     buf.push(stmt)
     return [pos, keyPos]
   },
+  insert(buf, key, pos, keyPos, update1, update2, checkExistance) {
+    let entry = this.get(keyPos)
+
+    if (checkExistance) {
+      c.if(buf)(c.eq(keyPos, "0"), buf1 => {
+        c.stmt(buf1)(c.inc(this.size))
+        c.stmt(buf1)(c.assign(keyPos, this.size))
+
+        c.stmt(buf1)(c.assign(this.htable + "[" + pos + "]", keyPos))
+        entry.key.assign(buf1, key)
+
+        update1(buf1, entry, pos, keyPos)
+      })
+    }
+
+    update2(buf, entry, pos, keyPos)
+  },
+  findAndInsert(buf, key, update1, update2, checkExistance) {
+    if (checkExistance) {
+      c.if(buf)(c.eq(this.size, this.capacity), buf1 => {
+        c.printErr(buf1)("hashmap size reached its full capacity\\n")
+        c.return(buf1)("1")
+      })
+    }
+
+    let [pos, keyPos] = this.find(buf, key)
+
+    this.insert(buf, key, pos, keyPos, update1, update2, checkExistance)
+
+    return [pos, keyPos]
+  },
   printJSON(buf, limit) {
     limit = limit ? c.ternary(c.lt(limit, this.size), limit, count) : this.size
     let iter = symbol.getSymbol("print_iter")
     c.printf(buf)("{")
-    buf.push(`for (int ${iter} = 1; ${iter} < ${this.size}; ${iter}++) {`)
+    buf.push(`for (int ${iter} = 1; ${iter} <= ${this.size}; ${iter}++) {`)
     let entry = this.get(iter)
     entry.key.printJSON(buf, true)
     c.printf(buf)(":")

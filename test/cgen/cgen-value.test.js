@@ -131,14 +131,109 @@ test("testHashMap1", async () => {
   let key = value.keys()
   key.addKey(value.string(types.string, `"Hello"`, 5))
   key.addKey(value.primitive(types.i32, "10"))
-  map.lookup(code, key)
-  let lookup = code[code.length - 1]
-  code.splice(code.length - 1)
 
-  lookup.emit(code)
+  let val = value.primitive(types.i32, "123")
+  map.findAndInsert(code, key, (buf, entry) => {
+    entry.val.assign(buf, val)
+  }, () => { }, true)
 
-  map.printJSON(code)
+  let code1 = []
+  code.map(line => {
+    if (typeof line == "object") {
+      return line.emit(code1)
+    } else {
+      code1.push(line)
+    }
+  })
 
-  let res = await run("testHashMap1", code)
-  console.log(res)
+  map.printJSON(code1)
+
+  let res = await run("testHashMap1", code1)
+  expect(JSON.parse(res)).toEqual({ "Hello,10": 123 })
+})
+
+test("testHashMap2", async () => {
+  let map = value.hashMap(typing.parseType("{*string: {*i32: string}}"), "hashmap", 256, false, false)
+  map.addKey(types.string)
+  let bucket = map.addBucketCol("_DEFAULT_", typing.parseType("{*i32: string}"), 8, false)
+  bucket.addColumn("_DEFAULT_", types.string)
+
+  let code = []
+  map.declare(code)
+
+  let key1 = value.string(types.string, `"Hello"`, 5)
+  map.findAndInsert(code, key1, (buf, entry) => {
+    c.stmt(buf)(c.assign(entry.val.size, 0))
+  }, (buf, entry) => {
+    entry.val.insert(buf, value.string(types.string, `"Hi"`, 2))
+    entry.val.insert(buf, value.string(types.string, `"there"`, 5))
+    entry.val.insert(buf, value.string(types.string, `"A"`, 1))
+    entry.val.insert(buf, value.string(types.string, `"B"`, 1))
+  }, true)
+
+  let key2 = value.string(types.string, `"World"`, 5)
+  map.findAndInsert(code, key2, (buf, entry) => {
+    c.stmt(buf)(c.assign(entry.val.size, 0))
+  }, (buf, entry) => {
+    entry.val.insert(buf, value.string(types.string, `"C"`, 1))
+    entry.val.insert(buf, value.string(types.string, `"DE"`, 2))
+    entry.val.insert(buf, value.string(types.string, `"FGH"`, 3))
+  }, true)
+
+  map.findAndInsert(code, key1, (buf, entry) => {
+    c.stmt(buf)(c.assign(entry.val.size, 0))
+  }, (buf, entry) => {
+    entry.val.insert(buf, value.string(types.string, `"C"`, 1))
+    entry.val.insert(buf, value.string(types.string, `"DE"`, 2))
+  }, true)
+
+  let code1 = []
+  code.map(line => {
+    if (typeof line == "object") {
+      return line.emit(code1)
+    } else {
+      code1.push(line)
+    }
+  })
+
+  map.printJSON(code1)
+
+  let res = await run("testHashMap2", code1)
+  expect(JSON.parse(res)).toEqual({
+    "Hello": ["Hi", "there", "A", "B", "C", "DE"],
+    "World": ["C", "DE", "FGH"]
+  })
+})
+
+test("testHashMap3", async () => {
+  let map = value.hashMap(typing.parseType("{*string: {*string: 123}}"), "hashmap", 128, false, false)
+  map.addKey(types.string)
+
+  let nested = map.addNestedHashMapCol("_DEFAULT_", typing.parseType("{*string: 123}"), "nested", 64, false)
+  nested.addKey(types.string)
+  nested.addColumn("_NESTED_DEFAULT_", types.i32)
+
+  let code = []
+  
+  nested.declareStruct(code)
+  map.declare(code)
+
+  let key1 = value.string(types.string, `"Hello"`, 5)
+  // map.findAndInsert(code, key1, (buf, entry) => {
+  // }, (buf, entry) => {
+  // }, true)
+
+  let code1 = []
+  code.map(line => {
+    if (typeof line == "object") {
+      return line.emit(code1)
+    } else {
+      code1.push(line)
+    }
+  })
+
+  map.printJSON(code1)
+
+  let res = await run("testHashMap3", code1)
+  expect(JSON.parse(res)).toEqual({})
 })
