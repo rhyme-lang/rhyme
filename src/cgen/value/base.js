@@ -1,19 +1,52 @@
 // Value rep objects for low level C code
 // primitive values
 
-const { VAL_TAG, BUF_TAG } = require("./tags")
 const { c, utils } = require("../utils")
 const { typing, types, typeSyms } = require("../../typing")
 const { symbol } = require("../symbol")
 
-// C primitive values. e.g. int, char etc.
-exports.primitive = (schema, val) => ({
-  tag: VAL_TAG.PRIMITIVE,
-  schema,
-  val,
-  assign(buf, rhs) {
-    c.stmt(buf)(c.assign(this.val, rhs.val))
-  },
+exports.copy = function(obj) {
+  return Object.assign(Object.create(Object.getPrototypeOf(obj)), obj)
+}
+
+class CValue {
+  schema
+
+  constructor(schema) {
+    this.schema = schema
+  }
+
+  printJSON() {
+    throw new Error("Not implemented")
+  }
+
+  print() {
+    throw new Error("Not implemented")
+  }
+}
+
+class CBasicValue extends CValue {
+  hash() {
+    throw new Error("Not implemented")
+  }
+
+  assign() {
+    throw new Error("Not implemented")
+  }
+
+  compare() {
+    throw new Error("Not implemented")
+  }
+}
+
+class CPrim extends CBasicValue {
+  val
+
+  constructor(schema, val) {
+    super(schema)
+    this.val = val
+  }
+
   hash(buf, hashed) {
     hashed = hashed || symbol.getSymbol("hash")
     if (!typing.isNumber(this.schema) &&
@@ -24,41 +57,54 @@ exports.primitive = (schema, val) => ({
     }
     c.declareULong(buf)(hashed, c.cast("unsigned long", this.val))
     return hashed
-  },
+  }
+
+  assign(buf, rhs) {
+    c.stmt(buf)(c.assign(this.val, rhs.val))
+  }
+
   compare(op, rhs) {
     return c.binary(this.val, rhs.val, op)
-  },
+  }
+
   printJSON(buf, quoted) {
     if (this.schema.typeSym == typeSyms.date) {
       if (quoted) c.printf(buf)("\\\"")
       c.stmt(buf)(c.call("print_date", this.val))
       if (quoted) c.printf(buf)("\\\"")
     } else if (quoted) {
-      c.printf(buf)(`"%${utils.getFormatSpecifier(this.schema)}"`, this.val)
+      c.printf(buf)(`\\"%${utils.getFormatSpecifier(this.schema)}\\"`, this.val)
     } else {
       c.printf(buf)(`%${utils.getFormatSpecifier(this.schema)}`, this.val)
     }
-  },
+  }
+
   print(buf) {
     this.printJSON(buf)
   }
-})
+}
 
-// C strings
-exports.string = (schema, str, len) => ({
-  tag: VAL_TAG.STRING,
-  schema,
-  str,
-  len,
-  assign(buf, rhs) {
-    c.stmt(buf)(c.assign(this.str, rhs.str))
-    c.stmt(buf)(c.assign(this.len, rhs.len))
-  },
+class CString extends CBasicValue {
+  str
+  len
+
+  constructor(schema, str, len) {
+    super(schema)
+    this.str = str
+    this.len = len
+  }
+
   hash(buf, hashed) {
     hashed = hashed || symbol.getSymbol("hash")
     c.declareULong(buf)(hashed, c.call("hash", this.str, this.len))
     return hashed
-  },
+  }
+
+  assign(buf, rhs) {
+    c.stmt(buf)(c.assign(this.str, rhs.str))
+    c.stmt(buf)(c.assign(this.len, rhs.len))
+  }
+
   compare(op, rhs) {
     let str1 = this.str
     let len1 = this.len
@@ -68,94 +114,29 @@ exports.string = (schema, str, len) => ({
       c.call("strncmp", str1, str2, c.ternary(c.lt(len1, len2), len1, len2)),
       "0", op
     )
-  },
+  }
+
   printJSON(buf) {
     c.printf(buf)(`\\"%.*s\\"`, this.len, this.str)
-  },
+  }
+
   print(buf) {
     c.printf(buf)(`%.*s`, this.len, this.str)
   }
-})
+}
 
-// Co with constant keys
-exports.keys = () => ({
-  tag: VAL_TAG.KEYS,
-  keys: [],
-  addKey(key) {
-    this.keys.push(key)
-  },
-  assign(buf, rhs) {
-    for (let i in this.keys) {
-      let key = this.keys[i]
-      key.assign(buf, rhs.keys[i])
-    }
-  },
-  hash(buf, hashed) {
-    hashed = hashed || symbol.getSymbol("hash")
-    let result
-    for (let i in this.keys) {
-      let key = this.keys[i]
-      let tmp = symbol.getSymbol("tmp_hash")
-      let tmpHash = key.hash(buf, tmp)
-      if (result) {
-        result = c.add(c.mul(result, "31"), tmpHash)
-      } else {
-        result = tmpHash
-      }
-    }
-    c.declareULong(buf)(hashed, result)
-    return hashed
-  },
-  compare(op, rhs) {
-    let res
-    for (let i in this.keys) {
-      let key = this.keys[i]
-      let cmp = key.compare(op, rhs.keys[i])
-      if (res) {
-        res = c.and(res, cmp)
-      } else {
-        res = cmp
-      }
-    }
-    return res
-  },
-  printJSON(buf) {
-    c.printf(buf)("\\\"");
-    for (let i in this.keys) {
-      let key = this.keys[i]
-      key.print(buf)
-      if (i != this.keys.length - 1) {
-        c.printf(buf)(",")
-      }
-    }
-    c.printf(buf)("\\\"");
-  },
-  print(buf) {
-    for (let i in this.keys) {
-      let key = this.keys[i]
-      key.print(buf)
-      c.printf(buf)("|");
-    }
+class CCompoundValue extends CBasicValue {
+  values
+
+  constructor(schema, values) {
+    super(schema)
+    this.values = values
   }
-})
 
-// Object with constant keys
-exports.object = (schema) => ({
-  tag: VAL_TAG.OBJECT,
-  schema,
-  values: {},
-  get(key) {
-    return this.values[key]
-  },
-  assign(buf, rhs) {
-    for (let key in this.values) {
-      let value = this.values[key]
-      value.assign(buf, rhs.values[key])
-    }
-  },
-  addField(key, value) {
-    this.values[key] = value
-  },
+  addValue() {
+    throw new Error("Not implemented")
+  }
+
   hash(buf, hashed) {
     hashed = hashed || symbol.getSymbol("hash")
     let result
@@ -171,7 +152,47 @@ exports.object = (schema) => ({
     }
     c.declareULong(buf)(hashed, result)
     return hashed
-  },
+  }
+
+  assign(buf, rhs) {
+    for (let key in this.values) {
+      let value = this.values[key]
+      value.assign(buf, rhs.values[key])
+    }
+  }
+
+  compare(op, rhs) {
+    let res
+    for (let key in this.values) {
+      let value = this.values[key]
+      let cmp = value.compare(op, rhs.values[key])
+      if (res) {
+        res = c.and(res, cmp)
+      } else {
+        res = cmp
+      }
+    }
+    return res
+  }
+
+  print(buf) {
+    for (let k in this.values) {
+      let v = this.values[k]
+      v.print(buf)
+      c.printf(buf)("|");
+    }
+  }
+}
+
+class CObject extends CCompoundValue {
+  constructor(schema) {
+    super(schema, {})
+  }
+
+  addValue(key, value) {
+    this.values[key] = value
+  }
+
   printJSON(buf) {
     c.printf(buf)("{");
     for (let i in Object.keys(this.values)) {
@@ -184,184 +205,280 @@ exports.object = (schema) => ({
       }
     }
     c.printf(buf)("}");
-  },
-  print(buf) {
-    for (let k in this.values) {
-      let v = this.values[k]
-      v.print(buf)
-      c.printf(buf)("|");
-    }
   }
-})
+}
 
-// Buffers represent the C arrays that stores a collection of values
-// which are typically seen under arrays or hashmaps
-exports.primitiveBuffer = (schema, name, capacity) => ({
-  tag: BUF_TAG.PRIMITIVE,
-  schema,
-  name,
-  valBuf: name,
-  capacity,
+class CKeys extends CCompoundValue {
+  constructor(schema) {
+    super(schema, [])
+  }
+
+  addKey(key) {
+    this.values.push(key)
+  }
+
+  // Same as addKey
+  addValue(value) {
+    this.values.push(value)
+  }
+
+  printJSON(buf) {
+    c.printf(buf)("\\\"");
+    for (let i in this.values) {
+      let key = this.values[i]
+      key.print(buf)
+      if (i != this.values.length - 1) {
+        c.printf(buf)(",")
+      }
+    }
+    c.printf(buf)("\\\"");
+  }
+}
+
+class CBuffer {
+  schema
+  capacity
+
+  constructor(schema, capacity) {
+    this.schema = schema
+    this.capacity = capacity
+  }
+
+  get() {
+    throw new Error("Not implemented")
+  }
+
+  shift() {
+    throw new Error("Not implemented")
+  }
+
+  derefFrom() {
+    throw new Error("Not implemented")
+  }
+
+  allocate() {
+    throw new Error("Not implemented")
+  }
+
+  declare() {
+    throw new Error("Not implemented")
+  }
+
+  allocateAssign() {
+    throw new Error("Not implemented")
+  }
+}
+
+class CPrimBuffer extends CBuffer {
+  valBuf
+
+  constructor(schema, capacity, valBuf) {
+    super(schema, capacity)
+    this.valBuf = valBuf
+  }
+
   get(idx) {
     let val = `${this.valBuf}[${idx}]`
-    return exports.primitive(this.schema, val)
-  },
+    return new CPrim(this.schema, val)
+  }
+
   shift(offset) {
-    let newBuffer = { ...this }
-    newBuffer.valBuf = c.add(newBuffer.valBuf, offset)
+    let newBuffer = new CPrimBuffer(
+      this.schema, this.capacity, c.add(this.valBuf, offset))
     return newBuffer
-  },
+  }
+
   derefFrom(ptr) {
-    let newBuffer = { ...this }
-    newBuffer.valBuf = `${ptr}->${newBuffer.valBuf}`
+    let newBuffer = new CPrimBuffer(
+      this.schema, this.capacity, `${ptr}->${this.valBuf}`)
     return newBuffer
-  },
-  addToStruct(struct) {
+  }
+
+  declare(buf) {
     let cType = utils.convertToCType(this.schema)
-    struct.addField(cType + " *", this.valBuf)
-  },
+    c.declarePtr(buf)(cType, this.valBuf)
+  }
+
   allocateAssign(buf) {
     // let convertToCType report "type not supported" errors
     let cType = utils.convertToCType(this.schema)
     c.stmt(buf)(c.assign(this.valBuf,
       c.cast(`${cType} *`, c.malloc(cType, this.capacity))))
-  },
+  }
+
   allocate(buf) {
     // let convertToCType report "type not supported" errors
     let cType = utils.convertToCType(this.schema)
     c.declarePtr(buf)(cType, this.valBuf,
       c.cast(`${cType} *`, c.malloc(cType, this.capacity)))
   }
-})
+}
 
-exports.stringBuffer = (schema, name, capacity) => ({
-  tag: BUF_TAG.STRING,
-  schema,
-  name,
-  strBuf: `${name}_str`,
-  lenBuf: `${name}_len`,
-  capacity,
+class CStringBuffer extends CBuffer {
+  strBuf
+  lenBuf
+
+  constructor(schema, capacity, strBuf) {
+    super(schema, capacity)
+    this.strBuf = strBuf
+    this.lenBuf = strBuf + "_len$"
+  }
+
   get(idx) {
     let str = `${this.strBuf}[${idx}]`
     let len = `${this.lenBuf}[${idx}]`
-    return exports.string(this.schema, str, len)
-  },
+    return new CString(this.schema, str, len)
+  }
+
   shift(offset) {
-    let newBuffer = { ...this }
-    newBuffer.strBuf = c.add(newBuffer.strBuf, offset)
-    newBuffer.lenBuf = c.add(newBuffer.lenBuf, offset)
+    let newBuffer = new CStringBuffer(
+      this.schema, this.capacity, this.strBuf)
+    newBuffer.strBuf = c.add(this.strBuf, offset)
+    newBuffer.lenBuf = c.add(this.lenBuf, offset)
     return newBuffer
-  },
+  }
+
   derefFrom(ptr) {
-    let newBuffer = { ...this }
-    newBuffer.strBuf = `${ptr}->${newBuffer.strBuf}`
-    newBuffer.lenBuf = `${ptr}->${newBuffer.lenBuf}`
+    let newBuffer = new CStringBuffer(
+      this.schema, this.capacity, this.strBuf)
+    newBuffer.strBuf = `${ptr}->${this.strBuf}`
+    newBuffer.lenBuf = `${ptr}->${this.lenBuf}`
     return newBuffer
-  },
-  addToStruct(struct) {
-    struct.addField("const char **", this.strBuf)
-    struct.addField("int *", this.lenBuf)
-  },
-  allocate(buf) {
-    c.declareCharPtrPtr(buf)(this.strBuf,
-      c.cast("const char **", c.malloc("const char *", this.capacity)))
-    c.declareIntPtr(buf)(this.lenBuf,
-      c.cast("int *", c.malloc("int", this.capacity)))
-  },
+  }
+
+  declare(buf) {
+    c.declareCharPtrPtr(buf)(this.strBuf)
+    c.declareIntPtr(buf)(this.lenBuf)
+  }
+
   allocateAssign(buf) {
     c.stmt(buf)(c.assign(this.strBuf,
       c.cast("const char **", c.malloc("const char *", this.capacity))))
     c.stmt(buf)(c.assign(this.lenBuf,
       c.cast("int *", c.malloc("int", this.capacity))))
-  },
-})
+  }
 
-exports.objectBuffer = (schema) => ({
-  tag: BUF_TAG.OBJECT,
-  schema,
-  buffers: {},
-  get(idx) {
-    let res = exports.object(this.schema)
-    for (let key in this.buffers) {
-      let buffer = this.buffers[key]
-      res.addField(key, buffer.get(idx))
-    }
-    return res
-  },
-  shift(offset) {
-    let newBuffer = exports.objectBuffer(this.schema)
-    for (let key in this.buffers) {
-      let buffer = this.buffers[key].shift(offset)
-      newBuffer.addBufferField(key, buffer)
-    }
-    return newBuffer
-  },
-  derefFrom(ptr) {
-    let newBuffer = exports.objectBuffer(this.schema)
-    for (let key in this.buffers) {
-      let buffer = this.buffers[key].derefFrom(ptr)
-      newBuffer.addBufferField(key, buffer)
-    }
-    return newBuffer
-  },
-  addToStruct(struct) {
-    for (let key in this.buffers) {
-      this.buffers[key].addToStruct(struct)
-    }
-  },
+  allocate(buf) {
+    c.declareCharPtrPtr(buf)(this.strBuf,
+      c.cast("const char **", c.malloc("const char *", this.capacity)))
+    c.declareIntPtr(buf)(this.lenBuf,
+      c.cast("int *", c.malloc("int", this.capacity)))
+  }
+}
+
+class CCompoundBuffer extends CBuffer {
+  buffers
+
+  constructor(schema, capacity, buffers) {
+    super(schema, capacity)
+    this.buffers = buffers
+  }
+
+  addBuffer() {
+    throw new Error("Not implemented")
+  }
+
   addBufferField(key, buffer) {
     this.buffers[key] = buffer
-  },
+  }
+
   allocate(buf) {
     for (let key in this.buffers) {
       this.buffers[key].allocate(buf)
     }
-  },
+  }
+
   allocateAssign(buf) {
     for (let key in this.buffers) {
       this.buffers[key].allocateAssign(buf)
     }
-  },
-})
+  }
+}
 
-exports.keysBuffer = () => ({
-  tag: BUF_TAG.KEYS,
-  buffers: [],
+class CObjectBuffer extends CCompoundBuffer {
+  constructor(schema, capacity) {
+    super(schema, capacity, {})
+  }
+  
+  addBuffer(key, buffer) {
+    this.buffers[key] = buffer
+  }
+
   get(idx) {
-    let res = exports.keys()
-    for (let i in this.buffers) {
-      let buffer = this.buffers[i]
-      res.addKey(buffer.get(idx))
+    let res = new CObject(this.schema)
+    for (let key in this.buffers) {
+      let buffer = this.buffers[key]
+      res.addValue(key, buffer.get(idx))
     }
     return res
-  },
+  }
+
   shift(offset) {
-    utils.internalError("not supported")
-  },
+    let newBuffer = new CObjectBuffer(this.schema, this.capacity)
+    for (let key in this.buffers) {
+      let buffer = this.buffers[key].shift(offset)
+      newBuffer.addBuffer(key, buffer)
+    }
+    return newBuffer
+  }
+
   derefFrom(ptr) {
-    let newBuffer = exports.keysBuffer()
-    for (let i in this.buffers) {
-      let buffer = this.buffers[i].derefFrom(ptr)
+    let newBuffer = new CObjectBuffer(this.schema, this.capacity)
+    for (let key in this.buffers) {
+      let buffer = this.buffers[key].derefFrom(ptr)
+      newBuffer.addBuffer(key, buffer)
+    }
+    return newBuffer
+  }
+}
+
+class CKeysBuffer extends CCompoundBuffer {
+  constructor(schema, capacity) {
+    super(schema, capacity, [])
+  }
+  
+  addBuffer(buffer) {
+    this.buffers.push(buffer)
+  }
+
+  get(idx) {
+    let res = new CKeys(this.schema)
+    for (let key in this.buffers) {
+      let buffer = this.buffers[key]
+      res.addValue(buffer.get(idx))
+    }
+    return res
+  }
+
+  shift(offset) {
+    let newBuffer = new CKeysBuffer(this.schema, this.capacity)
+    for (let key in this.buffers) {
+      let buffer = this.buffers[key].shift(offset)
       newBuffer.addBuffer(buffer)
     }
     return newBuffer
-  },
-  addToStruct(struct) {
-    for (let i in this.buffers) {
-      this.buffers[i].addToStruct(struct)
+  }
+
+  derefFrom(ptr) {
+    let newBuffer = new CKeysBuffer(this.schema, this.capacity)
+    for (let key in this.buffers) {
+      let buffer = this.buffers[key].derefFrom(ptr)
+      newBuffer.addBuffer(buffer)
     }
-  },
-  addBuffer(buffer) {
-    this.buffers.push(buffer)
-  },
-  allocate(buf) {
-    for (let i in this.buffers) {
-      this.buffers[i].allocate(buf)
-    }
-  },
-  allocateAssign(buf) {
-    for (let i in this.buffers) {
-      this.buffers[i].allocateAssign(buf)
-    }
-  },
-})
+    return newBuffer
+  }
+}
+
+exports.CValue = CValue
+exports.CBasicValue = CBasicValue
+exports.CPrim = CPrim
+exports.CString = CString
+exports.CCompoundValue = CCompoundValue
+exports.CObject = CObject
+exports.CKeys = CKeys
+exports.CBuffer = CBuffer
+exports.CPrimBuffer = CPrimBuffer
+exports.CStringBuffer = CStringBuffer
+exports.CCompoundBuffer = CCompoundBuffer
+exports.CObjectBuffer = CObjectBuffer
+exports.CKeysBuffer = CKeysBuffer

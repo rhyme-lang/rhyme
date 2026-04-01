@@ -11,26 +11,60 @@ const base = require("./base")
 const { getSettings, resetSettings } = require("../settings")
 const { symbol } = require("../symbol")
 
-// Array
-exports.array = (schema, sym, capacity, tuple) => ({
-  tag: VAL_TAG.ARRAY,
-  schema,
-  sym,
-  size: `${sym}_size$`,
-  capacity,
-  buffer: tuple ? base.objectBuffer(schema.objValue) : undefined,
-  tuple,
+class CCollection extends base.CValue {
+  sym
+  size
+  capacity
+
+  tuple
+
+  // The CBuffer that stores the values of this collection
+  values
+
+  constructor(schema, sym, capacity, tuple) {
+    super(schema)
+    this.sym = sym
+    this.size = `${sym}_size$`
+    this.capacity = capacity
+    this.tuple = tuple
+    this.values = tuple ? new base.CObjectBuffer(schema.objValue, this.capacity) : undefined
+  }
+
   get(idx) {
-    return this.buffer.get(idx)
-  },
+    throw new Error("Not implemented")
+  }
+
+  setOrAddBuffer(name, buffer) {
+    if (this.tuple) {
+      this.values.addBuffer(name, buffer)
+    } else {
+      this.values = buffer
+    }
+  }
+
   addColumn(name, schema) {
     let bufferName = `${this.sym}_${name}`
     let newBuffer = typing.isString(schema) ?
-      base.stringBuffer(schema, bufferName, this.capacity) :
-      base.primitiveBuffer(schema, bufferName, this.capacity)
+      new base.CStringBuffer(schema, this.capacity, bufferName) :
+      new base.CPrimBuffer(schema, this.capacity, bufferName)
     this.setOrAddBuffer(name, newBuffer)
     return newBuffer
-  },
+  }
+
+  getLoopTxt() {
+    throw new Error("Not implemented")
+  }
+}
+
+class CArray extends CCollection {
+  constructor(schema, sym, capacity, tuple) {
+    super(schema, sym, capacity, tuple)
+  }
+
+  get(idx) {
+    return this.values.get(idx)
+  }
+
   getLoopTxt(v, data) {
     return () => {
       let v1 = quoteVar(v)
@@ -49,20 +83,15 @@ exports.array = (schema, sym, capacity, tuple) => ({
         info: [], data, initCursor, loopHeader, boundsChecking, rowScanning: []
       }
     }
-  },
-  setOrAddBuffer(name, buffer) {
-    if (this.tuple) {
-      this.buffer.addBufferField(name, buffer)
-    } else {
-      this.buffer = buffer
-    }
-  },
+  }
+
   // Code generation
   declare(buf) {
     c.comment(buf)(`declaring array "${this.sym}"`)
     c.declareInt(buf)(this.size, "0")
-    this.buffer.allocate(buf)
-  },
+    this.values.allocate(buf)
+  }
+
   insert(buf, value) {
     if (getSettings().boundCheck) {
       c.if(buf)(c.eq(this.size, this.capacity), (buf1) => {
@@ -74,7 +103,8 @@ exports.array = (schema, sym, capacity, tuple) => ({
     lhs.assign(buf, value)
 
     c.stmt(buf)(c.inc(this.size))
-  },
+  }
+
   printJSON(buf, limit) {
     limit = limit ? c.ternary(c.lt(limit, this.size), limit, this.size) : this.size
     let cType = utils.convertToCType(this.schema.objKey)
@@ -87,243 +117,108 @@ exports.array = (schema, sym, capacity, tuple) => ({
     })
     buf.push("}")
     c.printf(buf)("]")
-  },
+  }
+
   print(buf, limit) {
     limit = limit ? c.ternary(c.lt(limit, this.size), limit, this.size) : this.size
     let cType = utils.convertToCType(this.schema.objKey)
     let iter = symbol.getSymbol("print_iter")
     buf.push(`for (${cType} ${iter} = 0; ${iter} < ${this.size}; ${iter}++) {`)
     this.get(iter).print(buf)
-    // c.if(buf)(c.ne(iter, c.sub(limit, 1)), buf1 => {
     c.printf(buf)("\n")
-    // })
     buf.push("}")
   }
-})
+}
 
-exports.hashBucketBuffer = (schema, name, capacity, parentCapacity, tuple) => ({
-  tag: BUF_TAG.HASHMAP_BUCKET,
-  schema,
-  name,
-  sizeBuf: `${name}_bucket_sizes$`,
-  parentCapacity,
-  capacity,
-  buffer: tuple ? base.objectBuffer(schema.objValue) : undefined,
-  tuple,
-  get(idx) {
-    let newBuffer = this.buffer.shift(c.mul(idx, capacity))
-    let res = exports.array(this.schema, this.name, this.capacity, this.tuple)
-    res.size = `${this.sizeBuf}[${idx}]`
-    res.buffer = newBuffer
-    return res
-  },
-  addColumn(name, schema) {
-    let bufferName = `${this.name}_${name}`
-    let bufferSize = this.parentCapacity * this.capacity
-    let newBuffer = typing.isString(schema) ?
-      base.stringBuffer(schema, bufferName, bufferSize) :
-      base.primitiveBuffer(schema, bufferName, bufferSize)
-    if (tuple) {
-      this.buffer.addBufferField(name, newBuffer)
-    } else {
-      this.buffer = newBuffer
-    }
-    return newBuffer
-  },
-  allocate(buf) {
-    // Allocate the array that stores the sizes of all buckets in the buffer
-    c.declareIntPtr(buf)(this.sizeBuf,
-      c.cast("int *", c.malloc("int", this.parentCapacity)))
-    this.buffer.allocate(buf)
+class CHashMap extends CCollection {
+  htable
+
+  multiKey
+  keys
+
+  constructor(schema, sym, capacity, tuple, multiKey) {
+    super(schema, sym, capacity, tuple)
+    this.htable = `${sym}_htable$`
+    this.multiKey = multiKey
+    this.keys = multiKey ? new base.CKeysBuffer(schema.objKey, capacity) : undefined
   }
-})
 
-exports.hashLinkedBucketBuffer = (schema, name, factor, parentCapacity, tuple) => ({
-  tag: BUF_TAG.HASHMAP_LINKED_BUCKET,
-  schema,
-  name,
-  headBuf: `${name}_list_head$`,
-  prevBuf: `${name}_list_prev$`,
-  parentCapacity,
-  factor,
-  buffer: tuple ? base.objectBuffer(schema.objValue) : undefined,
-  tuple,
-  get(idx) {
-    utils.internalError("not implemented")
-  },
-  addColumn(name, schema) {
-    let bufferName = `${this.name}_${name}`
-    let bufferSize = this.parentCapacity * this.factor
-    let newBuffer = typing.isString(schema) ?
-      base.stringBuffer(schema, bufferName, bufferSize) :
-      base.primitiveBuffer(schema, bufferName, bufferSize)
-    if (tuple) {
-      this.buffer.addBufferField(name, newBuffer)
-    } else {
-      this.buffer = newBuffer
-    }
-    return newBuffer
-  },
-  allocate(buf) {
-    // Allocate the array that stores the sizes of all buckets in the buffer
-    c.declareIntPtr(buf)(this.headBuf,
-      c.cast("int *", c.malloc("int", this.parentCapacity)))
-    c.declareIntPtr(buf)(this.prevBuf,
-      c.cast("int *", c.malloc("int", this.parentCapacity * this.factor)))
-    this.buffer.allocate(buf)
-  }
-})
-
-exports.nestedHashMapBuffer = (schema, sym, name, capacity, parentCapacity, tuple) => ({
-  tag: BUF_TAG.NESTED_HASHMAP,
-  schema,
-  sym,
-  htable: `${sym}_htable$`,
-  size: `${sym}_size$`,
-  name,
-  parentCapacity,
-  capacity,
-  key: undefined,
-  buffer: tuple ? base.objectBuffer(schema.objValue) : undefined,
-  tuple,
-  // buffer: tuple ? base.objectBuffer(schema.objValue) : undefined,
-  tuple,
-  get(idx) {
-    // get the nested hashmap
-    let ptr = `${this.name}[${idx}]`
-
-    let res = exports.hashMap(this.schema, sym, this.capacity, false, this.tuple)
-    res.htable = `${ptr}->${res.htable}`
-    res.size = `${ptr}->${res.size}`
-    res.key = this.key.derefFrom(ptr)
-    res.buffer = this.buffer.derefFrom(ptr)
-
-    return res
-  },
-  addKey(keySchema) {
-    let bufferName = `${this.sym}_key`
-    let newBuffer = typing.isString(keySchema) ?
-      base.stringBuffer(keySchema, bufferName, this.capacity) :
-      base.primitiveBuffer(keySchema, bufferName, this.capacity)
-
-    this.key = newBuffer
-  },
-  addColumn(name, schema) {
-    let bufferName = `${this.sym}_${name}`
-    let newBuffer = typing.isString(schema) ?
-      base.stringBuffer(schema, bufferName, this.capacity) :
-      base.primitiveBuffer(schema, bufferName, this.capacity)
-    if (this.tuple) {
-      this.buffer.addBufferField(name, newBuffer)
-    } else {
-      this.buffer = newBuffer
-    }
-    return newBuffer
-  },
-  declareStruct(buf) {
-    let struct = c.struct(this.sym)
-    struct.addField("int *", this.htable)
-    struct.addField("int", this.size)
-    this.key.addToStruct(struct)
-    this.buffer.addToStruct(struct)
-    c.declareStruct(buf)(struct)
-  },
-  allocate(buf) {
-    c.declarePtrPtr(buf)(`struct ${sym}`, this.name,
-      c.cast(`struct ${sym} **`, c.malloc(`struct ${sym} *`, this.parentCapacity)))
-  }
-})
-
-exports.hashMap = (schema, sym, capacity, multiKey, tuple) => ({
-  tag: VAL_TAG.HASHMAP,
-  schema,
-  sym,
-  htable: `${sym}_htable$`,
-  size: `${sym}_size$`,
-  capacity,
-  key: multiKey ? base.keysBuffer() : undefined,
-  multiKey,
-  buffer: tuple ? base.objectBuffer(schema.objValue) : undefined,
-  tuple,
   getKey(keyPos) {
-    return this.key.get(keyPos)
-  },
+    return this.keys.get(keyPos)
+  }
+
   getVal(keyPos) {
-    return this.buffer.get(keyPos)
-  },
+    return this.values.get(keyPos)
+  }
+
   get(keyPos) {
-    return { key: this.getKey(keyPos), val: this.getVal(keyPos) }
-  },
-  setOrAddBuffer(name, buffer) {
-    if (this.tuple) {
-      this.buffer.addBufferField(name, buffer)
-    } else {
-      this.buffer = buffer
+    return { key: this.getKey(keyPos), value: this.getVal(keyPos) }
+  }
+
+  getLoopTxt(v, data) {
+    return () => {
+      let v1 = quoteVar(v)
+
+      let initCursor = []
+      let loopHeader = []
+
+      loopHeader.push((this.cond ? `if (!${this.cond}) ` : "") +
+        `for (size_t ${v1} = 1; ${v1} <= ${this.size}; ${v1}++) {`)
+
+      let boundsChecking = []
+      boundsChecking.push(`if (${v1} > ${this.size}) break;`)
+
+      return {
+        info: [], data, initCursor, loopHeader, boundsChecking, rowScanning: []
+      }
     }
-  },
+  }
+
   addKey(keySchema) {
     let bufferName
     if (this.multiKey) {
-      bufferName = `${this.sym}_key${this.key.buffers.length}`
+      bufferName = `${this.sym}_key${this.keys.buffers.length}`
     } else {
-      bufferName = `${this.sym}_key`
+      bufferName = `${this.sym}_key$`
     }
     let newBuffer = typing.isString(keySchema) ?
-      base.stringBuffer(keySchema, bufferName, this.capacity) :
-      base.primitiveBuffer(keySchema, bufferName, this.capacity)
+      new base.CStringBuffer(keySchema, this.capacity, bufferName) :
+      new base.CPrimBuffer(keySchema, this.capacity, bufferName)
     if (this.multiKey) {
-      this.key.addBuffer(newBuffer)
+      this.keys.addBuffer(newBuffer)
     } else {
-      this.key = newBuffer
+      this.keys = newBuffer
     }
-  },
+  }
+
   // Code generation
   declare(buf) {
     c.comment(buf)(`declaring hashmap "${this.sym}"`)
     c.declareIntPtr(buf)(this.htable,
-      c.cast("int *", c.calloc("int", capacity)))
+      c.cast("int *", c.calloc("int", this.capacity)))
     c.declareInt(buf)(this.size, "0")
     c.comment(buf)(`keys for hashmap "${this.sym}"`)
-    this.key.allocate(buf)
+    this.keys.allocate(buf)
     c.comment(buf)(`values for hashmap "${this.sym}"`)
-    this.buffer.allocate(buf)
-  },
-  allocate(buf) {
-    c.comment(buf)(`keys for hashmap "${this.sym}"`)
-    this.key.allocateAssign(buf)
-    c.comment(buf)(`values for hashmap "${this.sym}"`)
-    this.buffer.allocateAssign(buf)
-  },
-  addColumn(name, schema) {
+    this.values.allocate(buf)
+  }
+
+  addNestedArrayCol(name, schema, arrCapacity, arrTuple) {
     let bufferName = `${this.sym}_${name}`
-    let newBuffer = typing.isString(schema) ?
-      base.stringBuffer(schema, bufferName, this.capacity) :
-      base.primitiveBuffer(schema, bufferName, this.capacity)
+    let newBuffer = new CNestedArrayBuffer(
+      schema, arrCapacity, this.capacity, arrTuple, bufferName)
     this.setOrAddBuffer(name, newBuffer)
     return newBuffer
-  },
-  addBucketCol(name, schema, bucketCapacity, bucketTuple) {
-    let bufferName = `${this.sym}_${name}`
-    let newBuffer = exports.hashBucketBuffer(
-      schema, bufferName, bucketCapacity, this.capacity, bucketTuple)
-    this.setOrAddBuffer(name, newBuffer)
-    return newBuffer
-  },
-  addLinkedBucketCol(name, schema, factor, bucketTuple) {
-    let bufferName = `${this.sym}_${name}`
-    let newBuffer = exports.hashLinkedBucketBuffer(
-      schema, bufferName, factor, this.capacity, bucketTuple)
-    this.setOrAddBuffer(name, newBuffer)
-    return newBuffer
-  },
+  }
+
   addNestedHashMapCol(name, schema, mapSym, mapCapacity, mapTuple) {
     let bufferName = `${this.sym}_${name}`
-    let newBuffer =
-      exports.nestedHashMapBuffer(
-        schema, mapSym, bufferName, mapCapacity, this.capacity, mapTuple)
+    let newBuffer = new CNestedHashMapBuffer(
+      schema, mapCapacity, this.capacity, mapTuple, mapSym, bufferName)
     this.setOrAddBuffer(name, newBuffer)
     return newBuffer
-  },
+  }
+
   find(buf, key) {
     let mask = this.capacity - 1
 
@@ -356,7 +251,8 @@ exports.hashMap = (schema, sym, capacity, multiKey, tuple) => ({
 
     buf.push(stmt)
     return [pos, keyPos]
-  },
+  }
+
   insert(buf, key, pos, keyPos, update1, update2, checkExistance) {
     let entry = this.get(keyPos)
 
@@ -373,7 +269,8 @@ exports.hashMap = (schema, sym, capacity, multiKey, tuple) => ({
     }
 
     update2(buf, entry, pos, keyPos)
-  },
+  }
+
   findAndInsert(buf, key, update1, update2, checkExistance) {
     if (checkExistance) {
       c.if(buf)(c.eq(this.size, this.capacity), buf1 => {
@@ -387,20 +284,198 @@ exports.hashMap = (schema, sym, capacity, multiKey, tuple) => ({
     this.insert(buf, key, pos, keyPos, update1, update2, checkExistance)
 
     return [pos, keyPos]
-  },
+  }
+
   printJSON(buf, limit) {
-    limit = limit ? c.ternary(c.lt(limit, this.size), limit, count) : this.size
+    limit = limit ? c.ternary(c.lt(limit, this.size), limit, this.size) : this.size
     let iter = symbol.getSymbol("print_iter")
     c.printf(buf)("{")
     buf.push(`for (int ${iter} = 1; ${iter} <= ${this.size}; ${iter}++) {`)
     let entry = this.get(iter)
     entry.key.printJSON(buf, true)
     c.printf(buf)(":")
-    entry.val.printJSON(buf)
+    entry.value.printJSON(buf)
     c.if(buf)(c.ne(iter, limit), buf1 => {
       c.printf(buf1)(",")
     })
     buf.push("}")
     c.printf(buf)("}")
   }
-})
+}
+
+class CNestedHashMap extends CHashMap {
+  ptr
+
+  constructor(schema, sym, capacity, tuple, multiKey, ptr) {
+    super(schema, sym, capacity, tuple, multiKey)
+    this.ptr = ptr
+  }
+
+  allocate(buf) {
+    c.stmt(buf)(c.assign(this.ptr, c.cast(`struct ${this.sym} *`, c.malloc(`struct ${this.sym}`, 1))))
+    c.stmt(buf)(c.assign(this.htable, c.cast("int *", c.calloc("int", this.capacity))))
+    c.stmt(buf)(c.assign(this.size, "0"))
+    this.keys.allocateAssign(buf)
+    this.values.allocateAssign(buf)
+  }
+}
+
+class CCollectionBuffer extends base.CBuffer {
+  parentCapacity
+
+  tuple
+  values
+
+  constructor(schema, capacity, parentCapacity, tuple) {
+    super(schema, capacity)
+    this.parentCapacity = parentCapacity
+    this.values = tuple ? new base.CObjectBuffer(schema.objValue) : undefined
+  }
+
+  get() {
+    throw new Error("Not implemented")
+  }
+
+  setOrAddBuffer(name, buffer) {
+    if (this.tuple) {
+      this.values.addBuffer(name, buffer)
+    } else {
+      this.values = buffer
+    }
+  }
+}
+
+class CNestedArrayBuffer extends CCollectionBuffer {
+  prefix
+  sizeBuf
+
+  constructor(schema, capacity, parentCapacity, tuple, prefix) {
+    super(schema, capacity, parentCapacity, tuple)
+    this.prefix = prefix
+    this.sizeBuf = `${prefix}_bucket_sizes$`
+  }
+
+  get(idx) {
+    let newBuffer = this.values.shift(c.mul(idx, this.capacity))
+    let res = new CArray(this.schema, undefined, this.capacity, this.tuple)
+    res.size = `${this.sizeBuf}[${idx}]`
+    res.values = newBuffer
+    return res
+  }
+
+  addColumn(name, schema) {
+    let bufferName = `${this.prefix}_${name}`
+    let bufferSize = this.parentCapacity * this.capacity
+    let newBuffer = typing.isString(schema) ?
+      new base.CStringBuffer(schema, bufferSize, bufferName) :
+      new base.CPrimBuffer(schema, bufferSize, bufferName)
+    this.setOrAddBuffer(name, newBuffer)
+    return newBuffer
+  }
+
+  allocate(buf) {
+    // Allocate the array that stores the sizes of all buckets in the buffer
+    c.declareIntPtr(buf)(this.sizeBuf,
+      c.cast("int *", c.malloc("int", this.parentCapacity)))
+    this.values.allocate(buf)
+  }
+}
+
+class CNestedHashMapBuffer extends CCollectionBuffer {
+  sym
+
+  htable
+  size
+  structBuf
+
+  keys
+
+  constructor(schema, capacity, parentCapacity, tuple, sym, structBuf) {
+    super(schema, capacity, parentCapacity, tuple)
+    this.sym = sym
+    this.htable = `${sym}_htable$`
+    this.size = `${sym}_size$`
+    this.structBuf = structBuf
+  }
+
+  get(idx) {
+    let ptr = `${this.structBuf}[${idx}]`
+
+    let res = new CNestedHashMap(
+      this.schema, this.sym, this.capacity, this.tuple, false, ptr)
+    res.htable = `${ptr}->${res.htable}`
+    res.size = `${ptr}->${res.size}`
+    res.keys = this.keys.derefFrom(ptr)
+    res.values = this.values.derefFrom(ptr)
+
+    return res
+  }
+
+  addKey(keySchema) {
+    let bufferName = `${this.sym}_key$`
+    let newBuffer = typing.isString(keySchema) ?
+      new base.CStringBuffer(keySchema, this.capacity, bufferName) :
+      new base.CPrimBuffer(keySchema, this.capacity, bufferName)
+    this.keys = newBuffer
+  }
+
+  addColumn(name, schema) {
+    let bufferName = `${this.sym}_${name}`
+    let newBuffer = typing.isString(schema) ?
+      new base.CStringBuffer(schema, this.capacity, bufferName) :
+      new base.CPrimBuffer(schema, this.capacity, bufferName)
+    this.setOrAddBuffer(name, newBuffer)
+    return newBuffer
+  }
+
+  addNestedHashMapCol(name, schema, mapSym, mapCapacity, mapTuple) {
+    let bufferName = `${this.sym}_${name}`
+    let newBuffer = new CNestedHashMapBuffer(
+      schema, mapCapacity, this.capacity, mapTuple, mapSym, bufferName)
+    this.setOrAddBuffer(name, newBuffer)
+    return newBuffer
+  }
+
+  declareStruct(buf) {
+    c.comment(buf)(`declaring struct for hashmap "${this.sym}"`)
+    buf.push(`struct ${this.sym} {`)
+    c.declareIntPtr(buf)(this.htable)
+    c.declareInt(buf)(this.size)
+    c.comment(buf)(`keys for hashmap "${this.sym}"`)
+    this.keys.declare(buf)
+    c.comment(buf)(`values for hashmap "${this.sym}"`)
+    this.values.declare(buf)
+    buf.push("};")
+  }
+
+  derefFrom(ptr) {
+    let newBuffer = new CNestedHashMapBuffer(
+      this.schema, this.capacity, this.parentCapacity, this.tuple, this.sym,
+      `${ptr}->${this.structBuf}`)
+    newBuffer.keys = this.keys
+    newBuffer.values = this.values
+    return newBuffer
+  }
+
+  allocate(buf) {
+    c.declarePtrPtr(buf)(`struct ${this.sym}`, this.structBuf,
+      c.cast(`struct ${this.sym} **`, c.malloc(`struct ${this.sym} *`, this.parentCapacity)))
+  }
+
+  declare(buf) {
+    c.declarePtrPtr(buf)(`struct ${this.sym}`, this.structBuf)
+  }
+
+  allocateAssign(buf) {
+    c.stmt(buf)(c.assign(this.structBuf,
+      c.cast(`struct ${this.sym} **`, c.malloc(`struct ${this.sym} *`, this.parentCapacity))))
+  }
+}
+
+exports.CCollection = CCollection
+exports.CArray = CArray
+exports.CHashMap = CHashMap
+exports.CNestedHashMap = CNestedHashMap
+exports.CCollectionBuffer = CCollectionBuffer
+exports.CNestedArrayBuffer = CNestedArrayBuffer
+exports.CNestedHashMapBuffer = CNestedHashMapBuffer
