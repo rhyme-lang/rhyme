@@ -1,6 +1,7 @@
 const { c, utils } = require("./utils")
 const { hashmap, array } = require("./collections")
 const { TAG, value } = require("./value")
+const val = require("./value/value")
 const { symbol } = require("./symbol")
 const { csv } = require("./csv")
 const { json } = require("./json")
@@ -57,6 +58,14 @@ let currentGroupPath
 
 let preload
 let linkedBuckets
+
+// Collection size config
+let hashSize
+let nestedHashSize
+let bucketSize
+let arraySize
+
+let backend
 
 let getDeps = q => [...q.fre, ...q.tmps.map(tmpSym)]
 
@@ -126,6 +135,13 @@ let reset = (settings) => {
   tmpVars = {}
 
   visitedAssignments = {}
+
+  backend = settings.backend
+
+  hashSize = settings.hashSize || 256
+  nestedHashSize = settings.nestedHashSize || 256
+  bucketSize = settings.bucketSize || 64
+  arraySize = settings.arraySize || 2048
 
   preload = settings.preload || false
   linkedBuckets = settings.linkedBuckets || false
@@ -651,13 +667,13 @@ let emitLoadInput = (buf, q) => {
         c.stmt(prolog1)(c.inc(count))
 
         c.stmt(prolog1)(c.assign(cursor, c.add(cursor, c.call("yyjson_doc_get_read_size", doc))))
-        
+
         prolog1.push("}")
         inputFiles[q.op][filename] = arr
       } else {
         inputFiles[q.op][filename] = value.primitive(q.schema.type, { mappedFile, size }, TAG.NDJSON)
       }
-      
+
     } else if (q.op == "csv" || q.op == "tbl") {
       let { mappedFile, size } = csv.emitLoadCSV(buf1, filenameStr, q.op)
       let fileValue = value.primitive(q.schema.type, { mappedFile, size, format: q.op }, TAG.CSV)
@@ -1210,7 +1226,7 @@ let addHashMapValue = (map, q, name, currentGroupPath) => {
   let q1 = assignments[q.op]
   if (q1.key == "update") {
     assignmentToSym[q.op] = currentGroupPath.sym
-    updateOps[map.val.sym].push(q.op)
+    updateOps[currentGroupPath.sym].push(q.op)
     q1.root = currentGroupPath.sym
     collectNestedHashMap(q, map, name, currentGroupPath)
   } else if (q1.key == "stateful" && q1.fre.length != 0) {
@@ -1218,7 +1234,7 @@ let addHashMapValue = (map, q, name, currentGroupPath) => {
       throw new Error("Stateful op expected to have the same set of free variables as the current group path but got: " + q1.fre + " and " + currentGroupPath.path)
     }
     assignmentToSym[q.op] = currentGroupPath.sym
-    updateOps[map.val.sym].push(q.op)
+    updateOps[currentGroupPath.sym].push(q.op)
     q1.root = currentGroupPath.sym
 
     let sym = tmpSym(map.val.sym)
@@ -1572,11 +1588,13 @@ let generateC = (q, ir, settings) => {
     })
   }
 
-  let cFile = joinPaths(outDir, outFile + ".c")
+  let ext = settings.backend == "c-new" ? ".c" : ".cu"
+
+  let cFile = joinPaths(outDir, outFile + ext)
   let out = joinPaths(outDir, outFile)
   let code = emitCode(q, ir, settings)
 
-  let compiler = settings.compiler || "gcc"
+  let compiler = settings.backend == "c-new" ? (settings.compiler || "gcc") : "nvcc"
   let cFlags = settings.cFlags || "-Icgen-sql -O3"
 
   let func = async () => {

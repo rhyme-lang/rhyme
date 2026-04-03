@@ -947,7 +947,7 @@ let compile = (q,userSettings={}) => {
   if (settings.newCodegen)
     return translateToNewCodegen(q)
 
-  if (settings.backend == "c-new") {
+  if (settings.backend == "c-new" || settings.backend == "cuda") {
     let ir = {filters, assignments, vars, order, pseudo}
     return generateC(q, ir, settings)
   }
