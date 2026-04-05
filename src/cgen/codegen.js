@@ -1020,7 +1020,6 @@ let emitPure = (buf, q) => {
     // binary op
     let [e1, e2] = q.arg.map(e => emitPath(buf, e))
     let op = utils.binaryOperators[q.op]
-    console.log(e1)
     if (e1.tag == TAG.JSON) e1 = json.convertJSONTo(e1, e1.schema)
     if (e2.tag == TAG.JSON) e2 = json.convertJSONTo(e2, e1.schema)
     if (q.op == "equal" || q.op == "notEqual" || q.op == "lessThan" || q.op == "greaterThan" || q.op == "lessThanOrEqual" || q.op == "greaterThanOrEqual") {
@@ -1664,6 +1663,7 @@ let generateC = (q, ir, settings) => {
   let writeAndCompile = async () => {
     await fs.writeFile(cFile, code)
     if (inputFiles["json"] || inputFiles["ndjson"]) cFlags += " -Ithird-party/yyjson -Lthird-party/yyjson/out -lyyjson"
+    if (backend == "cuda") cFlags += " -lcublas"
     let cmd = `${compiler} ${cFile} -o ${out} ${cFlags}`
     console.log("Executing: " + cmd)
     let time1 = performance.now()
