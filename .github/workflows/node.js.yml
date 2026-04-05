@@ -24,7 +24,8 @@ jobs:
     - name: CUDA toolkit
       uses: Jimver/cuda-toolkit@master
       with:
-        cuda: '13.2.0' # Specify version
+        cuda: '13.2.0'
+        log-file-suffix: '-node${{ matrix.node-version }}'
     - name: Install Nlohmann Json
       run: |
         git clone https://github.com/nlohmann/json.git
