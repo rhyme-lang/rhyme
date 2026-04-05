@@ -148,9 +148,20 @@ let reset = (settings) => {
 }
 
 let initializeProlog = () => {
+  if (backend == "cuda") {
+    prolog0.push("#include <cuda_runtime.h>")
+    prolog0.push("#include <cublas_v2.h>")
+  }
+
   prolog0.push(`#include "rhyme-c.h"`)
+
   prolog0.push(`typedef int (*__compar_fn_t)(const void *, const void *);`)
   prolog1.push("int main() {")
+
+  if (backend == "cuda") {
+    c.declareVar(prolog1)("cublasHandle_t", "handle")
+    c.stmt(prolog1)(c.call("cublasCreate", "&handle"))
+  }
 }
 
 // construct the prolog with prolog0 and prolog1
@@ -773,7 +784,7 @@ let emitGet = (buf, q) => {
         return { schema: q.schema.type, val: c.call("yyjson_obj_iter_get_val", quoteVar(e2.op)), tag: TAG.JSON }
       } else {
         // Slow path, use yyjson_obj_getn
-        if (typing.isNumber(e1.schema.type.objKey))
+        if (typing.isNumber(typing.getObjectKeys(e1.schema.type)))
           return { schema: q.schema.type, val: c.call("yyjson_arr_get", g1.val, quoteVar(e2.op)), tag: TAG.JSON }
         return { schema: q.schema.type, val: c.call("yyjson_obj_getn", g1.val, c.call("yyjson_get_str", quoteVar(e2.op)), c.call("yyjson_get_len", quoteVar(e2.op))), tag: TAG.JSON }
       }
@@ -1009,6 +1020,7 @@ let emitPure = (buf, q) => {
     // binary op
     let [e1, e2] = q.arg.map(e => emitPath(buf, e))
     let op = utils.binaryOperators[q.op]
+    console.log(e1)
     if (e1.tag == TAG.JSON) e1 = json.convertJSONTo(e1, e1.schema)
     if (e2.tag == TAG.JSON) e2 = json.convertJSONTo(e2, e1.schema)
     if (q.op == "equal" || q.op == "notEqual" || q.op == "lessThan" || q.op == "greaterThan" || q.op == "lessThanOrEqual" || q.op == "greaterThanOrEqual") {
@@ -1065,6 +1077,46 @@ let emitPure = (buf, q) => {
     }
 
     return res
+  } else if (q.op == "dotProduct") {
+    let [e1, e2] = q.arg.map(e => emitPath(buf, e))
+    let cType = "float"
+
+    let moveToDevice = (e) => {
+      let mem = symbol.getSymbol("h_vec")
+      let idx = symbol.getSymbol("idx")
+      let max = symbol.getSymbol("max")
+      let iter = symbol.getSymbol("iter")
+      let len = symbol.getSymbol("N")
+      c.declareSize(buf)(len, c.call("yyjson_arr_size", e1.val))
+      c.declarePtr(buf)(cType, mem, c.cast(cType + " *", c.malloc(cType, len)))
+      c.declareSize(buf)(idx)
+      c.declareSize(buf)(max)
+      c.declarePtr(buf)("yyjson_val", iter)
+      buf.push(`yyjson_arr_foreach(${e.val}, ${idx}, ${max}, ${iter}) {`)
+      buf.push(`${mem}[${idx}] = (float)yyjson_get_int(${iter});`)
+      buf.push(`}`)
+
+      let cuMem = symbol.getSymbol("d_vec")
+      c.declarePtr(buf)(cType, cuMem)
+      c.stmt(buf)(c.call("cudaMalloc", `&${cuMem}`, `${len} * sizeof(${cType})`))
+      c.stmt(buf)(c.call("cudaMemcpy", cuMem, mem, `${len} * sizeof(${cType})`, "cudaMemcpyHostToDevice"))
+
+      return { size: len, cuMem }
+    }
+
+    if (e1.tag != TAG.JSON || e2.tag != TAG.JSON) {
+      throw new Error("Expect json data on two sides for now")
+    }
+
+    let { size: size1, cuMem: cuMem1 } = moveToDevice(e1)
+    let { size: size2, cuMem: cuMem2 } = moveToDevice(e2)
+
+    let res = symbol.getSymbol("res")
+    c.declareVar(buf)(cType, res, 0)
+
+    c.stmt(buf)(c.call("cublasSdot", "handle", size1, cuMem1, "1", cuMem2, "1", "&" + res))
+
+    return value.primitive(types.f32, res)
   } else {
     throw new Error("Pure operation not supported: " + pretty(q))
   }
@@ -1452,9 +1504,10 @@ let processFilters = () => {
         vars[v1].gen[pretty(g1)] = value.json(g1.schema.type.objValue, quoteVar(v1) + "_gen")
         addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
       } else if (lhs.tag == TAG.JSON) {
-        if (typing.isNumber(g1.schema.type.objKey)) {
+        let schema = typing.removeTag(g1.schema.type);
+        if (typing.isNumber(schema.objKey)) {
           let getLoopTxtFunc = json.getJSONArrayLoopTxt(f, lhs, data)
-          if (firstSeen) vars[v1].gen = value.json(g1.schema.type.objValue, quoteVar(v1) + "_gen")
+          if (firstSeen) vars[v1].gen = value.json(schema.objValue, quoteVar(v1) + "_gen")
           addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
         } else {
           let getLoopTxtFunc = json.getJSONObjLoopTxt(f, lhs, data)
@@ -1543,6 +1596,10 @@ let emitCode = (q, ir, settings) => {
   let t2 = emitGetTime(epilog)
 
   c.printErr(epilog)(`\\n\\nTiming:\\n\\tInitializaton:\\t%ld μs\\n\\tRuntime:\\t%ld μs\\n\\tTotal:\\t\\t%ld μs\\n`, c.sub(t1, t0), c.sub(t2, t1), c.sub(t2, t0))
+
+  if (backend == "cuda") {
+    c.stmt(epilog)(c.call("cublasDestroy", "handle"))
+  }
   c.return(epilog)("0")
   epilog.push("}")
 

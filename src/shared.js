@@ -62,6 +62,8 @@ ops.pure.like = true
 ops.pure.substr = true
 ops.pure.isUndef = true
 
+ops.pure.dotProduct = true
+
 // stateful operations
 
 ops.stateful.sum = true

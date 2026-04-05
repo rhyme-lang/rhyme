@@ -44,14 +44,16 @@ let vecSchema = typing.parseType({
   "-": typing.keyval(key, key, types.u32)
 })
 
+let vecSchema1 = typing.createVec("dense", types.u32, 1, types.u32)
+
 let matA = rh`loadJSON "./cgen-sql/json/tensors/matA.json" ${matSchema}`
 let batchedMatA = rh`loadJSON "./cgen-sql/json/tensors/batchedMatA.json" ${batchedMatSchema}`
 
 let matB = rh`loadJSON "./cgen-sql/json/tensors/matB.json" ${matSchema}`
 let batchedMatB = rh`loadJSON "./cgen-sql/json/tensors/batchedMatB.json" ${batchedMatSchema}`
 
-let vecA = rh`loadJSON "./cgen-sql/json/tensors/vecA.json" ${vecSchema}`
-let vecB = rh`loadJSON "./cgen-sql/json/tensors/vecB.json" ${vecSchema}`
+let vecA = rh`loadJSON "./cgen-sql/json/tensors/vecA.json" ${vecSchema1}`
+let vecB = rh`loadJSON "./cgen-sql/json/tensors/vecB.json" ${vecSchema1}`
 
 test("transpose", async () => {
   let query = { "*j": { "*i": rh`${matB}.*i.*j` } }
@@ -118,6 +120,16 @@ test("dotProduct", async () => {
   let query = rh`sum(${vecA}.*i * ${vecB}.*i)`
 
   let func = await compile(query, { backend: "c-new", outDir, outFile: "dotProduct" })
+  let res = await func()
+
+  let expected = 10
+  expect(JSON.parse(res)).toEqual(expected)
+})
+
+test("dotProductCuda", async () => {
+  let query = rh`dotProduct ${vecA} ${vecB}`
+
+  let func = await compile(query, { backend: "cuda", outDir, outFile: "dotProductCuda" })
   let res = await func()
 
   let expected = 10

@@ -1082,6 +1082,17 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
         } else if (q.op == "length") {
             let {type: t1, props: p1} = argTups[0];
             return {type: types.u64, props: union(p1, nothingSet)};
+        } else if (q.op == "dotProduct") {
+            let {type: t1, props: p1} = argTups[0];
+            let {type: t2, props: p2} = argTups[1];
+
+            if (!isDense(t1))
+                throw new Error("Expect dense vector of dim 1 but got: " + prettyPrintType(t1) + "\nReceived from query: " + pretty(q.arg[0]));
+
+            if (!isDense(t2))
+                throw new Error("Expect dense vector of dim 1 but got: " + prettyPrintType(t2) + "\nReceived from query: " + pretty(q.arg[1]));
+
+            return {type: types.f32, props: p1}
         }
         throw new Error("Pure operation not implemented: " + q.op);
     } else if (q.key === "hint") {
@@ -1688,6 +1699,9 @@ let convertAST = (schema, q, completedMap, dontConvertVar = false) => {
             q.arg = q.arg.map($convertAST);
             return q;
         } else if (q.op == "singleton") {
+            q.arg = q.arg.map($convertAST);
+            return q;
+        } else if (q.op == "dotProduct") {
             q.arg = q.arg.map($convertAST);
             return q;
         }
