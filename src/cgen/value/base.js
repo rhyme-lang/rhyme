@@ -5,15 +5,17 @@ const { c, utils } = require("../utils")
 const { typing, types, typeSyms } = require("../../typing")
 const { symbol } = require("../symbol")
 
-exports.copy = function(obj) {
+exports.copy = function (obj) {
   return Object.assign(Object.create(Object.getPrototypeOf(obj)), obj)
 }
 
 class CValue {
   schema
+  isUndef
 
-  constructor(schema) {
+  constructor(schema, isUndef) {
     this.schema = schema
+    this.isUndef = isUndef
   }
 
   printJSON() {
@@ -36,6 +38,66 @@ class CBasicValue extends CValue {
 
   compare() {
     throw new Error("Not implemented")
+  }
+}
+
+class CJSON extends CValue {
+  val
+
+  constructor(schema, val) {
+    super(schema)
+    this.val = val
+  }
+
+  static load(buf, schema, filename) {
+    let err = symbol.getSymbol("err")
+    c.declareVar(buf)("yyjson_read_err", err)
+    let doc = symbol.getSymbol("tmp_doc")
+    c.declarePtr(buf)("yyjson_doc", doc, c.call("yyjson_read_file", filename, "0", "NULL", `&${err}`))
+    c.if(buf)(c.not(doc), buf1 => {
+      c.printErr(buf1)("read error: %s, code: %u at byte position: %lu\\n", `${err}.msg`, `${err}.code`, `${err}.pos`)
+      c.return(buf1)("1")
+    })
+    let jsonVal = symbol.getSymbol("json_val")
+    c.declarePtr(buf)("yyjson_val", jsonVal, c.call("yyjson_doc_get_root", doc))
+
+    return new CJSON(schema, jsonVal)
+  }
+
+  toConcrete() {
+    if (typing.isObject(this.schema)) {
+      return this
+    } else if (typing.isString(this.schema)) {
+      let str = c.call("yyjson_get_str", this.val)
+      let len = c.call("yyjson_get_len", this.val)
+      let isUndef = c.not(c.call("yyjson_is_str", this.val))
+      if (this.isUndef) isUndef = c.or(this.isUndef, isUndef)
+      return new CString(this.schema, str, len)
+    } else if (typing.isNumber(schema)) {
+      // Assume number
+      let func1 = "yyjson_get_num"
+      let func2 = "yyjson_is_num"
+      if (schema.typeSym == typeSyms.u8 || schema.typeSym == typeSyms.u16 ||
+        schema.typeSym == typeSyms.u32 || schema.typeSym == typeSyms.u64) {
+        func1 = "yyjson_get_uint"
+        func2 = "yyjson_is_uint"
+      } else if (schema.typeSym == typeSyms.i8 || schema.typeSym == typeSyms.i16 ||
+        schema.typeSym == typeSyms.i32 || schema.typeSym == typeSyms.i64) {
+        func1 = "yyjson_get_int"
+        func2 = "yyjson_is_int"
+      }
+      let val = c.call(func1, json.val)
+      let cond = c.not(c.call(func2, json.val))
+      if (this.cond) cond = c.or(this.cond, cond)
+      return new CPrim(this.schema, val)
+    } else {
+      throw new Error("Cannot convert JSON val to type: " + typing.prettyPrintType(schema))
+    }
+  }
+
+  printJSON(buf) {
+    c.comment(buf)("print json object")
+    c.printf(buf)("%s", c.call("yyjson_val_write", this.val, "0", "NULL"))
   }
 }
 
@@ -399,7 +461,7 @@ class CObjectBuffer extends CCompoundBuffer {
   constructor(schema, capacity) {
     super(schema, capacity, {})
   }
-  
+
   addBuffer(key, buffer) {
     this.buffers[key] = buffer
   }
@@ -436,7 +498,7 @@ class CKeysBuffer extends CCompoundBuffer {
   constructor(schema, capacity) {
     super(schema, capacity, [])
   }
-  
+
   addBuffer(buffer) {
     this.buffers.push(buffer)
   }
@@ -470,6 +532,7 @@ class CKeysBuffer extends CCompoundBuffer {
 }
 
 exports.CValue = CValue
+exports.CJSON = CJSON
 exports.CBasicValue = CBasicValue
 exports.CPrim = CPrim
 exports.CString = CString

@@ -16,6 +16,13 @@ let sh = (cmd) => {
   })
 }
 
+let hasCuda = false
+try {
+  os.execSync('nvcc --version', { stdio: 'ignore' })
+  hasCuda = true
+} catch (e) {}
+let testCuda = hasCuda ? test : test.skip
+
 let outDir = "cgen-sql/out/tensors"
 
 beforeAll(async () => {
@@ -126,7 +133,7 @@ test("dotProduct", async () => {
   expect(JSON.parse(res)).toEqual(expected)
 })
 
-test("dotProductCuda", async () => {
+testCuda("dotProductCuda", async () => {
   let query = rh`dotProduct ${vecA} ${vecB}`
 
   let func = await compile(query, { backend: "cuda", outDir, outFile: "dotProductCuda" })

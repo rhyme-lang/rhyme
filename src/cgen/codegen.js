@@ -147,6 +147,13 @@ let reset = (settings) => {
   linkedBuckets = settings.linkedBuckets || false
 }
 
+let stripConverts = q => {
+  while (q.key == "pure" && q.op.startsWith("convert_")) {
+    q = q.arg[0]
+  }
+  return q
+}
+
 let initializeProlog = () => {
   if (backend == "cuda") {
     prolog0.push("#include <cuda_runtime.h>")
@@ -432,18 +439,14 @@ let emitStateful1 = (q, map, insertKeyBuf) => {
             let val = e2.arg[i + 1]
 
             currentGroupPath.path.push(key)
-            while (val.key == "pure" && val.op.startsWith("convert_")) {
-              val = val.arg[0]
-            }
+            val = stripConverts(val)
             emitStateful1(val, map, buf1)
             currentGroupPath.path.pop()
           }
         })
 
       } else {
-        while (e2.key == "pure" && e2.op.startsWith("convert_")) {
-          e2 = e2.arg[0]
-        }
+        e2 = stripConverts(e2)
         emitStateful1(e2, map)
       }
 
@@ -503,18 +506,14 @@ let emitStateful1 = (q, map, insertKeyBuf) => {
             let val = e2.arg[i + 1]
 
             currentGroupPath.path.push(key)
-            while (val.key == "pure" && val.op.startsWith("convert_")) {
-              val = val.arg[0]
-            }
+            val = stripConverts(val)
             emitStateful1(val, map, buf1)
             currentGroupPath.path.pop()
           }
         })
         // throw new Error("Not supported yet")
       } else {
-        while (e2.key == "pure" && e2.op.startsWith("convert_")) {
-          e2 = e2.arg[0]
-        }
+        e2 = stripConverts(e2)
         emitStateful1(e2, map)
       }
       currentGroupPath.path.pop()
@@ -1156,6 +1155,84 @@ let emitPath = (buf, q) => {
 }
 
 
+/**
+ * 
+ * Performs pattern matching to find matrix multiplications.
+ * 
+ */
+let findMatmuls = q => {
+  let isGroupByVar = q => {
+    let [e0, e1, e2, e3] = q.arg
+    let e0EmpObj = e0.key == "const" && JSON.stringify(e0.op) == "{}"
+    let e1Var = e1.key == "var"
+    e2 = stripConverts(e2)
+    let e2Stateful = e2.key == "ref"
+    let noMkSet = e3 === undefined
+
+    return [e0EmpObj && e1Var && e2Stateful && noMkSet, assignments[e2.op]]
+  }
+
+  let checkMACOp = (q, v1, v2) => {
+    if (q.fre.length != 2 || q.fre[0] != v1 || q.fre[1] != v2) {
+      return false
+    }
+
+    let q1 = q.arg[0]
+  
+    q1 = stripConverts(q1)
+    if (q1.key != "pure" || q1.op != "times") {
+      return false
+    }
+
+    let [e0, e1] = q1.arg
+    console.log(pretty(e0), pretty(e1))
+
+    return true
+  }
+
+  if (q.key == "ref") {
+    let q1 = assignments[q.op]
+    if (q1.key == "update") {
+      // Try to see if we can find a matmul here
+      // console.log("trying to find matmul")
+      let [q1GroupByVar, inner] = isGroupByVar(q1)
+      if (!q1GroupByVar) {
+        q1.arg.map(findMatmuls)
+        return
+      }
+      if (inner.key != "update") {
+        q1.arg.map(findMatmuls)
+        return
+      }
+
+      let [innerGroupByVar, aggr] = isGroupByVar(inner)
+      if (!innerGroupByVar) {
+        q1.arg.map(findMatmuls)
+        return
+      }
+      if (aggr.key != "stateful" || aggr.op != "sum") {
+        q1.arg.map(findMatmuls)
+        return
+      }
+
+      let outerVar = q1.arg[1].op
+      let innerVar = inner.arg[1].op
+      let res = checkMACOp(aggr, outerVar, innerVar)
+      console.log(res)
+      if (!res) {
+        q1.arg.map(findMatmuls)
+        return
+      }
+
+      console.log("matmul???")
+    } else {
+      q1.arg.map(findMatmuls)
+    }
+  } else if (q.arg) {
+    q.arg.map(findMatmuls)
+  }
+}
+
 // Collect all the used columns.
 // e.g. if an integer column is used, it will be extracted
 // while we scan through each row in the csv.
@@ -1268,9 +1345,7 @@ let addHashMapBucket = (map, q, name, currentGroupPath) => {
 }
 
 let addHashMapValue = (map, q, name, currentGroupPath) => {
-  while (q.key == "pure" && q.op.startsWith("convert_")) {
-    q = q.arg[0]
-  }
+  q = stripConverts(q)
   if (q.key != "ref") {
     throw new Error("stateful op expected but got " + pretty(q))
   }
@@ -1558,6 +1633,9 @@ let emitCode = (q, ir, settings) => {
 
   // Fill with default prolog
   initializeProlog()
+
+  // Search for matmul patterns
+  findMatmuls(q)
 
   // Get the used filters to optimize CSV reading
   collectUsedAndSortedCols(q)

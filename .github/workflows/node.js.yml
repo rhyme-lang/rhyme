@@ -21,11 +21,6 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-    - name: CUDA toolkit
-      uses: Jimver/cuda-toolkit@master
-      with:
-        cuda: '13.2.0'
-        log-file-suffix: '-node${{ matrix.node-version }}'
     - name: Install Nlohmann Json
       run: |
         git clone https://github.com/nlohmann/json.git
@@ -50,7 +45,6 @@ jobs:
       with:
         node-version: ${{ matrix.node-version }}
         cache: 'npm'
-    - run: nvcc --version
     - run: npm ci
     - run: npm run build --if-present
     - run: npm test
