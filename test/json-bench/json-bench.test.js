@@ -51,7 +51,7 @@ let schema = typing.parseType({
 let bluesky = rh`loadNDJSON "cgen-sql/data/bluesky/file_0001.json" ${schema}`
 
 let settings = {
-  backend: "c-new",
+  backend: "c",
   schema: types.never,
   outDir,
   hashSize: 524288,

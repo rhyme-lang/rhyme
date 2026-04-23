@@ -59,7 +59,7 @@ let nestedB = rh`loadJSON "./cgen-sql/json/se-basic/nestedB.json" ${nestedSchema
 test("testScalar0", async () => {
   let query = rh`${data}.*A.value | group *A`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testScalar0" })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testScalar0" })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual({ A: 40, B: 20, C: 10 })
@@ -68,7 +68,7 @@ test("testScalar0", async () => {
 test("testScalar1", async () => {
   let query = rh`sum ${data}.*.value`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testScalar1" })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testScalar1" })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual(70)
@@ -77,7 +77,7 @@ test("testScalar1", async () => {
 test("testZipScalar2", async () => {
   let query = rh`${data}.*A.value + ${other}.*A.value | group *A`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testZipScalar2" })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testZipScalar2" })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual({ A: 140, B: 420 })
@@ -86,7 +86,7 @@ test("testZipScalar2", async () => {
 test("testZipScalar3", async () => {
   let query = rh`(sum ${data}.*A.value) + (sum ${other}.*A.value)`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testZipScalar3" })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testZipScalar3" })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual(560)
@@ -95,7 +95,7 @@ test("testZipScalar3", async () => {
 test("testZipScalar4", async () => {
   let query = rh`((sum ${data}.*A.value) + ${other}.*A.value) | group *A`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testZipScalar4", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testZipScalar4", enableOptimizations: false })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual({ A: 140, B: 420 })
@@ -104,7 +104,7 @@ test("testZipScalar4", async () => {
 test("testJoinScalar2", async () => {
   let query = rh`${data}.*A.value + ${other}.*B.value | group*B | group *A`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testJoinScalar2", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testJoinScalar2", enableOptimizations: false })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual({
@@ -117,7 +117,7 @@ test("testJoinScalar2", async () => {
 test("testJoinScalar3", async () => {
   let query = rh`(sum ${data}.*A.value) + (sum ${other}.*B.value)`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testJoinScalar3", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testJoinScalar3", enableOptimizations: false })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual(770)
@@ -126,7 +126,7 @@ test("testJoinScalar3", async () => {
 test("testJoinScalar4", async () => {
   let query = rh`(sum ${data}.*A.value) + ${other}.*B.value | group *B`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testJoinScalar4", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testJoinScalar4", enableOptimizations: false })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual({ A: 170, B: 470, D: 270 })
@@ -135,7 +135,7 @@ test("testJoinScalar4", async () => {
 test("testNested0", async () => {
   let query = rh`${nested}.*A.*B.value | group *B | group *A`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testNested0", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testNested0", enableOptimizations: false })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual({
@@ -148,7 +148,7 @@ test("testNested0", async () => {
 test("testNested1", async () => {
   let query = rh`sum ${nested}.*A.*B.value`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testNested1" })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testNested1" })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual(210)
@@ -157,7 +157,7 @@ test("testNested1", async () => {
 test("testZipNested2", async () => {
   let query = rh`${nested}.*A.*B.value + ${other}.*B.value | group *B | group *A`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testZipNested2", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testZipNested2", enableOptimizations: false })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual({ // restrict inner to A,B,D
@@ -171,7 +171,7 @@ test("testZipNested2", async () => {
 test("testZipNested3", async () => {
   let query = rh`${nested}.*A.*B.value + ${nestedB}.*C.*B.value | group *C | group *B | group *A`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testZipNested3", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testZipNested3", enableOptimizations: false })
   let res = await func()
 
   // result is different from the same test in se-basic since cgen does not have support for group *ANY
@@ -186,7 +186,7 @@ test("testZipNested3", async () => {
 test("testGroup0-a", async () => {
   let query = rh`{${data}.*.key: array(${data}.*.value)}`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testGroup0-a" })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testGroup0-a" })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual({ U: [40, 20], V: [10] })
@@ -197,7 +197,7 @@ test("testGroup0-a", async () => {
 test("testGroup1", async () => {
   let query = rh`{${data}.*.key: sum(${data}.*.value)}`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testGroup1" })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testGroup1" })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual({
@@ -218,7 +218,7 @@ test("testMaybeSum", async () => {
 
   let query = { A: rh`sum? ${data}.*.value`, B: rh`sum ${data}.*.value` }
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testMaybeSum" })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testMaybeSum" })
   let res = await func()
 
   // In the current impl, the maybe ops are not well supported yet
@@ -238,7 +238,7 @@ test("testMaybeSum", async () => {
 test("testEqualTrue", async () => {
   let query = rh`1 == 1`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testEqualTrue", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testEqualTrue", enableOptimizations: false })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual(true)
@@ -247,7 +247,7 @@ test("testEqualTrue", async () => {
 test("testEqualUndefined", async () => {
   let query = rh`1 == 2`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testEqualUndefined", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testEqualUndefined", enableOptimizations: false })
   let res = await func()
 
   // "undefined" is not valid JSON
@@ -257,7 +257,7 @@ test("testEqualUndefined", async () => {
 test("testNotEqualTrue", async () => {
   let query = rh`1 != 2`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testNotEqualTrue", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testNotEqualTrue", enableOptimizations: false })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual(true)
@@ -266,7 +266,7 @@ test("testNotEqualTrue", async () => {
 test("testNotEqualUndefined", async () => {
   let query = rh`1 != 1`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testNotEqualUndefined", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testNotEqualUndefined", enableOptimizations: false })
   let res = await func()
 
   expect(res).toEqual("undefined")
@@ -275,7 +275,7 @@ test("testNotEqualUndefined", async () => {
 test("testLessThanTrue", async () => {
   let query = rh`1 < 2`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testLessThanTrue", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testLessThanTrue", enableOptimizations: false })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual(true)
@@ -284,7 +284,7 @@ test("testLessThanTrue", async () => {
 test("testLessThanUndefined", async () => {
   let query = rh`1 < 0`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testLessThanUndefined", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testLessThanUndefined", enableOptimizations: false })
   let res = await func()
 
   expect(res).toEqual("undefined")
@@ -293,7 +293,7 @@ test("testLessThanUndefined", async () => {
 test("testLessThanOrEqualTrue", async () => {
   let query = rh`1 <= 2`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testLessThanOrEqualTrue", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testLessThanOrEqualTrue", enableOptimizations: false })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual(true)
@@ -302,7 +302,7 @@ test("testLessThanOrEqualTrue", async () => {
 test("testLessThanOrEqualUndefined", async () => {
   let query = rh`1 <= 0`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testLessThanOrEqualUndefined", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testLessThanOrEqualUndefined", enableOptimizations: false })
   let res = await func()
 
   expect(res).toEqual("undefined")
@@ -311,7 +311,7 @@ test("testLessThanOrEqualUndefined", async () => {
 test("testGreaterThanTrue", async () => {
   let query = rh`2 > 1`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testGreaterThanTrue", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testGreaterThanTrue", enableOptimizations: false })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual(true)
@@ -320,7 +320,7 @@ test("testGreaterThanTrue", async () => {
 test("testGreaterThanUndefined", async () => {
   let query = rh`0 > 1`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testGreaterThanUndefined", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testGreaterThanUndefined", enableOptimizations: false })
   let res = await func()
 
   expect(res).toEqual("undefined")
@@ -329,7 +329,7 @@ test("testGreaterThanUndefined", async () => {
 test("testGreaterThanOrEqualTrue", async () => {
   let query = rh`2 >= 1`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testGreaterThanOrEqualTrue", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testGreaterThanOrEqualTrue", enableOptimizations: false })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual(true)
@@ -338,7 +338,7 @@ test("testGreaterThanOrEqualTrue", async () => {
 test("testGreaterThanOrEqualUndefined", async () => {
   let query = rh`0 >= 1`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testGreaterThanOrEqualUndefined", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testGreaterThanOrEqualUndefined", enableOptimizations: false })
   let res = await func()
 
   expect(res).toEqual("undefined")
@@ -347,7 +347,7 @@ test("testGreaterThanOrEqualUndefined", async () => {
 test("testAndTrue", async () => {
   let query = rh`1 == 1 & 2 == 2`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testAndTrue", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testAndTrue", enableOptimizations: false })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual(true)
@@ -356,7 +356,7 @@ test("testAndTrue", async () => {
 test("testAndUndefined", async () => {
   let query = rh`1 == 1 & 2 == 3`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testAndUndefined", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testAndUndefined", enableOptimizations: false })
   let res = await func()
 
   expect(res).toEqual("undefined")
@@ -365,7 +365,7 @@ test("testAndUndefined", async () => {
 test("testAndAlsoTrue", async () => {
   let query = rh`1 == 1 && 2 == 2`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testAndAlsoTrue", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testAndAlsoTrue", enableOptimizations: false })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual(true)
@@ -374,7 +374,7 @@ test("testAndAlsoTrue", async () => {
 test("testAndAlsoUndefined", async () => {
   let query = rh`1 == 1 && 2 == 3`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testAndAlsoUndefined", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testAndAlsoUndefined", enableOptimizations: false })
   let res = await func()
 
   expect(res).toEqual("undefined")
@@ -383,7 +383,7 @@ test("testAndAlsoUndefined", async () => {
 test("testOrElseTrue", async () => {
   let query = rh`1 == 2 || 2 == 2`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testOrElseTrue", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testOrElseTrue", enableOptimizations: false })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual(true)
@@ -392,7 +392,7 @@ test("testOrElseTrue", async () => {
 test("testOrElseUndefined", async () => {
   let query = rh`1 == 2 || 2 == 3`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testOrElseUndefined", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testOrElseUndefined", enableOptimizations: false })
   let res = await func()
 
   expect(res).toEqual("undefined")

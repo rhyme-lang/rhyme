@@ -61,7 +61,7 @@ let region = rh`loadJSON "./cgen-sql/json/basic/region.json" ${regionSchema}`
 test("plainSumTest", async () => {
   let query = rh`sum(${data}.*A.value)`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "plainSumTest" })
+  let func = await compile(query, { backend: "c", outDir, outFile: "plainSumTest" })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual(60)
@@ -70,7 +70,7 @@ test("plainSumTest", async () => {
 test("plainAverageTest", async () => {
   let query = api.fdiv(api.sum(rh`${data}.*.value`), api.count(rh`${data}.*.value`))
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "plainAverageTest" })
+  let func = await compile(query, { backend: "c", outDir, outFile: "plainAverageTest" })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual(20)
@@ -79,7 +79,7 @@ test("plainAverageTest", async () => {
 test("uncorrelatedAverageTest", async () => {
   let query = api.fdiv(api.sum(rh`${data}.*A.value`), api.count(rh`${data}.*B.value`))
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "uncorrelatedAverageTest" })
+  let func = await compile(query, { backend: "c", outDir, outFile: "uncorrelatedAverageTest" })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual(20)
@@ -90,7 +90,7 @@ test("groupByTest", async () => {
     ${data}.*.key: sum(${data}.*.value)
   }`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "groupByTest", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "groupByTest", enableOptimizations: false })
   let res = await func()
 
   // total is currectly ignored but it is constructed in the code
@@ -103,7 +103,7 @@ test("groupByAverageTest", async () => {
     ${data}.*.key: ${avg(rh`${data}.*.value`)}
   }`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "groupByAverageTest", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "groupByAverageTest", enableOptimizations: false })
   let res = await func()
 
   // total is currectly ignored but it is constructed in the code
@@ -115,7 +115,7 @@ test("groupByRelativeSum", async () => {
     ${data}.*.key: sum(${data}.*.value) / sum(${data}.*B.value)
   }`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "groupByRelativeSum", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "groupByRelativeSum", enableOptimizations: false })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual({ "A": 0.6667, "B": 0.3333 })
@@ -128,7 +128,7 @@ test("nestedGroupAggregateTest", async () => {
     }
   }`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "nestedGroupAggregateTest", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "nestedGroupAggregateTest", enableOptimizations: false })
   let res = await func()
 
   let expected = {
@@ -150,7 +150,7 @@ test("joinSimpleTest1", async () => {
   }`
 
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "joinSimpleTest1", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "joinSimpleTest1", enableOptimizations: false })
   let res = await func()
 
   let expected = {
@@ -175,7 +175,7 @@ test("joinSimpleTest1B", async () => {
   }`
 
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "joinSimpleTest1B", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "joinSimpleTest1B", enableOptimizations: false })
   let res = await func()
 
   let expected = {
@@ -198,7 +198,7 @@ test("joinSimpleTest2", async () => {
     }
   }`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "joinSimpleTest2", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "joinSimpleTest2", enableOptimizations: false })
   let res = await func()
 
   let expected = {
@@ -219,7 +219,7 @@ test("joinWithAggrTest", async () => {
     }
   }`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "joinWithAggrTest", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "joinWithAggrTest", enableOptimizations: false })
   let res = await func()
 
   let expected = {
@@ -233,7 +233,7 @@ test("joinWithAggrTest", async () => {
 test("arrayTest1", async () => {
   let query = rh`sum(sum(${data}.*.value))`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "arrayTest1", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "arrayTest1", enableOptimizations: false })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual(60)
@@ -241,7 +241,7 @@ test("arrayTest1", async () => {
 
 test("arrayTest3", async () => {
   let query = rh`{ ${data}.*.key: [{ foo: ${data}.*.value }] }`
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "arrayTest3", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "arrayTest3", enableOptimizations: false })
   let res = await func()
 
   let expected = { A: [{ foo: 10 }, { foo: 30 }], B: [{ foo: 20 }] }

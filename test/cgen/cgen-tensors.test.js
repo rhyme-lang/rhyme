@@ -39,6 +39,8 @@ let matSchema = typing.parseType({
   })
 })
 
+let matSchema1 = typing.createVec("dense", types.u32, 2, types.u32)
+
 let batchedMatSchema = typing.parseType({
   "-": typing.keyval(key, {
     "-": typing.keyval(key, {
@@ -53,10 +55,10 @@ let vecSchema = typing.parseType({
 
 let vecSchema1 = typing.createVec("dense", types.u32, 1, types.u32)
 
-let matA = rh`loadJSON "./cgen-sql/json/tensors/matA.json" ${matSchema}`
+let matA = rh`loadJSON "./cgen-sql/json/tensors/matA.json" ${matSchema1}`
 let batchedMatA = rh`loadJSON "./cgen-sql/json/tensors/batchedMatA.json" ${batchedMatSchema}`
 
-let matB = rh`loadJSON "./cgen-sql/json/tensors/matB.json" ${matSchema}`
+let matB = rh`loadJSON "./cgen-sql/json/tensors/matB.json" ${matSchema1}`
 let batchedMatB = rh`loadJSON "./cgen-sql/json/tensors/batchedMatB.json" ${batchedMatSchema}`
 
 let vecA = rh`loadJSON "./cgen-sql/json/tensors/vecA.json" ${vecSchema1}`
@@ -65,7 +67,7 @@ let vecB = rh`loadJSON "./cgen-sql/json/tensors/vecB.json" ${vecSchema1}`
 test("transpose", async () => {
   let query = { "*j": { "*i": rh`${matB}.*i.*j` } }
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "transpose" })
+  let func = await compile(query, { backend: "c", outDir, outFile: "transpose" })
   let res = await func()
 
   let expected = { 0: { 0: 1, 1: 4 }, 1: { 0: 2, 1: 5 }, 2: { 0: 3, 1: 6 } }
@@ -76,7 +78,7 @@ test("transpose", async () => {
 test("sum", async () => {
   let query = rh`sum ${matB}.*i.*j`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "sum" })
+  let func = await compile(query, { backend: "c", outDir, outFile: "sum" })
   let res = await func()
 
   let expected = 21
@@ -86,7 +88,7 @@ test("sum", async () => {
 test("columnSum", async () => {
   let query = rh`{*j: sum ${matB}.*i.*j}`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "columnSum" })
+  let func = await compile(query, { backend: "c", outDir, outFile: "columnSum" })
   let res = await func()
 
   let expected = { 0: 5, 1: 7, 2: 9 }
@@ -96,7 +98,7 @@ test("columnSum", async () => {
 test("rowSum", async () => {
   let query = rh`{*i: sum ${matB}.*i.*j}`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "columnSum" })
+  let func = await compile(query, { backend: "c", outDir, outFile: "columnSum" })
   let res = await func()
 
   let expected = { 0: 6, 1: 15 }
@@ -106,17 +108,36 @@ test("rowSum", async () => {
 test("matmul", async () => {
   let query = rh`{*i: {*j: sum(${matA}.*i.*k * ${matB}.*k.*j)}}`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "matmul" })
+  let func = await compile(query, { backend: "c", outDir, outFile: "matmul" })
   let res = await func()
 
   let expected = { 0: { 0: 9, 1: 12, 2: 15 }, 1: { 0: 19, 1: 26, 2: 33 } }
   expect(JSON.parse(res)).toEqual(expected)
 })
 
+// test("matmulCuda", async () => {
+//   let query = rh`{*i: {*j: sum(${matA}.*i.*k * ${matB}.*k.*j)}}`
+
+//   let func = await compile(query, { backend: "cuda", outDir, outFile: "matmul", enableOptimizations: false })
+//   let res = await func()
+
+//   let expected = { 0: { 0: 9, 1: 12, 2: 15 }, 1: { 0: 19, 1: 26, 2: 33 } }
+//   expect(JSON.parse(res)).toEqual(expected)
+// })
+
+// test("matmulCuda1", async () => {
+//   let mulAB = rh`{*i0: {*j0: sum(${matA}.*i0.*k0 * ${matB}.*k0.*j0)}}`
+
+//   let query = rh`{*i1: {*j1: sum(${mulAB}.*i1.*k1 * ${matB}.*k1.*j1)}}`
+
+//   let func = await compile(query, { backend: "cuda", outDir, outFile: "matmul", enableOptimizations: false })
+//   let res = await func()
+// })
+
 test("hadamard", async () => {
   let query = rh`{*i: {*j: ${matA}.*i.*j * ${matA}.*i.*j}}`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "hadamard" })
+  let func = await compile(query, { backend: "c", outDir, outFile: "hadamard" })
   let res = await func()
 
   let expected = { 0: { 0: 1, 1: 4 }, 1: { 0: 9, 1: 16 } }
@@ -126,7 +147,7 @@ test("hadamard", async () => {
 test("dotProduct", async () => {
   let query = rh`sum(${vecA}.*i * ${vecB}.*i)`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "dotProduct" })
+  let func = await compile(query, { backend: "c", outDir, outFile: "dotProduct" })
   let res = await func()
 
   let expected = 10
@@ -146,7 +167,7 @@ testCuda("dotProductCuda", async () => {
 test("batchedMatmul", async () => {
   let query = rh`{*i: {*j: {*l: sum(${batchedMatA}.*i.*j.*k * ${batchedMatB}.*i.*k.*l)}}}`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "batchedMatmul", enableOptimizations: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "batchedMatmul", enableOptimizations: false })
   let res = await func()
 
   let expected = { 0: { 0: { 0: 9, 1: 12, 2: 15 }, 1: { 0: 19, 1: 26, 2: 33 } }, 1: { 0: { 0: 95, 1: 106, 2: 117 }, 1: { 0: 129, 1: 144, 2: 159 } } }
@@ -157,7 +178,7 @@ test("batchedMatmul", async () => {
 // test("diagonal", async () => {
 //   let query = rh`{*i: ${matA}.*i.*i}`
 
-//   let func = await compile(query, { backend: "c-new", outDir, outFile: "diagonal" })
+//   let func = await compile(query, { backend: "c", outDir, outFile: "diagonal" })
 //   let res = await func()
 
 //   let expected = {0: 1, 1: 4}

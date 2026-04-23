@@ -11,7 +11,7 @@ let outDir = "cgen-sql/out/tpch"
 let answersDir = "cgen-sql/answers/tpch"
 
 let settings = {
-  backend: "c-new",
+  backend: "c",
   schema: types.never,
   outDir,
   hashSize: 16777216,

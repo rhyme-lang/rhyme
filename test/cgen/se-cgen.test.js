@@ -80,7 +80,7 @@ let schema = typing.createSimpleObject({
 test("testTrivial0", async () => {
   let query = rh`1 + 4`
 
-  let func = compile(query, { backend : "c" })
+  let func = compile(query, { backend : "c-old" })
   // console.log(func.explain.code)
   let res = await func({data})
 
@@ -96,7 +96,7 @@ test("testTrivial0", async () => {
 test("testTrivial1", async () => {
   let query = rh`data.A.value`
 
-  let func = compile(query, { backend : "c" })
+  let func = compile(query, { backend : "c-old" })
   // console.log(func.explain.code)
   let res = await func({data})
 
@@ -106,7 +106,7 @@ test("testTrivial1", async () => {
 test("testScalar1", async () => {
   let query = rh`sum data.*.value`
 
-  let func = compile(query, { backend : "c", schema: schema });
+  let func = compile(query, { backend : "c-old", schema: schema });
   // console.log(func.explain.code)
   let res = await func({data})
 
@@ -116,7 +116,7 @@ test("testScalar1", async () => {
 test("testHint1", async () => {
   let query = rh`sum data.*.value` // (hint dense data) &
 
-  let func = compile(query, { backend : "c", schema: typing.createSimpleObject({
+  let func = compile(query, { backend : "c-old", schema: typing.createSimpleObject({
     data: typing.createVec("dense", types.string, 1, dataInnerObj),
   }) })
   // console.log(func.explain.code)

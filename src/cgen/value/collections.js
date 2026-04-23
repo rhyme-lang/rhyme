@@ -110,7 +110,7 @@ class CArray extends CCollection {
     let cType = utils.convertToCType(this.schema.objKey)
     let iter = symbol.getSymbol("print_iter")
     c.printf(buf)("[")
-    buf.push(`for (${cType} ${iter} = 0; ${iter} < ${this.size}; ${iter}++) {`)
+    buf.push(`for (${cType} ${iter} = 0; ${iter} < ${limit}; ${iter}++) {`)
     this.get(iter).printJSON(buf)
     c.if(buf)(c.ne(iter, c.sub(limit, 1)), buf1 => {
       c.printf(buf1)(",")
@@ -123,7 +123,7 @@ class CArray extends CCollection {
     limit = limit ? c.ternary(c.lt(limit, this.size), limit, this.size) : this.size
     let cType = utils.convertToCType(this.schema.objKey)
     let iter = symbol.getSymbol("print_iter")
-    buf.push(`for (${cType} ${iter} = 0; ${iter} < ${this.size}; ${iter}++) {`)
+    buf.push(`for (${cType} ${iter} = 0; ${iter} < ${limit}; ${iter}++) {`)
     this.get(iter).print(buf)
     c.printf(buf)("\n")
     buf.push("}")
@@ -290,7 +290,7 @@ class CHashMap extends CCollection {
     limit = limit ? c.ternary(c.lt(limit, this.size), limit, this.size) : this.size
     let iter = symbol.getSymbol("print_iter")
     c.printf(buf)("{")
-    buf.push(`for (int ${iter} = 1; ${iter} <= ${this.size}; ${iter}++) {`)
+    buf.push(`for (int ${iter} = 1; ${iter} <= ${limit}; ${iter}++) {`)
     let entry = this.get(iter)
     entry.key.printJSON(buf, true)
     c.printf(buf)(":")

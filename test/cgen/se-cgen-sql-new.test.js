@@ -28,7 +28,7 @@ beforeAll(async () => {
 test("testTrivial", async () => {
   let query = rh`1 + 200`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testTrivial", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testTrivial", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual(201)
@@ -48,7 +48,7 @@ test("testScalar", async () => {
 
   let query = rh`sum ${csv}.*A.C`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testScalar", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testScalar", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual(228)
@@ -59,7 +59,7 @@ test("testSimpleSum1", async () => {
 
   let query = rh`${csv}.*A.C | sum`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testSimpleSum1", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testSimpleSum1", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual(228)
@@ -70,7 +70,7 @@ test("testSimpleSum2", async () => {
 
   let query = rh`${csv}.*.C + 10 | sum`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testSimpleSum2", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testSimpleSum2", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual(268)
@@ -81,7 +81,7 @@ test("testSimpleSum3", async () => {
 
   let query = rh`(${csv}.*.C | sum) + 10`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testSimpleSum3", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testSimpleSum3", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual(238)
@@ -92,7 +92,7 @@ test("testSimpleSum4", async () => {
 
   let query = rh`sum(${csv}.*A.C) + sum(${csv}.*B.D)`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testSimpleSum4", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testSimpleSum4", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual(243)
@@ -103,7 +103,7 @@ test("testSimpleSum5", async () => {
 
   let query = rh`sum(${csv}.*A.C + ${csv}.*A.D)`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testSimpleSum5", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testSimpleSum5", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual(243)
@@ -115,7 +115,7 @@ test("testLoadCSVMultipleFilesZip", async () => {
 
   let query = rh`sum(${csv1}.*A.C + ${csv2}.*A.D)`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testLoadCSVMultipleFilesZip", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testLoadCSVMultipleFilesZip", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual(231)
@@ -126,7 +126,7 @@ test("testLoadCSVSingleFileJoin", async () => {
 
   let query = rh`sum(${csv}.*A.C + ${csv}.*B.D)`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testLoadCSVSingleFileJoin", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testLoadCSVSingleFileJoin", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual(972)
@@ -138,7 +138,7 @@ test("testLoadCSVMultipleFilesJoin", async () => {
 
   let query = rh`sum(${csv1}.*A.C + ${csv2}.*B.D)`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testLoadCSVMultipleFilesJoin", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testLoadCSVMultipleFilesJoin", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual(924)
@@ -149,7 +149,7 @@ test("testMin", async () => {
 
   let query = rh`min ${csv}.*.B`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testMin", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testMin", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual(1)
@@ -160,7 +160,7 @@ test("testMax", async () => {
 
   let query = rh`max ${csv}.*.C`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testMax", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testMax", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual(123)
@@ -171,7 +171,7 @@ test("testCount", async () => {
 
   let query = rh`count ${csv}.*.C`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testCount", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testCount", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual(4)
@@ -182,7 +182,7 @@ test("testStatefulPrint1", async () => {
 
   let query = rh`print ${csv}.*.B`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testStatefulPrint1", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testStatefulPrint1", schema: types.never })
 
   let res = await func()
   expect(res).toEqual(`5
@@ -198,7 +198,7 @@ test("testStatefulPrint2", async () => {
 
   let query = rh`print ${csv}.*.A`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testStatefulPrint2", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testStatefulPrint2", schema: types.never })
 
   let res = await func()
   expect(res).toEqual(`valA
@@ -221,7 +221,7 @@ test("testLoadCSVDynamicFilename", async () => {
 
   let query = rh`sum ${csv}.*A.D`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testLoadCSVDynamicFilename", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testLoadCSVDynamicFilename", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual(18)
@@ -239,7 +239,7 @@ test("testLoadCSVDynamicFilenameJoin", async () => {
 
   let query = rh`sum (${csv}.*A.D + ${csv}.*B.B)`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testLoadCSVDynamicFilenameJoin", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testLoadCSVDynamicFilenameJoin", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual(192)
@@ -248,7 +248,7 @@ test("testLoadCSVDynamicFilenameJoin", async () => {
 test("testConstStr", async () => {
   let query = rh`print "Hello, World!"`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testConstStr", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testConstStr", schema: types.never })
 
   let res = await func()
   expect(res).toEqual("Hello, World!\n")
@@ -259,7 +259,7 @@ test("testFilter1", async () => {
 
   let query = rh`print ((${csv}.*A.C == 123) & ${csv}.*A.A)`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testFilter1", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testFilter1", schema: types.never })
 
   let res = await func()
   expect(res).toEqual("valB\n")
@@ -270,7 +270,7 @@ test("testFilter2", async () => {
 
   let query = rh`print ((${csv}.*A.C != 123) & ${csv}.*A.A)`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testFilter2", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testFilter2", schema: types.never })
 
   let res = await func()
   expect(res).toEqual(`valA
@@ -284,7 +284,7 @@ test("testFilter3", async () => {
 
   let query = rh`print ((${csv}.*A.A == "valB") & ${csv}.*A.C)`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testFilter3", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testFilter3", schema: types.never })
 
   let res = await func()
   expect(res).toEqual("123\n")
@@ -295,7 +295,7 @@ test("testFilter4", async () => {
 
   let query = rh`print ((${csv}.*A.A == "valC") & ${csv}.*A.A)`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testFilter4", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testFilter4", schema: types.never })
 
   let res = await func()
   expect(res).toEqual("valC\n")
@@ -306,7 +306,7 @@ test("testFilter5", async () => {
 
   let query = rh`print ((${csv}.*A.A != ${csv}.*A.String) & ${csv}.*A.A)`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testFilter5", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testFilter5", schema: types.never })
 
   let res = await func()
   expect(res).toEqual(`valA
@@ -360,7 +360,7 @@ test("plainSumTest", async () => {
 
   let query = rh`sum ${csv}.*.value`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "plainSumTest", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "plainSumTest", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual(60)
@@ -371,7 +371,7 @@ test("plainAverageTest", async () => {
 
   let query = rh`(sum ${csv}.*.value) / (count ${csv}.*.value)`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "plainAverageTest", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "plainAverageTest", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual(20)
@@ -382,7 +382,7 @@ test("uncorrelatedAverageTest", async () => {
 
   let query = rh`(sum ${csv}.*A.value) / (count ${csv}.*B.value)`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "uncorrelatedAverageTest", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "uncorrelatedAverageTest", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual(20)
@@ -393,7 +393,7 @@ test("groupByTest", async () => {
 
   let query = rh`sum ${csv}.*.value | group ${csv}.*.key`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "groupByTest", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "groupByTest", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual({ A: 40, B: 20 })
@@ -406,7 +406,7 @@ test("groupByAverageTest", async () => {
 
   let query = rh`${avg} | group ${csv}.*.key`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "groupByAverageTest", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "groupByAverageTest", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual({ A: 20, B: 20 })
@@ -421,7 +421,7 @@ test("undefinedTest", async () => {
 
   let q = rh`${query}.C.avg`
 
-  let func = await compile(q, { backend: "c-new", outDir, outFile: "undefinedTest", schema: types.never })
+  let func = await compile(q, { backend: "c", outDir, outFile: "undefinedTest", schema: types.never })
 
   let res = await func()
   expect(res).toBe("undefined")
@@ -432,7 +432,7 @@ test("groupByRelativeSum", async () => {
 
   let query = rh`((sum ${csv}.*.value) / (sum ${csv}.*B.value)) | group ${csv}.*.key`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "groupByRelativeSum", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "groupByRelativeSum", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual({ A: 0.6667, B: 0.3333 })
@@ -444,7 +444,7 @@ test("groupCountByPopulation", async () => {
   // test integer values as group key
   let query = rh`count ${csv}.*.city | group ${csv}.*.population`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "groupCountByPopulation", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "groupCountByPopulation", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual({ "30": 1, "20": 1, "10": 2 })
@@ -456,7 +456,7 @@ test("groupRegionByCountry", async () => {
   // test strings as hashtable values
   let query = rh`${csv}.*.region | group ${csv}.*.country`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "groupRegionByCountry", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "groupRegionByCountry", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual({ Japan: "Asia", China: "Asia", France: "Europe", UK: "Europe" })
@@ -468,7 +468,7 @@ test("nestedLoopJoinSimpleTest", async () => {
 
   let query = rh`(${region}.*.country == ${country}.*.country) & ${region}.*.region | group ${country}.*.city`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "nestedLoopJoinSimpleTest", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "nestedLoopJoinSimpleTest", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual({ Tokyo: "Asia", Beijing: "Asia", Paris: "Europe", London: "Europe" })
@@ -481,7 +481,7 @@ test("nestedLoopJoinWithAggrTest", async () => {
   // SELECT SUM(country.population) FROM country JOIN region ON region.country = country.country GROUP BY region.region
   let query = rh`sum ((${region}.*.country == ${country}.*.country) & ${country}.*.population) | group ${region}.*.region`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "nestedLoopJoinWithAggrTest", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "nestedLoopJoinWithAggrTest", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual({ Asia: 50, Europe: 20 })
@@ -494,7 +494,7 @@ test("hashJoinSimpleTest", async () => {
   let q1 = rh`${region}.*O.region | group ${region}.*O.country`
   let query = rh`${q1}.(${country}.*.country) | group ${country}.*.city`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "hashJoinSimpleTest", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "hashJoinSimpleTest", schema: types.never })
   let res = await func()
   expect(JSON.parse(res)).toEqual({ Tokyo: "Asia", Beijing: "Asia", Paris: "Europe", London: "Europe" })
 })
@@ -506,7 +506,7 @@ test("hashJoinWithAggrTest", async () => {
   let q1 = rh`${region}.*O.region | group ${region}.*O.country`
   let query = rh`sum ${country}.*.population | group ${q1}.(${country}.*.country)`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "hashJoinWithAggrTest", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "hashJoinWithAggrTest", schema: types.never })
   let res = await func()
   expect(JSON.parse(res)).toEqual({ Asia: 50, Europe: 20 })
 })
@@ -530,7 +530,7 @@ test("groupByArray", async () => {
 
   let query = rh`array ${region}.*O.country | group ${region}.*O.region`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "groupByArray", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "groupByArray", schema: types.never })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual({ Asia: ["Japan", "China"], Europe: ["France", "UK"] })
@@ -543,7 +543,7 @@ test("hashJoinArray", async () => {
   let q1 = rh`${region}.*O.region | group ${region}.*O.country`
   let query = rh`array ${country}.*.population | group ${q1}.(${country}.*.country)`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "hashJoinArray", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "hashJoinArray", schema: types.never })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual({ Asia: [30, 20], Europe: [10, 10] })
@@ -554,7 +554,7 @@ test("plainSumTBLTest", async () => {
 
   let query = rh`sum ${csv}.*.value`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "plainSumTBLTest", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "plainSumTBLTest", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual(60)
@@ -565,7 +565,7 @@ test("arrayProjectionSingleTest", async () => {
 
   let query = rh`[${csv}.*.value]`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "arrayProjectionSingleTest", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "arrayProjectionSingleTest", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual([10, 20, 30])
@@ -576,7 +576,7 @@ test("arrayProjectionSingleStringTest", async () => {
 
   let query = rh`[${csv}.*.key]`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "arrayProjectionSingleStringTest", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "arrayProjectionSingleStringTest", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual(["A", "B", "A"])
@@ -587,7 +587,7 @@ test("arrayProjectionMultipleTest", async () => {
 
   let query = rh`[{ value: ${csv}.*.value, key: ${csv}.*.key }]`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "arrayProjectionMultipleTest", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "arrayProjectionMultipleTest", schema: types.never })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual([{ value: 10, key: "A" }, { value: 20, key: "B" }, { value: 30, key: "A" }])
@@ -598,7 +598,7 @@ test("arrayAccessUndefTest", async () => {
 
   let query = rh`[{ value: ${csv}.*.value, key: ${csv}.*.key }].(1 + 10).key`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "arrayAccessUndefTest", schema: types.never })
+  let func = await compile(query, { backend: "c", outDir, outFile: "arrayAccessUndefTest", schema: types.never })
 
   let res = await func()
   // undefined is not a valid json string
@@ -610,7 +610,7 @@ test("testArraySimpleSum1", async () => {
 
   let query = rh`sum [{C: ${csv}.*A.C}].*B.C`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testArraySimpleSum1", schema: types.never, enableOptimization: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testArraySimpleSum1", schema: types.never, enableOptimization: false })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual(228)
@@ -621,7 +621,7 @@ test("testArraySorting", async () => {
 
   let query = rh`sort [{C: ${csv}.*A.C}] "C" 0`
 
-  let func = await compile(query, { backend: "c-new", outDir, outFile: "testArraySimpleSum1", schema: types.never, enableOptimization: false })
+  let func = await compile(query, { backend: "c", outDir, outFile: "testArraySimpleSum1", schema: types.never, enableOptimization: false })
 
   let res = await func()
   expect(JSON.parse(res)).toEqual([{ C: 0 }, { C: 13 }, { C: 92 }, { C: 123 }])

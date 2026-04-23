@@ -1075,7 +1075,7 @@ let emitPure = (buf, q) => {
     }
 
     return res
-  } else if (q.op == "dotProduct") {
+  } else if (q.op == "dot") {
     let [e1, e2] = q.arg.map(e => emitPath(buf, e))
     let cType = "float"
 
@@ -1115,6 +1115,9 @@ let emitPure = (buf, q) => {
     c.stmt(buf)(c.call("cublasSdot", "handle", size1, cuMem1, "1", cuMem2, "1", "&" + res))
 
     return value.primitive(types.f32, res)
+  } else if (q.op == "matmul") {
+    console.log(pretty(q))
+    throw new Error("Not implemented yet")
   } else {
     throw new Error("Pure operation not supported: " + pretty(q))
   }
@@ -1165,72 +1168,94 @@ let findMatmuls = q => {
     let [e0, e1, e2, e3] = q.arg
     let e0EmpObj = e0.key == "const" && JSON.stringify(e0.op) == "{}"
     let e1Var = e1.key == "var"
-    e2 = stripConverts(e2)
-    let e2Stateful = e2.key == "ref"
+    let e2Stateful = e2.key == "update" || e2.key == "stateful"
     let noMkSet = e3 === undefined
 
-    return [e0EmpObj && e1Var && e2Stateful && noMkSet, assignments[e2.op]]
+    return e0EmpObj && e1Var && e2Stateful && noMkSet
+  }
+
+  let extractGetPath = (q) => {
+    if (q.key == "get" && q.arg[1].key == "var") {
+      let [root, path] = extractGetPath(q.arg[0])
+      path.push(q.arg[1].op)
+      return [root, path]
+    } else {
+      return [q, []]
+    }
   }
 
   let checkMACOp = (q, v1, v2) => {
-    if (q.fre.length != 2 || q.fre[0] != v1 || q.fre[1] != v2) {
+    if (!same(q.fre, [v1, v2])) {
       return false
     }
 
     let q1 = q.arg[0]
-  
-    q1 = stripConverts(q1)
     if (q1.key != "pure" || q1.op != "times") {
       return false
     }
 
     let [e0, e1] = q1.arg
-    console.log(pretty(e0), pretty(e1))
+    let [root0, path0] = extractGetPath(e0)
+    let [root1, path1] = extractGetPath(e1)
 
-    return true
-  }
+    root0 = findMatmuls(root0)
+    root1 = findMatmuls(root1)
 
-  if (q.key == "ref") {
-    let q1 = assignments[q.op]
-    if (q1.key == "update") {
-      // Try to see if we can find a matmul here
-      // console.log("trying to find matmul")
-      let [q1GroupByVar, inner] = isGroupByVar(q1)
-      if (!q1GroupByVar) {
-        q1.arg.map(findMatmuls)
-        return
-      }
-      if (inner.key != "update") {
-        q1.arg.map(findMatmuls)
-        return
-      }
-
-      let [innerGroupByVar, aggr] = isGroupByVar(inner)
-      if (!innerGroupByVar) {
-        q1.arg.map(findMatmuls)
-        return
-      }
-      if (aggr.key != "stateful" || aggr.op != "sum") {
-        q1.arg.map(findMatmuls)
-        return
-      }
-
-      let outerVar = q1.arg[1].op
-      let innerVar = inner.arg[1].op
-      let res = checkMACOp(aggr, outerVar, innerVar)
-      console.log(res)
-      if (!res) {
-        q1.arg.map(findMatmuls)
-        return
-      }
-
-      console.log("matmul???")
-    } else {
-      q1.arg.map(findMatmuls)
+    if (path0.length != 2 || path1.length != 2) {
+      return false
     }
-  } else if (q.arg) {
-    q.arg.map(findMatmuls)
+
+    if (path0[1] == path1[0] && path0[0] == v1 && path1[1] == v2) {
+      return [root0, root1]
+    }
+    if (path1[1] == path0[0] && path1[0] == v1 && path0[1] == v2) {
+      return [root0, root1]
+    }
+
+    return false
   }
+
+  if (q.key == "update") {
+    // Try to see if we can find a matmul here
+    // console.log("trying to find matmul")
+    let qGroupByVar = isGroupByVar(q)
+    if (!qGroupByVar) {
+      q.arg = q.arg.map(findMatmuls)
+      return q
+    }
+    let inner = q.arg[2]
+    if (inner.key != "update") {
+      q.arg = q.arg.map(findMatmuls)
+      return q
+    }
+
+    let innerGroupByVar = isGroupByVar(inner)
+    if (!innerGroupByVar) {
+      q.arg = q.arg.map(findMatmuls)
+      return q
+    }
+    let aggr = inner.arg[2]
+    if (aggr.key != "stateful" || aggr.op != "sum") {
+      q.arg = q.arg.map(findMatmuls)
+      return q
+    }
+
+    let outerVar = q.arg[1].op
+    let innerVar = inner.arg[1].op
+    let res = checkMACOp(aggr, outerVar, innerVar)
+    if (!res) {
+      q.arg = q.arg.map(findMatmuls)
+      return q
+    }
+
+    console.log("matmul???")
+
+    return { key: "pure", op: "matmul", arg: res }
+  } else if (q.arg) {
+    q.arg = q.arg.map(findMatmuls)
+  }
+
+  return q
 }
 
 // Collect all the used columns.
@@ -1563,11 +1588,12 @@ let processFilters = () => {
       vars[v1].lhs ??= {}
       vars[v1].lhs[pretty(g1)] = lhs
       // Generate loops based on different types of left hand side values
-      if (typing.isUnknown(g1.schema.type)) {
+      let schema = typing.removeTag(g1.schema.type)
+      if (typing.isUnknown(schema)) {
         throw new Error("Cannot generate loop")
       }
       if (firstSeen) {
-        vars[v1].val = value.primitive(g1.schema.type.objKey || types.unknown, quoteVar(v1))
+        vars[v1].val = value.primitive(schema.objKey || types.unknown, quoteVar(v1))
       }
       if (lhs.tag == TAG.CSV) {
         let getLoopTxtFunc = csv.getCSVLoopTxt(f, lhs, data, usedCols)
@@ -1575,10 +1601,9 @@ let processFilters = () => {
       } else if (lhs.tag == TAG.NDJSON) {
         let getLoopTxtFunc = json.getNDJSONLoopTxt(f, lhs, data)
         vars[v1].gen ??= {}
-        vars[v1].gen[pretty(g1)] = value.json(g1.schema.type.objValue, quoteVar(v1) + "_gen")
+        vars[v1].gen[pretty(g1)] = value.json(schema.objValue, quoteVar(v1) + "_gen")
         addGenerator(f.arg[0], f.arg[1], getLoopTxtFunc)
       } else if (lhs.tag == TAG.JSON) {
-        let schema = typing.removeTag(g1.schema.type);
         if (typing.isNumber(schema.objKey)) {
           let getLoopTxtFunc = json.getJSONArrayLoopTxt(f, lhs, data)
           if (firstSeen) vars[v1].gen = value.json(schema.objValue, quoteVar(v1) + "_gen")
@@ -1633,9 +1658,6 @@ let emitCode = (q, ir, settings) => {
 
   // Fill with default prolog
   initializeProlog()
-
-  // Search for matmul patterns
-  findMatmuls(q)
 
   // Get the used filters to optimize CSV reading
   collectUsedAndSortedCols(q)
@@ -1722,16 +1744,16 @@ let generateC = (q, ir, settings) => {
     })
   }
 
-  let ext = settings.backend == "c-new" ? ".c" : ".cu"
+  let ext = settings.backend == "c" ? ".c" : ".cu"
 
   let cFile = joinPaths(outDir, outFile + ext)
   let out = joinPaths(outDir, outFile)
   let code = emitCode(q, ir, settings)
 
-  let compiler = settings.backend == "c-new" ? (settings.compiler || "gcc") : "nvcc"
+  let compiler = settings.backend == "c" ? (settings.compiler || "gcc") : "nvcc"
   let cFlags = settings.cFlags || "-Icgen-sql -O3"
 
-  let func = async () => {
+  async function func() {
     let stdout = await sh(`./${out} `)
     return stdout
   }
@@ -1743,7 +1765,7 @@ let generateC = (q, ir, settings) => {
     if (inputFiles["json"] || inputFiles["ndjson"]) cFlags += " -Ithird-party/yyjson -Lthird-party/yyjson/out -lyyjson"
     if (backend == "cuda") cFlags += " -lcublas"
     let cmd = `${compiler} ${cFile} -o ${out} ${cFlags}`
-    console.log("Executing: " + cmd)
+    // console.log("Executing: " + cmd)
     let time1 = performance.now()
     await sh(cmd)
     func.explain.time = time1

@@ -62,7 +62,7 @@ ops.pure.like = true
 ops.pure.substr = true
 ops.pure.isUndef = true
 
-ops.pure.dotProduct = true
+ops.pure.dot = true
 
 // stateful operations
 

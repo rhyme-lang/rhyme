@@ -60,7 +60,7 @@ test("constant-folding-plus", () => {
 test("constant-folding-eta-reduction", () => {
     let query = {"total": rh`data.*A.value | sum`};
     let func = api.compile(rh`${query}.total`, typing.parseType({data: dataSchema}))
-    console.log(func.explain2.pseudo);
+    // console.log(func.explain2.pseudo);
     let res = func({ data })
     let expected = 60
     expect(res).toBe(expected)

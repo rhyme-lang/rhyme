@@ -6,7 +6,7 @@ const { generate } = require('./new-codegen')
 const { preproc } = require('./preprocess')
 const { runtime } = require('./simple-runtime')
 const { pretty, setEmitPseudoState, emitPseudo } = require('./prettyprint')
-const { generateC } = require('./cgen/codegen')
+const cgen = require('./cgen/codegen')
 const { typing, types, typeSyms } = require('./typing')
 const { optimizer } = require('./optimizer')
 
@@ -886,6 +886,10 @@ let compile = (q,userSettings={}) => {
     //  2: multiple vars encoded using (vars *A *B *C)
   }
 
+  if (settings.backend == "cuda") {
+    q = cgen.findMatmuls(q)
+  }
+
   // Deduplicate
   q = optimizer.deduplicate(q, {});
   // Perform type checking, and modify ast to include types.
@@ -947,12 +951,12 @@ let compile = (q,userSettings={}) => {
   if (settings.newCodegen)
     return translateToNewCodegen(q)
 
-  if (settings.backend == "c-new" || settings.backend == "cuda") {
+  if (settings.backend == "c" || settings.backend == "cuda") {
     let ir = {filters, assignments, vars, order, pseudo}
-    return generateC(q, ir, settings)
+    return cgen.generateC(q, ir, settings)
   }
 
-  if (settings.backend == "c" || settings.backend == "cpp") {
+  if (settings.backend == "c-old" || settings.backend == "cpp") {
     const fs = require('fs/promises')
     const os = require('child_process')
 
@@ -966,7 +970,7 @@ let compile = (q,userSettings={}) => {
     }
 
     let code, cc, filename, flags
-    if (settings.backend == "c") {
+    if (settings.backend == "c-old") {
       code = fixIndent(emitCodeC(q,order))
       cc = "gcc"
       filename = "test.c"

@@ -307,5 +307,5 @@ test("testHashMap4", async () => {
   map.printJSON(code1)
 
   let res = await run("testHashMap4", code1)
-  console.log(JSON.parse(res))
+  expect(JSON.parse(res)).toEqual({ key1: { key2: { "42": "Hello" } } })
 })

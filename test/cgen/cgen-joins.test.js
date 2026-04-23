@@ -73,7 +73,7 @@ test("innerJoin1", async () => {
     orderitem: ${phase1}.(${customers}.*c.id).*o2.item
   }]`
 
-  let func = await compile(phase2, { backend: "c-new", outDir, outFile: "innerJoin1" })
+  let func = await compile(phase2, { backend: "c", outDir, outFile: "innerJoin1" })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual(innerJoinExpected)
@@ -95,7 +95,7 @@ test("leftOuterJoin", async () => {
     orderitem: (${phase1}.(${customers}.*c.id) || ${orderDefault}).*o2.item
   }]`
 
-  let func = await compile(phase2, { backend: "c-new", outDir, outFile: "leftOuterJoin", enableOptimizations: false })
+  let func = await compile(phase2, { backend: "c", outDir, outFile: "leftOuterJoin", enableOptimizations: false })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual(leftJoinExpected)
@@ -131,7 +131,7 @@ test("fullOuterJoin", async () => {
     orderitem: (${ordersMap}.(${phase1}.*) || ${orderDefault}).*.item
   }]`
 
-  let func = await compile(phase2, { backend: "c-new", outDir, outFile: "fullOuterJoin", enableOptimizations: false })
+  let func = await compile(phase2, { backend: "c", outDir, outFile: "fullOuterJoin", enableOptimizations: false })
   let res = await func()
 
   expect(JSON.parse(res)).toEqual(fullOuterJoinExpected)
