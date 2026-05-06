@@ -1847,5 +1847,6 @@ typing.validateIR = (schema, q) => {
     inferVarTypes(varMap, schema, cseMap, nonEmptyGuarantees);
 
     validateIRQuery(schema, cseMap, varMap, nonEmptyGuarantees, q);
-    return convertAST(schema, q, {});
+    // return convertAST(schema, q, {});
+    return q;
 }

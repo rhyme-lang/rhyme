@@ -7,6 +7,7 @@ const { preproc } = require('./preprocess')
 const { runtime } = require('./simple-runtime')
 const { pretty, setEmitPseudoState, emitPseudo } = require('./prettyprint')
 const cgen = require('./cgen/codegen')
+const c2_ir = require('./c2-ir')
 const { typing, types, typeSyms } = require('./typing')
 const { optimizer } = require('./optimizer')
 
@@ -123,7 +124,7 @@ let extractKey0 = q => {
   return extract0(q)   // could move more logic here
 }
 
-
+let KCounter = 0
 let extract0 = q => {
   if (q.key == "var") {
     if (q.op == "*") throw console.error("cannot support free-standing *")
@@ -156,8 +157,14 @@ let extract0 = q => {
     }
     if (e1.key != "var" && e1.key != "placeholder" && (e1.key != "pure" || e1.op != "vars")) {
       let prefix = { key:"mkset", arg:[e1] }
-      let v1 = { key: "var", op: canonicalVarName(prefix, true) }
-      let v2 = { key: "var", op: canonicalVarName(prefix, true) }
+      let gen
+      // if (e1.key == "const") {
+      //   gen = "KK" + (KCounter++)
+      // } else {
+        gen = canonicalVarName(prefix, true)
+      // }
+      let v1 = { key: "var", op: gen }
+      let v2 = { key: "var", op: gen }
 
       if (settings.backend != "js" || !settings.extractGroupKeys)
         return { ...q, key: "update", arg: [e0, v1, e2, { key: "get", arg: [prefix, v2] }], mode: mode }
@@ -902,6 +909,13 @@ let compile = (q,userSettings={}) => {
     q = optimizer.loopsConsolidate(q, vars);
   }
 
+  // js-new backend: walk the still-nested IR directly into new-codegen IR.
+  // Hooks in BEFORE extract2/extract3 so loop fusion is preserved.
+  if (settings.backend == "js-new") {
+    let rep = c2_ir.createIR(q)
+    return generate(rep, "js")
+  }
+
   if (settings.extractAssignments && !((settings.enableOptimizations && settings.schema) || settings.extractAssignmentsLate)) {
     // 8. Extract assignments
     q = extract2(q)
@@ -956,54 +970,54 @@ let compile = (q,userSettings={}) => {
     return cgen.generateC(q, ir, settings)
   }
 
-  if (settings.backend == "c-old" || settings.backend == "cpp") {
-    const fs = require('fs/promises')
-    const os = require('child_process')
+  // if (settings.backend == "c-old" || settings.backend == "cpp") {
+  //   const fs = require('fs/promises')
+  //   const os = require('child_process')
 
-    let execPromise = function(cmd) {
-      return new Promise(function(resolve, reject) {
-        os.exec(cmd, function(err, stdout) {
-          if (err) return reject(err);
-          resolve(stdout);
-        });
-      });
-    }
+  //   let execPromise = function(cmd) {
+  //     return new Promise(function(resolve, reject) {
+  //       os.exec(cmd, function(err, stdout) {
+  //         if (err) return reject(err);
+  //         resolve(stdout);
+  //       });
+  //     });
+  //   }
 
-    let code, cc, filename, flags
-    if (settings.backend == "c-old") {
-      code = fixIndent(emitCodeC(q,order))
-      cc = "gcc"
-      filename = "test.c"
-      flags = ""
-    } else {
-      code = emitCodeCPP(q,order)
-      cc = "g++"
-      filename = "test.cpp"
-      flags = "-std=c++17 -Ithird-party/json/include"
-    }
+  //   let code, cc, filename, flags
+  //   if (settings.backend == "c-old") {
+  //     code = fixIndent(emitCodeC(q,order))
+  //     cc = "gcc"
+  //     filename = "test.c"
+  //     flags = ""
+  //   } else {
+  //     code = emitCodeCPP(q,order)
+  //     cc = "g++"
+  //     filename = "test.cpp"
+  //     flags = "-std=c++17 -Ithird-party/json/include"
+  //   }
 
-    let func = (async () => {
-      await fs.writeFile(`cgen/${filename}`, code);
-      await execPromise(`${cc}  ${flags} cgen/${filename} -o cgen/test.out`)
-      return 'cgen/test.out'
-    })()
+  //   let func = (async () => {
+  //     await fs.writeFile(`cgen/${filename}`, code);
+  //     await execPromise(`${cc}  ${flags} cgen/${filename} -o cgen/test.out`)
+  //     return 'cgen/test.out'
+  //   })()
 
-    let wrap = async (input) => {
-      let file = await func
-      for (let obj in input) {
-        await fs.writeFile(`cgen/${obj}.json`, JSON.stringify(input[obj]));
-      }
-      let res = await execPromise(file)
-      return res
-    }
+  //   let wrap = async (input) => {
+  //     let file = await func
+  //     for (let obj in input) {
+  //       await fs.writeFile(`cgen/${obj}.json`, JSON.stringify(input[obj]));
+  //     }
+  //     let res = await execPromise(file)
+  //     return res
+  //   }
 
-    wrap.explain = {
-      src,
-      ir: {filters, assignments, vars, order},
-      pseudo, code
-    }
-    return wrap
-  }
+  //   wrap.explain = {
+  //     src,
+  //     ir: {filters, assignments, vars, order},
+  //     pseudo, code
+  //   }
+  //   return wrap
+  // }
 
   let code = emitCode(q,order)
 

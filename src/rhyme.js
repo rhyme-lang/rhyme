@@ -140,11 +140,19 @@ api["query"] = api["compile"] = (query, schema = types.unknown) => {
     let c1_opt = new_codegen.generate(rep)
     let c2 = simpleEval.compile(query, {schema: schema})
     let c2_new = simpleEval.compile(query, {schema: schema, newCodegen: true })
+
+    let c2_js_new = simpleEval.compile(query, {schema: schema, backend: "js-new", enableOptimizations: false})
+    
+    // console.log(c1_opt.explain.codeString)
+    // console.log(c2_new.explain.codeString)
+    // console.log(c2_js_new.explain.codeString)
+
     let wrapper = (x) => {
         let res1 = c1(x)
         let res1_opt = c1_opt(x)
         let res2 = c2(x)
         let res2_new = c2_new(x)
+        let res2_js_new = c2_js_new(x)
 
         let cmp = src => ({
           toEqual: dst => {
@@ -157,6 +165,7 @@ api["query"] = api["compile"] = (query, schema = types.unknown) => {
         cmp(res1_opt).toEqual(res1)
         cmp(res2).toEqual(res1)
         cmp(res2_new).toEqual(res2)
+        cmp(res2_js_new).toEqual(res1)
         return res2
     }
     logDebugOutput({
@@ -164,15 +173,18 @@ api["query"] = api["compile"] = (query, schema = types.unknown) => {
       c1_opt: c1_opt.explain.codeString,
       c2: c2.explain.code,
       c2_new: c2_new.explain.codeString,
+      c2_js_new: c2_js_new.explain.codeString,
     })
     wrapper.c1 = c1
     wrapper.c1_opt = c1_opt
     wrapper.c2 = c2
     wrapper.c2_new = c2_new
+    wrapper.c2_js_new = c2_js_new
     wrapper.explain = c1.explain
     wrapper.explain_opt = c1_opt.explain
     wrapper.explain2 = c2.explain
     wrapper.explain2_new = c2_new.explain
+    wrapper.explain2_js_new = c2_js_new.explain
     return wrapper
 }
 api["compileC1"] = api["compileFastPathOnly"] = (query) => {
