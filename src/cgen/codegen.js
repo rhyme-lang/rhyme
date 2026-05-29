@@ -1765,7 +1765,7 @@ let generateC = (q, ir, settings) => {
     if (inputFiles["json"] || inputFiles["ndjson"]) cFlags += " -Ithird-party/yyjson -Lthird-party/yyjson/out -lyyjson"
     if (backend == "cuda") cFlags += " -lcublas"
     let cmd = `${compiler} ${cFile} -o ${out} ${cFlags}`
-    // console.log("Executing: " + cmd)
+    console.log("Executing: " + cmd)
     let time1 = performance.now()
     await sh(cmd)
     func.explain.time = time1

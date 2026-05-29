@@ -7,7 +7,7 @@ let dataDir = "cgen-sql/data/SF10"
 let outDir = "bench/out/tpch"
 
 let settings = {
-  backend: "c-new",
+  backend: "c",
   schema: types.never,
   outDir,
   hashSize: 16777216,
@@ -207,6 +207,65 @@ async function q2() {
   await compile(query, { ...settings, outFile: "q2", arraySize: 8000000, limit: 100 })
 }
 
+async function q2_cedar() {
+  // CTE Alder: nation ⋈ region(EUROPE) -> nationkey index of European nations (5 rows)
+  let region1 = rh`single ${region}.*r1.r_regionkey | group (${region}.*r1.r_name == "EUROPE" & ${region}.*r1.r_regionkey)`
+
+  let nation1 = rh`{
+    n_nationkey: single ${nation}.*n1.n_nationkey,
+    n_name: single ${nation}.*n1.n_name
+  } | group (${region1}.(${nation}.*n1.n_regionkey) & ${nation}.*n1.n_nationkey)`
+
+  // Single supplier scan: supplier ⋈ Alder fused, indexed by s_suppkey.
+  // Reused below as both a European-supplier membership guard and a row lookup.
+  let supplier1 = rh`{
+    n_name: single ${nation1}.(${supplier}.*s1.s_nationkey).n_name,
+    s_suppkey: single ${supplier}.*s1.s_suppkey,
+    s_name: single ${supplier}.*s1.s_name,
+    s_address: single ${supplier}.*s1.s_address,
+    s_phone: single ${supplier}.*s1.s_phone,
+    s_acctbal: single ${supplier}.*s1.s_acctbal,
+    s_comment: single ${supplier}.*s1.s_comment
+  } | group (${nation1}.(${supplier}.*s1.s_nationkey) & ${supplier}.*s1.s_suppkey)`
+
+  // partsupp scan #1: GROUP BY ps_partkey -> min(ps_supplycost) restricted to European suppliers
+  let partsupp1 = rh`{
+    ps_partkey: single ${partsupp}.*ps1.ps_partkey,
+    min_cost: min ${partsupp}.*ps1.ps_supplycost
+  } | group (${supplier1}.(${partsupp}.*ps1.ps_suppkey) & ${partsupp}.*ps1.ps_partkey)`
+
+  // Outer build: hashtable on filtered part (p_size = 15 && p_type LIKE '%BRASS')
+  let partFiltered = rh`{
+    p_partkey: single ${part}.*p1.p_partkey,
+    p_mfgr: single ${part}.*p1.p_mfgr
+  } | group ((${part}.*p1.p_size == 15 && (like ${part}.*p1.p_type "%BRASS")) & ${part}.*p1.p_partkey)`
+
+  // FLIPPED: iterate partsupp1 (probe), look up partFiltered (build) -> ~69 candidate parts
+  let part1 = rh`{
+    p_partkey: single ${partFiltered}.(${partsupp1}.*p3.ps_partkey).p_partkey,
+    p_mfgr: single ${partFiltered}.(${partsupp1}.*p3.ps_partkey).p_mfgr,
+    min_cost: single ${partsupp1}.*p3.min_cost
+  } | group (${partFiltered}.(${partsupp1}.*p3.ps_partkey) & ${partsupp1}.*p3.ps_partkey)`
+
+  // partsupp scan #2 (the 8M outer probe): probe part1 by ps_partkey, supplycost == min_cost.
+  // supplier1 lookup transparently filters to European suppliers (undef otherwise).
+  let joinCond2 = rh`${part1}.(${partsupp}.*ps2.ps_partkey) && ${part1}.(${partsupp}.*ps2.ps_partkey).min_cost == ${partsupp}.*ps2.ps_supplycost`
+  let partsupp2 = rh`[${joinCond2} & {
+    s_acctbal: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).s_acctbal,
+    s_name: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).s_name,
+    n_name: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).n_name,
+    p_partkey: ${partsupp}.*ps2.ps_partkey,
+    p_mfgr: ${part1}.(${partsupp}.*ps2.ps_partkey).p_mfgr,
+    s_address: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).s_address,
+    s_phone: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).s_phone,
+    s_comment: ${supplier1}.(${partsupp}.*ps2.ps_suppkey).s_comment
+  }]`
+
+  let query = rh`sort ${partsupp2} "s_acctbal" 1 "n_name" 0 "s_name" 0 "p_partkey" 0`
+
+  await compile(query, { ...settings, outFile: "q2_cedar", arraySize: 8000000, limit: 100 })
+}
+
 async function q3() {
   let customer1 = rh`single ${customer}.*c1.c_custkey | group (${customer}.*c1.c_mktsegment == "BUILDING" & ${customer}.*c1.c_custkey)`
 
@@ -328,6 +387,47 @@ async function q7() {
   await compile(query, { ...settings, outFile: "q7", arraySize: 60000000 })
 }
 
+async function q7_cedar() {
+  let nation1 = rh`single ${nation}.*ns.n_name | group ((${nation}.*ns.n_name == "FRANCE" || ${nation}.*ns.n_name == "GERMANY") & ${nation}.*ns.n_nationkey)`
+
+  // Supplier branch: nation1 ⋈ supplier -> FR/DE suppliers, keyed by s_suppkey
+  // Equivalent to Cedar's JOIN(8262). Value = supp_nation directly.
+  let supplier1 = rh`single ${nation1}.(${supplier}.*s1.s_nationkey) | group (${nation1}.(${supplier}.*s1.s_nationkey) & ${supplier}.*s1.s_suppkey)`
+
+  // Customer branch: nation1 ⋈ customer -> FR/DE customers, keyed by c_custkey
+  // Equivalent to Cedar's JOIN(120k). Value = cust_nation directly.
+  let customer1 = rh`single ${nation1}.(${customer}.*c1.c_nationkey) | group (${nation1}.(${customer}.*c1.c_nationkey) & ${customer}.*c1.c_custkey)`
+
+  // orders ⋈ customer1: orders for FR/DE customers, keyed by o_orderkey, value = cust_nation
+  // Equivalent to Cedar's JOIN(1.2M).
+  let orders1 = rh`single ${customer1}.(${orders}.*o1.o_custkey) | group (${customer1}.(${orders}.*o1.o_custkey) & ${orders}.*o1.o_orderkey)`
+
+  // Topmost join + GROUP BY fused into one lineitem scan:
+  //   - probe orders1 (lineitem ⋈ orders1 -> Cedar's JOIN(1.5M))
+  //   - probe supplier1 (supp branch ⋈ above -> Cedar's JOIN(803k))
+  //   - date filter on l_shipdate (pushed into Cedar's lineitem scan)
+  //   - crossover constraint: supp_nation != cust_nation (Cedar's join filter)
+  let suppNation = rh`${supplier1}.(${lineitem}.*l1.l_suppkey)`
+  let custNation = rh`${orders1}.(${lineitem}.*l1.l_orderkey)`
+
+  let cond = rh`${suppNation} && ${custNation} && ${orders1}.(${lineitem}.*l1.l_orderkey) && ${lineitem}.*l1.l_shipdate >= 19950101 && ${lineitem}.*l1.l_shipdate <= 19961231 && ${suppNation} != ${custNation}`
+
+  let lineitem1 = rh`{
+    supp_nation: single ${suppNation},
+    cust_nation: single ${custNation},
+    l_year: year ${lineitem}.*l1.l_shipdate,
+    revenue: sum (${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount))
+  } | group [
+    ${cond} & ${suppNation},
+    ${custNation},
+    (year ${lineitem}.*l1.l_shipdate)
+  ]`
+
+  let query = rh`sort ${lineitem1} "supp_nation" 0 "cust_nation" 0 "l_year" 0`
+
+  await compile(query, { ...settings, outFile: "q7_cedar", arraySize: 60000000 })
+}
+
 async function q8() {
   let region1 = rh`single ${region}.*r1.r_regionkey | group ${region}.*r1.r_name == "AMERICA" & ${region}.*r1.r_regionkey`
   let nation1 = rh`single ${nation}.*n1.n_nationkey | group ${region1}.(${nation}.*n1.n_regionkey) & ${nation}.*n1.n_nationkey`
@@ -410,6 +510,49 @@ async function q9() {
   await compile(query, { ...settings, outFile: "q9", arraySize: 60000000 })
 }
 
+// Cedar-aligned variant: supplier/nation join moved to the lineitem-result level
+// (Cedar's step 4: (nation⋈supplier) ⋈ (part⋈partsupp⋈lineitem) on l_suppkey),
+// instead of being fused into partsupp.
+async function q9_cedar() {
+  let nation1 = rh`single ${nation}.*n1.n_name | group ${nation}.*n1.n_nationkey`
+
+  // nation ⋈ supplier: s_suppkey -> n_name. Built separately (Cedar's JOIN(99094)).
+  let supplier1 = rh`single ${nation1}.(${supplier}.*s1.s_nationkey) | group ${supplier}.*s1.s_suppkey`
+
+  let part1 = rh`single ${part}.*p1.p_partkey | group (like ${part}.*p1.p_name "%green%") & ${part}.*p1.p_partkey`
+
+  // part(green) ⋈ partsupp, keyed by ps_partkey. No supplier join here.
+  let partsupp1 = rh`[{
+    ps_suppkey: ${partsupp}.*ps1.ps_suppkey,
+    ps_supplycost: ${partsupp}.*ps1.ps_supplycost
+  }] | group ${part1}.(${partsupp}.*ps1.ps_partkey) & ${partsupp}.*ps1.ps_partkey`
+
+  // (part⋈partsupp) ⋈ lineitem on (partkey, suppkey), then ⋈ (nation⋈supplier) on l_suppkey.
+  // nation attached here via supplier1.(l_suppkey), matching Cedar's post-lineitem supplier join.
+  let joinCond = rh`${partsupp1}.(${lineitem}.*l1.l_partkey).*ps2.ps_suppkey == ${lineitem}.*l1.l_suppkey`
+  let lineitem1 = rh`[{
+    nation: ${supplier1}.(${lineitem}.*l1.l_suppkey),
+    ps_supplycost: ${partsupp1}.(${lineitem}.*l1.l_partkey).*ps2.ps_supplycost,
+    l_quantity: ${lineitem}.*l1.l_quantity,
+    l_extendedprice: ${lineitem}.*l1.l_extendedprice,
+    l_discount: ${lineitem}.*l1.l_discount
+  }] | group ${partsupp1}.(${lineitem}.*l1.l_partkey) && ${joinCond} & ${lineitem}.*l1.l_orderkey`
+
+  let amount = rh`${lineitem1}.(${orders}.*o1.o_orderkey).*l2.l_extendedprice * (1 - ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.l_discount) - ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.ps_supplycost * ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.l_quantity`
+  let orders1 = rh`{
+    nation: single ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.nation,
+    o_year: (year ${orders}.*o1.o_orderdate),
+    sum_profit: sum ${amount}
+  } | group [
+    ${lineitem1}.(${orders}.*o1.o_orderkey) & ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.nation,
+    (year ${orders}.*o1.o_orderdate)
+  ]`
+
+  let query = rh`sort ${orders1} "nation" 0 "o_year" 1`
+
+  await compile(query, { ...settings, outFile: "q9_cedar", arraySize: 60000000 })
+}
+
 async function q10() {
   let nation1 = rh`single ${nation}.*n1.n_name | group ${nation}.*n1.n_nationkey`
   let orders1 = rh`[${orders}.*o1.o_orderkey] | group (${orders}.*o1.o_orderdate >= 19931001 && ${orders}.*o1.o_orderdate < 19940101) & ${orders}.*o1.o_custkey`
@@ -453,18 +596,15 @@ async function q10() {
 async function q11() {
   let nation1 = rh`single ${nation}.*n1.n_nationkey | group ${nation}.*n1.n_name == "GERMANY" & ${nation}.*n1.n_nationkey`
 
-  let supplier1 = rh`{
-    n_nationkey: single ${nation1}.(${supplier}.*s1.s_nationkey),
-    s_suppkey: single ${supplier}.*s1.s_suppkey
-  } | group ${nation1}.(${supplier}.*s1.s_nationkey) & ${supplier}.*s1.s_suppkey`
+  let supplier1 = rh`single ${supplier}.*s1.s_suppkey | group ${nation1}.(${supplier}.*s1.s_nationkey) & ${supplier}.*s1.s_suppkey`
 
   let cond = rh`${supplier1}.(${partsupp}.*ps1.ps_suppkey)`
   let sum = rh`(sum (${cond} & (${partsupp}.*ps1.ps_supplycost * ${partsupp}.*ps1.ps_availqty))) * 0.0001`
 
   let partsupp1 = rh`{
     ps_partkey: single ${partsupp}.*ps1.ps_partkey,
-    sum: sum? (${partsupp}.*ps1.ps_supplycost * ${partsupp}.*ps1.ps_availqty)
-  } | group ${supplier1}.(${partsupp}.*ps1.ps_suppkey).s_suppkey == ${partsupp}.*ps1.ps_suppkey & ${partsupp}.*ps1.ps_partkey`
+    sum: sum (${partsupp}.*ps1.ps_supplycost * ${partsupp}.*ps1.ps_availqty)
+  } | group ${supplier1}.(${partsupp}.*ps1.ps_suppkey) & ${partsupp}.*ps1.ps_partkey`
 
   let partsupp2 = rh`[${partsupp1}.*.sum > ${sum} & {
     ps_partkey: ${partsupp1}.*.ps_partkey,
@@ -500,9 +640,40 @@ async function q12() {
   await compile(query, { ...settings, outFile: "q12", arraySize: 60000000 })
 }
 
+// Cedar-aligned variant: BUILD the small filtered lineitem (keyed by l_orderkey),
+// PROBE with the orders scan -- matching Cedar's "BUILD lineitem(527k), PROBE orders(15M)"
+// (the original q12 builds the full 15M orders index instead).
+async function q12_cedar() {
+  let cond1 = rh`${lineitem}.*l1.l_shipmode == "MAIL" || ${lineitem}.*l1.l_shipmode == "SHIP"`
+  let cond2 = rh`${lineitem}.*l1.l_commitdate < ${lineitem}.*l1.l_receiptdate`
+  let cond3 = rh`${lineitem}.*l1.l_shipdate < ${lineitem}.*l1.l_commitdate`
+  let cond4 = rh`${lineitem}.*l1.l_receiptdate >= 19940101 && ${lineitem}.*l1.l_receiptdate < 19950101`
+  let cond = rh`${cond1} && ${cond2} && ${cond3} && ${cond4}`
+
+  // BUILD: filtered lineitem keyed by l_orderkey (small, ~527k)
+  let lineitem1 = rh`[{
+    l_shipmode: ${lineitem}.*l1.l_shipmode
+  }] | group ${cond} & ${lineitem}.*l1.l_orderkey`
+
+  // PROBE: iterate orders, expand matching lineitems, group by l_shipmode.
+  // Case exprs use o_orderpriority directly (we are iterating orders).
+  let cond5 = rh`${orders}.*o1.o_orderpriority == "1-URGENT" || ${orders}.*o1.o_orderpriority == "2-HIGH"`
+  let cond6 = rh`${orders}.*o1.o_orderpriority != "1-URGENT" && ${orders}.*o1.o_orderpriority != "2-HIGH"`
+
+  let result = rh`{
+    l_shipmode: single ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.l_shipmode,
+    high_line_count: count (${cond5} & ${lineitem1}.(${orders}.*o1.o_orderkey).*l2),
+    low_line_count: count (${cond6} & ${lineitem1}.(${orders}.*o1.o_orderkey).*l2)
+  } | group ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.l_shipmode`
+
+  let query = rh`sort ${result} "l_shipmode" 0`
+
+  await compile(query, { ...settings, outFile: "q12_cedar", arraySize: 60000000 })
+}
+
 async function q13() {
   let cond = rh`isUndef (like ${orders}.*o1.o_comment "%special%requests%")`
-  let orders1 = rh`[${orders}.*o1.o_orderkey] | group ${cond} & ${orders}.*o1.o_custkey`
+  let orders1 = rh`[${orders}.*o1] | group ${cond} & ${orders}.*o1.o_custkey`
 
   let customer1 = rh`count ${orders1}.(${customer}.*c1.c_custkey).*o2 | group ${customer}.*c1.c_custkey`
 
@@ -599,6 +770,48 @@ async function q16() {
   await compile(query, { ...settings, outFile: "q16", arraySize: 8000000 })
 }
 
+// Cedar-aligned variant: part(filtered) ⋈ partsupp as inner hashjoin (BUILD part / PROBE partsupp),
+// then NOT-IN complaint suppliers as a rightanti join AFTER the part join -- matching Cedar's order.
+// (The original q16 builds the anti-filtered partsupp first and iterates part.)
+// Note: uses p_size == 49 per the SQL (the original q16 has 42, a suspected typo).
+async function q16_cedar() {
+  let supplier1 = rh`count (${supplier}.*s1) | group (like ${supplier}.*s1.s_comment "%Customer%Complaints%") & ${supplier}.*s1.s_suppkey`
+
+  let cond1 = rh`${part}.*p1.p_brand != "Brand#45" && (isUndef (like ${part}.*p1.p_type "MEDIUM POLISHED%"))`
+  let cond2 = rh`${part}.*p1.p_size == 49 || ${part}.*p1.p_size == 14 || ${part}.*p1.p_size == 23 || ${part}.*p1.p_size == 45 ||
+                 ${part}.*p1.p_size == 19 || ${part}.*p1.p_size == 3 || ${part}.*p1.p_size == 36 || ${part}.*p1.p_size == 9`
+
+  // BUILD: filtered part keyed by p_partkey (Cedar's inner-join build side)
+  let part1 = rh`{
+    p_brand: single ${part}.*p1.p_brand,
+    p_type: single ${part}.*p1.p_type,
+    p_size: single ${part}.*p1.p_size
+  } | group ((${cond1} && ${cond2}) & ${part}.*p1.p_partkey)`
+
+  // PROBE: iterate partsupp, probe part1 (inner), anti-join complaint suppliers (NOT IN),
+  // dedup via GROUP BY [brand, type, size, ps_suppkey]
+  let p = rh`${part1}.(${partsupp}.*ps1.ps_partkey)`
+  let cond = rh`${p} && (isUndef ${supplier1}.(${partsupp}.*ps1.ps_suppkey))`
+  let partsupp1 = rh`{
+    p_brand: single ${p}.p_brand,
+    p_type: single ${p}.p_type,
+    p_size: single ${p}.p_size,
+    ps_suppkey: single ${partsupp}.*ps1.ps_suppkey
+  } | group [${cond} & ${p}.p_brand, ${p}.p_type, ${p}.p_size, ${partsupp}.*ps1.ps_suppkey]`
+
+  // count(distinct ps_suppkey): GROUP BY [brand, type, size]
+  let part2 = rh`{
+    p_brand: single ${partsupp1}.*p2.p_brand,
+    p_type: single ${partsupp1}.*p2.p_type,
+    p_size: single ${partsupp1}.*p2.p_size,
+    supplier_cnt: count ${partsupp1}.*p2.ps_suppkey
+  } | group [${partsupp1}.*p2.p_brand, ${partsupp1}.*p2.p_type, ${partsupp1}.*p2.p_size]`
+
+  let query = rh`sort ${part2} "supplier_cnt" 1 "p_brand" 0 "p_type" 0 "p_size" 0`
+
+  await compile(query, { ...settings, outFile: "q16_cedar", arraySize: 8000000 })
+}
+
 async function q17() {
   let lineitem1 = rh`[{
     l_quantity: ${lineitem}.*l1.l_quantity,
@@ -622,6 +835,19 @@ async function q17() {
   await compile(query, { ...settings, outFile: "q17", arraySize: 60000000 })
 }
 
+async function q17_cedar() {
+  let part1 = rh`[
+      ${part}.*p1.p_partkey
+  ] | group (${part}.*p1.p_brand == "Brand#23" && ${part}.*p1.p_container == "MED BOX") & ${part}.*p1.p_partkey`
+
+  let avgMap = rh`0.2 * sum(${lineitem}.*l1.l_quantity) / count(${lineitem}.*l1.l_quantity) | group ${part1}.(${lineitem}.*l1.l_partkey) & ${lineitem}.*l1.l_partkey`
+  
+  let cond = rh`${part1}.(${lineitem}.*l2.l_partkey) && ${lineitem}.*l2.l_quantity < ${avgMap}.(${lineitem}.*l2.l_partkey)`
+  let query = rh`(sum (${cond} & ${lineitem}.*l2.l_extendedprice)) / 7.0`
+
+  await compile(query, { ...settings, outFile: "q17_cedar", arraySize: 60000000 })
+}
+
 async function q18() {
   let customer1 = rh`{
     c_custkey: single ${customer}.*c1.c_custkey,
@@ -633,13 +859,13 @@ async function q18() {
     sum: sum ${lineitem}.*l1.l_quantity
   } | group ${lineitem}.*l1.l_orderkey`
 
-  let lineitem2 = rh`[{
-    l_orderkey: ${lineitem1}.*l2.l_orderkey,
-    sum: ${lineitem1}.*l2.sum
-  }] | group ${lineitem1}.*l2.sum > 300 & ${lineitem1}.*l2.l_orderkey`
+  let lineitem2 = rh`{
+    l_orderkey: single ${lineitem1}.*l2.l_orderkey,
+    sum: single ${lineitem1}.*l2.sum
+  } | group ${lineitem1}.*l2.sum > 300 & ${lineitem1}.*l2.l_orderkey`
 
   let orders1 = rh`{
-    o_orderkey: single ${lineitem2}.(${orders}.*o1.o_orderkey).*l3.l_orderkey,
+    o_orderkey: single ${lineitem2}.(${orders}.*o1.o_orderkey).l_orderkey,
     c_custkey: single ${customer1}.(${orders}.*o1.o_custkey).c_custkey,
     c_name: single ${customer1}.(${orders}.*o1.o_custkey).c_name,
     o_totalprice: single ${orders}.*o1.o_totalprice,
@@ -664,6 +890,59 @@ async function q18() {
   let query = rh`sort ${lineitem3} "o_totalprice" 1 "o_orderdate" 0`
 
   await compile(query, { ...settings, outFile: "q18", arraySize: 60000000, limit: 100 })
+}
+
+// Cedar-aligned variant: ((IN-subquery ⋈ orders) ⋈ customer) ⋈ lineitem.
+// The customer join is its own step that BUILDs the (IN⋈orders) result keyed by o_custkey
+// and PROBEs with the customer scan -- matching Cedar's customer-as-probe direction.
+// (The original q18 fuses the customer lookup into the orders scan: builds customer1, probes orders.)
+async function q18_cedar() {
+  let lineitem1 = rh`{
+    l_orderkey: single ${lineitem}.*l1.l_orderkey,
+    sum: sum ${lineitem}.*l1.l_quantity
+  } | group ${lineitem}.*l1.l_orderkey`
+
+  // IN subquery: orderkeys with sum(l_quantity) > 300
+  let lineitem2 = rh`{
+    l_orderkey: single ${lineitem1}.*l2.l_orderkey,
+    sum: single ${lineitem1}.*l2.sum
+  } | group ${lineitem1}.*l2.sum > 300 & ${lineitem1}.*l2.l_orderkey`
+
+  // (IN ⋈ orders) keyed by o_custkey (arrays) -- BUILD side of the customer join
+  let orders1 = rh`[{
+    o_orderkey: ${orders}.*o1.o_orderkey,
+    o_totalprice: ${orders}.*o1.o_totalprice,
+    o_orderdate: ${orders}.*o1.o_orderdate
+  }] | group ${lineitem2}.(${orders}.*o1.o_orderkey) & ${orders}.*o1.o_custkey`
+
+  // PROBE with customer scan: iterate customer, expand its qualifying orders, re-key by o_orderkey
+  let customer2 = rh`{
+    o_orderkey: single ${orders1}.(${customer}.*c1.c_custkey).*o2.o_orderkey,
+    c_name: single ${customer}.*c1.c_name,
+    c_custkey: single ${customer}.*c1.c_custkey,
+    o_totalprice: single ${orders1}.(${customer}.*c1.c_custkey).*o2.o_totalprice,
+    o_orderdate: single ${orders1}.(${customer}.*c1.c_custkey).*o2.o_orderdate
+  } | group ${orders1}.(${customer}.*c1.c_custkey) & ${orders1}.(${customer}.*c1.c_custkey).*o2.o_orderkey`
+
+  // ⋈ lineitem (re-scan), GROUP BY 5 cols, sum(l_quantity)
+  let lineitem3 = rh`{
+    c_name: single ${customer2}.(${lineitem}.*l4.l_orderkey).c_name,
+    c_custkey: single ${customer2}.(${lineitem}.*l4.l_orderkey).c_custkey,
+    o_orderkey: single ${customer2}.(${lineitem}.*l4.l_orderkey).o_orderkey,
+    o_orderdate: single ${customer2}.(${lineitem}.*l4.l_orderkey).o_orderdate,
+    o_totalprice: single ${customer2}.(${lineitem}.*l4.l_orderkey).o_totalprice,
+    sum_l_quantity: sum (${lineitem}.*l4.l_quantity)
+  } | group [
+    ${customer2}.(${lineitem}.*l4.l_orderkey) & ${customer2}.(${lineitem}.*l4.l_orderkey).c_name,
+    ${customer2}.(${lineitem}.*l4.l_orderkey).c_custkey,
+    ${customer2}.(${lineitem}.*l4.l_orderkey).o_orderkey,
+    ${customer2}.(${lineitem}.*l4.l_orderkey).o_orderdate,
+    ${customer2}.(${lineitem}.*l4.l_orderkey).o_totalprice
+  ]`
+
+  let query = rh`sort ${lineitem3} "o_totalprice" 1 "o_orderdate" 0`
+
+  await compile(query, { ...settings, outFile: "q18_cedar", arraySize: 60000000, limit: 100 })
 }
 
 async function q19() {
@@ -712,6 +991,43 @@ async function q19() {
   let query = rh`sum ((${cond} & ${lExtendedPrice} * (1 - ${lDiscount})))`
 
   await compile(query, { ...settings, outFile: "q19", arraySize: 60000000 })
+}
+
+// Cedar-aligned variant: BUILD the small filtered part (~3906, by the brand/container/size
+// disjunction) keyed by p_partkey, PROBE with the lineitem scan -- matching Cedar's
+// "BUILD part(3906) / PROBE lineitem(1M)". The original q19 builds the large filtered-lineitem
+// side and iterates part.
+async function q19_cedar() {
+  let pBrand = rh`${part}.*p1.p_brand`
+  let pSize = rh`${part}.*p1.p_size`
+  let pContainer = rh`${part}.*p1.p_container`
+
+  // Part-side per-branch predicates (brand + container + size)
+  let pA = rh`${pBrand} == "Brand#12" && (${pContainer} == "SM CASE" || ${pContainer} == "SM BOX" || ${pContainer} == "SM PACK" || ${pContainer} == "SM PKG") && ${pSize} <= 5`
+  let pB = rh`${pBrand} == "Brand#23" && (${pContainer} == "MED BAG" || ${pContainer} == "MED BOX" || ${pContainer} == "MED PKG" || ${pContainer} == "MED PACK") && ${pSize} <= 10`
+  let pC = rh`${pBrand} == "Brand#34" && (${pContainer} == "LG CASE" || ${pContainer} == "LG BOX" || ${pContainer} == "LG PACK" || ${pContainer} == "LG PKG") && ${pSize} <= 15`
+  let partCond = rh`${pSize} >= 1 && (${pA} || ${pB} || ${pC})`
+
+  // BUILD: small filtered part keyed by p_partkey. Store only p_brand -- container/size are
+  // already guaranteed by partCond, and brands are mutually exclusive, so brand alone identifies
+  // which branch matched. Re-checking container/size in the probe would be redundant.
+  let part1 = rh`single ${pBrand} | group ${partCond} & ${part}.*p1.p_partkey`
+
+  // PROBE: iterate lineitem (filtered shipmode/shipinstruct), look up part1.
+  // Only brand + quantity need checking here.
+  let condLineitem = rh`(${lineitem}.*l1.l_shipmode == "AIR" || ${lineitem}.*l1.l_shipmode == "AIR REG") && ${lineitem}.*l1.l_shipinstruct == "DELIVER IN PERSON"`
+
+  let p = rh`${part1}.(${lineitem}.*l1.l_partkey)`
+  let lq = rh`${lineitem}.*l1.l_quantity`
+
+  let condA = rh`${p} == "Brand#12" && ${lq} >= 1 && ${lq} <= 11`
+  let condB = rh`${p} == "Brand#23" && ${lq} >= 10 && ${lq} <= 20`
+  let condC = rh`${p} == "Brand#34" && ${lq} >= 20 && ${lq} <= 30`
+
+  let cond = rh`${p} && ${condLineitem} && (${condA} || ${condB} || ${condC})`
+  let query = rh`sum (${cond} & ${lineitem}.*l1.l_extendedprice * (1 - ${lineitem}.*l1.l_discount))`
+
+  await compile(query, { ...settings, outFile: "q19_cedar", arraySize: 60000000 })
 }
 
 async function q20() {
@@ -781,6 +1097,52 @@ async function q21() {
   await compile(query, { ...settings, outFile: "q21", arraySize: 60000000, limit: 100 })
 }
 
+// Cedar-aligned variant: follows Cedar's semi(l2)/anti(l3) decomposition, but expresses the two
+// correlated "different suppkey" subqueries via per-order min/max suppkey ranges instead of
+// literal semi/anti hash joins. For a candidate Saudi-late line l1 (supplier S, order O):
+//   EXISTS l2 (a different supplier on O)        <=> minSupp(O) != maxSupp(O)   (>= 2 distinct suppliers)
+//   NOT EXISTS l3 (a different LATE supplier on O) <=> minLate(O) == maxLate(O)  (S is the sole late supplier)
+// Both hold because S is always present in O's supplier set / late-supplier set.
+// This fuses the semi+anti aggregates into ONE lineitem scan and uses a single orders pass
+// (the original q21 scans orders twice and counts differing-supplier pairs).
+async function q21_cedar() {
+  let nation1 = rh`single ${nation}.*n1.n_nationkey | group ${nation}.*n1.n_name == "SAUDI ARABIA" & ${nation}.*n1.n_nationkey`
+  let supplier1 = rh`single ${supplier}.*s1.s_name | group ${nation1}.(${supplier}.*s1.s_nationkey) & ${supplier}.*s1.s_suppkey`
+
+  // Per-order suppkey range over ALL lines and over LATE lines (single fused lineitem scan via *la)
+  let orderSupp = rh`{
+    minSupp: min ${lineitem}.*la.l_suppkey,
+    maxSupp: max ${lineitem}.*la.l_suppkey
+  } | group ${lineitem}.*la.l_orderkey`
+
+  let lateCond = rh`${lineitem}.*la.l_receiptdate > ${lineitem}.*la.l_commitdate`
+  let orderLate = rh`{
+    minLate: min ${lineitem}.*la.l_suppkey,
+    maxLate: max ${lineitem}.*la.l_suppkey
+  } | group ${lateCond} & ${lineitem}.*la.l_orderkey`
+
+  // orders with o_orderstatus = 'F' (70), keyed by orderkey
+  let ordersF = rh`single ${orders}.*o1.o_orderkey | group ${orders}.*o1.o_orderstatus == 70 & ${orders}.*o1.o_orderkey`
+
+  // Iterate Saudi late l1 lines; count(*) per s_name (each qualifying l1 row counts, matching the SQL)
+  let sName = rh`${supplier1}.(${lineitem}.*l1.l_suppkey)`
+  let late1 = rh`${lineitem}.*l1.l_receiptdate > ${lineitem}.*l1.l_commitdate`
+  let supp = rh`${orderSupp}.(${lineitem}.*l1.l_orderkey)`
+  let lateR = rh`${orderLate}.(${lineitem}.*l1.l_orderkey)`
+  let existsL2 = rh`${supp}.minSupp != ${supp}.maxSupp`
+  let notExistsL3 = rh`${lateR}.minLate == ${lateR}.maxLate`
+  let cond = rh`${sName} && ${late1} && ${ordersF}.(${lineitem}.*l1.l_orderkey) && ${existsL2} && ${notExistsL3}`
+
+  let orders2 = rh`{
+    s_name: single ${sName},
+    numwait: count ${lineitem}.*l1
+  } | group ${cond} & ${sName}`
+
+  let query = rh`sort ${orders2} "numwait" 1 "s_name" 0`
+
+  await compile(query, { ...settings, outFile: "q21_cedar", arraySize: 60000000, limit: 100 })
+}
+
 async function q22() {
   let cond1 = rh`${customer}.*c1.c_acctbal > 0`
   let cond2 = rh`(substr ${customer}.*c1.c_phone 0 2) == "13" || (substr ${customer}.*c1.c_phone 0 2) == "31" ||
@@ -820,26 +1182,26 @@ if (queryNum) {
     console.log(`Compiling query ${num}...`)
     switch (num) {
       case 1: q1(); break
-      case 2: q2(); break
+      case 2: {q2(); q2_cedar(); break}
       case 3: q3(); break
       case 4: q4(); break
       case 5: q5(); break
       case 6: q6(); break
-      case 7: q7(); break
+      case 7: {q7(); q7_cedar(); break}
       case 8: q8(); break
-      case 9: q9(); break
+      case 9: {q9(); q9_cedar(); break}
       case 10: q10(); break
       case 11: q11(); break
-      case 12: q12(); break
+      case 12: {q12(); q12_cedar(); break}
       case 13: q13(); break
       case 14: q14(); break
       case 15: q15(); break
-      case 16: q16(); break
-      case 17: q17(); break
-      case 18: q18(); break
-      case 19: q19(); break
+      case 16: {q16(); q16_cedar(); break}
+      case 17: {q17(); q17_cedar(); break}
+      case 18: {q18(); q18_cedar(); break}
+      case 19: {q19(); q19_cedar(); break}
       case 20: q20(); break
-      case 21: q21(); break
+      case 21: {q21(); q21_cedar(); break}
       case 22: q22(); break
     }
   } else {
@@ -850,24 +1212,33 @@ if (queryNum) {
   console.log('Compiling all queries...')
   q1()
   q2()
+  q2_cedar()
   q3()
   q4()
   q5()
   q6()
   q7()
+  q7_cedar()
   q8()
   q9()
+  q9_cedar()
   q10()
   q11()
   q12()
+  q12_cedar()
   q13()
   q14()
   q15()
   q16()
+  q16_cedar()
   q17()
+  q17_cedar()
   q18()
+  q18_cedar()
   q19()
+  q19_cedar()
   q20()
   q21()
+  q21_cedar()
   q22()
 }
