@@ -1,6 +1,6 @@
 const { c, utils } = require("./utils")
 const { symbol } = require("./symbol")
-const { value } = require('./value')
+const { value, TAG } = require('./value')
 const { typing, types, typeSyms } = require('../typing')
 
 const { pretty } = require('../prettyprint')
@@ -11,6 +11,7 @@ const { quoteVar } = utils
 // It will otherwise try to convert to the expected type
 // Returns the original value if no schema is provided
 let convertJSONTo = (json, schema) => {
+  console.log(json)
   if (typing.isObject(schema)) {
     return json
   } else if (typing.isString(schema)) {
@@ -19,16 +20,18 @@ let convertJSONTo = (json, schema) => {
     let cond = c.not(c.call("yyjson_is_str", json.val))
     if (json.cond) cond = c.or(json.cond, cond)
     return value.string(schema, str, len, undefined, cond)
-  } else if (typing.isNumber(schema)) {
-    // Assume number
+  } else if (typing.isNumber(schema) || (schema && (schema.typeSym == typeSyms.date || schema.typeSym == typeSyms.char))) {
+    // Assume number (dates stored as signed ints; chars as their unsigned byte value)
     let func1 = "yyjson_get_num"
     let func2 = "yyjson_is_num"
     if (schema.typeSym == typeSyms.u8 || schema.typeSym == typeSyms.u16 ||
-      schema.typeSym == typeSyms.u32 || schema.typeSym == typeSyms.u64) {
+      schema.typeSym == typeSyms.u32 || schema.typeSym == typeSyms.u64 ||
+      schema.typeSym == typeSyms.char) {
       func1 = "yyjson_get_uint"
       func2 = "yyjson_is_uint"
     } else if (schema.typeSym == typeSyms.i8 || schema.typeSym == typeSyms.i16 ||
-      schema.typeSym == typeSyms.i32 || schema.typeSym == typeSyms.i64) {
+      schema.typeSym == typeSyms.i32 || schema.typeSym == typeSyms.i64 ||
+      schema.typeSym == typeSyms.date) {
       func1 = "yyjson_get_int"
       func2 = "yyjson_is_int"
     }
@@ -38,6 +41,33 @@ let convertJSONTo = (json, schema) => {
     return value.primitive(schema, val, undefined, cond)
   } else {
     throw new Error("Cannot convert JSON val to type: " + typing.prettyPrintType(schema))
+  }
+}
+
+// Wrap a concrete value into a self-managed yyjson_val (the inverse of convertJSONTo).
+// dstPtr is a `yyjson_val *` lvalue, e.g. "&arr[i]". We own the value; it is NOT backed
+// by a yyjson document. JSON-sourced values (already TAG.JSON) are copied in directly.
+// NOTE: uses the yyjson_set_* API (yyjson >= 0.6). If the bundled header lacks them,
+// replace each call with direct field writes, e.g.:
+//   dstPtr->tag = (YYJSON_TYPE_NUM | YYJSON_SUBTYPE_UINT); dstPtr->uni.u64 = num;
+let wrapJSON = (buf, dstPtr, val) => {
+  let schema = val.schema
+  if (val.tag == TAG.JSON) {
+    // already a yyjson value (json-sourced): copy the struct in
+    c.stmt(buf)(c.assign("*" + dstPtr, "*" + val.val))
+  } else if (typing.isString(schema)) {
+    c.stmt(buf)(c.call("yyjson_set_strn", dstPtr, val.val.str, val.val.len))
+  } else if (typing.isNumber(schema) || (schema && (schema.typeSym == typeSyms.date || schema.typeSym == typeSyms.char))) {
+    // dates are stored as signed integers; chars as their (unsigned) byte value
+    let ts = schema.typeSym
+    let setF = "yyjson_set_real"
+    if (ts == typeSyms.u8 || ts == typeSyms.u16 || ts == typeSyms.u32 || ts == typeSyms.u64 || ts == typeSyms.char)
+      setF = "yyjson_set_uint"
+    else if (ts == typeSyms.i8 || ts == typeSyms.i16 || ts == typeSyms.i32 || ts == typeSyms.i64 || ts == typeSyms.date)
+      setF = "yyjson_set_sint"
+    c.stmt(buf)(c.call(setF, dstPtr, val.val))
+  } else {
+    throw new Error("Cannot wrap value into yyjson_val: " + typing.prettyPrintType(schema))
   }
 }
 
@@ -170,6 +200,7 @@ let getNDJSONLoopTxt = (f, ndjson, data) => () => {
 
 let json = {
   convertJSONTo,
+  wrapJSON,
   emitLoadJSON,
   emitLoadNDJSON,
   getJSONObjLoopTxt,

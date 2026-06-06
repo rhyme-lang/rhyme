@@ -23,7 +23,8 @@ const TAG = {
   JSON: "json",
   NDJSON: "ndjson",
   COMBINED_KEY: "combined_key",
-  NESTED_HASHMAP: "nested_hashap"
+  NESTED_HASHMAP: "nested_hashap",
+  NESTED_ARRAY: "nested_array"
 }
 
 let value = {}

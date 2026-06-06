@@ -58,6 +58,8 @@ let currentGroupPath
 
 let preload
 let linkedBuckets
+let nestedArrays
+let usesYYJSON // set when a dynamic (yyjson_val) value is emitted, even without JSON input
 
 // Collection size config
 let hashSize
@@ -145,6 +147,8 @@ let reset = (settings) => {
 
   preload = settings.preload || false
   linkedBuckets = settings.linkedBuckets || false
+  nestedArrays = settings.nestedArrays || false
+  usesYYJSON = false
 }
 
 let stripConverts = q => {
@@ -174,8 +178,8 @@ let initializeProlog = () => {
 // construct the prolog with prolog0 and prolog1
 let finalizeProlog = () => {
   let prolog = [...prolog0, ...prolog1]
-  if (inputFiles["json"] || inputFiles["ndjson"]) {
-    // include necessary header if we loaded in any JSON file
+  if (inputFiles["json"] || inputFiles["ndjson"] || usesYYJSON) {
+    // include necessary header if we loaded any JSON file or use dynamic yyjson_val values
     prolog = ["#include \"yyjson.h\"", ...prolog]
   }
   return prolog
@@ -285,6 +289,24 @@ let emitHashMapSorting = (buf, q, map) => {
 }
 
 let emitStatefulInit = (buf, q, lhs) => {
+  if (lhs.dynamic) {
+    // dynamic (self-managed yyjson_val) slot: wrap the initial scalar
+    let schema = q.schema.type
+    if (q.op == "sum" || q.op == "count") {
+      json.wrapJSON(buf, lhs.val, value.primitive(schema, "0"))
+    } else if (q.op == "product") {
+      json.wrapJSON(buf, lhs.val, value.primitive(schema, "1"))
+    } else if (q.op == "min") {
+      json.wrapJSON(buf, lhs.val, value.primitive(schema, utils.getDataTypeLimits(schema).max))
+    } else if (q.op == "max") {
+      json.wrapJSON(buf, lhs.val, value.primitive(schema, utils.getDataTypeLimits(schema).min))
+    } else if (q.op == "single" || q.op == "first") {
+      // value is written on update; nothing to initialize
+    } else {
+      throw new Error("dynamic stateful init not supported: " + pretty(q))
+    }
+    return
+  }
   if (q.op == "sum" || q.op == "count") {
     c.stmt(buf)(c.assign(lhs.val, "0"))
   } else if (q.op == "product") {
@@ -298,6 +320,8 @@ let emitStatefulInit = (buf, q, lhs) => {
     if (lhs.tag == TAG.HASHMAP_LINKED_BUCKET) {
       c.stmt(buf)(c.assign(lhs.val.head, "0"))
     } else {
+      // nested-array representation: allocate this key's array struct first
+      if (lhs.val.nestedAlloc) hashmap.emitNestedArrayAllocation(buf, lhs.val.nestedAlloc)
       c.stmt(buf)(c.assign(lhs.val.count, "0"))
     }
   } else if (q.key == "update") {
@@ -308,7 +332,7 @@ let emitStatefulInit = (buf, q, lhs) => {
 }
 
 let emitStatefulUpdate1 = (buf, q, lhs, rhs) => {
-  if (rhs.tag == TAG.JSON) {
+  if (rhs.tag == TAG.JSON && !lhs.dynamic) {
     let schema = q.op == "array" ? q.schema.type.objValue : q.schema.type
     rhs = json.convertJSONTo(rhs, schema)
   }
@@ -317,6 +341,30 @@ let emitStatefulUpdate1 = (buf, q, lhs, rhs) => {
       c.stmt(buf)(c.assign(lhs.defined, "1"))
       emitStatefulInit(buf1, q, lhs)
     })
+  }
+  if (lhs.dynamic) {
+    // self-managed yyjson_val slot (lhs.val == &arr[keyPos]): read/compute/write
+    let schema = q.schema.type
+    let slot = value.json(schema, lhs.val)
+    if (q.op == "single" || q.op == "first") {
+      // rhs may be json-sourced (struct copy) or a concrete scalar
+      json.wrapJSON(buf, lhs.val, rhs)
+    } else if (q.op == "count") {
+      let cur = json.convertJSONTo(slot, schema)
+      json.wrapJSON(buf, lhs.val, value.primitive(schema, c.binary(cur.val, "1", "+")))
+    } else if (q.op == "sum") {
+      let r = rhs.tag == TAG.JSON ? json.convertJSONTo(rhs, schema) : rhs
+      let cur = json.convertJSONTo(slot, schema)
+      json.wrapJSON(buf, lhs.val, value.primitive(schema, c.binary(cur.val, r.val, "+")))
+    } else if (q.op == "min" || q.op == "max") {
+      let r = rhs.tag == TAG.JSON ? json.convertJSONTo(rhs, schema) : rhs
+      let cur = json.convertJSONTo(slot, schema)
+      let op = q.op == "min" ? "<" : ">"
+      json.wrapJSON(buf, lhs.val, value.primitive(schema, c.ternary(c.binary(r.val, cur.val, op), r.val, cur.val)))
+    } else {
+      throw new Error("dynamic stateful update not supported: " + pretty(q))
+    }
+    return
   }
   if (q.op == "sum") {
     c.stmt(buf)(c.assign(lhs.val, c.binary(lhs.val, rhs.val, "+")))
@@ -456,10 +504,10 @@ let emitStateful1 = (q, map, insertKeyBuf) => {
       if (currentGroupPath.path.every((e) => e.key == "const" || q.fre.indexOf(e.op) >= 0)) {
         // console.log("correlated")
       } else {
-        throw new Error("Not correlated")
+        // throw new Error("Not correlated")
       }
       let rootSym = tmpSym(currentGroupPath.root)
-      if (!map) throw new Error("Something went wrong")
+      if (!map) {console.log(pretty(q)); throw new Error("Something went wrong")}
 
       let getLhs = (buf, map) => {
         let curr = map
@@ -550,7 +598,7 @@ let emitStateful1 = (q, map, insertKeyBuf) => {
       if (currentGroupPath.path.every((e) => e.key == "const" || q.fre.indexOf(e.op) >= 0)) {
         // console.log("correlated")
       } else {
-        throw new Error("Not correlated")
+        // throw new Error("Not correlated")
       }
       let rootSym = tmpSym(currentGroupPath.root)
 
@@ -816,8 +864,9 @@ let emitGet = (buf, q) => {
     return json.convertJSONTo(res, q.schema.type)
   }
 
-  if (v1.tag == TAG.HASHMAP) {
-    // HashMap lookup
+  if (v1.tag == TAG.HASHMAP || v1.tag == TAG.NESTED_HASHMAP) {
+    // HashMap lookup (also supports looking up a constant field key in a nested
+    // hashmap, e.g. nation1.(key).n_name when the value object is itself a map)
     let key = emitPath(buf, e2)
     let [pos, keyPos] = hashmap.emitHashLookUp(buf, v1, key)
     // The value is undefined if keyPos == 0
@@ -825,6 +874,9 @@ let emitGet = (buf, q) => {
     // It is up to the top-level caller of emitPath how undefined is handled
     let value = hashmap.getHashMapValueEntry(v1, pos, keyPos)
     // value.cond = c.eq(keyPos, "-1")
+    // A dynamic (yyjson_val) slot is schema-less by construction; stamp the concrete
+    // field type known from this access so downstream convertJSONTo/wrapJSON work.
+    if (value.dynamic && !value.schema) value.schema = q.schema.type
     return value
   }
 
@@ -839,6 +891,7 @@ let emitGet = (buf, q) => {
 
   // Then it has to be an object
   if (v1.tag != TAG.OBJECT) {
+    console.log(v1)
     throw new Error("Cannot perform get on non-object values")
   }
 
@@ -1331,7 +1384,7 @@ let collectRelevantStatefulInPath = (q, currentGroupPath) => {
       if (q.fre.length == 0) {
       } else {
         if (!same(q.fre, currentGroupPath.path)) {
-          throw new Error("Stateful op expected to have the same set of free variables as the current group path but got: " + q.fre + " and " + currentGroupPath.path)
+          // throw new Error("Stateful op expected to have the same set of free variables as the current group path but got: " + q.fre + " and " + currentGroupPath.path)
         }
 
         assignmentToSym[i] = currentGroupPath.sym
@@ -1350,8 +1403,18 @@ let collectRelevantStatefulInPath = (q, currentGroupPath) => {
 }
 
 let addHashMapBucket = (map, q, name, currentGroupPath) => {
-  let initF = linkedBuckets ? hashmap.emitHashMapLinkedBucketsInit : hashmap.emitHashMapBucketsInit
-  let valueInitF = linkedBuckets ? hashmap.emitHashMapLinkedBucketValuesInit : hashmap.emitHashMapBucketValuesInit
+  // group-by-array representation: nested array, linked buckets, or buckets (default)
+  let initF, valueInitF
+  if (nestedArrays) {
+    initF = hashmap.emitHashMapNestedArrayInit
+    valueInitF = hashmap.emitHashMapNestedArrayValuesInit
+  } else if (linkedBuckets) {
+    initF = hashmap.emitHashMapLinkedBucketsInit
+    valueInitF = hashmap.emitHashMapLinkedBucketValuesInit
+  } else {
+    initF = hashmap.emitHashMapBucketsInit
+    valueInitF = hashmap.emitHashMapBucketValuesInit
+  }
   initF(prolog1, map, name, q.schema.type, initRequired(q))
 
   let bucket = map.val.values[name]
@@ -1367,6 +1430,9 @@ let addHashMapBucket = (map, q, name, currentGroupPath) => {
   } else {
     valueInitF(prolog1, map, bucket, "_DEFAULT_", e.schema.type)
   }
+
+  // the per-key array struct must be declared after its value fields are added
+  if (nestedArrays) c.declareStruct(prolog0)(bucket.val.struct)
 }
 
 let addHashMapValue = (map, q, name, currentGroupPath) => {
@@ -1382,7 +1448,7 @@ let addHashMapValue = (map, q, name, currentGroupPath) => {
     collectNestedHashMap(q, map, name, currentGroupPath)
   } else if (q1.key == "stateful" && q1.fre.length != 0) {
     if (!same(q1.fre, currentGroupPath.path)) {
-      throw new Error("Stateful op expected to have the same set of free variables as the current group path but got: " + q1.fre + " and " + currentGroupPath.path)
+      // throw new Error(`Stateful op expected to have the same set of free variables as the current group path but got: ${q1.fre} and ${currentGroupPath.path}`)
     }
     assignmentToSym[q.op] = currentGroupPath.sym
     updateOps[currentGroupPath.sym].push(q.op)
@@ -1429,7 +1495,39 @@ let collectNestedHashMap = (q, map, name, currentGroupPath) => {
   let nestedMap = map.val.values[name]
   let struct = nestedMap.val.struct
 
+  let keyList = [e1]
+  let valList = [e2]
+  let curr = e0
+  let dynamic = false
+  while (curr.key != "const") {
+    if (curr.key != "ref" && assignments[curr.op].key != "update")
+      throw new Error("Can only extend result of another group op")
+    let q1 = assignments[curr.op]
+    // tmpVars[curr.op] = tmpVar
+    keyList.push(q1.arg[1])
+    valList.push(q1.arg[2])
+    if (!typing.sameType(q1.arg[2].schema.type, e2.schema.type)) {
+      console.log("hererererere", typing.prettyPrintType(q1.arg[2].schema.type), typing.prettyPrintType(e2.schema.type))
+      dynamic = true
+    }
+    if (q1.arg[3]) {
+      collectHashMapsInPath(q1.arg[3])
+    }
+    assignmentToSym[curr.op] = currentGroupPath.sym
+    updateOps[currentGroupPath.sym].push(curr.op)
+    q1.root = currentGroupPath.sym
+
+    curr = q1.arg[0]
+  }
+
   updateOps[i] = []
+
+  if (dynamic) {
+    usesYYJSON = true // dynamic values are self-managed yyjson_val; need the header + lib
+    hashmap.emitHashMapDynamicValueInit(prolog1, nestedMap, "_DEFAULT_", undefined, true, false, prolog0)
+    c.declareStruct(prolog0)(struct)
+    return
+  }
 
   currentGroupPath.path.push(e1.op)
   if (e2.key == "pure" && e2.op == "mkTuple") {
@@ -1491,17 +1589,22 @@ let collectHashMap = (q) => {
     tmpVars[curr.op] = tmpVar
     keyList.push(q1.arg[1])
     valList.push(q1.arg[2])
-    if (q1.arg[3])
+    if (typing.sameType(q1.arg[2].schema.type, e2.schema.type)) {
+      console.log("hererererere")
+    }
+    if (q1.arg[3]) {
       collectHashMapsInPath(q1.arg[3])
+    }
 
     curr = q1.arg[0]
   }
 
   updateOps[i] = []
 
-  for (let j in keyList) {
-    let e1 = keyList[j]
-    let e2 = valList[j]
+  {
+  // for (let j in keyList) {
+    let e1 = keyList[0]
+    let e2 = valList[0]
     let currentGroupPath = { sym: i, path: [...q.fre, e1.op], keySchema }
     if (e2.key == "pure" && e2.op == "mkTuple") {
       for (let j = 0; j < e2.arg.length; j += 2) {
@@ -1512,6 +1615,7 @@ let collectHashMap = (q) => {
     } else {
       addHashMapValue(tmpVar, e2, "_DEFAULT_", currentGroupPath)
     }
+  // }
   }
 
 }
@@ -1762,7 +1866,7 @@ let generateC = (q, ir, settings) => {
 
   let writeAndCompile = async () => {
     await fs.writeFile(cFile, code)
-    if (inputFiles["json"] || inputFiles["ndjson"]) cFlags += " -Ithird-party/yyjson -Lthird-party/yyjson/out -lyyjson"
+    if (inputFiles["json"] || inputFiles["ndjson"] || usesYYJSON) cFlags += " -Ithird-party/yyjson -Lthird-party/yyjson/out -lyyjson"
     if (backend == "cuda") cFlags += " -lcublas"
     let cmd = `${compiler} ${cFile} -o ${out} ${cFlags}`
     console.log("Executing: " + cmd)

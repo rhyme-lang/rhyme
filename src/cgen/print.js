@@ -40,6 +40,36 @@ let emitObjectPrint = (buf, obj, settings) => {
   }
 }
 
+// Print a hashmap entry's key as JSON. A single key keeps its natural quoting
+// (e.g. "N" or 42). A composite (group-by-multiple) key is collapsed into one
+// '|'-separated JSON string (e.g. "N|O") so the surrounding object stays valid
+// JSON -- emitting each component with its own quotes would yield {"N""O": ...}.
+let emitKeyPrintJSON = (buf, keys, indexing, settings) => {
+  let ks = Object.keys(keys)
+  let multi = ks.length > 1
+  if (multi) c.printf(buf)(`\\"`)
+  for (let j = 0; j < ks.length; j++) {
+    if (multi && j > 0) c.printf(buf)("|")
+    let key = JSON.parse(JSON.stringify(keys[ks[j]]))
+    if (key.tag == TAG.JSON) {
+      key.val += indexing
+      emitValPrint(buf, key, settings)
+    } else if (typing.isString(key.schema)) {
+      key.val.str += indexing
+      key.val.len += indexing
+      // raw (unquoted) when part of a composite, otherwise its own quoted string
+      if (multi) c.printf(buf)(`%.*s`, key.val.len, key.val.str)
+      else emitStringPrint(buf, key, settings)
+    } else {
+      key.val += indexing
+      // raw when part of a composite, otherwise add quotes around the scalar key
+      if (multi) c.printf(buf)(`%${utils.getFormatSpecifier(key.schema)}`, key.val)
+      else c.printf(buf)(`\\"%${utils.getFormatSpecifier(key.schema)}\\"`, key.val)
+    }
+  }
+  if (multi) c.printf(buf)(`\\"`)
+}
+
 // Emit code that prints the keys and values in a hashmap.
 let emitHashMapPrintJSON = (buf, map, settings) => {
   let sym = tmpSym(map.val.sym)
@@ -59,21 +89,7 @@ let emitHashMapPrintJSON = (buf, map, settings) => {
   let loopVar = map.val.sorted ? "i" : "key_pos"
 
   buf.push(`// print key`)
-  for (let i in map.val.keys) {
-    let key = JSON.parse(JSON.stringify(map.val.keys[i]))
-    if (key.tag == TAG.JSON) {
-      key.val += "[key_pos]"
-      emitValPrint(buf, key, settings)
-    } else if (typing.isString(key.schema)) {
-      key.val.str += "[key_pos]"
-      key.val.len += "[key_pos]"
-      emitStringPrint(buf, key, settings)
-    } else {
-      key.val += "[key_pos]"
-      // Add quotes around non-string keys
-      c.printf(buf)(`\\"%${utils.getFormatSpecifier(key.schema)}\\"`, key.val)
-    }
-  }
+  emitKeyPrintJSON(buf, map.val.keys, "[key_pos]", settings)
 
   c.printf(buf)(":")
 
@@ -135,22 +151,7 @@ let emitNestedHashMapPrint = (buf, map, settings) => {
   buf.push(`for (int ${loopVar} = 1; ${loopVar} <= ${limit}; ${loopVar}++) {`)
 
   buf.push(`// print key`)
-  let indexing = `[${loopVar}]`
-  for (let i in map.val.keys) {
-    let key = JSON.parse(JSON.stringify(map.val.keys[i]))
-    if (key.tag == TAG.JSON) {
-      key.val += indexing
-      emitValPrint(buf, key, settings)
-    } else if (typing.isString(key.schema)) {
-      key.val.str += indexing
-      key.val.len += indexing
-      emitStringPrint(buf, key, settings)
-    } else {
-      key.val += indexing
-      // Add quotes around non-string keys
-      c.printf(buf)(`\\"%${utils.getFormatSpecifier(key.schema)}\\"`, key.val)
-    }
-  }
+  emitKeyPrintJSON(buf, map.val.keys, `[${loopVar}]`, settings)
 
   c.printf(buf)(":")
 

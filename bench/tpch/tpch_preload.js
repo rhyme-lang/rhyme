@@ -470,6 +470,48 @@ async function q8() {
   await compile(query, { ...settings, outFile: "q8", arraySize: 60000000 })
 }
 
+async function q8_nested_arrays() {
+  let region1 = rh`single ${region}.*r1.r_regionkey | group ${region}.*r1.r_name == "AMERICA" & ${region}.*r1.r_regionkey`
+  let nation1 = rh`single ${nation}.*n1.n_nationkey | group ${region1}.(${nation}.*n1.n_regionkey) & ${nation}.*n1.n_nationkey`
+
+  let part1 = rh`single ${part}.*p1.p_partkey | group ${part}.*p1.p_type == "ECONOMY ANODIZED STEEL" & ${part}.*p1.p_partkey`
+
+  let lineitem1 = rh`[{
+    l_suppkey: ${lineitem}.*l1.l_suppkey,
+    l_extendedprice: ${lineitem}.*l1.l_extendedprice,
+    l_discount: ${lineitem}.*l1.l_discount
+  }] | group ${part1}.(${lineitem}.*l1.l_partkey) & ${lineitem}.*l1.l_orderkey`
+
+  let orders1 = rh`[{
+    l_suppkey: ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.l_suppkey,
+    l_extendedprice: ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.l_extendedprice,
+    l_discount: ${lineitem1}.(${orders}.*o1.o_orderkey).*l2.l_discount,
+    o_orderdate: ${orders}.*o1.o_orderdate
+  }] | group ${lineitem1}.(${orders}.*o1.o_orderkey) && ${orders}.*o1.o_orderdate >= 19950101 && ${orders}.*o1.o_orderdate <= 19961231 & ${orders}.*o1.o_custkey`
+
+  let customer1 = rh`[{
+    l_extendedprice: ${orders1}.(${customer}.*c1.c_custkey).*o2.l_extendedprice,
+    l_discount: ${orders1}.(${customer}.*c1.c_custkey).*o2.l_discount,
+    o_orderdate: ${orders1}.(${customer}.*c1.c_custkey).*o2.o_orderdate
+  }] | group ${orders1}.(${customer}.*c1.c_custkey) && ${nation1}.(${customer}.*c1.c_nationkey) & ${orders1}.(${customer}.*c1.c_custkey).*o2.l_suppkey`
+
+  let nation2 = rh`single ${nation}.*n2.n_name | group ${nation}.*n2.n_nationkey`
+
+  let sumTotal = rh`sum (${customer1}.(${supplier}.*s1.s_suppkey).*c2.l_extendedprice * (1 - ${customer1}.(${supplier}.*s1.s_suppkey).*c2.l_discount))`
+
+  let cond = rh`${nation2}.(${supplier}.*s1.s_nationkey) == "BRAZIL"`
+  let sumBrazil = rh`sum (${cond} & ${customer1}.(${supplier}.*s1.s_suppkey).*c2.l_extendedprice * (1 - ${customer1}.(${supplier}.*s1.s_suppkey).*c2.l_discount))`
+
+  let supplier1 = rh`{
+    year: (year ${customer1}.(${supplier}.*s1.s_suppkey).*c2.o_orderdate),
+    mkt_share: (${sumBrazil} / ${sumTotal})
+  } | group ${customer1}.(${supplier}.*s1.s_suppkey) & (year ${customer1}.(${supplier}.*s1.s_suppkey).*c2.o_orderdate)`
+
+  let query = rh`sort ${supplier1} "year" 0`
+
+  await compile(query, { ...settings, linkedBuckets: false, nestedArrays: true, outFile: "q8_abl", arraySize: 60000000 })
+}
+
 async function q9() {
   let nation1 = rh`single ${nation}.*n1.n_name | group ${nation}.*n1.n_nationkey`
 
@@ -841,7 +883,7 @@ async function q17_cedar() {
   ] | group (${part}.*p1.p_brand == "Brand#23" && ${part}.*p1.p_container == "MED BOX") & ${part}.*p1.p_partkey`
 
   let avgMap = rh`0.2 * sum(${lineitem}.*l1.l_quantity) / count(${lineitem}.*l1.l_quantity) | group ${part1}.(${lineitem}.*l1.l_partkey) & ${lineitem}.*l1.l_partkey`
-  
+
   let cond = rh`${part1}.(${lineitem}.*l2.l_partkey) && ${lineitem}.*l2.l_quantity < ${avgMap}.(${lineitem}.*l2.l_partkey)`
   let query = rh`(sum (${cond} & ${lineitem}.*l2.l_extendedprice)) / 7.0`
 
@@ -1182,26 +1224,26 @@ if (queryNum) {
     console.log(`Compiling query ${num}...`)
     switch (num) {
       case 1: q1(); break
-      case 2: {q2(); q2_cedar(); break}
+      case 2: { q2(); q2_cedar(); break }
       case 3: q3(); break
       case 4: q4(); break
       case 5: q5(); break
       case 6: q6(); break
-      case 7: {q7(); q7_cedar(); break}
-      case 8: q8(); break
-      case 9: {q9(); q9_cedar(); break}
+      case 7: { q7(); q7_cedar(); break }
+      case 8: { q8(); q8_nested_arrays(); break }
+      case 9: { q9(); q9_cedar(); break }
       case 10: q10(); break
       case 11: q11(); break
-      case 12: {q12(); q12_cedar(); break}
+      case 12: { q12(); q12_cedar(); break }
       case 13: q13(); break
       case 14: q14(); break
       case 15: q15(); break
-      case 16: {q16(); q16_cedar(); break}
-      case 17: {q17(); q17_cedar(); break}
-      case 18: {q18(); q18_cedar(); break}
-      case 19: {q19(); q19_cedar(); break}
+      case 16: { q16(); q16_cedar(); break }
+      case 17: { q17(); q17_cedar(); break }
+      case 18: { q18(); q18_cedar(); break }
+      case 19: { q19(); q19_cedar(); break }
       case 20: q20(); break
-      case 21: {q21(); q21_cedar(); break}
+      case 21: { q21(); q21_cedar(); break }
       case 22: q22(); break
     }
   } else {
@@ -1220,6 +1262,7 @@ if (queryNum) {
   q7()
   q7_cedar()
   q8()
+  q8_nested_arrays()
   q9()
   q9_cedar()
   q10()

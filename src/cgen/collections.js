@@ -12,6 +12,7 @@ let hashSize
 let nestedHashSize
 
 let bucketSize
+let nestedArraySize
 let dataSize
 
 let linkedBucketsSize
@@ -26,6 +27,7 @@ let reset = (settings) => {
   hashSize = settings.hashSize || 256
   nestedHashSize = settings.nestedHashSize || 256
   bucketSize = settings.bucketSize || 64
+  nestedArraySize = settings.nestedArraySize || bucketSize
   linkedBucketsSize = hashSize * 8
   arraySize = settings.arraySize || 2048
 
@@ -64,6 +66,19 @@ let allocateYYJSONBuffer = (buf, name, size, global, prolog0) => {
     c.stmt(buf)(c.assign(name, c.cast("yyjson_val **", c.malloc("yyjson_val *", size$))))
   } else {
     c.declarePtrPtr(buf)("yyjson_val", name, c.cast("yyjson_val **", c.malloc("yyjson_val *", size$)))
+  }
+}
+
+// Allocate an array of self-managed yyjson_val *structs* (by value), not pointers.
+// Each slot is a yyjson_val we own and set fields on (see json.wrapJSON); used as the
+// dynamic/tagged value column when a chained-update value is heterogeneously typed.
+let allocateYYJSONValBuffer = (buf, name, size, global, prolog0) => {
+  let size$ = size || arraySize
+  if (global) {
+    c.declarePtr(prolog0)("yyjson_val", name)
+    c.stmt(buf)(c.assign(name, c.cast("yyjson_val *", c.malloc("yyjson_val", size$))))
+  } else {
+    c.declarePtr(buf)("yyjson_val", name, c.cast("yyjson_val *", c.malloc("yyjson_val", size$)))
   }
 }
 
@@ -191,6 +206,85 @@ let emitHashMapBucketValuesInit = (buf, map, bucket, name, schema) => {
   bucket.val.values[name] = res
 }
 
+// group-by-array with a per-key, lazily-allocated array struct.
+// Modeled on the nested-hashmap representation (struct ** indexed by key slot),
+// but the per-key struct holds a flat array { int count; <value buffers> } instead
+// of a hashmap. Insertion/iteration/printing reuse the regular ARRAY path because
+// getValueAtIdx below derefs ptr[keyPos] into a TAG.ARRAY value.
+let emitHashMapNestedArrayInit = (buf, map, name, schema, defined) => {
+  let sym = tmpSym(map.val.sym)
+  let res = { schema }
+
+  let arrSym = `${sym}_${name}_arr` // struct name
+  let ptr = `${sym}_${name}`        // struct ** symbol (one slot per outer key)
+  let count = "count$"              // count field inside the per-key struct
+
+  let struct = c.struct(arrSym)
+  struct.addField("int", count)
+
+  if (map.tag == TAG.NESTED_HASHMAP) {
+    map.val.struct.addField(`struct ${arrSym} **`, ptr)
+  } else {
+    c.declarePtrPtr(buf)(`struct ${arrSym}`, ptr,
+      c.cast(`struct ${arrSym} **`, c.malloc(`struct ${arrSym} *`, hashSize)))
+  }
+
+  res.val = { ptr, struct, count, capacity: nestedArraySize }
+  res.tag = TAG.NESTED_ARRAY
+
+  if (!defined) {
+    if (map.tag == TAG.NESTED_HASHMAP) {
+      map.val.struct.addField("uint8_t *", `${sym}_${name}_defined`)
+    } else
+      c.declarePtr(buf)("uint8_t", `${sym}_${name}_defined`, c.cast(`uint8_t *`, c.calloc("uint8_t", hashSize)))
+    res.defined = `${sym}_${name}_defined`
+  }
+
+  map.val.values ??= {}
+  map.val.values[name] = res
+}
+
+// Add a value column as a field of the per-key array struct
+let emitHashMapNestedArrayValuesInit = (buf, map, bucket, name, schema) => {
+  let struct = bucket.val.struct
+  let res = { schema }
+
+  if (typing.isUnknown(schema)) {
+    struct.addField("yyjson_val **", `${name}$`)
+    res.val = `${name}$`
+    res.tag = TAG.JSON
+  } else if (typing.isObject(schema)) {
+    throw new Error("Nested object inside nested array not supported")
+  } else if (typing.isString(schema)) {
+    struct.addField("const char **", `${name}_str$`)
+    struct.addField("int *", `${name}_len$`)
+    res.val = { str: `${name}_str$`, len: `${name}_len$` }
+  } else {
+    let cType = utils.convertToCType(schema)
+    struct.addField(`${cType} *`, `${name}$`)
+    res.val = `${name}$`
+  }
+
+  bucket.val.values ??= {}
+  bucket.val.values[name] = res
+}
+
+// Lazily allocate the per-key array struct + its value buffers.
+// Called from emitStatefulInit when a new outer key is created.
+let emitNestedArrayAllocation = (buf, alloc) => {
+  let assign = (...args) => c.stmt(buf)(c.assign(...args))
+  assign(alloc.ptr, c.cast(`struct ${alloc.struct} *`, c.malloc(`struct ${alloc.struct}`, 1)))
+  for (let i in alloc.fields) {
+    let f = alloc.fields[i]
+    if (f.str) {
+      assign(f.str, c.cast("const char **", c.malloc("const char *", alloc.capacity)))
+      assign(f.len, c.cast("int *", c.malloc("int", alloc.capacity)))
+    } else {
+      assign(f.val, c.cast(`${f.cType} *`, c.malloc(f.cType, alloc.capacity)))
+    }
+  }
+}
+
 let emitHashMapValueInit = (buf, map, name, schema, defined, sorted, prolog0) => {
   if (name == "_DEFAULT_" && map.val.values?.[name]) return
 
@@ -216,6 +310,41 @@ let emitHashMapValueInit = (buf, map, name, schema, defined, sorted, prolog0) =>
       allocatePrimitiveBuffer(buf, cType, `${sym}_${name}`, size, sorted, prolog0)
     res.val = `${sym}_${name}`
   }
+
+  if (!defined) {
+    if (map.tag == TAG.NESTED_HASHMAP) {
+      map.val.struct.addField("uint8_t *", `${sym}_${name}_defined`)
+    } else
+      c.declarePtr(buf)("uint8_t", `${sym}_${name}_defined`, c.cast(`uint8_t *`, c.calloc("uint8_t", size)))
+    res.defined = `${sym}_${name}_defined`
+  }
+
+  map.val.values ??= {}
+  map.val.values[name] = res
+}
+
+// Create a dynamic (self-managed) value column: one yyjson_val per key slot, used when a
+// chained-update value is heterogeneously typed (mkTuple disabled). The slot is read with
+// json.convertJSONTo and written with json.wrapJSON on the address of the slot.
+// NOTE: the array holds yyjson_val *by value*, so accessing slot keyPos must take its
+// address (&arr[keyPos]); the consumer (getValueAtIdx) should emit `&` for res.dynamic values.
+let emitHashMapDynamicValueInit = (buf, map, name, schema, defined, sorted, prolog0) => {
+  if (name == "_DEFAULT_" && map.val.values?.[name]) return
+
+  let sym = tmpSym(map.val.sym)
+  let size = hashSize
+
+  c.comment(buf)(`dynamic value of ${sym}: ${name}`)
+  let res = { schema }
+
+  if (map.tag == TAG.NESTED_HASHMAP) {
+    map.val.struct.addField("yyjson_val *", `${sym}_${name}`)
+  } else {
+    allocateYYJSONValBuffer(buf, `${sym}_${name}`, size, sorted, prolog0)
+  }
+  res.val = `${sym}_${name}`
+  res.tag = TAG.JSON
+  res.dynamic = true
 
   if (!defined) {
     if (map.tag == TAG.NESTED_HASHMAP) {
@@ -309,6 +438,9 @@ let emitNestedHashMapAllocation = (buf, map) => {
       // throw new Error("Not implemented yet")
     } else if (value.tag == TAG.HASHMAP_BUCKET) {
       throw new Error("Not implemented yet")
+    } else if (value.dynamic) {
+      // self-managed yyjson_val array (by value)
+      assign(value.val, c.cast("yyjson_val *", c.malloc("yyjson_val", nestedHashSize)))
     } else if (typing.isString(value.schema)) {
       assign(value.val.str, c.cast("const char **", c.malloc("const char *", nestedHashSize)))
       assign(value.val.len, c.cast("int *", c.malloc("int", nestedHashSize)))
@@ -393,6 +525,7 @@ let emitHashMapInsert = (buf, map, key, pos, keyPos, lhs, init) => {
     let schema = key.schema
 
     if (key.tag == TAG.JSON) {
+      console.log(key)
       key = json.convertJSONTo(key, schema)
     }
 
@@ -550,6 +683,9 @@ let getNestedHashmapAtIdx = (map, idx) => {
       value.val.ptr = ptr + "->" + value.val.ptr
     } else if (value.tag == TAG.HASHMAP_BUCKET) {
       throw new Error("Not implemented yet")
+    } else if (value.dynamic) {
+      // self-managed yyjson_val* field of the nested struct
+      value.val = ptr + "->" + value.val
     } else if (typing.isString(value.schema)) {
       value.val.str = ptr + "->" + value.val.str
       value.val.len = ptr + "->" + value.val.len
@@ -591,6 +727,35 @@ let getValueAtIdx = (val, idx) => {
       }
       res.val[name].val.capacity = bucketSize
       res.val[name].tag = TAG.ARRAY
+    } else if (value.tag == TAG.NESTED_ARRAY) {
+      // deref the per-key array struct: ptr[idx] -> { count$; <fields> }
+      let ptrAt = value.val.ptr + indexing
+      res.val[name].val.count = ptrAt + "->" + value.val.count
+      let allocFields = []
+      for (let n in res.val[name].val.values) {
+        let v = res.val[name].val.values[n]
+        if (typing.isString(v.schema)) {
+          v.val.str = ptrAt + "->" + v.val.str
+          v.val.len = ptrAt + "->" + v.val.len
+          allocFields.push({ str: v.val.str, len: v.val.len })
+        } else {
+          v.val = ptrAt + "->" + v.val
+          allocFields.push({ val: v.val, cType: utils.convertToCType(v.schema) })
+        }
+      }
+      res.val[name].val.capacity = value.val.capacity
+      // metadata for the lazy per-key allocation done at key-insert time
+      res.val[name].val.nestedAlloc = {
+        ptr: ptrAt,
+        struct: value.val.struct.name,
+        fields: allocFields,
+        capacity: value.val.capacity
+      }
+      res.val[name].tag = TAG.ARRAY
+    } else if (value.dynamic) {
+      // self-managed yyjson_val array (by value): hand out the address of the slot
+      // so convertJSONTo (read) / json.wrapJSON (write) operate on &arr[idx]
+      res.val[name].val = "&" + value.val + indexing
     } else if (typing.isString(value.schema)) {
       res.val[name].val.str += indexing
       res.val[name].val.len += indexing
@@ -846,6 +1011,7 @@ let hashmap = {
   reset,
   emitHashMapInit,
   emitHashMapValueInit,
+  emitHashMapDynamicValueInit,
   emitHashMapBucketsInit,
   emitHashMapInsert,
   emitHashLookUpOrUpdate,
@@ -862,6 +1028,9 @@ let hashmap = {
   emitHashMapLinkedBucketsInit,
   emitHashMapLinkedBucketValuesInit,
   getHashMapLinkedBucketLoopTxt,
+  emitHashMapNestedArrayInit,
+  emitHashMapNestedArrayValuesInit,
+  emitNestedArrayAllocation,
 }
 
 // let hashmapC1 = {
