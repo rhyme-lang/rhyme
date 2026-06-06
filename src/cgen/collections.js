@@ -525,7 +525,6 @@ let emitHashMapInsert = (buf, map, key, pos, keyPos, lhs, init) => {
     let schema = key.schema
 
     if (key.tag == TAG.JSON) {
-      console.log(key)
       key = json.convertJSONTo(key, schema)
     }
 

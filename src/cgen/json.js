@@ -11,7 +11,6 @@ const { quoteVar } = utils
 // It will otherwise try to convert to the expected type
 // Returns the original value if no schema is provided
 let convertJSONTo = (json, schema) => {
-  console.log(json)
   if (typing.isObject(schema)) {
     return json
   } else if (typing.isString(schema)) {

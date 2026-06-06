@@ -6,7 +6,7 @@ const { runtime: rt } = require("../../src/simple-runtime")
 let outDir = "bench/out/rhyme-bench"
 
 let settings = {
-  backend: "c-new",
+  backend: "c",
   schema: types.never,
   outDir,
   enableOptimizations: false,
