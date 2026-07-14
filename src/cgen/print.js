@@ -272,10 +272,53 @@ let emitHashMapLinkedBucketPrint = (buf, bucket, settings) => {
   buf.push(`}`)
 }
 
+let emitGPUTensorPrint = (buf, val) => {
+  let { cuMem, rows, cols, batches, cType } = val.val
+  let hC = symbol.getSymbol("h_C")
+
+  if (batches) {
+    c.declarePtr(buf)(cType, hC, c.cast(cType + " *", c.malloc(cType, `${batches} * ${rows} * ${cols}`)))
+    c.stmt(buf)(c.call("cudaMemcpy", hC, cuMem, `${batches} * ${rows} * ${cols} * sizeof(${cType})`, "cudaMemcpyDeviceToHost"))
+    buf.push(`printf("{");`)
+    buf.push(`for (int b = 0; b < ${batches}; b++) {`)
+    buf.push(`  if (b > 0) printf(", ");`)
+    buf.push(`  printf("\\"%d\\": {", b);`)
+    buf.push(`  for (int i = 0; i < ${rows}; i++) {`)
+    buf.push(`    if (i > 0) printf(", ");`)
+    buf.push(`    printf("\\"%d\\": {", i);`)
+    buf.push(`    for (int j = 0; j < ${cols}; j++) {`)
+    buf.push(`      if (j > 0) printf(", ");`)
+    buf.push(`      printf("\\"%d\\": %.0f", j, ${hC}[b * ${rows} * ${cols} + i * ${cols} + j]);`)
+    buf.push(`    }`)
+    buf.push(`    printf("}");`)
+    buf.push(`  }`)
+    buf.push(`  printf("}");`)
+    buf.push(`}`)
+    buf.push(`printf("}");`)
+  } else {
+    c.declarePtr(buf)(cType, hC, c.cast(cType + " *", c.malloc(cType, `${rows} * ${cols}`)))
+    c.stmt(buf)(c.call("cudaMemcpy", hC, cuMem, `${rows} * ${cols} * sizeof(${cType})`, "cudaMemcpyDeviceToHost"))
+    buf.push(`printf("{");`)
+    buf.push(`for (int i = 0; i < ${rows}; i++) {`)
+    buf.push(`  if (i > 0) printf(", ");`)
+    buf.push(`  printf("\\"%d\\": {", i);`)
+    buf.push(`  for (int j = 0; j < ${cols}; j++) {`)
+    buf.push(`    if (j > 0) printf(", ");`)
+    buf.push(`    printf("\\"%d\\": %.0f", j, ${hC}[i * ${cols} + j]);`)
+    buf.push(`  }`)
+    buf.push(`  printf("}");`)
+    buf.push(`}`)
+    buf.push(`printf("}");`)
+  }
+}
+
 let emitValPrint = (buf, val, settings) => {
   if (settings.format != "json" && settings.format != "csv") throw new Error("Unknown print format: " + settings.format)
   let f = (buf1) => {
-    if (val.tag == TAG.HASHMAP) {
+    if (val.tag == TAG.GPU_TENSOR) {
+      c.comment(buf1)("print gpu tensor")
+      emitGPUTensorPrint(buf1, val)
+    } else if (val.tag == TAG.HASHMAP) {
       c.comment(buf1)("print hashmap")
       emitHashMapPrint(buf1, val, settings)
     } else if (val.tag == TAG.ARRAY) {

@@ -24,7 +24,8 @@ const TAG = {
   NDJSON: "ndjson",
   COMBINED_KEY: "combined_key",
   NESTED_HASHMAP: "nested_hashap",
-  NESTED_ARRAY: "nested_array"
+  NESTED_ARRAY: "nested_array",
+  GPU_TENSOR: "gpu"
 }
 
 let value = {}
@@ -55,6 +56,10 @@ value.array = (schema, sym, count, cond) => ({
 
 value.combinedKey = (schema, keys, cond, keyPos) => ({
   schema, val: { keys }, tag: TAG.COMBINED_KEY, cond, keyPos
+})
+
+value.gpuTensor = (schema, cuMem, rows, cols, batches, cType, cond) => ({
+  schema, val: { cuMem, rows, cols, batches, cType }, tag: TAG.GPU_TENSOR, cond
 })
 
 module.exports = {

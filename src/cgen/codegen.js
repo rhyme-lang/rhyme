@@ -162,6 +162,7 @@ let initializeProlog = () => {
   if (backend == "cuda") {
     prolog0.push("#include <cuda_runtime.h>")
     prolog0.push("#include <cublas_v2.h>")
+    prolog0.push("#include <cusparse_v2.h>")
   }
 
   prolog0.push(`#include "rhyme-c.h"`)
@@ -172,6 +173,8 @@ let initializeProlog = () => {
   if (backend == "cuda") {
     c.declareVar(prolog1)("cublasHandle_t", "handle")
     c.stmt(prolog1)(c.call("cublasCreate", "&handle"))
+    c.declareVar(prolog1)("cusparseHandle_t", "sparseHandle")
+    c.stmt(prolog1)(c.call("cusparseCreate", "&sparseHandle"))
   }
 }
 
@@ -1138,7 +1141,7 @@ let emitPure = (buf, q) => {
       let max = symbol.getSymbol("max")
       let iter = symbol.getSymbol("iter")
       let len = symbol.getSymbol("N")
-      c.declareSize(buf)(len, c.call("yyjson_arr_size", e1.val))
+      c.declareSize(buf)(len, c.call("yyjson_arr_size", e.val)) // used to be e1 -> should just be e
       c.declarePtr(buf)(cType, mem, c.cast(cType + " *", c.malloc(cType, len)))
       c.declareSize(buf)(idx)
       c.declareSize(buf)(max)
@@ -1169,12 +1172,412 @@ let emitPure = (buf, q) => {
 
     return value.primitive(types.f32, res)
   } else if (q.op == "matmul") {
-    console.log(pretty(q))
-    throw new Error("Not implemented yet")
+    // console.log(pretty(q))
+    // throw new Error("Not implemented yet")
+    // cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, n, m, k, &alpha, B, n, A, k, &beta, C, n)
+
+    let [A, B] = q.arg.map(e => emitPath(buf, e))
+    let alphaNode = q.arg[2] ? emitPath(buf, q.arg[2]) : null
+    let CNode = q.arg[3] ? emitPath(buf, q.arg[3]) : null
+    let betaNode = q.arg[4] ? emitPath(buf, q.arg[4]) : null
+    let cType = "float"
+    
+
+    // C = alpha * A@B + beta * C_in
+    let moveToDevice = (e) => {
+      if (e.tag == TAG.GPU_TENSOR) {
+        return { rows: e.val.rows, cols: e.val.cols, cuMem: e.val.cuMem }
+      }
+
+      if (typing.isSparse(e.schema)) {
+        let rows = symbol.getSymbol("rows")
+        let rowsField = symbol.getSymbol("rowsField")
+        let rowPtrArr = symbol.getSymbol("rowPtrArr")
+        let rowPtrLen = symbol.getSymbol("rowPtrLen")
+        let h_rowPtr = symbol.getSymbol("h_rowPtr")
+        let rp_idx = symbol.getSymbol("rp_idx")
+        let rp_max = symbol.getSymbol("rp_max")
+        let rp_iter = symbol.getSymbol("rp_iter")
+        
+        let cols = symbol.getSymbol("cols")
+        let colsField = symbol.getSymbol("colsField")
+        let colIdxArr = symbol.getSymbol("colIdxArr")
+        let colIdxLen = symbol.getSymbol("colIdxLen")
+        let h_colIdx = symbol.getSymbol("h_colIdx")
+        let ci_idx = symbol.getSymbol("ci_idx")
+        let ci_max = symbol.getSymbol("ci_max")
+        let ci_iter = symbol.getSymbol("ci_iter")
+
+        let valuesArr = symbol.getSymbol("valuesArr")
+        let valuesLen = symbol.getSymbol("valuesLen")
+        let h_values = symbol.getSymbol("h_values")
+        let v_idx = symbol.getSymbol("v_idx")
+        let v_max = symbol.getSymbol("v_max")
+        let v_iter = symbol.getSymbol("v_iter")
+
+        c.declarePtr(buf)("yyjson_val", rowsField, c.call("yyjson_obj_get", e.val, `"rows"`))
+        c.declareSize(buf)(rows, c.call("yyjson_get_int", rowsField))
+        c.declarePtr(buf)("yyjson_val", colsField, c.call("yyjson_obj_get", e.val, `"cols"`))
+        c.declareSize(buf)(cols, c.call("yyjson_get_int", colsField))
+
+
+        c.declarePtr(buf)("yyjson_val", rowPtrArr, c.call("yyjson_obj_get", e.val, `"rowPtr"`))
+        c.declareSize(buf)(rowPtrLen, c.call("yyjson_arr_size", rowPtrArr))
+        c.declarePtr(buf)("int", h_rowPtr, c.cast("int *", c.malloc("int", rowPtrLen)))
+        c.declarePtr(buf)("yyjson_val", colIdxArr, c.call("yyjson_obj_get", e.val, `"colIdx"`))
+        c.declareSize(buf)(colIdxLen, c.call("yyjson_arr_size", colIdxArr))
+        c.declarePtr(buf)("int", h_colIdx, c.cast("int *", c.malloc("int", colIdxLen)))
+        c.declarePtr(buf)("yyjson_val", valuesArr, c.call("yyjson_obj_get", e.val, `"values"`))
+        c.declareSize(buf)(valuesLen, c.call("yyjson_arr_size", valuesArr))
+        c.declarePtr(buf)("float", h_values, c.cast("float *", c.malloc("float", valuesLen)))
+
+
+
+        c.declareSize(buf)(rp_idx)
+        c.declareSize(buf)(rp_max)
+        c.declarePtr(buf)("yyjson_val", rp_iter)
+        buf.push(`yyjson_arr_foreach(${rowPtrArr}, ${rp_idx}, ${rp_max}, ${rp_iter}) {`)
+        buf.push(`${h_rowPtr}[${rp_idx}] = yyjson_get_int(${rp_iter});`)
+        buf.push(`}`)
+
+        c.declareSize(buf)(ci_idx)
+        c.declareSize(buf)(ci_max)
+        c.declarePtr(buf)("yyjson_val", ci_iter)
+        buf.push(`yyjson_arr_foreach(${colIdxArr}, ${ci_idx}, ${ci_max}, ${ci_iter}) {`)
+        buf.push(`${h_colIdx}[${ci_idx}] = yyjson_get_int(${ci_iter});`)
+        buf.push(`}`)
+
+        c.declareSize(buf)(v_idx)
+        c.declareSize(buf)(v_max)
+        c.declarePtr(buf)("yyjson_val", v_iter)
+        buf.push(`yyjson_arr_foreach(${valuesArr}, ${v_idx}, ${v_max}, ${v_iter}) {`)
+        buf.push(`${h_values}[${v_idx}] = (float)yyjson_get_int(${v_iter});`)
+        buf.push(`}`)
+
+        let d_rowPtr = symbol.getSymbol("d_rowPtr")
+        let d_colIdx = symbol.getSymbol("d_colIdx")
+        let d_values = symbol.getSymbol("d_values")
+
+        c.declarePtr(buf)("int", d_rowPtr)
+        c.declarePtr(buf)("int", d_colIdx)
+        c.declarePtr(buf)("float", d_values)
+
+        c.stmt(buf)(c.call("cudaMalloc", `&${d_rowPtr}`, `${rowPtrLen} * sizeof(int)`))
+        c.stmt(buf)(c.call("cudaMemcpy", d_rowPtr, h_rowPtr, `${rowPtrLen} * sizeof(int)`, "cudaMemcpyHostToDevice"))
+
+        c.stmt(buf)(c.call("cudaMalloc", `&${d_colIdx}`, `${colIdxLen} * sizeof(int)`))
+        c.stmt(buf)(c.call("cudaMemcpy", d_colIdx, h_colIdx, `${colIdxLen} * sizeof(int)`, "cudaMemcpyHostToDevice"))
+
+        c.stmt(buf)(c.call("cudaMalloc", `&${d_values}`, `${valuesLen} * sizeof(float)`))
+        c.stmt(buf)(c.call("cudaMemcpy", d_values, h_values, `${valuesLen} * sizeof(float)`, "cudaMemcpyHostToDevice"))
+
+        return { rows, cols, nnz: valuesLen, rowPtr: d_rowPtr, colIdx: d_colIdx, values: d_values }
+      }
+
+      let mem = symbol.getSymbol("h_mat")
+      let r_idx = symbol.getSymbol("row_idx")
+      let r_max = symbol.getSymbol("row_max")
+      let r_iter = symbol.getSymbol("row_iter")
+      let c_idx = symbol.getSymbol("col_idx")
+      let c_max = symbol.getSymbol("col_max")
+      let c_iter = symbol.getSymbol("col_iter")
+      let rows = symbol.getSymbol("rows")
+      let cols = symbol.getSymbol("cols")
+      
+      c.declareSize(buf)(rows, c.call("yyjson_arr_size", e.val))
+      
+      let firstRow = symbol.getSymbol("firstRow")
+      c.declarePtr(buf)("yyjson_val", firstRow, c.call("yyjson_arr_get", e.val, "0"))
+      c.declareSize(buf)(cols, c.call("yyjson_arr_size", firstRow))
+
+      c.declarePtr(buf)(cType, mem, c.cast(cType + " *", c.malloc(cType, `${rows} * ${cols}`)))
+      c.declareSize(buf)(r_idx)
+      c.declareSize(buf)(r_max)
+      c.declarePtr(buf)("yyjson_val", r_iter)
+      c.declareSize(buf)(c_idx)
+      c.declareSize(buf)(c_max)
+      c.declarePtr(buf)("yyjson_val", c_iter)
+
+      buf.push(`yyjson_arr_foreach(${e.val}, ${r_idx}, ${r_max}, ${r_iter}) {`)
+      buf.push(`yyjson_arr_foreach(${r_iter}, ${c_idx}, ${c_max}, ${c_iter}) {`)
+      buf.push(`${mem}[${r_idx} * ${cols} + ${c_idx}] = (float)yyjson_get_int(${c_iter});`)
+      buf.push(`}`)
+      buf.push(`}`)
+
+
+      let cuMem = symbol.getSymbol("d_mat")
+      c.declarePtr(buf)(cType, cuMem)
+      c.stmt(buf)(c.call("cudaMalloc", `&${cuMem}`, `${rows} * ${cols} * sizeof(${cType})`))
+      c.stmt(buf)(c.call("cudaMemcpy", cuMem, mem, `${rows} * ${cols} * sizeof(${cType})`, "cudaMemcpyHostToDevice"))
+
+      return { rows, cols, cuMem }
+    }
+
+    // if (A.tag != TAG.JSON || B.tag != TAG.JSON) {
+    //   throw new Error("Expect json data on two sides for now")
+    // }
+
+    let devA = moveToDevice(A)
+    let devB = moveToDevice(B)
+    let m = devA.rows, k_a = devA.cols
+    let k_b = devB.rows, n = devB.cols
+
+    // if (k_a != k_b) {
+    //   throw new Error("Num of cols for A should match num of rows for B")
+    // }
+
+    let aSparse = devA.rowPtr !== undefined
+    let bSparse = devB.rowPtr !== undefined
+
+    let C
+    if (CNode) {
+      ;({ cuMem: C } = moveToDevice(CNode))
+    } else {
+      C = symbol.getSymbol("C")
+      c.declarePtr(buf)(cType, C)
+      c.stmt(buf)(c.call("cudaMalloc", `&${C}`, `${m} * ${n} * sizeof(${cType})`))
+    }
+
+    let alphaVar = symbol.getSymbol("alpha")
+    let alphaVal = alphaNode ? alphaNode.val : "1.0f"
+    let betaVar = symbol.getSymbol("beta")
+    let betaVal = betaNode ? betaNode.val : "0.0f"
+    c.declareVar(buf)(cType, alphaVar, alphaVal)
+    c.declareVar(buf)(cType, betaVar, betaVal)
+
+    let resultTransposed = false
+
+    if (aSparse && bSparse) {
+      throw new Error("sparse x sparse matmul (SpGEMM) not implemented yet")
+    } else if (bSparse && !aSparse) {
+      // A is dense, B is sparse
+      // Returning C.T = B.T * A.T -- result is TRANSPOSED
+      resultTransposed = true
+
+      let matA = symbol.getSymbol("matA")
+      c.declareVar(buf)("cusparseSpMatDescr_t", matA)
+      c.stmt(buf)(c.call("cusparseCreateCsr", `&${matA}`, devB.rows, devB.cols, devB.nnz,
+        devB.rowPtr, devB.colIdx, devB.values,
+        "CUSPARSE_INDEX_32I", "CUSPARSE_INDEX_32I", "CUSPARSE_INDEX_BASE_ZERO", "CUDA_R_32F"))
+
+      let matB = symbol.getSymbol("matB")
+      c.declareVar(buf)("cusparseDnMatDescr_t", matB)
+      c.stmt(buf)(c.call("cusparseCreateDnMat", `&${matB}`, m, k_a, k_a, devA.cuMem, "CUDA_R_32F", "CUSPARSE_ORDER_ROW"))
+
+      let matC = symbol.getSymbol("matC")
+      c.declareVar(buf)("cusparseDnMatDescr_t", matC)
+      c.stmt(buf)(c.call("cusparseCreateDnMat", `&${matC}`, n, m, m, C, "CUDA_R_32F", "CUSPARSE_ORDER_ROW"))
+
+      let bufferSize = symbol.getSymbol("bufferSize")
+      c.declareSize(buf)(bufferSize)
+      c.stmt(buf)(c.call("cusparseSpMM_bufferSize", "sparseHandle",
+        "CUSPARSE_OPERATION_TRANSPOSE", "CUSPARSE_OPERATION_TRANSPOSE",
+        "&" + alphaVar, matA, matB, "&" + betaVar, matC,
+        "CUDA_R_32F", "CUSPARSE_SPMM_ALG_DEFAULT", "&" + bufferSize))
+
+      let dBuffer = symbol.getSymbol("dBuffer")
+      c.declarePtr(buf)("void", dBuffer)
+      c.stmt(buf)(c.call("cudaMalloc", `&${dBuffer}`, bufferSize))
+
+      c.stmt(buf)(c.call("cusparseSpMM", "sparseHandle",
+        "CUSPARSE_OPERATION_TRANSPOSE", "CUSPARSE_OPERATION_TRANSPOSE",
+        "&" + alphaVar, matA, matB, "&" + betaVar, matC,
+        "CUDA_R_32F", "CUSPARSE_SPMM_ALG_DEFAULT", dBuffer))
+    } else if (aSparse) {
+      // A is sparse, B is dense
+
+      let matA = symbol.getSymbol("matA")
+      c.declareVar(buf)("cusparseSpMatDescr_t", matA)
+      c.stmt(buf)(c.call("cusparseCreateCsr", `&${matA}`, devA.rows, devA.cols, devA.nnz,
+        devA.rowPtr, devA.colIdx, devA.values,
+        "CUSPARSE_INDEX_32I", "CUSPARSE_INDEX_32I", "CUSPARSE_INDEX_BASE_ZERO", "CUDA_R_32F"))
+
+      let matB = symbol.getSymbol("matB")
+      c.declareVar(buf)("cusparseDnMatDescr_t", matB)
+      c.stmt(buf)(c.call("cusparseCreateDnMat", `&${matB}`, k_b, n, n, devB.cuMem, "CUDA_R_32F", "CUSPARSE_ORDER_ROW"))
+
+      let matC = symbol.getSymbol("matC")
+      c.declareVar(buf)("cusparseDnMatDescr_t", matC)
+      c.stmt(buf)(c.call("cusparseCreateDnMat", `&${matC}`, m, n, n, C, "CUDA_R_32F", "CUSPARSE_ORDER_ROW"))
+
+      let bufferSize = symbol.getSymbol("bufferSize")
+      c.declareSize(buf)(bufferSize)
+      c.stmt(buf)(c.call("cusparseSpMM_bufferSize", "sparseHandle",
+        "CUSPARSE_OPERATION_NON_TRANSPOSE", "CUSPARSE_OPERATION_NON_TRANSPOSE",
+        "&" + alphaVar, matA, matB, "&" + betaVar, matC,
+        "CUDA_R_32F", "CUSPARSE_SPMM_ALG_DEFAULT", "&" + bufferSize))
+
+      let dBuffer = symbol.getSymbol("dBuffer")
+      c.declarePtr(buf)("void", dBuffer)
+      c.stmt(buf)(c.call("cudaMalloc", `&${dBuffer}`, bufferSize))
+
+      c.stmt(buf)(c.call("cusparseSpMM", "sparseHandle",
+        "CUSPARSE_OPERATION_NON_TRANSPOSE", "CUSPARSE_OPERATION_NON_TRANSPOSE",
+        "&" + alphaVar, matA, matB, "&" + betaVar, matC,
+        "CUDA_R_32F", "CUSPARSE_SPMM_ALG_DEFAULT", dBuffer))
+    } else {
+      // both dense -> existing cublasSgemm path
+      c.stmt(buf)(c.call("cublasSgemm", "handle", "CUBLAS_OP_N", "CUBLAS_OP_N", n, m, k_a, "&" + alphaVar, devB.cuMem, n, devA.cuMem, k_a, "&" + betaVar, C, n))
+    }
+
+    // copy back to host
+    // let hC = symbol.getSymbol("h_C")
+    // c.declarePtr(buf)(cType, hC, c.cast(cType + " *", c.malloc(cType, `${m} * ${n}`)))
+    // c.stmt(buf)(c.call("cudaMemcpy", hC, C, `${m} * ${n} * sizeof(${cType})`, "cudaMemcpyDeviceToHost"))
+
+    // buf.push(`printf("{");`)
+    // buf.push(`for (int i = 0; i < ${m}; i++) {`)
+    // buf.push(`  if (i > 0) printf(", ");`)
+    // buf.push(`  printf("\\"%d\\": {", i);`)
+    // buf.push(`  for (int j = 0; j < ${n}; j++) {`)
+    // buf.push(`    if (j > 0) printf(", ");`)
+    // buf.push(`    printf("\\"%d\\": %.0f", j, ${hC}[i * ${n} + j]);`)
+    // buf.push(`  }`)
+    // buf.push(`  printf("}");`)
+    // buf.push(`}`)
+    // buf.push(`printf("}");`)
+
+    return resultTransposed
+      ? value.gpuTensor(q.schema, C, n, m, undefined, 'float')
+      : value.gpuTensor(q.schema, C, m, n, undefined, 'float')
+    // return { schema: { typeSym: typeSyms.never } }
+
+    // return value.primitive(types.f32, C)
+
+
+
+
+  } else if (q.op == "batched-matmul") {
+    /*
+    [[1 2], [5 6]]
+    [[3 4], [7 8]]  
+    */
+
+    // library call for batched-matmul
+    // console.log(pretty(q))
+
+    let [A, B] = q.arg.map(e => emitPath(buf, e))
+    let cType = "float"
+
+    let moveToDevice = (e) => {
+      if (e.tag == TAG.GPU_TENSOR) {
+        return { batches: e.val.batches, rows: e.val.rows, cols: e.val.cols, cuMem: e.val.cuMem }
+      }
+      let mem = symbol.getSymbol("h_batch")
+      let b_idx = symbol.getSymbol("batch_idx")
+      let b_max = symbol.getSymbol("batch_max")
+      let b_iter = symbol.getSymbol("batch_iter")
+      let r_idx = symbol.getSymbol("row_idx")
+      let r_max = symbol.getSymbol("row_max")
+      let r_iter = symbol.getSymbol("row_iter")
+      let c_idx = symbol.getSymbol("col_idx")
+      let c_max = symbol.getSymbol("col_max")
+      let c_iter = symbol.getSymbol("col_iter")
+      let batches = symbol.getSymbol("batches")
+      let rows = symbol.getSymbol("rows")
+      let cols = symbol.getSymbol("cols")
+
+      c.declareSize(buf)(batches, c.call("yyjson_arr_size", e.val))
+      let firstMatrix = symbol.getSymbol("firstMatrix")
+      c.declarePtr(buf)("yyjson_val", firstMatrix, c.call("yyjson_arr_get", e.val, "0"))
+      
+      c.declareSize(buf)(rows, c.call("yyjson_arr_size", firstMatrix))
+      let firstRow = symbol.getSymbol("firstRow")
+      c.declarePtr(buf)("yyjson_val", firstRow, c.call("yyjson_arr_get", firstMatrix, "0"))
+
+      c.declareSize(buf)(cols, c.call("yyjson_arr_size", firstRow))
+
+      c.declarePtr(buf)(cType, mem, c.cast(cType + " *", c.malloc(cType, `${batches} * ${rows} * ${cols}`)))
+      
+      c.declareSize(buf)(b_idx)
+      c.declareSize(buf)(b_max)
+      c.declarePtr(buf)("yyjson_val", b_iter)
+      c.declareSize(buf)(r_idx)
+      c.declareSize(buf)(r_max)
+      c.declarePtr(buf)("yyjson_val", r_iter)
+      c.declareSize(buf)(c_idx)
+      c.declareSize(buf)(c_max)
+      c.declarePtr(buf)("yyjson_val", c_iter)
+
+      buf.push(`yyjson_arr_foreach(${e.val}, ${b_idx}, ${b_max}, ${b_iter}) {`)
+      buf.push(`yyjson_arr_foreach(${b_iter}, ${r_idx}, ${r_max}, ${r_iter}) {`)
+      buf.push(`yyjson_arr_foreach(${r_iter}, ${c_idx}, ${c_max}, ${c_iter}) {`)
+      buf.push(`${mem}[(${b_idx} * ${rows} + ${r_idx}) * ${cols} + ${c_idx}] = (float)yyjson_get_int(${c_iter});`)
+      buf.push(`}`)
+      buf.push(`}`)
+      buf.push(`}`)
+
+      let cuMem = symbol.getSymbol("d_batch")
+      c.declarePtr(buf)(cType, cuMem)
+      c.stmt(buf)(c.call("cudaMalloc", `&${cuMem}`, `${batches} * ${rows} * ${cols} * sizeof(${cType})`))
+      c.stmt(buf)(c.call("cudaMemcpy", cuMem, mem, `${batches} * ${rows} * ${cols} * sizeof(${cType})`, "cudaMemcpyHostToDevice"))
+
+
+      return { batches, rows, cols, cuMem}
+    }
+  
+ 
+    let { batches: batches_a, rows: m, cols: k_a, cuMem: cuMemA } = moveToDevice(A)
+    let { batches: batches_b, rows: k_b, cols: n, cuMem: cuMemB } = moveToDevice(B)
+
+
+    let C_batch = symbol.getSymbol("C_batch")
+
+    c.declarePtr(buf)(cType, C_batch)
+    c.stmt(buf)(c.call("cudaMalloc", `&${C_batch}`, `${batches_a} * ${m} * ${n} * sizeof(${cType})`))
+
+    let alpha = symbol.getSymbol("alpha")
+    let beta = symbol.getSymbol("beta")
+    c.declareVar(buf)(cType,alpha, "1.0f")
+    c.declareVar(buf)(cType, beta, "0.0f")
+
+    c.stmt(buf)(c.call("cublasSgemmStridedBatched", "handle", "CUBLAS_OP_N", "CUBLAS_OP_N", n, m, k_a, "&" + alpha, cuMemB, n, `${k_b} * ${n}`, cuMemA, k_a, `${m} * ${k_a}`, "&" + beta, C_batch, n, `${m} * ${n}`, batches_a))
+    
+    // let hC = symbol.getSymbol("h_C")
+    // c.declarePtr(buf)(cType, hC, c.cast(cType + " *", c.malloc(cType, `${batches_a} * ${m} * ${n}`)))
+    // c.stmt(buf)(c.call("cudaMemcpy", hC, C_batch, `${batches_a} * ${m} * ${n} * sizeof(${cType})`, "cudaMemcpyDeviceToHost"))
+
+    // buf.push(`printf("{");`)
+    // buf.push(`for (int b = 0; b < ${batches_a}; b++) {`)
+    // buf.push(`  if (b > 0) printf(", ");`)
+    // buf.push(`  printf("\\"%d\\": {", b);`)
+    // buf.push(`  for (int i = 0; i < ${m}; i++) {`)
+    // buf.push(`    if (i > 0) printf(", ");`)
+    // buf.push(`    printf("\\"%d\\": {", i);`)
+    // buf.push(`    for (int j = 0; j < ${n}; j++) {`)
+    // buf.push(`      if (j > 0) printf(", ");`)
+    // buf.push(`      printf("\\"%d\\": %.0f", j, ${hC}[b * ${m} * ${n} + i * ${n} + j]);`)
+    // buf.push(`    }`)
+    // buf.push(`    printf("}");`)
+    // buf.push(`  }`)
+    // buf.push(`  printf("}");`)
+    // buf.push(`}`)
+    // buf.push(`printf("}");`)
+    // return { schema: { typeSym: typeSyms.never } }
+
+    return value.gpuTensor(q.schema, C_batch, m, n, batches_a, 'float')
+
   } else {
     throw new Error("Pure operation not supported: " + pretty(q))
   }
 }
+
+/*
+cublasStatus_t cublasSgemmStridedBatched(cublasHandle_t handle,
+                                  cublasOperation_t transa,
+                                  cublasOperation_t transb,
+                                  int m, int n, int k,
+                                  const float           *alpha,
+                                  const float           *A, int lda,
+                                  long long int          strideA,
+                                  const float           *B, int ldb,
+                                  long long int          strideB,
+                                  const float           *beta,
+                                  float                 *C, int ldc,
+                                  long long int          strideC,
+                                  int batchCount)
+
+*/
 
 // Generate code for paths
 // returns the value of the path
@@ -1262,7 +1665,8 @@ let findMatmuls = q => {
       return [root0, root1]
     }
     if (path1[1] == path0[0] && path1[0] == v1 && path0[1] == v2) {
-      return [root0, root1]
+      // return [root0, root1] wrong order
+      return [root1, root0]
     }
 
     return false
@@ -1301,13 +1705,445 @@ let findMatmuls = q => {
       return q
     }
 
-    console.log("matmul???")
+    // console.log("matmul???")
 
     return { key: "pure", op: "matmul", arg: res }
   } else if (q.arg) {
     q.arg = q.arg.map(findMatmuls)
   }
 
+  return q
+}
+
+let findBatchedMatmuls = q => {
+  // rh`{*i: {*j: {*l: sum(${batchedMatA}.*i.*j.*k * ${batchedMatB}.*i.*k.*l)}}}`
+  // from findMatmuls
+  let isGroupByVar = q => {
+    let [e0, e1, e2, e3] = q.arg
+    let e0EmpObj = e0.key == "const" && JSON.stringify(e0.op) == "{}"
+    let e1Var = e1.key == "var"
+    let e2Stateful = e2.key == "update" || e2.key == "stateful"
+    let noMkSet = e3 === undefined
+
+    return e0EmpObj && e1Var && e2Stateful && noMkSet
+  }
+  
+  // from findMatmuls
+  let extractGetPath = (q) => {
+    /*
+    batchedMatA.*i.*j.*k
+    get(get(get(batchedMatA, *i), *j), *k)
+    path = [*i, *j, *k]
+    root = batchedMatA
+
+    batchedMatB.*i.*k.*l
+    get(get(get(batchedMatB, *i), *k), *l)
+    path = [*i, *k, *l]
+    root = batchedMatB
+
+    */
+    if (q.key == "get" && q.arg[1].key == "var") {
+      let [root, path] = extractGetPath(q.arg[0])
+      path.push(q.arg[1].op)
+      return [root, path]
+    } else {
+      return [q, []]
+    }
+  }
+
+  let checkMACOp = (q, vbatch, v1, v2) => {
+    if (!same(q.fre, [vbatch, v1, v2])) {
+      return false
+    }
+    
+    let q1 = q.arg[0]
+    if (q1.key != "pure" || q1.op != "times") {
+      return false
+    }
+    
+    let [e0, e1] = q1.arg
+    let [root0, path0] = extractGetPath(e0)
+    let [root1, path1] = extractGetPath(e1)
+    
+    root0 = findBatchedMatmuls(root0)
+    root1 = findBatchedMatmuls(root1)
+    
+    // modified from findMatmuls
+    if (path0.length != 3 || path1.length != 3) {
+      return false
+    }
+
+    // case 1: A[i][j][k] * B[i][k][l]
+    if (path0[0] == vbatch && path1[0] == vbatch && path0[1] == v1 && path0[2] == path1[1] && path1[2] == v2) {
+      return [root0, root1]
+    }
+
+    // case 2: B[i][k][l] * A[i][j][k]
+    if (path0[0] == vbatch && path1[0] == vbatch && path0[1] == path1[2] && path0[2] == v2 && path1[1] == v1) {
+      return [root1, root0]
+    }
+    return false
+  }
+
+  // modified from findMatmuls
+  if (q.key == "update") {
+    let qGroupByVar = isGroupByVar(q)
+    if (!qGroupByVar) {
+      q.arg = q.arg.map(findBatchedMatmuls)
+      return q
+    }
+
+    let inner = q.arg[2]
+    if (inner.key != "update") {
+      q.arg = q.arg.map(findBatchedMatmuls)
+      return q
+    } else {
+      if (!isGroupByVar(inner)) {
+        q.arg = q.arg.map(findBatchedMatmuls)
+        return q
+      }
+    }
+
+    let innerMost = inner.arg[2]
+    if (innerMost.key != "update") {
+      q.arg = q.arg.map(findBatchedMatmuls)
+      return q
+    } else {
+      if (!isGroupByVar(innerMost)) {
+        q.arg = q.arg.map(findBatchedMatmuls)
+        return q
+      }
+    }
+
+    let aggr = innerMost.arg[2]
+    if (aggr.key != "stateful" || aggr.op != "sum") {
+      q.arg = q.arg.map(findBatchedMatmuls)
+      return q
+    }
+
+    let outerVar = q.arg[1].op
+    let innerVar = inner.arg[1].op
+    let innerMostVar = innerMost.arg[1].op
+    let res = checkMACOp(aggr, outerVar, innerVar, innerMostVar)
+    if (!res) {
+      q.arg = q.arg.map(findBatchedMatmuls)
+      return q
+    }
+
+    // console.log("Batched matmul?")
+
+    return { key: "pure", op: "batched-matmul", arg: res}
+
+  } else if (q.arg) {
+    q.arg = q.arg.map(findBatchedMatmuls)
+  }
+
+  return q
+
+
+}
+
+let findScaledMatmuls = q => {
+  let isGroupByVar = q => {
+    let [e0, e1, e2, e3] = q.arg
+    let e0EmpObj = e0.key == "const" && JSON.stringify(e0.op) == "{}"
+    let e1Var = e1.key == "var"
+    let e2Stateful = e2.key == "update" || e2.key == "stateful"
+    let noMkSet = e3 === undefined
+
+    return e0EmpObj && e1Var && e2Stateful && noMkSet
+  }
+
+  let extractGetPath = (q) => {
+    if (q.key == "get" && q.arg[1].key == "var") {
+      let [root, path] = extractGetPath(q.arg[0])
+      path.push(q.arg[1].op)
+      return [root, path]
+    } else {
+      return [q, []]
+    }
+  }
+
+  let checkMACOp = (q, v1, v2) => {
+    if (!same(q.fre, [v1, v2])) {
+      return false
+    }
+
+    let q1 = q.arg[0]
+    if (q1.key != "pure" || q1.op != "times") {
+      return false
+    }
+
+    let [e0, e1] = q1.arg
+    let [root0, path0] = extractGetPath(e0)
+    let [root1, path1] = extractGetPath(e1)
+
+    root0 = findMatmuls(root0)
+    root1 = findMatmuls(root1)
+
+    if (path0.length != 2 || path1.length != 2) {
+      return false
+    }
+
+    if (path0[1] == path1[0] && path0[0] == v1 && path1[1] == v2) {
+      return [root0, root1]
+    }
+    if (path1[1] == path0[0] && path1[0] == v1 && path0[1] == v2) {
+      // return [root0, root1] wrong order
+      return [root1, root0]
+    }
+
+    return false
+  }
+
+
+  if (q.key == "update") {
+    let qGroupByVar = isGroupByVar(q)
+    if (!qGroupByVar) {
+      q.arg = q.arg.map(findScaledMatmuls)
+      return q
+    }
+    let inner = q.arg[2]
+    if (inner.key != "update") {
+      q.arg = q.arg.map(findScaledMatmuls)
+      return q
+    }
+    let aggr = inner.arg[2]
+    let timesNode
+    if (aggr.key == "pure" && aggr.op == "times") {
+      timesNode = aggr
+    } else if (aggr.key == "stateful" && aggr.op == "single" && aggr.arg[0].key == "pure" && aggr.arg[0].op == "times") {
+      timesNode = aggr.arg[0]
+    } else {
+      q.arg = q.arg.map(findScaledMatmuls)
+      return q
+    }
+
+    let alpha, statefulSum
+    if (timesNode.arg[1].key == "stateful" && timesNode.arg[1].op == "sum") {
+      alpha = timesNode.arg[0]
+      statefulSum = timesNode.arg[1]
+    } else if (timesNode.arg[0].key == "stateful" && timesNode.arg[0].op == "sum") {
+      alpha = timesNode.arg[1]
+      statefulSum = timesNode.arg[0]
+    } else {
+      q.arg = q.arg.map(findScaledMatmuls)
+      return q
+    }
+
+    let outerVar = q.arg[1].op
+    let innerVar = inner.arg[1].op
+    let res = checkMACOp(statefulSum, outerVar, innerVar)
+    if (!res) {
+      q.arg = q.arg.map(findScaledMatmuls)
+      return q
+    }
+
+
+
+    return { key: "pure", op: "matmul", arg: [...res, alpha]}
+  } else if (q.arg) {
+    q.arg = q.arg.map(findScaledMatmuls)
+  }
+
+  return q
+}
+
+// Full GEMM: {*i: {*j: alpha * sum(A.*i.*k * B.*k.*j) + beta * C.*i.*j}}
+// -> { key: "pure", op: "matmul", arg: [A, B, alpha, C, beta] }
+let findFullGemm = q => {
+  let isGroupByVar = q => {
+    let [e0, e1, e2, e3] = q.arg
+    let e0EmpObj = e0.key == "const" && JSON.stringify(e0.op) == "{}"
+    let e1Var = e1.key == "var"
+    let e2Stateful = e2.key == "update" || e2.key == "stateful"
+    let noMkSet = e3 === undefined
+
+    return e0EmpObj && e1Var && e2Stateful && noMkSet
+  }
+
+  let extractGetPath = (q) => {
+    if (q.key == "get" && q.arg[1].key == "var") {
+      let [root, path] = extractGetPath(q.arg[0])
+      path.push(q.arg[1].op)
+      return [root, path]
+    } else {
+      return [q, []]
+    }
+  }
+
+  // same MAC check as findMatmuls/findScaledMatmuls
+  let checkMACOp = (q, v1, v2) => {
+    if (!same(q.fre, [v1, v2])) {
+      return false
+    }
+
+    let q1 = q.arg[0]
+    if (q1.key != "pure" || q1.op != "times") {
+      return false
+    }
+
+    let [e0, e1] = q1.arg
+    let [root0, path0] = extractGetPath(e0)
+    let [root1, path1] = extractGetPath(e1)
+
+    root0 = findFullGemm(root0)
+    root1 = findFullGemm(root1)
+
+    if (path0.length != 2 || path1.length != 2) {
+      return false
+    }
+
+    if (path0[1] == path1[0] && path0[0] == v1 && path1[1] == v2) {
+      return [root0, root1]
+    }
+    if (path1[1] == path0[0] && path1[0] == v1 && path0[1] == v2) {
+      return [root1, root0]
+    }
+
+    return false
+  }
+
+  let classifyTerm = (t) => {
+    if (t.key != "pure" || t.op != "times") return null
+
+    let [a, b] = t.arg
+    if (b.key == "stateful" && b.op == "sum") return { kind: "ab", scalar: a, node: b }
+    if (a.key == "stateful" && a.op == "sum") return { kind: "ab", scalar: b, node: a }
+    if (a.key == "get") return { kind: "c", scalar: b, node: a }
+    if (b.key == "get") return { kind: "c", scalar: a, node: b }
+
+    return null
+  }
+
+  
+  if (q.key == "update") {
+    let qGroupByVar = isGroupByVar(q)
+    if (!qGroupByVar) {
+      q.arg = q.arg.map(findFullGemm)
+      return q
+    }
+    let inner = q.arg[2]
+    if (inner.key != "update" || !isGroupByVar(inner)) {
+      q.arg = q.arg.map(findFullGemm)
+      return q
+    }
+
+    let body = inner.arg[2]
+    if (body.key != "stateful" || body.op != "single") {
+      q.arg = q.arg.map(findFullGemm)
+      return q
+    }
+    let plusNode = body.arg[0]
+    if (plusNode.key != "pure" || plusNode.op != "plus") {
+      q.arg = q.arg.map(findFullGemm)
+      return q
+    }
+
+    let [t1, t2] = plusNode.arg.map(classifyTerm)
+    if (!t1 || !t2 || t1.kind == t2.kind) {
+      q.arg = q.arg.map(findFullGemm)
+      return q
+    }
+
+    let abTerm = t1.kind == "ab" ? t1 : t2
+    let cTerm = t1.kind == "c" ? t1 : t2
+
+    let outerVar = q.arg[1].op
+    let innerVar = inner.arg[1].op
+
+    let res = checkMACOp(abTerm.node, outerVar, innerVar)
+    if (!res) {
+      q.arg = q.arg.map(findFullGemm)
+      return q
+    }
+
+    let [root, path] = extractGetPath(cTerm.node)
+    if (path.length != 2 || path[0] != outerVar || path[1] != innerVar) {
+      q.arg = q.arg.map(findFullGemm)
+      return q
+    }
+
+    return { key: "pure", op: "matmul", arg: [...res, abTerm.scalar, findFullGemm(root), cTerm.scalar] }
+  } else if (q.arg) {
+    q.arg = q.arg.map(findFullGemm)
+  }
+
+  return q
+}
+
+let findDotProducts = q => {
+   
+  if (q.key == "stateful" && q.op == "sum") {
+    if (q.arg[0].key == "pure" && q.arg[0].op == "times") {
+      let [e1, e2] = q.arg[0].arg;
+      if (e1.key == "get" && e2.key == "get") {
+        if (e1.arg[1].op == e2.arg[1].op) {
+          return { key: "pure", op: "dot", arg: [e1.arg[0], e2.arg[0]] }
+        }
+      }
+    }
+  }
+
+  if (q.arg) {
+    q.arg = q.arg.map(findDotProducts);
+  }
+  return q;
+
+
+}
+
+// TODO: general function for any dot product, matmul, scaling and translation, or batched
+let findMAC = q => {
+  // collect output index vars,
+  let peelGroupByVars = (q) => {
+    let outVars = []
+    while (q.key == "update" && isGroupByVar(q)) {
+      outVars.push(q.arg[1].op)
+      q = q.arg[2]
+    }
+    return { outVars, body: q }
+  }
+
+  let isGroupByVar = q => {
+    let [e0, e1, e2, e3] = q.arg
+    return e0.key == "const" && JSON.stringify(e0.op) == "{}" &&
+      e1.key == "var" &&
+      (e2.key == "update" || e2.key == "stateful") &&
+      e3 === undefined
+  }
+
+  let extractGetPath = (q) => {
+    if (q.key == "get" && q.arg[1].key == "var") {
+      let [root, path] = extractGetPath(q.arg[0])
+      path.push(q.arg[1].op)
+      return [root, path]
+    }
+    return [q, []]
+  }
+
+
+  // figure out which index var is summed away, which are shared batch dims, and which are per-operand output dims
+  let unifyPaths = (pathA, pathB, outVars) => {
+
+  }
+
+  // TODO: peel off a scale factor (single(times, [alpha, sum])) and/or a beta*C accumulator 
+  // TODO: once A/B are matched, look at their .schema to pick the emitter
+  // this match is shape-only and deliberately doesn't know about storage format.
+
+  let outVars = [], body = q
+  if (q.key == "update") {
+    ;({ outVars, body } = peelGroupByVars(q))
+  }
+  if (body.key == "stateful" && body.op == "sum") {
+    let res = checkMAC(body, outVars)
+    if (res) {
+      return { key: "pure", op: "mac", arg: [res.A, res.B], meta: { outVars, ...res.shape } }
+    }
+  }
+
+  if (q.arg) q.arg = q.arg.map(findMAC)
   return q
 }
 
@@ -1802,6 +2638,7 @@ let emitCode = (q, ir, settings) => {
 
   if (backend == "cuda") {
     c.stmt(epilog)(c.call("cublasDestroy", "handle"))
+    c.stmt(epilog)(c.call("cusparseDestroy", "sparseHandle"))
   }
   c.return(epilog)("0")
   epilog.push("}")
@@ -1867,7 +2704,7 @@ let generateC = (q, ir, settings) => {
   let writeAndCompile = async () => {
     await fs.writeFile(cFile, code)
     if (inputFiles["json"] || inputFiles["ndjson"] || usesYYJSON) cFlags += " -Ithird-party/yyjson -Lthird-party/yyjson/out -lyyjson"
-    if (backend == "cuda") cFlags += " -lcublas"
+    if (backend == "cuda") cFlags += " -lcublas -lcusparse"
     let cmd = `${compiler} ${cFile} -o ${out} ${cFlags}`
     console.log("Executing: " + cmd)
     let time1 = performance.now()
@@ -1879,4 +2716,9 @@ let generateC = (q, ir, settings) => {
   return writeAndCompile()
 }
 
-module.exports = { generateC }
+module.exports = { generateC, findMatmuls, findScaledMatmuls, findFullGemm, findDotProducts, findBatchedMatmuls, findMAC }
+
+
+
+
+

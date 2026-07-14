@@ -644,7 +644,7 @@ let deno = q => k => {
       return {out:union(q.out,v1.dims)}
     })
     q.real = intersect(q.out,e1.real)
-    console.log("SUM", ""+e1.real+"->"+q.real + " / "+q.out , " --- ", pretty(q))
+    // console.log("SUM", ""+e1.real+"->"+q.real + " / "+q.out , " --- ", pretty(q))
     return pretty(q)
 /*  } else if (q.key == "group") {
     let e1 = extract(q.arg[0])
@@ -802,6 +802,9 @@ let compile = (q,userSettings={}) => {
   // ---- front end ----
   // 1. Preprocess (after parse, desugar)
   q = preproc(q)
+
+  // console.log(JSON.stringify(q, null, 2))
+  
   // rh`sum (x)` -> {op: "sum", arg: [x], deps: fre: [], bnd: []}.
   // rh`update a k v` -> {op: "update", arg: [a, k, v]}
 
@@ -887,7 +890,14 @@ let compile = (q,userSettings={}) => {
   }
 
   if (settings.backend == "cuda") {
+    // console.log(pretty(q))
+    q = cgen.findDotProducts(q)
+    q = cgen.findBatchedMatmuls(q)
     q = cgen.findMatmuls(q)
+    q = cgen.findScaledMatmuls(q)
+    q = cgen.findFullGemm(q) 
+
+    // q = cgen.findMAC(q)
   }
 
   // Deduplicate
