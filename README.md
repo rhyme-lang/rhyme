@@ -38,7 +38,7 @@ let res = api.compile(query)({ data })
 console.log("Result: " + JSON.stringify(res))
 ```
 
-Visit [documentation](https://rhyme-lang.github.io/docs/) to get a glimpse of what Rhyme can do.
+Visit [documentation](https://rhyme-lang.github.io/) to get a glimpse of what Rhyme can do.
 
 ## Using in the browser/frontend
 Npm package `rhyme-lang` installed using above command is intended for use in nodejs projects.
