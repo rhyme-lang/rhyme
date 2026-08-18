@@ -207,7 +207,7 @@ let extract0 = q => {
 //
 //   { data.*: count(data.*) }
 //
-// here it seems more logical iterpret
+// here it seems more logical to interpret
 // this as counting multiples
 
 

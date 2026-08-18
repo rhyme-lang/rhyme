@@ -352,7 +352,7 @@ rt.stateful.single = x => s => { // error if more than one
   if (s === undefined) return x
   // throw new Error("single value expected but got two: "+s+", "+x)
   //
-  // NOTE: relaxed to support multiple occurrances of the
+  // NOTE: relaxed to support multiple occurrences of the
   // same value. Tighter semantics (above) currently not 
   // in line with expected output of test nestedIterators3 
   // and variants.
@@ -431,7 +431,7 @@ rt.stateful.update_init = (x0) => () => {
 rt.stateful.update = (x1,x2) => s => {
   if (x1 === undefined) return s
   if (x2 === undefined) return s
-  if (s === undefined) s = {} // not intialized? assume empty object
+  if (s === undefined) s = {} // not initialized? assume empty object
   if (typeof s !== "object") return s // not an object? do nothing
   if (x1 instanceof Array) {
     s = rt.deepUpdate(s, x1, x2)

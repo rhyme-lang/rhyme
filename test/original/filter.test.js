@@ -109,7 +109,7 @@ test("generatorAsFilter", () => {
 */
 
     // NOTE: can we achieve udf.filter more directly using a query
-    // object expresion { ... } ? Almost, but not quite! (TODO)
+    // object expression { ... } ? Almost, but not quite! (TODO)
     // - we need to deal with (ie prevent) undefined keys in objects
     // - there are some issues with dependencies of objects - note that this
     //   is inside a path in a key position (group (filter data.*.key ... ))

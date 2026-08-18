@@ -609,14 +609,14 @@ let emitHashLookUp = (buf, map, key) => {
 }
 
 // Emit the code that updates the hashMap value for the key at keyPos
-// it will initialize the key if it is not there when checkExistance is set to true
-let emitHashMapUpdate = (buf, map, key, pos, keyPos, update1, update2, checkExistance) => {
+// it will initialize the key if it is not there when checkExistence is set to true
+let emitHashMapUpdate = (buf, map, key, pos, keyPos, update1, update2, checkExistence) => {
   let sym = map.val.sym
   let lhs = getHashMapValueEntry(map, pos, keyPos)
 
   lhs.cond = c.eq(keyPos, "0")
 
-  if (checkExistance) {
+  if (checkExistence) {
     let cond = c.eq(keyPos, "0")
     // if (key.cond)
     //   cond = c.and(cond, c.not(key.cond))
@@ -641,11 +641,11 @@ let emitHashLookUpOrUpdate = (buf, map, key, update) =>
 //   updates the value
 // if the key is not found:
 //   inserts a new key into the hashmap and initializes it
-let emitHashLookUpAndUpdate = (buf, map, key, update, checkExistance) =>
-  emitHashLookUpAndUpdateCust(buf, map, key, () => { }, update, checkExistance)
+let emitHashLookUpAndUpdate = (buf, map, key, update, checkExistence) =>
+  emitHashLookUpAndUpdateCust(buf, map, key, () => { }, update, checkExistence)
 
-let emitHashLookUpAndUpdateCust = (buf, map, key, update1, update2, checkExistance) => {
-  if (checkOutOfBounds && checkExistance) {
+let emitHashLookUpAndUpdateCust = (buf, map, key, update1, update2, checkExistence) => {
+  if (checkOutOfBounds && checkExistence) {
     // We might insert a new key into the map, check size
     c.if(buf)(c.eq(map.val.count, hashSize), buf1 => {
       c.printErr(buf1)("hashmap size reached its full capacity\\n")
@@ -655,7 +655,7 @@ let emitHashLookUpAndUpdateCust = (buf, map, key, update1, update2, checkExistan
 
   let [pos, keyPos] = emitHashLookUp(buf, map, key)
 
-  emitHashMapUpdate(buf, map, key, pos, keyPos, update1, update2, checkExistance)
+  emitHashMapUpdate(buf, map, key, pos, keyPos, update1, update2, checkExistence)
 
   return [pos, keyPos]
 }

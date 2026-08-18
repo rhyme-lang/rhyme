@@ -1443,7 +1443,7 @@ let translateToNewCodegen = q => {
   }
 
   // TODO: make reusable generator/filter variable for the "current"
-  // value of an iteration available in new-codgen. The "scope" object
+  // value of an iteration available in new-codegen. The "scope" object
   // passed to 'codegen' should list all available such variables in
   // scope -- right now there are none, filters = q.filters would
   // mean all used filters have associated variables.

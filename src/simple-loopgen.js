@@ -136,7 +136,7 @@ let emitFilters1 = (scope, free, bnd, ext, careAboutOrderingAndMultiplicity) => 
     // choice (e.g. how the variable is called), but ultimately
     // using individual loops might be more flexible. 
     //
-    // One concern is that for deep vars, adressing of 'proj'
+    // One concern is that for deep vars, addressing of 'proj'
     // work differently (path is flattened to single key).
     // We need better abstractions to deal with such differences.
 

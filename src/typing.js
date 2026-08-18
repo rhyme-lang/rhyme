@@ -1534,7 +1534,7 @@ let convertQuery = (q, type) => {
     // For Objects and functions:
     // - No conversion is necessary or can be done. Hence, this function should never be ran on them.
 
-    // All leafs in the union-interseciton tree must then be primitive number/string types.
+    // All leaves in the union-intersection tree must then be primitive number/string types.
     // This leaves that it is:
     // 1. A different sub/supertype (u8 vs u16).
     // 2. A different type. (string vs u16).

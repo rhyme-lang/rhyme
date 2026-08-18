@@ -450,7 +450,7 @@ test("redBlackTree0", () => {
 
 test("redBlackTree1", () => {
 
-  // sort array and count occurence
+  // sort array and count occurrence
   let data = [4,1, 5,1,2,3,7,7,2,0]
 
   let udf = {

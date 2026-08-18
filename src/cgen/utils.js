@@ -179,7 +179,7 @@ let getFormatSpecifier = (type) => {
   if (type.typeSym === "dynkey")
     return getFormatSpecifier(type.keySupertype)
   if (type.typeSym === "union")
-    throw new Error("Unable to get type specifier for union tpyes currently: " + typing.prettyPrintType(type))
+    throw new Error("Unable to get type specifier for union types currently: " + typing.prettyPrintType(type))
   if (type.typeSym in formatSpecifierMap)
     return formatSpecifierMap[type.typeSym]
   throw new Error("Unknown type: " + typing.prettyPrintType(type))
@@ -292,7 +292,7 @@ let getDataTypeLimits = (type) => {
   if (type.typeSym === "dynkey")
     return getDataTypeLimits(type.keySupertype)
   if (type.typeSym === "union")
-    throw new Error("Unable to get type specifier for union tpyes currently: " + typing.prettyPrintType(type))
+    throw new Error("Unable to get type specifier for union types currently: " + typing.prettyPrintType(type))
   if (type.typeSym in dataTypeLimits)
     return dataTypeLimits[type.typeSym]
   throw new Error("Unknown type: " + typing.prettyPrintType(type))
