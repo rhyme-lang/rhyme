@@ -90,7 +90,7 @@ test("union-basic", () => {
     expect(typing.createUnion(types.string, typing.createKey(types.string))).toBe(types.string);
 })
 
-test("insersect-basic", () => {
+test("intersect-basic", () => {
     expect(typing.createIntersection(types.u8, types.i16)).toBe(types.u8);
     expect(typing.createIntersection(types.string, types.i16)).toBe(types.never);
     expect(typing.createIntersection("A", "B")).toBe(types.never);

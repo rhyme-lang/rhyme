@@ -117,7 +117,7 @@ test("asymmetricPartialSum", () => {
 // Right now, there are few special cases, so "undefined" can
 // show up easily, e.g. in key and value positions.
 //
-// A sensible alterntive design would be to propagate "undefined"
+// A sensible alternative design would be to propagate "undefined"
 // values uniformly as failure, so that they trigger abortive
 // behavior (proper "inner join" semantics). So, rather than
 // inserting "undefined" as a key/val, we would just not insert

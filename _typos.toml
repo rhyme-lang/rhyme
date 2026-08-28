@@ -1,0 +1,15 @@
+[files]
+extend-exclude = [
+    "third-party/*", "cgen-sql/*", "test/aoc/aoc_2023.test.js",
+    # typos recognizes BUILDs as a typo, as it sees [BUIL] as a word.
+    "bench/tpch/tpch_preload.js"
+]
+
+[default.extend-words]
+ix = "ix"
+iy = "iy"
+abl = "abl"
+# these abbreviations for free and true
+# are sometimes used.
+fre = "fre"
+tru = "tru"

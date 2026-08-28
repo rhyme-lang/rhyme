@@ -185,7 +185,7 @@ let finalizeProlog = () => {
   return prolog
 }
 
-// Emit the comapre function for qsort
+// Emit the compare function for qsort
 let emitCompareFunc = (buf, name, valPairs, orders) => {
   buf.push(`int ${name}(int *i, int *j) {`)
   for (let i in valPairs) {
@@ -1348,7 +1348,7 @@ let collectUsedAndSortedCols = q => {
   } else if (q.key == "pure" && q.op == "sort") {
     // if a column is used for sorting,
     // we need to define it as a global array
-    // so that it is accessbile to the comparison function
+    // so that it is accessible to the comparison function
     let columns = q.arg.slice(1)
     collectUsedAndSortedCols(q.arg[0])
     sortedCols[tmpSym(q.arg[0].op)] ??= {}

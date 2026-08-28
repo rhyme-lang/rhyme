@@ -253,10 +253,10 @@ class CHashMap extends CCollection {
     return [pos, keyPos]
   }
 
-  insert(buf, key, pos, keyPos, update1, update2, checkExistance) {
+  insert(buf, key, pos, keyPos, update1, update2, checkExistence) {
     let entry = this.get(keyPos)
 
-    if (checkExistance) {
+    if (checkExistence) {
       c.if(buf)(c.eq(keyPos, "0"), buf1 => {
         c.stmt(buf1)(c.inc(this.size))
         c.stmt(buf1)(c.assign(keyPos, this.size))
@@ -271,8 +271,8 @@ class CHashMap extends CCollection {
     update2(buf, entry, pos, keyPos)
   }
 
-  findAndInsert(buf, key, update1, update2, checkExistance) {
-    if (checkExistance) {
+  findAndInsert(buf, key, update1, update2, checkExistence) {
+    if (checkExistence) {
       c.if(buf)(c.eq(this.size, this.capacity), buf1 => {
         c.printErr(buf1)("hashmap size reached its full capacity\\n")
         c.return(buf1)("1")
@@ -281,7 +281,7 @@ class CHashMap extends CCollection {
 
     let [pos, keyPos] = this.find(buf, key)
 
-    this.insert(buf, key, pos, keyPos, update1, update2, checkExistance)
+    this.insert(buf, key, pos, keyPos, update1, update2, checkExistence)
 
     return [pos, keyPos]
   }

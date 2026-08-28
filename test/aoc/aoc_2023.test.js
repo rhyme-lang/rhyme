@@ -209,7 +209,7 @@ let udf = {
     let j = +point[1]
     return [[i-1, j-1], [i-1, j], [i-1, j+1], [i, j-1], [i, j+1], [i+1, j-1], [i+1, j], [i+1, j+1]]
   },
-  // Get the corrdinates of the current match, i.e. [[row, match.start], ..., [row, match.end]]
+  // Get the coordinates of the current match, i.e. [[row, match.start], ..., [row, match.end]]
   getCords: row => match => Array.from({length: match[0].length}, (_, i) => [+row, i + match.index]),
   // !!! Temporary hack for optional chaining, should change this afterwards
   optionalChaining: o => k => o?.[k],
@@ -234,7 +234,7 @@ let udf_typ = typing.parseType`${udf_std_typ} & {
 }`
 let root = api.input()
 
-// Temporay matrix of characters, joined in later queries.
+// Temporary matrix of characters, joined in later queries.
 let matrix = pipe(root).get("input").map("udf.splitN").get("*i").map("udf.splitB").get("*j").group("*j").group("*i")
 
 let matches = pipe(root).get("input").map("udf.splitN").get("*row").map("udf.match").get("*match")
@@ -294,7 +294,7 @@ test("day3-part2", () => {
   // 42 is *
   let isStar = rh`udf.isEqual ${syms} (udf.int2Char 42)`
   let matches = rh`.input | udf.split "\\n" | .*line | udf.matchAll "\\\\d+" "g" | .*match`
-  // Check whether a symbolc at (i, j) is adjacent to a match
+  // Check whether a symbolic at (i, j) is adjacent to a match
   let isAdj = rh`udf.isAdj *i *j *line ${matches}`
   // The array of adjacent part numbers for each * symbol, ungrouped
   let partNumsPerGear_ungrouped = [rh`${matches} | udf.toNum | ${filterBy("*f0", isAdj)} | ${filterBy("*f1", isStar)}`]
@@ -402,12 +402,12 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
     "count": 1
   }
 
-  let matchCountObj = rh`${lineRes} | last | group ${id}` // XXX the 'last' is neccessary (eager
+  let matchCountObj = rh`${lineRes} | last | group ${id}` // XXX the 'last' is necessary (eager
                                                           // vs reluctant use of free variables)
 
   // For each line i in the matchCountObject, it will look through the matchCountObject
   // to find every other line j that satisfies j.id > i.id and j.id <= i.id + i.match.
-  // For each of these lines, it will increament j.count by i.count
+  // For each of these lines, it will increment j.count by i.count
   // udf.andThen here use the first argument as a side effect so that the final result will contain only the count
 
   let query = rh`${matchCountObj} | .*lineRes
@@ -948,7 +948,7 @@ test("day9-part2", () => {
     sign:newsign,
     sum:rh`.state.sum + (sum ${head})`
   }
-  // XXX: in c1_opt (new codegen), the last *s loop is splitted into two loops.
+  // XXX: in c1_opt (new codegen), the last *s loop is split into two loops.
   // This is because we require strict ordering of assignments to one tmp.
   let f1 = api.compile(q1)
   while (state.data.length) {
@@ -2434,7 +2434,7 @@ hdj{m>838:A,pv}
       value: rh`${predStr} | udf.getValue | udf.toNum`
   });
 
-  // Separate workflows into multiple "subworkflows" that check a single condiiton and go to a specific state based on the result.
+  // Separate workflows into multiple "subworkflows" that check a single condition and go to a specific state based on the result.
   // This allows simpler running by flattening the workflows into singular operations.
   let workflow_split = {
       "-": api.keyval(rh`${rh`${workflows}.*wf.name`} :: (udf.asString *opt)`, (

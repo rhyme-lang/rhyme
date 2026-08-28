@@ -93,7 +93,7 @@ test("groupByTest", async () => {
   let func = await compile(query, { backend: "c", outDir, outFile: "groupByTest", enableOptimizations: false })
   let res = await func()
 
-  // total is currectly ignored but it is constructed in the code
+  // total is currently ignored but it is constructed in the code
   expect(JSON.parse(res)).toEqual({ "A": 40, "B": 20 })
 })
 
@@ -106,7 +106,7 @@ test("groupByAverageTest", async () => {
   let func = await compile(query, { backend: "c", outDir, outFile: "groupByAverageTest", enableOptimizations: false })
   let res = await func()
 
-  // total is currectly ignored but it is constructed in the code
+  // total is currently ignored but it is constructed in the code
   expect(JSON.parse(res)).toEqual({ "A": 20, "B": 20 })
 })
 
