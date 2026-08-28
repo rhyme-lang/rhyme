@@ -133,9 +133,14 @@ If you're using VSCode, you can install [Jest Runner](https://marketplace.visual
 
 
 ### Useful Links
-- A recent publication on Rhyme (PADL 2024):
-  [Rhyme: A Data-Centric Expressive Query Language for Nested Data Structures](https://www.cs.purdue.edu/homes/rompf/papers/abeysinghe-padl24.pdf)
-- A second publication (FLOPS 2024):
+- Paper published at VLDB (Aug 2026):
+  [Rhyme Native: Efficient Code Generation for Structured and Semi-Structured Workloads](https://www.vldb.org/pvldb/vol19/p3676-guo.pdf)
+
+- Paper published at FLOPS (Jun 2024):
   [Rhyme: A Data-Centric Multi-Paradigm Query Language based on Functional Logic Metaprogramming](https://www.cs.purdue.edu/homes/rompf/papers/abeysinghe-preprint2401.pdf)
-- An interactive blog post introducing Rhyme:  
+
+- Paper published at PADL (Jan 2024):
+  [Rhyme: A Data-Centric Expressive Query Language for Nested Data Structures](https://www.cs.purdue.edu/homes/rompf/papers/abeysinghe-padl24.pdf)
+
+- An interactive blog post introducing an early version of Rhyme:
   [Let's build a Query Language!](https://tiarkrompf.github.io/notes/?/js-queries/)
