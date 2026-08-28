@@ -91,6 +91,10 @@ int main(int argc, char **argv) {
                 }
                 int key_pos0$ = tmp6_htable[tmp_pos0$];
                 if ((key_pos0$ == 0)) {
+                    if ((tmp6_key_count >= 65535)) {
+                        fprintf(stderr, "Error: exceeded maximum number of unique keys (65535)\n");
+                        return 1;
+                    }
                     tmp6_key_count++;
                     (key_pos0$ = tmp6_key_count);
                     (tmp6_htable[tmp_pos0$] = key_pos0$);
