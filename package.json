@@ -9,9 +9,24 @@
     "prepublishOnly": "./node_modules/.bin/webpack",
     "build": "webpack"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "query-language",
+    "json",
+    "nested-data",
+    "code-generation",
+    "compiler",
+    "data-processing"
+  ],
+  "author": "Tiark Rompf",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rhyme-lang/rhyme.git"
+  },
+  "homepage": "https://rhyme-lang.github.io/",
+  "bugs": {
+    "url": "https://github.com/rhyme-lang/rhyme/issues"
+  },
   "devDependencies": {
     "jest": "^29.7.0",
     "webpack": "^5.91.0",

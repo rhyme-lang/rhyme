@@ -8,6 +8,17 @@ let outDir = "cgen-sql/out/json-bench"
 
 let answersDir = "cgen-sql/answers/json-bench"
 
+// point to the data directory
+let dataDir = "cgen-sql/data/bluesky"
+let blueskyFile = `"${dataDir}/file_0001.json"`
+
+// The JSONBench queries run against the bluesky dump.
+// Skip rather than fail when it hasn't been downloaded.
+let hasData = fs.existsSync(`${dataDir}/file_0001.json`)
+if (!hasData)
+  console.log(`Skipping JSONBench tests: no file_0001.json in ${dataDir} (see .github/workflows/node.js.yml)`)
+let testJSONBench = hasData ? test : test.skip
+
 let sh = (cmd) => {
   return new Promise((resolve, reject) => {
     os.exec(cmd, (err, stdout) => {
@@ -21,13 +32,10 @@ let sh = (cmd) => {
 }
 
 beforeAll(async () => {
-  try {
-    await sh(`rm -rf ${outDir}`)
-    await sh(`mkdir -p ${outDir}`)
-    await sh(`cp cgen-sql/rhyme-c.h ${outDir}`)
-  } catch (error) {
-    console.log(error)
-  }
+  if (!hasData) return
+  await sh(`rm -rf ${outDir}`)
+  await sh(`mkdir -p ${outDir}`)
+  await sh(`cp cgen-sql/rhyme-c.h ${outDir}`)
 })
 
 let u32Key = typing.createKey(types.u32)
@@ -48,7 +56,7 @@ let schema = typing.parseType({
   })
 })
 
-let bluesky = rh`loadNDJSON "cgen-sql/data/bluesky/file_0001.json" ${schema}`
+let bluesky = rh`loadNDJSON ${blueskyFile} ${schema}`
 
 let settings = {
   backend: "c",
@@ -60,7 +68,7 @@ let settings = {
   format: "csv"
 }
 
-test("q1", async () => {
+testJSONBench("q1", async () => {
   let group = rh`{
     ${bluesky}.*A.commit.collection || "(null)": {
       event: single(${bluesky}.*A.commit.collection || "(null)"),
@@ -77,7 +85,7 @@ test("q1", async () => {
   expect(res).toBe(answer)
 })
 
-test("q2", async () => {
+testJSONBench("q2", async () => {
   let cond = rh`${bluesky}.*A.kind == "commit" && ${bluesky}.*A.commit.operation == "create"`
 
   let countDistinct = rh`{
@@ -105,7 +113,7 @@ test("q2", async () => {
   expect(res).toBe(answer)
 })
 
-test("q3", async () => {
+testJSONBench("q3", async () => {
   let cond1 = rh`${bluesky}.*A.kind == "commit" && ${bluesky}.*A.commit.operation == "create"`
   let cond2 = rh`${bluesky}.*A.commit.collection == "app.bsky.feed.post" || ${bluesky}.*A.commit.collection == "app.bsky.feed.repost" || ${bluesky}.*A.commit.collection == "app.bsky.feed.like"`
 
@@ -128,7 +136,7 @@ test("q3", async () => {
   expect(res).toBe(answer)
 })
 
-test("q4", async () => {
+testJSONBench("q4", async () => {
   let cond1 = rh`${bluesky}.*A.kind == "commit" && ${bluesky}.*A.commit.operation == "create"`
   let cond2 = rh`${bluesky}.*A.commit.collection == "app.bsky.feed.post"`
 
@@ -150,7 +158,7 @@ test("q4", async () => {
   expect(res).toBe(answer)
 })
 
-test("q5", async () => {
+testJSONBench("q5", async () => {
   let cond1 = rh`${bluesky}.*A.kind == "commit" && ${bluesky}.*A.commit.operation == "create"`
   let cond2 = rh`${bluesky}.*A.commit.collection == "app.bsky.feed.post"`
 

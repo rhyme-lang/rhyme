@@ -10,6 +10,13 @@ let outDir = "cgen-sql/out/tpch"
 
 let answersDir = "cgen-sql/answers/tpch"
 
+// The TPC-H queries run against generated .tbl data.
+// Skip rather than fail when it hasn't been generated.
+let hasData = fs.existsSync(`${dataDir}/lineitem.tbl`)
+if (!hasData)
+  console.log(`Skipping TPC-H tests: no .tbl files in ${dataDir} (generate with tpch-dbgen -s 1)`)
+let testTPCH = hasData ? test : test.skip
+
 let settings = {
   backend: "c",
   schema: types.never,
@@ -143,15 +150,10 @@ let sh = (cmd) => {
 }
 
 beforeAll(async () => {
-  try {
-    const stat = fs.statSync(dataDir)
-    stat.isDirectory()
-    await sh(`rm -rf ${outDir}`)
-    await sh(`mkdir -p ${outDir}`)
-    await sh(`cp cgen-sql/rhyme-c.h ${outDir}`)
-  } catch (error) {
-    console.log(error)
-  }
+  if (!hasData) return
+  await sh(`rm -rf ${outDir}`)
+  await sh(`mkdir -p ${outDir}`)
+  await sh(`cp cgen-sql/rhyme-c.h ${outDir}`)
 })
 
 // test("q1-js", () => {
@@ -176,7 +178,7 @@ beforeAll(async () => {
 //   console.log(func.explain.code)
 // })
 
-test("q1-alt", async () => {
+testTPCH("q1-alt", async () => {
   let cond = rh`${lineitem}.*.l_shipdate <= 19980902`
 
   let query1 = rh`{
@@ -201,7 +203,7 @@ test("q1-alt", async () => {
   expect(res).toBe(answer)
 })
 
-test("q1", async () => {
+testTPCH("q1", async () => {
   let cond = rh`${lineitem}.*.l_shipdate <= 19980902`
 
   let lineitem1 = rh`{
@@ -239,7 +241,7 @@ test("q1", async () => {
   expect(res).toBe(answer)
 })
 
-test("q2", async () => {
+testTPCH("q2", async () => {
   let region1 = rh`single ${region}.*r1.r_regionkey | group (${region}.*r1.r_name == "EUROPE" & ${region}.*r1.r_regionkey)`
   
   let nation1 = rh`{
@@ -288,7 +290,7 @@ test("q2", async () => {
   expect(res).toBe(answer)
 })
 
-test("q3", async () => {
+testTPCH("q3", async () => {
   let customer1 = rh`single ${customer}.*c1.c_custkey | group (${customer}.*c1.c_mktsegment == "BUILDING" & ${customer}.*c1.c_custkey)`
   
   let orders1 = rh`{
@@ -316,7 +318,7 @@ test("q3", async () => {
   expect(res).toBe(answer)
 })
 
-test("q4", async () => {
+testTPCH("q4", async () => {
   let countR = rh`count ${lineitem}.*l.l_orderkey | group (${lineitem}.*l.l_commitdate < ${lineitem}.*l.l_receiptdate) & ${lineitem}.*l.l_orderkey`
   
   let cond = rh`19930701 <= ${orders}.*.o_orderdate && ${orders}.*.o_orderdate < 19931001`
@@ -334,7 +336,7 @@ test("q4", async () => {
   expect(res).toBe(answer)
 })
 
-test("q5", async () => {
+testTPCH("q5", async () => {
   let region1 = rh`single ${region}.*r1.r_regionkey | (group ${region}.*r1.r_name == "ASIA" & ${region}.*r1.r_regionkey)`
   let nation1 = rh`{
     n_nationkey: single ${nation}.*n1.n_nationkey,
@@ -368,7 +370,7 @@ test("q5", async () => {
   expect(res).toBe(answer)
 })
 
-test("q6", async () => {
+testTPCH("q6", async () => {
   let cond1 = rh`19940101 <= ${lineitem}.*.l_shipdate && ${lineitem}.*.l_shipdate < 19950101`
   let cond2 = rh`0.05 <= ${lineitem}.*.l_discount && ${lineitem}.*.l_discount <= 0.07`
   let cond3 = rh`${lineitem}.*.l_quantity < 24`
@@ -384,7 +386,7 @@ test("q6", async () => {
   expect(res).toBe(answer)
 })
 
-test("q7", async () => {
+testTPCH("q7", async () => {
   let cond1 = rh`${nation}.*n1.n_name == "FRANCE" && ${nation}.*n2.n_name == "GERMANY" || ${nation}.*n1.n_name == "GERMANY" && ${nation}.*n2.n_name == "FRANCE"`
   let nation1 = rh`{
     supp_nation: single ${nation}.*n1.n_name,
@@ -428,7 +430,7 @@ test("q7", async () => {
   expect(res).toBe(answer)
 })
 
-test("q8", async () => {
+testTPCH("q8", async () => {
   let region1 = rh`single ${region}.*r1.r_regionkey | group ${region}.*r1.r_name == "AMERICA" & ${region}.*r1.r_regionkey`
   let nation1 = rh`single ${nation}.*n1.n_nationkey | group ${region1}.(${nation}.*n1.n_regionkey) & ${nation}.*n1.n_nationkey`
 
@@ -474,7 +476,7 @@ test("q8", async () => {
   expect(res).toBe(answer)
 })
 
-test("q9", async () => {
+testTPCH("q9", async () => {
   let nation1 = rh`single ${nation}.*n1.n_name | group ${nation}.*n1.n_nationkey`
   
   let supplier1 = rh`{
@@ -518,7 +520,7 @@ test("q9", async () => {
   expect(res).toBe(answer)
 })
 
-test("q10", async () => {
+testTPCH("q10", async () => {
   let nation1 = rh`single ${nation}.*n1.n_name | group ${nation}.*n1.n_nationkey`
   let orders1 = rh`[${orders}.*o1.o_orderkey] | group (${orders}.*o1.o_orderdate >= 19931001 && ${orders}.*o1.o_orderdate < 19940101) & ${orders}.*o1.o_custkey`
 
@@ -562,7 +564,7 @@ test("q10", async () => {
   expect(res).toBe(answer)
 })
 
-test("q11", async () => {
+testTPCH("q11", async () => {
   let nation1 = rh`single ${nation}.*n1.n_nationkey | group ${nation}.*n1.n_name == "GERMANY" & ${nation}.*n1.n_nationkey`
   
   let supplier1 = rh`{
@@ -592,7 +594,7 @@ test("q11", async () => {
   expect(res).toBe(answer)
 })
 
-test("q12", async () => {
+testTPCH("q12", async () => {
   let orders1 = rh`single ${orders}.*o1.o_orderpriority | group ${orders}.*o1.o_orderkey`
   
   let cond1 = rh`${lineitem}.*l1.l_shipmode == "MAIL" || ${lineitem}.*l1.l_shipmode == "SHIP"`
@@ -620,7 +622,7 @@ test("q12", async () => {
   expect(res).toBe(answer)
 })
 
-test("q13", async () => {
+testTPCH("q13", async () => {
   let cond = rh`isUndef (like ${orders}.*o1.o_comment "%special%requests%")`
   let orders1 = rh`[${orders}.*o1.o_orderkey] | group ${cond} & ${orders}.*o1.o_custkey`
 
@@ -640,7 +642,7 @@ test("q13", async () => {
   expect(res).toBe(answer)
 })
 
-test("q14", async () => {
+testTPCH("q14", async () => {
   let cond1 = rh`${lineitem}.*l1.l_shipdate >= 19950901 && ${lineitem}.*l1.l_shipdate < 19951001`
   let lineitem1 = rh`[{
     l_extendedprice: ${lineitem}.*l1.l_extendedprice,
@@ -662,7 +664,7 @@ test("q14", async () => {
   expect(res).toBe(answer)
 })
 
-test("q15", async () => {
+testTPCH("q15", async () => {
   let supplier1 = rh`{
     s_name: single ${supplier}.*s1.s_name,
     s_address: single ${supplier}.*s1.s_address,
@@ -692,7 +694,7 @@ test("q15", async () => {
   expect(res).toBe(answer)
 })
 
-test("q16", async () => {
+testTPCH("q16", async () => {
   let supplier1 = rh`count (${supplier}.*s1) | group (like ${supplier}.*s1.s_comment "%Customer%Complaints%") & ${supplier}.*s1.s_suppkey`
   
   let partsupp1 = rh`[${partsupp}.*ps1.ps_suppkey] | group (isUndef ${supplier1}.(${partsupp}.*ps1.ps_suppkey)) & ${partsupp}.*ps1.ps_partkey`
@@ -735,7 +737,7 @@ test("q16", async () => {
   expect(res).toBe(answer)
 })
 
-test("q17", async () => {
+testTPCH("q17", async () => {
   let lineitem1 = rh`[{
     l_quantity: ${lineitem}.*l1.l_quantity,
     l_extendedprice: ${lineitem}.*l1.l_extendedprice
@@ -762,7 +764,7 @@ test("q17", async () => {
   expect(res).toBe(answer)
 })
 
-test("q17-alt", async () => {
+testTPCH("q17-alt", async () => {
   let part1 = rh`[
     (${part}.*p1.p_brand == "Brand#23" && ${part}.*p1.p_container == "MED BOX") & ${part}.*p1.p_partkey
   ] | group ${part}.*p1.p_partkey`
@@ -779,7 +781,7 @@ test("q17-alt", async () => {
   expect(res).toBe(answer)
 })
 
-test("q18", async () => {
+testTPCH("q18", async () => {
   let customer1 = rh`{
     c_custkey: single ${customer}.*c1.c_custkey,
     c_name: single ${customer}.*c1.c_name
@@ -827,7 +829,7 @@ test("q18", async () => {
   expect(res).toBe(answer)
 })
 
-test("q19", async () => {
+testTPCH("q19", async () => {
   let condLineitem1 = rh`${lineitem}.*l1.l_shipmode == "AIR" || ${lineitem}.*l1.l_shipmode == "AIR REG"`
   let condLineitem2 = rh`${lineitem}.*l1.l_shipinstruct == "DELIVER IN PERSON"`
 
@@ -879,7 +881,7 @@ test("q19", async () => {
   expect(res).toBe(answer)
 })
 
-test("q20", async () => {
+testTPCH("q20", async () => {
   let part1 = rh`count ${part}.*p1 | group (like ${part}.*p1.p_name "forest%") & ${part}.*p1.p_partkey`
   let partsupp1 = rh`[{
     ps_suppkey: ${partsupp}.*ps1.ps_suppkey,
@@ -916,7 +918,7 @@ test("q20", async () => {
   expect(res).toBe(answer)
 })
 
-test("q21", async () => {
+testTPCH("q21", async () => {
   let nation1 = rh`single ${nation}.*n1.n_nationkey | group ${nation}.*n1.n_name == "SAUDI ARABIA" & ${nation}.*n1.n_nationkey`
   let supplier1 = rh`single ${supplier}.*s1.s_name | group ${nation1}.(${supplier}.*s1.s_nationkey) & ${supplier}.*s1.s_suppkey`
 
@@ -954,7 +956,7 @@ test("q21", async () => {
   expect(res).toBe(answer)
 })
 
-test("q22", async () => {
+testTPCH("q22", async () => {
   let cond1 = rh`${customer}.*c1.c_acctbal > 0`
   let cond2 = rh`(substr ${customer}.*c1.c_phone 0 2) == "13" || (substr ${customer}.*c1.c_phone 0 2) == "31" ||
                   (substr ${customer}.*c1.c_phone 0 2) == "23" || (substr ${customer}.*c1.c_phone 0 2) == "29" ||

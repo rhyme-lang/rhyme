@@ -1,4 +1,3 @@
-const { optimize } = require('webpack')
 const { api, rh } = require('../../src/rhyme')
 const { compile } = require('../../src/simple-eval')
 const { typing, types } = require('../../src/typing')
