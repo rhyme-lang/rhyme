@@ -1,7 +1,6 @@
 const { c, utils } = require("./utils")
 const { hashmap, array } = require("./collections")
 const { TAG, value } = require("./value")
-const val = require("./value/value")
 const { symbol } = require("./symbol")
 const { csv } = require("./csv")
 const { json } = require("./json")

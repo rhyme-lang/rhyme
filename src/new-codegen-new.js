@@ -1,3 +1,18 @@
+// WIP variant of new-codegen.js, kept on purpose. Nothing requires this file,
+// and that is intentional -- it is parked, not dead.
+//
+// What it explores: a different way of deciding which loops a statement sits
+// in. new-codegen.js derives that from the statement's own dep list
+// (nodes[s].val.deps filtered by isloop); this version reads it straight from
+// loopdeps[s] via getLoops1, which also changes when a loop can be closed.
+// The aim was a scheduling issue in new-codegen.js.
+//
+// Drift warning: this is a file copy, so it does not receive fixes made to
+// new-codegen.js. It is currently missing 16f05b3 ("fix jsonbench error"),
+// which hoists the getLoopTxt() call out of the c-sql loop and emits
+// loopTxt.epilog in emitLoopEpilog. Port that across before diffing the two,
+// or the comparison measures that bug rather than the scheduling change.
+
 const { quoteVar, debug, trace, print, inspect, error, warn } = require("./utils")
 const { scc } = require('./scc')
 const { runtime } = require('./simple-runtime')
