@@ -5,10 +5,10 @@ const fs = require("fs")
 const os = require('child_process')
 
 // point to the data directory
-let dataDir = "cgen-sql/data/SF1"
-let outDir = "cgen-sql/out/tpch"
+let dataDir = "data/SF1"
+let outDir = "out/tpch"
 
-let answersDir = "cgen-sql/answers/tpch"
+let answersDir = "test/expected/tpch"
 
 // The TPC-H queries run against generated .tbl data.
 // Skip rather than fail when it hasn't been generated.
@@ -153,7 +153,7 @@ beforeAll(async () => {
   if (!hasData) return
   await sh(`rm -rf ${outDir}`)
   await sh(`mkdir -p ${outDir}`)
-  await sh(`cp cgen-sql/rhyme-c.h ${outDir}`)
+  await sh(`cp runtime/rhyme-c.h ${outDir}`)
 })
 
 // test("q1-js", () => {

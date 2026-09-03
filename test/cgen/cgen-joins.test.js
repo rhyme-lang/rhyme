@@ -16,21 +16,20 @@ let sh = (cmd) => {
   })
 }
 
-let outDir = "cgen-sql/out/joins"
+let outDir = "out/joins"
 
 beforeAll(async () => {
   await sh(`rm -rf ${outDir}`)
   await sh(`mkdir -p ${outDir}`)
-  // await sh(`cp cgen-sql/yyjson.h ${outDir}`)
 })
 
 let customerSchema = typing.parseType("{*u32: {id: i16, name: string}}")
 let ordersSchema = typing.parseType("{*u32: {id: i16, item: string, customerId: i16}}")
 let dummySchema = typing.parseType("{*u32: u32}")
 
-let customers = rh`loadJSON "./cgen-sql/json/joins/customers.json" ${customerSchema}`
-let orders = rh`loadJSON "./cgen-sql/json/joins/orders.json" ${ordersSchema}`
-let dummy = rh`loadJSON "./cgen-sql/json/joins/dummy.json" ${dummySchema}`
+let customers = rh`loadJSON "./data/json/joins/customers.json" ${customerSchema}`
+let orders = rh`loadJSON "./data/json/joins/orders.json" ${ordersSchema}`
+let dummy = rh`loadJSON "./data/json/joins/dummy.json" ${dummySchema}`
 
   let innerJoinExpected = [
   { custId: 1, name: 'customer1', orderId: 1, orderitem: 'order1' },

@@ -1854,7 +1854,7 @@ let generateC = (q, ir, settings) => {
   let code = emitCode(q, ir, settings)
 
   let compiler = settings.backend == "c" ? (settings.compiler || "gcc") : "nvcc"
-  let cFlags = settings.cFlags || "-Icgen-sql -O3"
+  let cFlags = settings.cFlags || "-Iruntime -O3"
 
   async function func() {
     let stdout = await sh(`./${out} `)

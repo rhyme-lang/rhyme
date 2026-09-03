@@ -16,12 +16,12 @@ let sh = (cmd) => {
   })
 }
 
-let outDir = "cgen-sql/out/sql-new"
+let outDir = "out/sql-new"
 
 beforeAll(async () => {
   await sh(`rm -rf ${outDir}`)
   await sh(`mkdir -p ${outDir}`)
-  // await sh(`cp cgen-sql/rhyme-c.h ${outDir}`)
+  // await sh(`cp runtime/rhyme-c.h ${outDir}`)
 });
 
 test("testTrivial", async () => {
@@ -43,7 +43,7 @@ let schema = typing.objBuilder()
   })).build()
 
 test("testScalar", async () => {
-  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+  let csv = rh`loadCSV "./data/csv/simple.csv" ${schema}`
 
   let query = rh`sum ${csv}.*A.C`
 
@@ -54,7 +54,7 @@ test("testScalar", async () => {
 })
 
 test("testSimpleSum1", async () => {
-  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+  let csv = rh`loadCSV "./data/csv/simple.csv" ${schema}`
 
   let query = rh`${csv}.*A.C | sum`
 
@@ -65,7 +65,7 @@ test("testSimpleSum1", async () => {
 })
 
 test("testSimpleSum2", async () => {
-  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+  let csv = rh`loadCSV "./data/csv/simple.csv" ${schema}`
 
   let query = rh`${csv}.*.C + 10 | sum`
 
@@ -76,7 +76,7 @@ test("testSimpleSum2", async () => {
 })
 
 test("testSimpleSum3", async () => {
-  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+  let csv = rh`loadCSV "./data/csv/simple.csv" ${schema}`
 
   let query = rh`(${csv}.*.C | sum) + 10`
 
@@ -87,7 +87,7 @@ test("testSimpleSum3", async () => {
 })
 
 test("testSimpleSum4", async () => {
-  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+  let csv = rh`loadCSV "./data/csv/simple.csv" ${schema}`
 
   let query = rh`sum(${csv}.*A.C) + sum(${csv}.*B.D)`
 
@@ -98,7 +98,7 @@ test("testSimpleSum4", async () => {
 })
 
 test("testSimpleSum5", async () => {
-  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+  let csv = rh`loadCSV "./data/csv/simple.csv" ${schema}`
 
   let query = rh`sum(${csv}.*A.C + ${csv}.*A.D)`
 
@@ -109,8 +109,8 @@ test("testSimpleSum5", async () => {
 })
 
 test("testLoadCSVMultipleFilesZip", async () => {
-  let csv1 = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
-  let csv2 = rh`loadCSV "./cgen-sql/simple1.csv" ${schema}`
+  let csv1 = rh`loadCSV "./data/csv/simple.csv" ${schema}`
+  let csv2 = rh`loadCSV "./data/csv/simple1.csv" ${schema}`
 
   let query = rh`sum(${csv1}.*A.C + ${csv2}.*A.D)`
 
@@ -121,7 +121,7 @@ test("testLoadCSVMultipleFilesZip", async () => {
 })
 
 test("testLoadCSVSingleFileJoin", async () => {
-  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+  let csv = rh`loadCSV "./data/csv/simple.csv" ${schema}`
 
   let query = rh`sum(${csv}.*A.C + ${csv}.*B.D)`
 
@@ -132,8 +132,8 @@ test("testLoadCSVSingleFileJoin", async () => {
 })
 
 test("testLoadCSVMultipleFilesJoin", async () => {
-  let csv1 = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
-  let csv2 = rh`loadCSV "./cgen-sql/simple1.csv" ${schema}`
+  let csv1 = rh`loadCSV "./data/csv/simple.csv" ${schema}`
+  let csv2 = rh`loadCSV "./data/csv/simple1.csv" ${schema}`
 
   let query = rh`sum(${csv1}.*A.C + ${csv2}.*B.D)`
 
@@ -144,7 +144,7 @@ test("testLoadCSVMultipleFilesJoin", async () => {
 })
 
 test("testMin", async () => {
-  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+  let csv = rh`loadCSV "./data/csv/simple.csv" ${schema}`
 
   let query = rh`min ${csv}.*.B`
 
@@ -155,7 +155,7 @@ test("testMin", async () => {
 })
 
 test("testMax", async () => {
-  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+  let csv = rh`loadCSV "./data/csv/simple.csv" ${schema}`
 
   let query = rh`max ${csv}.*.C`
 
@@ -166,7 +166,7 @@ test("testMax", async () => {
 })
 
 test("testCount", async () => {
-  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+  let csv = rh`loadCSV "./data/csv/simple.csv" ${schema}`
 
   let query = rh`count ${csv}.*.C`
 
@@ -177,7 +177,7 @@ test("testCount", async () => {
 })
 
 test("testStatefulPrint1", async () => {
-  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+  let csv = rh`loadCSV "./data/csv/simple.csv" ${schema}`
 
   let query = rh`print ${csv}.*.B`
 
@@ -193,7 +193,7 @@ test("testStatefulPrint1", async () => {
 })
 
 test("testStatefulPrint2", async () => {
-  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+  let csv = rh`loadCSV "./data/csv/simple.csv" ${schema}`
 
   let query = rh`print ${csv}.*.A`
 
@@ -214,7 +214,7 @@ test("testLoadCSVDynamicFilename", async () => {
       file: types.string
     })).build()
 
-  let filenames = rh`(loadCSV "./cgen-sql/files.csv" ${files_schema}).*f.file`
+  let filenames = rh`(loadCSV "./data/csv/files.csv" ${files_schema}).*f.file`
 
   let csv = rh`loadCSV ${filenames} ${schema}`
 
@@ -232,7 +232,7 @@ test("testLoadCSVDynamicFilenameJoin", async () => {
       file: types.string
     })).build()
 
-  let filenames = rh`(loadCSV "./cgen-sql/files.csv" ${files_schema}).*f.file`
+  let filenames = rh`(loadCSV "./data/csv/files.csv" ${files_schema}).*f.file`
 
   let csv = rh`loadCSV ${filenames} ${schema}`
 
@@ -254,7 +254,7 @@ test("testConstStr", async () => {
 })
 
 test("testFilter1", async () => {
-  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+  let csv = rh`loadCSV "./data/csv/simple.csv" ${schema}`
 
   let query = rh`print ((${csv}.*A.C == 123) & ${csv}.*A.A)`
 
@@ -265,7 +265,7 @@ test("testFilter1", async () => {
 })
 
 test("testFilter2", async () => {
-  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+  let csv = rh`loadCSV "./data/csv/simple.csv" ${schema}`
 
   let query = rh`print ((${csv}.*A.C != 123) & ${csv}.*A.A)`
 
@@ -279,7 +279,7 @@ valD
 })
 
 test("testFilter3", async () => {
-  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+  let csv = rh`loadCSV "./data/csv/simple.csv" ${schema}`
 
   let query = rh`print ((${csv}.*A.A == "valB") & ${csv}.*A.C)`
 
@@ -290,7 +290,7 @@ test("testFilter3", async () => {
 })
 
 test("testFilter4", async () => {
-  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+  let csv = rh`loadCSV "./data/csv/simple.csv" ${schema}`
 
   let query = rh`print ((${csv}.*A.A == "valC") & ${csv}.*A.A)`
 
@@ -301,7 +301,7 @@ test("testFilter4", async () => {
 })
 
 test("testFilter5", async () => {
-  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+  let csv = rh`loadCSV "./data/csv/simple.csv" ${schema}`
 
   let query = rh`print ((${csv}.*A.A != ${csv}.*A.String) & ${csv}.*A.A)`
 
@@ -355,7 +355,7 @@ let regionSchema = typing.objBuilder()
   })).build()
 
 test("plainSumTest", async () => {
-  let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
+  let csv = rh`loadCSV "./data/csv/data.csv" ${dataSchema}`
 
   let query = rh`sum ${csv}.*.value`
 
@@ -366,7 +366,7 @@ test("plainSumTest", async () => {
 })
 
 test("plainAverageTest", async () => {
-  let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
+  let csv = rh`loadCSV "./data/csv/data.csv" ${dataSchema}`
 
   let query = rh`(sum ${csv}.*.value) / (count ${csv}.*.value)`
 
@@ -377,7 +377,7 @@ test("plainAverageTest", async () => {
 })
 
 test("uncorrelatedAverageTest", async () => {
-  let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
+  let csv = rh`loadCSV "./data/csv/data.csv" ${dataSchema}`
 
   let query = rh`(sum ${csv}.*A.value) / (count ${csv}.*B.value)`
 
@@ -388,7 +388,7 @@ test("uncorrelatedAverageTest", async () => {
 })
 
 test("groupByTest", async () => {
-  let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
+  let csv = rh`loadCSV "./data/csv/data.csv" ${dataSchema}`
 
   let query = rh`sum ${csv}.*.value | group ${csv}.*.key`
 
@@ -399,7 +399,7 @@ test("groupByTest", async () => {
 })
 
 test("groupByAverageTest", async () => {
-  let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
+  let csv = rh`loadCSV "./data/csv/data.csv" ${dataSchema}`
 
   let avg = rh`(sum ${csv}.*.value) / (count ${csv}.*.value)`
 
@@ -412,7 +412,7 @@ test("groupByAverageTest", async () => {
 })
 
 test("undefinedTest", async () => {
-  let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
+  let csv = rh`loadCSV "./data/csv/data.csv" ${dataSchema}`
 
   let avg = rh`(sum ${csv}.*.value) / (count ${csv}.*.value)`
 
@@ -427,7 +427,7 @@ test("undefinedTest", async () => {
 })
 
 test("groupByRelativeSum", async () => {
-  let csv = rh`loadCSV "./cgen-sql/data.csv" ${dataSchema}`
+  let csv = rh`loadCSV "./data/csv/data.csv" ${dataSchema}`
 
   let query = rh`((sum ${csv}.*.value) / (sum ${csv}.*B.value)) | group ${csv}.*.key`
 
@@ -438,7 +438,7 @@ test("groupByRelativeSum", async () => {
 })
 
 test("groupCountByPopulation", async () => {
-  let csv = rh`loadCSV "./cgen-sql/country.csv" ${countrySchema}`
+  let csv = rh`loadCSV "./data/csv/country.csv" ${countrySchema}`
 
   // test integer values as group key
   let query = rh`count ${csv}.*.city | group ${csv}.*.population`
@@ -450,7 +450,7 @@ test("groupCountByPopulation", async () => {
 })
 
 test("groupRegionByCountry", async () => {
-  let csv = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
+  let csv = rh`loadCSV "./data/csv/region.csv" ${regionSchema}`
 
   // test strings as hashtable values
   let query = rh`${csv}.*.region | group ${csv}.*.country`
@@ -462,8 +462,8 @@ test("groupRegionByCountry", async () => {
 })
 
 test("nestedLoopJoinSimpleTest", async () => {
-  let country = rh`loadCSV "./cgen-sql/country.csv" ${countrySchema}`
-  let region = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
+  let country = rh`loadCSV "./data/csv/country.csv" ${countrySchema}`
+  let region = rh`loadCSV "./data/csv/region.csv" ${regionSchema}`
 
   let query = rh`(${region}.*.country == ${country}.*.country) & ${region}.*.region | group ${country}.*.city`
 
@@ -474,8 +474,8 @@ test("nestedLoopJoinSimpleTest", async () => {
 })
 
 test("nestedLoopJoinWithAggrTest", async () => {
-  let country = rh`loadCSV "./cgen-sql/country.csv" ${countrySchema}`
-  let region = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
+  let country = rh`loadCSV "./data/csv/country.csv" ${countrySchema}`
+  let region = rh`loadCSV "./data/csv/region.csv" ${regionSchema}`
 
   // SELECT SUM(country.population) FROM country JOIN region ON region.country = country.country GROUP BY region.region
   let query = rh`sum ((${region}.*.country == ${country}.*.country) & ${country}.*.population) | group ${region}.*.region`
@@ -487,8 +487,8 @@ test("nestedLoopJoinWithAggrTest", async () => {
 })
 
 test("hashJoinSimpleTest", async () => {
-  let country = rh`loadCSV "./cgen-sql/country.csv" ${countrySchema}`
-  let region = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
+  let country = rh`loadCSV "./data/csv/country.csv" ${countrySchema}`
+  let region = rh`loadCSV "./data/csv/region.csv" ${regionSchema}`
 
   let q1 = rh`${region}.*O.region | group ${region}.*O.country`
   let query = rh`${q1}.(${country}.*.country) | group ${country}.*.city`
@@ -499,8 +499,8 @@ test("hashJoinSimpleTest", async () => {
 })
 
 test("hashJoinWithAggrTest", async () => {
-  let country = rh`loadCSV "./cgen-sql/country.csv" ${countrySchema}`
-  let region = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
+  let country = rh`loadCSV "./data/csv/country.csv" ${countrySchema}`
+  let region = rh`loadCSV "./data/csv/region.csv" ${regionSchema}`
 
   let q1 = rh`${region}.*O.region | group ${region}.*O.country`
   let query = rh`sum ${country}.*.population | group ${q1}.(${country}.*.country)`
@@ -525,7 +525,7 @@ let regionData = [
 ]
 
 test("groupByArray", async () => {
-  let region = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
+  let region = rh`loadCSV "./data/csv/region.csv" ${regionSchema}`
 
   let query = rh`array ${region}.*O.country | group ${region}.*O.region`
 
@@ -536,8 +536,8 @@ test("groupByArray", async () => {
 })
 
 test("hashJoinArray", async () => {
-  let country = rh`loadCSV "./cgen-sql/country.csv" ${countrySchema}`
-  let region = rh`loadCSV "./cgen-sql/region.csv" ${regionSchema}`
+  let country = rh`loadCSV "./data/csv/country.csv" ${countrySchema}`
+  let region = rh`loadCSV "./data/csv/region.csv" ${regionSchema}`
 
   let q1 = rh`${region}.*O.region | group ${region}.*O.country`
   let query = rh`array ${country}.*.population | group ${q1}.(${country}.*.country)`
@@ -549,7 +549,7 @@ test("hashJoinArray", async () => {
 })
 
 test("plainSumTBLTest", async () => {
-  let csv = rh`loadTBL "./cgen-sql/data.tbl" ${dataSchema}`
+  let csv = rh`loadTBL "./data/csv/data.tbl" ${dataSchema}`
 
   let query = rh`sum ${csv}.*.value`
 
@@ -560,7 +560,7 @@ test("plainSumTBLTest", async () => {
 })
 
 test("arrayProjectionSingleTest", async () => {
-  let csv = rh`loadTBL "./cgen-sql/data.tbl" ${dataSchema}`
+  let csv = rh`loadTBL "./data/csv/data.tbl" ${dataSchema}`
 
   let query = rh`[${csv}.*.value]`
 
@@ -571,7 +571,7 @@ test("arrayProjectionSingleTest", async () => {
 })
 
 test("arrayProjectionSingleStringTest", async () => {
-  let csv = rh`loadTBL "./cgen-sql/data.tbl" ${dataSchema}`
+  let csv = rh`loadTBL "./data/csv/data.tbl" ${dataSchema}`
 
   let query = rh`[${csv}.*.key]`
 
@@ -582,7 +582,7 @@ test("arrayProjectionSingleStringTest", async () => {
 })
 
 test("arrayProjectionMultipleTest", async () => {
-  let csv = rh`loadTBL "./cgen-sql/data.tbl" ${dataSchema}`
+  let csv = rh`loadTBL "./data/csv/data.tbl" ${dataSchema}`
 
   let query = rh`[{ value: ${csv}.*.value, key: ${csv}.*.key }]`
 
@@ -593,7 +593,7 @@ test("arrayProjectionMultipleTest", async () => {
 })
 
 test("arrayAccessUndefTest", async () => {
-  let csv = rh`loadTBL "./cgen-sql/data.tbl" ${dataSchema}`
+  let csv = rh`loadTBL "./data/csv/data.tbl" ${dataSchema}`
 
   let query = rh`[{ value: ${csv}.*.value, key: ${csv}.*.key }].(1 + 10).key`
 
@@ -605,7 +605,7 @@ test("arrayAccessUndefTest", async () => {
 })
 
 test("testArraySimpleSum1", async () => {
-  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+  let csv = rh`loadCSV "./data/csv/simple.csv" ${schema}`
 
   let query = rh`sum [{C: ${csv}.*A.C}].*B.C`
 
@@ -616,7 +616,7 @@ test("testArraySimpleSum1", async () => {
 })
 
 test("testArraySorting", async () => {
-  let csv = rh`loadCSV "./cgen-sql/simple.csv" ${schema}`
+  let csv = rh`loadCSV "./data/csv/simple.csv" ${schema}`
 
   let query = rh`sort [{C: ${csv}.*A.C}] "C" 0`
 

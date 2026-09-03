@@ -17,7 +17,7 @@ let sh = (cmd) => {
   })
 }
 
-let outDir = "cgen-sql/out/value/"
+let outDir = "out/value/"
 
 let prolog = ["#include \"rhyme-c.h\"", "int main() {"]
 let epilog = ["return 0;", "}"]
@@ -25,10 +25,9 @@ let epilog = ["return 0;", "}"]
 beforeAll(async () => {
   await sh(`rm -rf ${outDir}`)
   await sh(`mkdir -p ${outDir}`)
-  // await sh(`cp cgen-sql/yyjson.h ${outDir}`)
 })
 
-let cmd = (cFile, exec) => `gcc ${cFile} -o ${exec} -Icgen-sql`
+let cmd = (cFile, exec) => `gcc ${cFile} -o ${exec} -Iruntime`
 
 let run = async (out, code) => {
   code = [...prolog, ...code, ...epilog]

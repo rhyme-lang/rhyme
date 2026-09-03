@@ -16,12 +16,11 @@ let sh = (cmd) => {
   })
 }
 
-let outDir = "cgen-sql/out/basic"
+let outDir = "out/basic"
 
 beforeAll(async () => {
   await sh(`rm -rf ${outDir}`)
   await sh(`mkdir -p ${outDir}`)
-  // await sh(`cp cgen-sql/yyjson.h ${outDir}`)
 })
 
 let key = typing.createKey(types.u32)
@@ -49,10 +48,10 @@ let regionSchema = typing.parseType({
   })
 })
 
-let data = rh`loadJSON "./cgen-sql/json/basic/data.json" ${dataSchema}`
+let data = rh`loadJSON "./data/json/basic/data.json" ${dataSchema}`
 
-let country = rh`loadJSON "./cgen-sql/json/basic/country.json" ${countrySchema}`
-let region = rh`loadJSON "./cgen-sql/json/basic/region.json" ${regionSchema}`
+let country = rh`loadJSON "./data/json/basic/country.json" ${countrySchema}`
+let region = rh`loadJSON "./data/json/basic/region.json" ${regionSchema}`
 
 //
 // ----- Tests from basic.test.js

@@ -4,12 +4,12 @@ const { typing, types } = require('../../src/typing')
 const fs = require("fs")
 const os = require('child_process')
 
-let outDir = "cgen-sql/out/json-bench"
+let outDir = "out/json-bench"
 
-let answersDir = "cgen-sql/answers/json-bench"
+let answersDir = "test/expected/json-bench"
 
 // point to the data directory
-let dataDir = "cgen-sql/data/bluesky"
+let dataDir = "data/bluesky"
 let blueskyFile = `"${dataDir}/file_0001.json"`
 
 // The JSONBench queries run against the bluesky dump.
@@ -35,7 +35,7 @@ beforeAll(async () => {
   if (!hasData) return
   await sh(`rm -rf ${outDir}`)
   await sh(`mkdir -p ${outDir}`)
-  await sh(`cp cgen-sql/rhyme-c.h ${outDir}`)
+  await sh(`cp runtime/rhyme-c.h ${outDir}`)
 })
 
 let u32Key = typing.createKey(types.u32)

@@ -31,12 +31,12 @@ jobs:
         make -C tpch-dbgen
         tpch-dbgen/dbgen -s 1 -f -b ./tpch-dbgen/dists.dss
         chmod 664 *.tbl
-        mkdir -v -p cgen-sql/data/SF1
-        mv -v *.tbl cgen-sql/data/SF1
+        mkdir -v -p data/SF1
+        mv -v *.tbl data/SF1
     - name: Get JSONBench data
       run: |
-        wget --progress=dot:giga --directory-prefix cgen-sql/data/bluesky "https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz"
-        gzip -d cgen-sql/data/bluesky/file_0001.json.gz
+        wget --progress=dot:giga --directory-prefix data/bluesky "https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz"
+        gzip -d data/bluesky/file_0001.json.gz
     - name: Compile yyjson
       run: |
         make -C third-party/yyjson

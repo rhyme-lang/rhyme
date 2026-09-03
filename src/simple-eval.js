@@ -40,7 +40,7 @@ let defaultSettings = {
   // c backend options
   format: "json",
 
-  outDir: "cgen-sql",
+  outDir: "out",
   outFile: "tmp"
 }
 

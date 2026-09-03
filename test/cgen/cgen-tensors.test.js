@@ -23,12 +23,11 @@ try {
 } catch (e) {}
 let testCuda = hasCuda ? test : test.skip
 
-let outDir = "cgen-sql/out/tensors"
+let outDir = "out/tensors"
 
 beforeAll(async () => {
   await sh(`rm -rf ${outDir}`)
   await sh(`mkdir -p ${outDir}`)
-  // await sh(`cp cgen-sql/yyjson.h ${outDir}`)
 })
 
 let key = typing.createKey(types.u32)
@@ -55,14 +54,14 @@ let vecSchema = typing.parseType({
 
 let vecSchema1 = typing.createVec("dense", types.u32, 1, types.u32)
 
-let matA = rh`loadJSON "./cgen-sql/json/tensors/matA.json" ${matSchema1}`
-let batchedMatA = rh`loadJSON "./cgen-sql/json/tensors/batchedMatA.json" ${batchedMatSchema}`
+let matA = rh`loadJSON "./data/json/tensors/matA.json" ${matSchema1}`
+let batchedMatA = rh`loadJSON "./data/json/tensors/batchedMatA.json" ${batchedMatSchema}`
 
-let matB = rh`loadJSON "./cgen-sql/json/tensors/matB.json" ${matSchema1}`
-let batchedMatB = rh`loadJSON "./cgen-sql/json/tensors/batchedMatB.json" ${batchedMatSchema}`
+let matB = rh`loadJSON "./data/json/tensors/matB.json" ${matSchema1}`
+let batchedMatB = rh`loadJSON "./data/json/tensors/batchedMatB.json" ${batchedMatSchema}`
 
-let vecA = rh`loadJSON "./cgen-sql/json/tensors/vecA.json" ${vecSchema1}`
-let vecB = rh`loadJSON "./cgen-sql/json/tensors/vecB.json" ${vecSchema1}`
+let vecA = rh`loadJSON "./data/json/tensors/vecA.json" ${vecSchema1}`
+let vecB = rh`loadJSON "./data/json/tensors/vecB.json" ${vecSchema1}`
 
 test("transpose", async () => {
   let query = { "*j": { "*i": rh`${matB}.*i.*j` } }

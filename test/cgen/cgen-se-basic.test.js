@@ -16,12 +16,11 @@ let sh = (cmd) => {
   })
 }
 
-let outDir = "cgen-sql/out/se-basic"
+let outDir = "out/se-basic"
 
 beforeAll(async () => {
   await sh(`rm -rf ${outDir}`)
   await sh(`mkdir -p ${outDir}`)
-  // await sh(`cp cgen-sql/yyjson.h ${outDir}`)
 })
 
 let key = typing.createKey(types.string)
@@ -47,10 +46,10 @@ let nestedSchema = typing.parseType({
   })
 })
 
-let data = rh`loadJSON "./cgen-sql/json/se-basic/data.json" ${dataSchema}`
-let other = rh`loadJSON "./cgen-sql/json/se-basic/other.json" ${otherSchema}`
-let nested = rh`loadJSON "./cgen-sql/json/se-basic/nested.json" ${nestedSchema}`
-let nestedB = rh`loadJSON "./cgen-sql/json/se-basic/nestedB.json" ${nestedSchema}`
+let data = rh`loadJSON "./data/json/se-basic/data.json" ${dataSchema}`
+let other = rh`loadJSON "./data/json/se-basic/other.json" ${otherSchema}`
+let nested = rh`loadJSON "./data/json/se-basic/nested.json" ${nestedSchema}`
+let nestedB = rh`loadJSON "./data/json/se-basic/nestedB.json" ${nestedSchema}`
 
 //
 // ----- Tests from se-basic.test.js
@@ -214,7 +213,7 @@ test("testMaybeSum", async () => {
   let emptySchema = typing.parseType({
     "-": typing.keyval(key, types.unknown)
   })
-  let data = rh`loadJSON "./cgen-sql/json/se-basic/data_empty.json" ${emptySchema}`
+  let data = rh`loadJSON "./data/json/se-basic/data_empty.json" ${emptySchema}`
 
   let query = { A: rh`sum? ${data}.*.value`, B: rh`sum ${data}.*.value` }
 
