@@ -106,7 +106,6 @@ let backends = exports.backends = {
   "c":     true,
   "cuda":  true,
   "cpp":   true,
-  "c-old": true,
 }
 
 // Unknown names used to fall through to the js backend silently, which meant

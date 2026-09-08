@@ -1,23 +1,10 @@
-const { api, rh } = require('../../src/rhyme')
+const { rh } = require('../../src/rhyme')
 const { compile } = require('../../src/simple-eval')
-
-
-const fs = require('node:fs/promises')
-const os = require('node:child_process')
 const { typing, types } = require('../../src/typing')
 
 
-// ---------- begin C gen tests -------- //
+// ---------- begin C++ gen tests -------- //
 
-
-let execPromise = function(cmd) {
-    return new Promise(function(resolve, reject) {
-        os.exec(cmd, function(err, stdout) {
-            if (err) return reject(err);
-            resolve(stdout);
-        });
-    });
-}
 
 let buildCSV = vec => {
   let data = []
@@ -49,24 +36,6 @@ let buildCSR = mat => {
   return {data, cols, rows}
 }
 
-test("testRoundtrip0", async () => {
-  let content =
-`#include <stdio.h>
-#include "rhyme.h"
-int main() {
-  puts("Hello C!");
-}
-`
-  await fs.writeFile('cgen/test.c', content);
-  await execPromise('gcc cgen/test.c -o cgen/test.out')
-  let res = await execPromise('cgen/test.out')
-
-  expect(res).toEqual("Hello C!\n")
-})
-
-
-let data = {}
-
 let dataInnerObj = typing.createSimpleObject({
     key: types.string,
     value: types.i16
@@ -77,56 +46,7 @@ let schema = typing.createSimpleObject({
         .build()
 });
 
-test("testTrivial0", async () => {
-  let query = rh`1 + 4`
-
-  let func = compile(query, { backend : "c-old" })
-  // console.log(func.explain.code)
-  let res = await func({data})
-
-  expect(res).toEqual("5")
-})
-
-
-// XXX TODO:
-// - access input data
-// - string, array/obj
-// - implement assignments
-
-test("testTrivial1", async () => {
-  let query = rh`data.A.value`
-
-  let func = compile(query, { backend : "c-old" })
-  // console.log(func.explain.code)
-  let res = await func({data})
-
-  expect(res).toEqual("undefined")
-})
-
-test("testScalar1", async () => {
-  let query = rh`sum data.*.value`
-
-  let func = compile(query, { backend : "c-old", schema: schema });
-  // console.log(func.explain.code)
-  let res = await func({data})
-
-  expect(res).toEqual("0")
-})
-
-test("testHint1", async () => {
-  let query = rh`sum data.*.value` // (hint dense data) &
-
-  let func = compile(query, { backend : "c-old", schema: typing.createSimpleObject({
-    data: typing.createVec("dense", types.string, 1, dataInnerObj),
-  }) })
-  // console.log(func.explain.code)
-  // console.log(func.explain.pseudo)
-  let res = await func({data})
-
-  expect(res).toEqual("0")
-})
-
-data = {
+let data = {
   A: { key: "U", value: 40 },
   B: { key: "U", value: 20 },
   C: { key: "V", value: 10 },

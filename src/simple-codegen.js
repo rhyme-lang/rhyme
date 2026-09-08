@@ -815,86 +815,6 @@ let emitCodeLowLevel = (q) => {
 
 
 
-let quoteIndexVarsXS_C = (s, vs) => {
-  let res = s
-  for (let v of vs) {
-    res = "rt_get("+res+", "+quoteVarXS(v)+")"
-  }
-  return res
-}
-
-
-let codegenC = q => {
-  if (q.key == "input") {
-    return "inp"
-  } else if (q.key == "const") {
-    if (typeof q.op === "number") {
-      if (Number.isInteger(q.op))
-        return "rt_const_int("+q.op+")"
-      else
-        return "rt_const_float("+q.op+")"
-    } else if (typeof q.op === "string") {
-      return "rt_const_string(\""+q.op+"\")"
-    } else if (typeof q.op === "object" && Object.keys(q.op).length == 0){
-      return "rt_const_obj()"
-    } else {
-      console.error("unsupported constant ", pretty(q))
-      return String(q.op)
-    }
-  } else if (q.key == "var") {
-    return quoteVar(q.op)
-  } else if (q.key == "ref") {
-    let q1 = assignments[q.op]
-    let xs = ["rt_const_int("+q.op+")",...q1.fre]
-    return quoteIndexVarsXS_C("tmp", xs)
-  } else if (q.key == "get" && isDeepVarExp(q.arg[1])) {
-    let [e1,e2] = q.arg.map(codegenC)
-    return "rt_deepGet("+e1+","+e2+")"
-  } else if (q.key == "get") {
-    let [e1,e2] = q.arg.map(codegenC)
-    return "rt_get("+e1+","+e2+")"
-  } else if (q.key == "pure") {
-    let es = q.arg.map(codegenC)
-    return "rt_pure_"+q.op+"("+es.join(",")+")"
-  } else if (q.key == "hint") {
-    // no-op!
-    return "rt_const_int(1)"
-  } else if (q.key == "mkset") {
-    let [e1] = q.arg.map(codegenC)
-    return "rt_singleton("+e1+")"
-  } else {
-    console.error("unknown op ", pretty(q))
-    return "<?"+q.key+"?>"
-  }
-}
-
-
-let emitCodeC = (q, order) => {
-  let buf = []
-  buf.push("#include <stdio.h>")
-  buf.push("#include \"rhyme.h\"")
-  buf.push("int main() {")
-  buf.push("rh inp = 0; // input?")
-  buf.push("rh tmp = rt_const_obj();")
-
-  for (let is of order) {
-    if (is.length > 1)
-      console.error("cycle "+is)
-    let [i] = is
-    let q = assignments[i]
-
-    buf.push("// --- tmp"+i+" ---")
-    buf.push("// XXX NOT IMPLEMENTED")
-  }
-
-  buf.push("// --- res ---")
-  buf.push("rh res = "+codegenC(q)+";")
-  buf.push("write_result(res);")
-  buf.push("}\n")
-
-  return buf.join("\n")
-}
-
 let nameEnv = {}
 /* TODO: Unused. Are they needed anymore?
 let quoteIndexVarsXS_CPP = (s, vs) => {
@@ -1525,8 +1445,6 @@ exports.translateToNewCodegen = translateToNewCodegen
 exports.emitCode = emitCode
 
 exports.emitCodeLowLevel = emitCodeLowLevel
-
-exports.emitCodeC = emitCodeC
 
 exports.emitCodeCPP = emitCodeCPP
 

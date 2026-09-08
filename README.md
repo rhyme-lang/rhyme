@@ -145,11 +145,12 @@ code that is compiled and run against the input data.
 
 **Backends** — the IR is handed to one of several code generators, selected by the
 `backend` and `newCodegen` settings. The accepted `backend` names are listed in the
-`backends` table in `src/shared.js` — `js` (default), `c`, `cuda`, `cpp`, `c-old` —
+`backends` table in `src/shared.js` — `js` (default), `c`, `cuda`, `cpp` —
 and an unknown name is rejected rather than silently treated as `js`:
 - `src/simple-codegen.js`, `src/simple-loopgen.js`: generate JavaScript (the default).
   The generated code is evaluated with `src/simple-runtime.js` in scope, which
-  implements the built-in operations at runtime.
+  implements the built-in operations at runtime. `simple-codegen.js` also holds the
+  legacy `cpp` backend, which emits C++ against the vendored nlohmann/json.
 - `src/new-codegen.js`: a loop-scheduling code generator that emits each assignment
   exactly once and fuses loops where possible. Used both for the JavaScript backend
   (`newCodegen: true`) and by the C backend.

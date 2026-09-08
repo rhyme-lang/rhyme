@@ -778,7 +778,6 @@ const {
   translateToNewCodegen, 
   emitCode,
   emitCodeLowLevel,
-  emitCodeC,
   emitCodeCPP,
   fixIndent
 } = require('./simple-codegen')
@@ -958,7 +957,7 @@ let compile = (q,userSettings={}) => {
     return cgen.generateC(q, ir, settings)
   }
 
-  if (settings.backend == "c-old" || settings.backend == "cpp") {
+  if (settings.backend == "cpp") {
     const fs = require('fs/promises')
     const os = require('child_process')
 
@@ -971,22 +970,12 @@ let compile = (q,userSettings={}) => {
       });
     }
 
-    let code, cc, filename, flags
-    if (settings.backend == "c-old") {
-      code = fixIndent(emitCodeC(q,order))
-      cc = "gcc"
-      filename = "test.c"
-      flags = ""
-    } else {
-      code = emitCodeCPP(q,order)
-      cc = "g++"
-      filename = "test.cpp"
-      flags = "-std=c++17 -Ithird-party/json/include"
-    }
+    let code = emitCodeCPP(q,order)
+    let flags = "-std=c++17 -Ithird-party/json/include"
 
     let func = (async () => {
-      await fs.writeFile(`cgen/${filename}`, code);
-      await execPromise(`${cc}  ${flags} cgen/${filename} -o cgen/test.out`)
+      await fs.writeFile("cgen/test.cpp", code);
+      await execPromise(`g++ ${flags} cgen/test.cpp -o cgen/test.out`)
       return 'cgen/test.out'
     })()
 
