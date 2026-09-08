@@ -2,6 +2,7 @@ const { rh } = require('./parser');
 const { api } = require('./rhyme');
 const { types, typing } = require('./typing');
 const simpleEval = require('./simple-eval');
+const { backends } = require('./shared');
 const parser = require('./parser');
 const readline = require('node:readline');
 
@@ -46,10 +47,10 @@ let generateSchema = (q) => {
                     } else if (cmdArgs[0] == "#setbackend") {
                         if (cmdArgs.length == 1) {
                             console.log("Invalid number of arguments.")
-                        } else if (cmdArgs[1] == "c" || cmdArgs[1] == "cpp" || cmdArgs[1] == "c-sql" || cmdArgs[1] == "js") {
+                        } else if (backends[cmdArgs[1]]) {
                             backend = cmdArgs[1];
                         } else {
-                            console.log("Invalid backend. Valid types are: js, c, cpp, c-sql")
+                            console.log("Invalid backend. Valid values are: " + Object.keys(backends).join(", "))
                         }
                     } else if (cmdArgs[0] == "#setdata") {
                         if (cmdArgs.length == 1) {
@@ -71,7 +72,7 @@ let generateSchema = (q) => {
                 try {
                     let query = parser.parse(query_str);
                     let func;
-                    if (backend == "c" || backend == "cpp" || backend == "c-sql") {
+                    if (backend != "js") {
                         func = simpleEval.compile(query, {backend: backend, schema: generateSchema({data: queryData})});
                         console.log(await func({data: queryData}));
                     } else {

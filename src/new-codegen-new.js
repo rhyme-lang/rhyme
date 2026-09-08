@@ -9,7 +9,7 @@
 //
 // Drift warning: this is a file copy, so it does not receive fixes made to
 // new-codegen.js. It is currently missing 16f05b3 ("fix jsonbench error"),
-// which hoists the getLoopTxt() call out of the c-sql loop and emits
+// which hoists the getLoopTxt() call out of the C backend's loop and emits
 // loopTxt.epilog in emitLoopEpilog. Port that across before diffing the two,
 // or the comparison measures that bug rather than the scheduling change.
 
@@ -293,7 +293,7 @@ exports.generate = (ir, backend = "js") => {
       }
     }
   }
-  if (backend == "cpp" || backend == "c-sql") {
+  if (backend == "cpp" || backend == "c") {
     prolog.forEach(emitC)
   } else if (backend == "js") {
     emit("inp => {")
@@ -381,7 +381,7 @@ exports.generate = (ir, backend = "js") => {
   }
   function emitStatement(i) {
     let e = getStmt(i)
-    if (backend == "c-sql") {
+    if (backend == "c") {
       e.txt.map(emitC)
     } else {
       emit(e.txt)
@@ -399,7 +399,7 @@ exports.generate = (ir, backend = "js") => {
     if (backend == "cpp") {
       emit(e.loopTxt)
       // TODO: support multiple filters
-    } else if (backend == "c-sql") {
+    } else if (backend == "c") {
       let loops = gensBySym[s]
       let loopTxts = loops.map(x => x.getLoopTxt())
       for (let loopTxt of loopTxts) {
@@ -578,7 +578,7 @@ exports.generate = (ir, backend = "js") => {
   //
   // wrap up codegen
   //
-  if (backend == "cpp" || backend == "c-sql") {
+  if (backend == "cpp" || backend == "c") {
     epilog.forEach(emitC)
     let codeString = code.join("\n")
     return codeString

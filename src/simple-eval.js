@@ -1,6 +1,6 @@
 const { api } = require('./rhyme')
 const { parse } = require('./parser')
-const { sets } = require('./shared')
+const { sets, checkBackend } = require('./shared')
 const { scc } = require('./scc')
 const { generate } = require('./new-codegen')
 const { preproc } = require('./preprocess')
@@ -59,6 +59,8 @@ let assignments
 
 let reset = (userSettings) => {
   settings = { ...defaultSettings, ...userSettings }
+
+  checkBackend(settings.backend)
 
   prefixes = []
   path = []

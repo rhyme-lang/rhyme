@@ -144,7 +144,9 @@ code that is compiled and run against the input data.
   detection for recursive queries, IR pretty-printing used by `explain`.
 
 **Backends** — the IR is handed to one of several code generators, selected by the
-`backend` and `newCodegen` settings:
+`backend` and `newCodegen` settings. The accepted `backend` names are listed in the
+`backends` table in `src/shared.js` — `js` (default), `c`, `cuda`, `cpp`, `c-old` —
+and an unknown name is rejected rather than silently treated as `js`:
 - `src/simple-codegen.js`, `src/simple-loopgen.js`: generate JavaScript (the default).
   The generated code is evaluated with `src/simple-runtime.js` in scope, which
   implements the built-in operations at runtime.

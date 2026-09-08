@@ -275,7 +275,7 @@ exports.generate = (ir, backend = "js") => {
       }
     }
   }
-  if (backend == "cpp" || backend == "c-sql") {
+  if (backend == "cpp" || backend == "c") {
     prolog.forEach(emitC)
   } else if (backend == "js") {
     emit("inp => {")
@@ -362,7 +362,7 @@ exports.generate = (ir, backend = "js") => {
   }
   function emitStatement(i) {
     let e = getStmt(i)
-    if (backend == "c-sql") {
+    if (backend == "c") {
       e.txt.map(emitC)
     } else {
       emit(e.txt)
@@ -380,7 +380,7 @@ exports.generate = (ir, backend = "js") => {
     if (backend == "cpp") {
       emit(e.loopTxt)
       // TODO: support multiple filters
-    } else if (backend == "c-sql") {
+    } else if (backend == "c") {
       gensBySym[s] = gensBySym[s].map(x => ({ ...x, loopTxt: x.getLoopTxt() }))
       let loops = gensBySym[s]
       let loopTxts = loops.map(x => x.loopTxt)
@@ -429,7 +429,7 @@ exports.generate = (ir, backend = "js") => {
     l = openedLoops.pop()
     let loops = gensBySym[l]
     for (let loop of loops) {
-      if (backend == "c-sql" && loop.loopTxt.epilog) loop.loopTxt.epilog.map(emitC)
+      if (backend == "c" && loop.loopTxt.epilog) loop.loopTxt.epilog.map(emitC)
     }
     emit("}")
     scopeTable.exit()
@@ -563,7 +563,7 @@ exports.generate = (ir, backend = "js") => {
   //
   // wrap up codegen
   //
-  if (backend == "cpp" || backend == "c-sql") {
+  if (backend == "cpp" || backend == "c") {
     epilog.forEach(emitC)
     let codeString = code.join("\n")
     return codeString

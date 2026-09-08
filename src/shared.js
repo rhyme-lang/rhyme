@@ -97,6 +97,28 @@ ops.stateful["all?"] = true
 ops.stateful["any?"] = true
 
 
+//
+// ---------- available backends ----------
+//
+
+let backends = exports.backends = {
+  "js":    true,
+  "c":     true,
+  "cuda":  true,
+  "cpp":   true,
+  "c-old": true,
+}
+
+// Unknown names used to fall through to the js backend silently, which meant
+// a typo benchmarked the wrong thing. Fail loudly instead.
+exports.checkBackend = name => {
+  if (!backends[name])
+    throw new Error("unknown backend '" + name + "', expected one of: " +
+      Object.keys(backends).join(", "))
+  return name
+}
+
+
 
 // 
 // ---------- ast creation api (used by parser, test suite) ---------- 

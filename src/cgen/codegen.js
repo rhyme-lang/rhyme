@@ -1815,7 +1815,7 @@ let emitCode = (q, ir, settings) => {
     prolog,
     epilog
   }
-  return generate(newCodegenIR, "c-sql")
+  return generate(newCodegenIR, backend == "cuda" ? "c" : backend)
 }
 
 let generateC = (q, ir, settings) => {
