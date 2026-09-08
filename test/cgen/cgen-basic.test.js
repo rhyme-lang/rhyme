@@ -212,19 +212,15 @@ test("joinWithAggrTest", async () => {
   let q1 = rh`{
     ${region}.*O.country: ${region}.*O.region
   }`
+  // SELECT SUM(country.population) FROM country JOIN region ON region.country = country.country GROUP BY region.region
   let query = rh`{
-    ${q1}.(${country}.*.country) : {
-      ${country}.*.city: sum ${country}.*.population
-    }
+    ${q1}.(${country}.*.country): sum ${country}.*.population
   }`
 
   let func = await compile(query, { backend: "c", outDir, outFile: "joinWithAggrTest", enableOptimizations: false })
   let res = await func()
 
-  let expected = {
-    "Asia": { "Beijing": 20, "Tokyo": 30 },
-    "Europe": { "London": 10, "Paris": 10 }
-  }
+  let expected = { "Asia": 50, "Europe": 20 }
 
   expect(JSON.parse(res)).toEqual(expected)
 })

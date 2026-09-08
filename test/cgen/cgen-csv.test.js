@@ -16,12 +16,11 @@ let sh = (cmd) => {
   })
 }
 
-let outDir = "out/sql-new"
+let outDir = "out/csv"
 
 beforeAll(async () => {
   await sh(`rm -rf ${outDir}`)
   await sh(`mkdir -p ${outDir}`)
-  // await sh(`cp runtime/rhyme-c.h ${outDir}`)
 });
 
 test("testTrivial", async () => {
@@ -42,21 +41,10 @@ let schema = typing.objBuilder()
     String: types.string,
   })).build()
 
-test("testScalar", async () => {
-  let csv = rh`loadCSV "./data/csv/simple.csv" ${schema}`
-
-  let query = rh`sum ${csv}.*A.C`
-
-  let func = await compile(query, { backend: "c", outDir, outFile: "testScalar", schema: types.never })
-
-  let res = await func()
-  expect(JSON.parse(res)).toEqual(228)
-})
-
 test("testSimpleSum1", async () => {
   let csv = rh`loadCSV "./data/csv/simple.csv" ${schema}`
 
-  let query = rh`${csv}.*A.C | sum`
+  let query = rh`sum (${csv}.*A.C)`
 
   let func = await compile(query, { backend: "c", outDir, outFile: "testSimpleSum1", schema: types.never })
 
@@ -67,7 +55,7 @@ test("testSimpleSum1", async () => {
 test("testSimpleSum2", async () => {
   let csv = rh`loadCSV "./data/csv/simple.csv" ${schema}`
 
-  let query = rh`${csv}.*.C + 10 | sum`
+  let query = rh`sum (${csv}.*.C + 10)`
 
   let func = await compile(query, { backend: "c", outDir, outFile: "testSimpleSum2", schema: types.never })
 
@@ -78,7 +66,7 @@ test("testSimpleSum2", async () => {
 test("testSimpleSum3", async () => {
   let csv = rh`loadCSV "./data/csv/simple.csv" ${schema}`
 
-  let query = rh`(${csv}.*.C | sum) + 10`
+  let query = rh`(sum ${csv}.*.C) + 10`
 
   let func = await compile(query, { backend: "c", outDir, outFile: "testSimpleSum3", schema: types.never })
 

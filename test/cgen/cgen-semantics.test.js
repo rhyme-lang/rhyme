@@ -16,7 +16,7 @@ let sh = (cmd) => {
   })
 }
 
-let outDir = "out/se-basic"
+let outDir = "out/semantics"
 
 beforeAll(async () => {
   await sh(`rm -rf ${outDir}`)
@@ -46,13 +46,13 @@ let nestedSchema = typing.parseType({
   })
 })
 
-let data = rh`loadJSON "./data/json/se-basic/data.json" ${dataSchema}`
-let other = rh`loadJSON "./data/json/se-basic/other.json" ${otherSchema}`
-let nested = rh`loadJSON "./data/json/se-basic/nested.json" ${nestedSchema}`
-let nestedB = rh`loadJSON "./data/json/se-basic/nestedB.json" ${nestedSchema}`
+let data = rh`loadJSON "./data/json/semantics/data.json" ${dataSchema}`
+let other = rh`loadJSON "./data/json/semantics/other.json" ${otherSchema}`
+let nested = rh`loadJSON "./data/json/semantics/nested.json" ${nestedSchema}`
+let nestedB = rh`loadJSON "./data/json/semantics/nestedB.json" ${nestedSchema}`
 
 //
-// ----- Tests from se-basic.test.js
+// ----- Tests from test/semantics/se-basic.test.js
 //
 
 test("testScalar0", async () => {
@@ -173,7 +173,7 @@ test("testZipNested3", async () => {
   let func = await compile(query, { backend: "c", outDir, outFile: "testZipNested3", enableOptimizations: false })
   let res = await func()
 
-  // result is different from the same test in se-basic since cgen does not have support for group *ANY
+  // result is different from the same test in test/semantics/se-basic.test.js since cgen does not have support for group *ANY
   expect(JSON.parse(res)).toEqual({
     U: {}, V: { C: { X: 540, Y: 640 } }, W: {}
   })
@@ -213,7 +213,7 @@ test("testMaybeSum", async () => {
   let emptySchema = typing.parseType({
     "-": typing.keyval(key, types.unknown)
   })
-  let data = rh`loadJSON "./data/json/se-basic/data_empty.json" ${emptySchema}`
+  let data = rh`loadJSON "./data/json/semantics/data_empty.json" ${emptySchema}`
 
   let query = { A: rh`sum? ${data}.*.value`, B: rh`sum ${data}.*.value` }
 
