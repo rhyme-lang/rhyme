@@ -1285,7 +1285,7 @@ let emitCodeCPP = (q, order) => {
   for (let obj in objs) {
     let expr = objs[obj]
     let ty = expr.schema.type
-    prolog.push(`${quoteTypeCPP(ty)} ${obj} = ${quoteFileReadCPP(ty)}(\"cgen/${obj}.json\");`)
+    prolog.push(`${quoteTypeCPP(ty)} ${obj} = ${quoteFileReadCPP(ty)}(\"${settings.outDir}/${obj}.json\");`)
   }
 
   let epilog = []

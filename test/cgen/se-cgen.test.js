@@ -5,6 +5,8 @@ const { typing, types } = require('../../src/typing')
 
 // ---------- begin C++ gen tests -------- //
 
+let outDir = "out/cpp"
+
 
 let buildCSV = vec => {
   let data = []
@@ -55,7 +57,7 @@ let data = {
 test("testTrivial1CPP", async () => {
   let query = rh`data.A.value`
 
-  let func = compile(query, { backend : "cpp", schema: schema })
+  let func = compile(query, { backend : "cpp", outDir, outFile : "testTrivial1CPP", schema: schema })
   // console.log(func.explain.code)
   let res = await func({data})
 
@@ -65,7 +67,7 @@ test("testTrivial1CPP", async () => {
 test("testScalar1CPP", async () => {
   let query = rh`sum data.*.value`
 
-  let func = compile(query, { backend : "cpp", schema: schema })
+  let func = compile(query, { backend : "cpp", outDir, outFile : "testScalar1CPP", schema: schema })
   // console.log(func.explain.code)
   let res = await func({data})
 
@@ -97,17 +99,17 @@ test("testHint2VectorCPP", async () => {
 
   let csv = buildCSV(vec)
 
-  let funcRh = compile(queryRh, { backend : "cpp", schema: typing.createSimpleObject({
+  let funcRh = compile(queryRh, { backend : "cpp", outDir, outFile : "testHint2VectorCPPRh", schema: typing.createSimpleObject({
     vec: typing.createVec("dense", types.u16, 1, types.u16)
   })});
   let resRh = await funcRh({vec})
 
-  let funcDense = compile(queryDense, { backend : "cpp", schema: typing.createSimpleObject({
+  let funcDense = compile(queryDense, { backend : "cpp", outDir, outFile : "testHint2VectorCPPDense", schema: typing.createSimpleObject({
     vec: typing.createVec("dense", types.u16, 1, types.u16)
   })});
   let resDense = await funcDense({vec})
 
-  let funcSparse = compile(querySparse, { backend : "cpp", schema: typing.createSimpleObject({
+  let funcSparse = compile(querySparse, { backend : "cpp", outDir, outFile : "testHint2VectorCPPSparse", schema: typing.createSimpleObject({
     csv: typing.createVec("sparse", types.u16, 1, types.u16)
   })});
   let resSparse = await funcSparse({csv})
@@ -133,7 +135,7 @@ test("testHint3MatrixCPP", async () => {
 
   let csr = buildCSR(mat)
 
-  let funcRh = compile(queryRh, { backend : "cpp", schema: typing.createSimpleObject({
+  let funcRh = compile(queryRh, { backend : "cpp", outDir, outFile : "testHint3MatrixCPPRh", schema: typing.createSimpleObject({
     mat: typing.objBuilder()
         .add(typing.createKey(types.string), typing.objBuilder()
             .add(typing.createKey(types.string), types.u16)
@@ -143,12 +145,12 @@ test("testHint3MatrixCPP", async () => {
   });
   let resRh = await funcRh({mat})
 
-  let funcDense = compile(queryDense, { backend : "cpp", schema: typing.createSimpleObject({
+  let funcDense = compile(queryDense, { backend : "cpp", outDir, outFile : "testHint3MatrixCPPDense", schema: typing.createSimpleObject({
     mat: typing.createVec("dense", types.u8, 2, types.u16)
   })});
   let resDense = await funcDense({mat})
 
-  let funcSparse = compile(querySparse, { backend : "cpp", schema: typing.createSimpleObject({
+  let funcSparse = compile(querySparse, { backend : "cpp", outDir, outFile : "testHint3MatrixCPPSparse", schema: typing.createSimpleObject({
     csr: typing.createVec("sparse", types.u8, 2, types.u16)
   })});
   let resSparse = await funcSparse({csr})
@@ -168,7 +170,7 @@ test("testHint4DotProductCPP", async () => {
   let vec2 = buildCSV(data2)
 
   tys = typing.createVecs("sparse", types.i32, 1, [types.i32, types.i32])
-  let func = compile(query, { backend : "cpp", schema: typing.createSimpleObject({
+  let func = compile(query, { backend : "cpp", outDir, outFile : "testHint4DotProductCPP", schema: typing.createSimpleObject({
     vec1: tys[0],
     vec2: tys[1]
   })});

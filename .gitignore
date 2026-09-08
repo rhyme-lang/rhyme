@@ -2,11 +2,6 @@
 node_modules
 umd
 
-cgen/*.json
-cgen/test.c
-cgen/test.cpp
-cgen/test.out
-
 /data/SF*
 /data/bluesky
 

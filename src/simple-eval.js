@@ -970,19 +970,21 @@ let compile = (q,userSettings={}) => {
       });
     }
 
+    let { outDir, outFile } = settings
     let code = emitCodeCPP(q,order)
-    let flags = "-std=c++17 -Ithird-party/json/include"
+    let flags = "-std=c++17 -Iruntime -Ithird-party/json/include"
 
     let func = (async () => {
-      await fs.writeFile("cgen/test.cpp", code);
-      await execPromise(`g++ ${flags} cgen/test.cpp -o cgen/test.out`)
-      return 'cgen/test.out'
+      await fs.mkdir(outDir, { recursive: true })
+      await fs.writeFile(`${outDir}/${outFile}.cpp`, code);
+      await execPromise(`g++ ${flags} ${outDir}/${outFile}.cpp -o ${outDir}/${outFile}`)
+      return `${outDir}/${outFile}`
     })()
 
     let wrap = async (input) => {
       let file = await func
       for (let obj in input) {
-        await fs.writeFile(`cgen/${obj}.json`, JSON.stringify(input[obj]));
+        await fs.writeFile(`${outDir}/${obj}.json`, JSON.stringify(input[obj]));
       }
       let res = await execPromise(file)
       return res
