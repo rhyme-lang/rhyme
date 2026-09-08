@@ -118,22 +118,81 @@ npm install webpack webpack-cli --save-dev
 This will generate a file `umd/rhyme-lang.min.js` that you can include in your HTML file.
 
 ### Code Structure
-Currently the code is structured into four main javascript files:
-- `src/rhyme.js`: Contains the main APIs that are exposed to the user.
-- `src/ir.js`: Contains the logic for creating the Rhyme intermediate representation (IR) from input query ASTs.
-- `src/codegen.js`: Contains the logic for generating optimized javascript code from the Rhyme IR.
-- `src/parser.js`: Contains the logic for a preliminary parser that provides a simple
-textual interface for writing certain Rhyme expressions.
+A Rhyme query is parsed into an AST, lowered to an intermediate
+representation (IR), analyzed, and then turned into generated JavaScript (or C/CUDA)
+code that is compiled and run against the input data.
+
+**Frontend** — query text or JS objects to stratified IR:
+- `src/parser.js`: lexer and parser for the textual syntax, including the `` rh`...` ``
+  tagged-template quasiquote.
+- `src/desugar.js`: resolves paths, implicit arguments/holes and partial application
+  into a canonical AST.
+- `src/preprocess.js`: converts the AST into the stratified IR the rest of the
+  compiler works on (`const`, `input`, `var`, `get`, `pure`, `stateful`, `update`, ...).
+- `src/shared.js`: the table of built-in operations, shared by every stage, plus set
+  utilities.
+
+**Middle tier** — dependency analysis and optimization:
+- `src/simple-eval.js`: the main compiler driver. Infers the dimensions, bound and
+  free variables of every subterm to a fixpoint, extracts assignments and filters,
+  and computes a legal execution order for them.
+- `src/typing.js`: the type and schema system; also validates the IR and annotates it
+  with types.
+- `src/optimizer.js`: IR-level optimizations (common subexpression elimination, loop
+  consolidation, shrinking).
+- `src/scc.js`, `src/prettyprint.js`, `src/utils.js`: supporting utilities — cycle
+  detection for recursive queries, IR pretty-printing used by `explain`.
+
+**Backends** — the IR is handed to one of several code generators, selected by the
+`backend` and `newCodegen` settings:
+- `src/simple-codegen.js`, `src/simple-loopgen.js`: generate JavaScript (the default).
+  The generated code is evaluated with `src/simple-runtime.js` in scope, which
+  implements the built-in operations at runtime.
+- `src/new-codegen.js`: a loop-scheduling code generator that emits each assignment
+  exactly once and fuses loops where possible. Used both for the JavaScript backend
+  (`newCodegen: true`) and by the C backend.
+- `src/cgen/`: the C and CUDA backend. Emits a C file, compiles it with `gcc`/`nvcc`
+  against the runtime header in `runtime/`, and runs the resulting binary. This is the
+  backend described in the VLDB paper linked below.
+- `src/c1-ir.js`, `src/c1-codegen.js`: the original ("c1") pipeline. It is superseded
+  by `simple-eval.js`, and is kept because `api.compile` still cross-checks against it.
+
+**Entry points:**
+- `src/rhyme.js`: the main APIs exposed to the user — the syntax API (`api.sum`,
+  `api.get`, ...), the compilation API (`api.compile`, `api.compileC2`, ...), and
+  `api.display`.
+- `src/cli.js`: the `rhyme` command-line tool.
+- `src/shell.js`: an interactive REPL (`npm run shell`) that keeps data across queries.
+- `src/graphics.js`: the browser visualization layer behind `api.display` and
+  `$display`; this is what the webpack browser build is mainly for.
+
+**Other directories:**
+- `test/`: the test suite (see below).
+- `data/`: JSON and CSV inputs used by the tests.
+- `runtime/`: `rhyme-c.h`, the C runtime header included by generated C code.
+- `demos/`: standalone HTML demos of the visualization features.
+- `third-party/`: vendored dependencies for the C/C++ backends (yyjson, nlohmann/json).
 
 
 ### Running tests
 `npm test` will run all the tests that are in the `test` directory.
 
+The tests are grouped as follows:
+- `test/original/`, `test/semantics/`: language and compiler semantics — the former
+  goes through `api.compile`, the latter calls `simple-eval` directly.
+- `test/typing/`: the type system.
+- `test/cgen/`: the C backend. These compile generated C with `gcc` and run it, so
+  they need a working C toolchain.
+- `test/aoc/`: Advent of Code solutions written in Rhyme, used as larger end-to-end
+  tests.
+- `test/tpch/`, `test/json-bench/`: benchmark-derived suites. They need datasets that
+  are not in the repository and skip themselves when the data is absent.
+
 If you're using VSCode, you can install [Jest Runner](https://marketplace.visualstudio.com/items?itemName=firsttris.vscode-jest-runner) extension and run/debug individual tests.
 
 
 ### Useful Links
-- Paper published at VLDB (Aug 2026):
+- Paper published at VLDB (Jul 2026):
   [Rhyme Native: Efficient Code Generation for Structured and Semi-Structured Workloads](https://www.vldb.org/pvldb/vol19/p3676-guo.pdf)
 
 - Paper published at FLOPS (Jun 2024):
