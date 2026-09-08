@@ -35,7 +35,6 @@ beforeAll(async () => {
   if (!hasData) return
   await sh(`rm -rf ${outDir}`)
   await sh(`mkdir -p ${outDir}`)
-  await sh(`cp runtime/rhyme-c.h ${outDir}`)
 })
 
 let u32Key = typing.createKey(types.u32)

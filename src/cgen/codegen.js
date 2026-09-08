@@ -163,7 +163,7 @@ let initializeProlog = () => {
     prolog0.push("#include <cublas_v2.h>")
   }
 
-  prolog0.push(`#include "rhyme-c.h"`)
+  prolog0.push(`#include "rhyme.h"`)
 
   prolog0.push(`typedef int (*__compar_fn_t)(const void *, const void *);`)
   prolog1.push("int main() {")

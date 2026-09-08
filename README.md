@@ -172,7 +172,7 @@ and an unknown name is rejected rather than silently treated as `js`:
 **Other directories:**
 - `test/`: the test suite (see below).
 - `data/`: JSON and CSV inputs used by the tests.
-- `runtime/`: `rhyme-c.h` and `rhyme.hpp`, the runtime headers included by
+- `runtime/`: `rhyme.h` and `rhyme.hpp`, the runtime headers included by
   generated C and C++ code.
 - `demos/`: standalone HTML demos of the visualization features.
 - `third-party/`: vendored dependencies for the C/C++ backends (yyjson, nlohmann/json).

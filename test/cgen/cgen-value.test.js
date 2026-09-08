@@ -19,7 +19,7 @@ let sh = (cmd) => {
 
 let outDir = "out/value/"
 
-let prolog = ["#include \"rhyme-c.h\"", "int main() {"]
+let prolog = ["#include \"rhyme.h\"", "int main() {"]
 let epilog = ["return 0;", "}"]
 
 beforeAll(async () => {
