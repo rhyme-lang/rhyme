@@ -169,14 +169,6 @@ exports.parserImpl = (strings, holes) => {
 
 
   // ----- Parser -----
-  //
-  // One function per production in doc/grammar.txt:
-  //
-  //   expression  -> expr()          binop_expr -> binop()
-  //   let_expr    -> letExpr()       path       -> path()
-  //   pipe_expr   -> pipe()          atom       -> atom()
-  //   application -> application()   key_atom   -> keyAtom()
-  //   array       -> array()         object     -> object()
 
   // error handling: could be improved, for know
   // we just halt on first error
