@@ -27,10 +27,6 @@ let binops = {
   "%" : { ast: "mod",                prec: 200, assoc: 1 },
 }
 
-// Application binds looser than every operator except '|', so the operands
-// of an application parse at '&' precedence or tighter.
-let precApply = binops["&"].prec
-
 function ast_binop(op, a,b) {
   let op1 = binops[op]?.ast ?? op
   return { xxkey: op1, xxparam: [a,b] }
@@ -173,6 +169,14 @@ exports.parserImpl = (strings, holes) => {
 
 
   // ----- Parser -----
+  //
+  // One function per production in doc/grammar.txt:
+  //
+  //   expression  -> expr()          binop_expr -> binop()
+  //   let_expr    -> letExpr()       path       -> path()
+  //   pipe_expr   -> pipe()          atom       -> atom()
+  //   application -> application()   key_atom   -> keyAtom()
+  //   array       -> array()         object     -> object()
 
   // error handling: could be improved, for know
   // we just halt on first error
@@ -237,61 +241,64 @@ exports.parserImpl = (strings, holes) => {
 
 
   function expr() {
-    if (peek == 'ident' && str == "let") {
-      // 'let' ident+ '=' tight (';'|'\n') expr
+    if (peek == 'ident' && str == "let")
+      return letExpr()
+    return pipe()
+  }
+  function letExpr() { // 'let' ident+ '=' binop_expr (';'|'\n') expression
+    next()
+    if (peek != "ident")
+      error("ident expected but got '"+sanitize(peek)+"'")
+    let lhs = str
+    next()
+
+    let args = []
+    while (peek == "ident") {
+      args.push(str)
       next()
-      if (peek != "ident")
-        error("ident expected but got '"+sanitize(peek)+"'")
-      let lhs = str
-      next()
-
-      let args = []
-      while (peek == "ident") {
-        args.push(str)
-        next()
-      }
-      // check unique?
-
-      if (peek != "=")
-        error("'=' expected but got '"+sanitize(peek)+"'")
-      next()
-      let rhs = exprTight()
-      // console.log(gap, "'"+gap+"'")
-      if (peek != ";" && !gap.includes("\n"))
-        error("';' or newline expected but got '"+sanitize(peek)+"'")
-      if (peek == ";")
-        next()
-      let body = expr()
-
-      for (let x of args.reverse()) // mutates!
-        rhs = ast.call(ast.call(ast.ident("fn"), ast.ident(x)), rhs)
-
-      let res = ast.call(ast.ident("let"), ast.ident(lhs))
-      res = ast.call(res, rhs)
-      res = ast.call(res, body)
-      return res
-    } else {
-      return binop(0)
     }
+    // check unique?
+
+    if (peek != "=")
+      error("'=' expected but got '"+sanitize(peek)+"'")
+    next()
+    let rhs = binop()
+    // console.log(gap, "'"+gap+"'")
+    if (peek != ";" && !gap.includes("\n"))
+      error("';' or newline expected but got '"+sanitize(peek)+"'")
+    if (peek == ";")
+      next()
+    let body = expr()
+
+    for (let x of args.reverse()) // mutates!
+      rhs = ast.call(ast.call(ast.ident("fn"), ast.ident(x)), rhs)
+
+    let res = ast.call(ast.ident("let"), ast.ident(lhs))
+    res = ast.call(res, rhs)
+    res = ast.call(res, body)
+    return res
   }
-  function exprTight() {
-    return binopTight(precApply)
-  }
-  function binop(min) {
-    let res = loose()
+  // Precedence climbing: a chain of binary operators over 'operand',
+  // consuming only those at precedence 'min' or tighter.
+  function climb(operand, min) {
+    let res = operand()
     while (peek in binops && binops[peek].prec >= min) {
       let nextMin = binops[peek].prec + binops[peek].assoc // + 1 for left assoc
-      res = ast_binop(next(), res, binop(nextMin))
+      res = ast_binop(next(), res, climb(operand, nextMin))
     }
     return res
   }
-  function binopTight(min) {
-    let res = tight()
-    while (peek in binops && binops[peek].prec >= min) {
-      let nextMin = binops[peek].prec + binops[peek].assoc // + 1 for left assoc
-      res = ast_binop(next(), res, binopTight(nextMin))
-    }
-    return res
+  // The two chains differ only in their operand. Only '|' can actually
+  // reach pipe(): everything tighter was already consumed by the binop()
+  // inside an application.
+  function pipe() {
+    return climb(application, 0)
+  }
+  function binop() {
+    // 50 is the precedence of '&', the loosest operator an application
+    // may have inside an operand: application binds looser than every
+    // operator except '|'. Keep in sync with the table above.
+    return climb(path, 50)
   }
   function atom() {
     // NOTE: a bare '*' is an operand here and multiplication in binop(),
@@ -327,26 +334,28 @@ exports.parserImpl = (strings, holes) => {
     } else if (peek == '(') {
       return parens(expr)
     } else if (peek == '{') {
-      // object constructor syntax
-      let entry = () => {
-        let key = expr()
-        let val
-        if (peek == ":") {
-          next(); val = expr()
-        } else {
-          val = key
-        }
-        return [key, val]
-      }
-      let elems = braces(() => commaList(entry))
-      return ast.object(elems.flat())
+      return object()
     } else if (peek == '[') {
-      // array constructor syntax
-      let elems = brackets(() => commaList(expr))
-      return ast.array(elems)
+      return array()
     } else {
       error("atom expected but got '"+sanitize(peek)+"'")
     }
+  }
+  function array() {
+    return ast.array(brackets(() => commaList(expr)))
+  }
+  function object() {
+    let entry = () => {
+      let key = expr()
+      let val
+      if (peek == ":") {
+        next(); val = expr()
+      } else {
+        val = key // shorthand, {x} is {x: x}
+      }
+      return [key, val]
+    }
+    return ast.object(braces(() => commaList(entry)).flat())
   }
   // Field names, i.e. what may follow a '.'. Deliberately narrower than
   // atom(): strings, arrays and objects are not keys -- a."x", a.[1] and
@@ -373,7 +382,7 @@ exports.parserImpl = (strings, holes) => {
       error("field name expected after '.' but got '"+sanitize(peek)+"'")
     }
   }
-  function tight() {
+  function path() {
     let res
     if (peek == ".") { // e.g. .input, to distinguish 'get' from 'ident'
       next()
@@ -420,12 +429,12 @@ exports.parserImpl = (strings, holes) => {
     }
     return res
   }
-  function loose() {
-    let res = exprTight()
+  function application() { // juxtaposition is a call: 'f x y'
+    let res = binop()
     while (peek == "num" || peek == "str" || peek == "hole" ||
            peek == "ident" ||
            peek == "." || peek == "(" || peek == "[" || peek == "{") {
-      res = ast.call(res, exprTight())
+      res = ast.call(res, binop())
     }
     return res
   }
