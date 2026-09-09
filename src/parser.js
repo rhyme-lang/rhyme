@@ -1,31 +1,34 @@
 const { desugar } = require("./desugar")
 const { ast } = require("./shared")
 
-let binop_table = {
-  "|" : "pipe",
-  "&" : "and",   // low prec, could give it some other grouping semantics
+// Binary operators, loosest first: the ast node each one builds, its
+// precedence (higher binds tighter) and its associativity (1 = left,
+// 0 = right).
+let binops = {
+  "|" : { ast: "pipe",               prec:  40, assoc: 1 },
+  "&" : { ast: "and",                prec:  50, assoc: 1 },  // low prec, could give it some other grouping semantics
 
-  "||":  "orElse",
-  "&&":  "andAlso",
+  "||": { ast: "orElse",             prec:  70, assoc: 1 },
+  "&&": { ast: "andAlso",            prec:  80, assoc: 1 },
 
-  "<" :  "lessThan",
-  "<=":  "lessThanOrEqual",
-  ">" :  "greaterThan",
-  ">=":  "greaterThanOrEqual",
-  "==":  "equal",
-  "!=":  "notEqual",
+  "<" : { ast: "lessThan",           prec:  90, assoc: 1 },
+  "<=": { ast: "lessThanOrEqual",    prec:  90, assoc: 1 },
+  ">" : { ast: "greaterThan",        prec:  90, assoc: 1 },
+  ">=": { ast: "greaterThanOrEqual", prec:  90, assoc: 1 },
+  "==": { ast: "equal",              prec:  90, assoc: 1 },
+  "!=": { ast: "notEqual",           prec:  90, assoc: 1 },
 
-  "::" : "concat",
-  "+" : "plus",
-  "-" : "minus",
-  "*" : "times",
-  "/" : "fdiv",  // float div by default
-  "//": "div",   // integer division
-  "%" : "mod",
+  "::": { ast: "concat",             prec:  95, assoc: 1 },
+  "+" : { ast: "plus",               prec: 100, assoc: 1 },
+  "-" : { ast: "minus",              prec: 100, assoc: 1 },
+  "*" : { ast: "times",              prec: 200, assoc: 1 },
+  "/" : { ast: "fdiv",               prec: 200, assoc: 1 },  // float div by default
+  "//": { ast: "div",                prec: 200, assoc: 1 },  // integer division
+  "%" : { ast: "mod",                prec: 200, assoc: 1 },
 }
 
 function ast_binop(op, a,b) {
-  let op1 = binop_table[op] ?? op
+  let op1 = binops[op]?.ast ?? op
   return { xxkey: op1, xxparam: [a,b] }
 }
 
@@ -35,7 +38,10 @@ function ast_postop(op, a) {
   } else if (op == "?" && a.xxkey == "get") {
     return { ...a, xxkey: "get?" }
   }
-  return { xxkey: op, xxparam: [a] }
+  // '?' only means something on an identifier or a field access. Anything
+  // else used to build a { xxkey: "?" } node that desugar turned into an
+  // apply of an undefined '?' function, failing much later.
+  throw new Error("'" + op + "' expects an identifier or field access, got '" + a.xxkey + "'")
 }
 
 //
@@ -59,8 +65,6 @@ exports.parserImpl = (strings, holes) => {
   let gap
   let str
   let start
-  let indent
-  let bullet
   let hole = -1
 
   // ----- Lexer -----
@@ -75,12 +79,10 @@ exports.parserImpl = (strings, holes) => {
 
 
   // init lexer with first token to get going
-  indent = whitespace();
+  let indent = whitespace();
   gap = input.substring(0, indent)
   if (input[pos] == '-' && input[pos+1] == ' ') {
-    pos += 2; bullet = true
-  } else {
-    bullet = false
+    pos += 2 // skip a leading bullet ("- ")
   }
   read()
 
@@ -127,7 +129,7 @@ exports.parserImpl = (strings, holes) => {
       while (input[pos] && input[pos] != '\n' && input[pos] != '"') pos++
       // note: unclosed string literals need to be detected later
       if (input[pos] == '"') pos++ // consume closing
-        peek = "str"
+      peek = "str"
     } else if (input[pos] == '\n') { // NOT HIT ANYMORE!
       error("unexpected newline")
     } else if (input[pos] === '\0') {
@@ -173,19 +175,13 @@ exports.parserImpl = (strings, holes) => {
   // TODO: need a better way of reporting errors
   // to user
   function error(s) {
-    console.dir({start, pos, str, msg:s})
-    throw new Error(s)
+    // position info goes in the message rather than to the console, so
+    // that a caller catching the error still sees where it happened
+    throw new Error(s + " (at offset " + start + ": '" + input.substring(start, pos) + "')")
   }
   function sanitize(s) {
     return s // TODO?
   }
-
-  // is this a known token? useful in error repair
-  function isknown(p) {
-    return !p || p == '(' || p == ')' || p == '\n' ||
-    p == '=' || p == '+' || p == '*'
-  }
-
 
   function parens(f) {
     if (peek != '(')
@@ -236,107 +232,73 @@ exports.parserImpl = (strings, holes) => {
   }
 
 
-  // precedence: higher binds tighter
-  let prec = {
-    '|' :  40,
-    '&' :  50,
-    '||':  70,
-    '&&':  80,
-    '<' :  90,
-    '<=':  90,
-    '>' :  90,
-    '>=':  90,
-    '==':  90,
-    '!=':  90,
-    '::':  95,
-    '+' : 100,
-    '-' : 100,
-    '*' : 200,
-    '/' : 200,
-    '//': 200,
-    '%' : 200,
-  }
-  // associativity: 1 for left, 0 for right
-  let assoc = {
-    '|' : 1,
-    '&' : 1,
-    '||': 1,
-    '&&': 1,
-    '=' : 0,
-    '<' : 1,
-    '<=': 1,
-    '>' : 1,
-    '>=': 1,
-    '==': 1,
-    '!=': 1,
-    '::': 1,
-    '+' : 1,
-    '-' : 1,
-    '*' : 1,
-    '/' : 1,
-    '//': 1,
-    '%' : 1,
-  }
-
-
   function expr() {
-    if (peek == 'ident' && str == "let") {
-      // 'let' ident+ '=' tight (';'|'\n') expr
+    if (peek == 'ident' && str == "let")
+      return letExpr()
+    return pipe()
+  }
+  function letExpr() { // 'let' ident+ '=' binop_expr (';'|'\n') expression
+    next()
+    if (peek != "ident")
+      error("ident expected but got '"+sanitize(peek)+"'")
+    let lhs = str
+    next()
+
+    let args = []
+    while (peek == "ident") {
+      args.push(str)
       next()
-      if (peek != "ident")
-        error("ident expected but got '"+sanitize(peek)+"'")
-      let lhs = str
-      next()
-
-      let args = []
-      while (peek == "ident") {
-        args.push(str)
-        next()
-      }
-      // check unique?
-
-      if (peek != "=")
-        error("'=' expected but got '"+sanitize(peek)+"'")
-      next()
-      let rhs = exprTight()
-      // console.log(gap, "'"+gap+"'")
-      if (peek != ";" && !gap.includes("\n"))
-        error("';' or newline expected but got '"+sanitize(peek)+"'")
-      if (peek == ";")
-        next()
-      let body = expr()
-
-      for (let x of args.reverse()) // mutates!
-        rhs = ast.call(ast.call(ast.ident("fn"), ast.ident(x)), rhs)
-
-      let res = ast.call(ast.ident("let"), ast.ident(lhs))
-      res = ast.call(res, rhs)
-      res = ast.call(res, body)
-      return res
-    } else {
-      return binop(0)
     }
+    // check unique?
+
+    if (peek != "=")
+      error("'=' expected but got '"+sanitize(peek)+"'")
+    next()
+    let rhs = binop()
+    // console.log(gap, "'"+gap+"'")
+    if (peek != ";" && !gap.includes("\n"))
+      error("';' or newline expected but got '"+sanitize(peek)+"'")
+    if (peek == ";")
+      next()
+    let body = expr()
+
+    for (let x of args.reverse()) // mutates!
+      rhs = ast.call(ast.call(ast.ident("fn"), ast.ident(x)), rhs)
+
+    let res = ast.call(ast.ident("let"), ast.ident(lhs))
+    res = ast.call(res, rhs)
+    res = ast.call(res, body)
+    return res
   }
-  function exprTight() {
-    return binopTight(50)
-  }
-  function binop(min) {
-    let res = loose()
-    while (peek in prec && prec[peek] >= min) {
-      let nextMin = prec[peek] + assoc[peek] // + 1 for left assoc
-      res = ast_binop(next(), res, binop(nextMin))
+  // Precedence climbing: a chain of binary operators over 'operand',
+  // consuming only those at precedence 'min' or tighter.
+  function climb(operand, min) {
+    let res = operand()
+    while (peek in binops && binops[peek].prec >= min) {
+      let nextMin = binops[peek].prec + binops[peek].assoc // + 1 for left assoc
+      res = ast_binop(next(), res, climb(operand, nextMin))
     }
     return res
   }
-  function binopTight(min) {
-    let res = tight()
-    while (peek in prec && prec[peek] >= min) {
-      let nextMin = prec[peek] + assoc[peek] // + 1 for left assoc
-      res = ast_binop(next(), res, binopTight(nextMin))
-    }
-    return res
+  // The two chains differ only in their operand. Only '|' can actually
+  // reach pipe(): everything tighter was already consumed by the binop()
+  // inside an application.
+  function pipe() {
+    return climb(application, 0)
+  }
+  function binop() {
+    // 50 is the precedence of '&', the loosest operator an application
+    // may have inside an operand: application binds looser than every
+    // operator except '|'. Keep in sync with the table above.
+    return climb(path, 50)
   }
   function atom() {
+    // NOTE: a bare '*' is an operand here and multiplication in binop(),
+    // and the two never collide: atom() only runs where an operand is
+    // expected, and binop() consumes a '*' following one before we get
+    // back here. So 'a * b' is always times, '*' and '*.foo' always the
+    // anonymous key. It does mean 'f *' is times looking for a right
+    // operand, never application -- write 'f (*)' for that.
     if (peek == "num" || peek == "str" || peek == "ident" || peek == "*") {
       let s = str
       let res
@@ -351,7 +313,7 @@ exports.parserImpl = (strings, holes) => {
         }
         res = ast.str(s)
       } else if (s == "true" || s == "false") {
-        res = ast.num(Boolean(s))
+        res = ast.num(s == "true") // NOTE: Boolean("false") is true!
       } else {
         res = ast.ident(s)
       }
@@ -364,45 +326,76 @@ exports.parserImpl = (strings, holes) => {
     } else if (peek == '(') {
       return parens(expr)
     } else if (peek == '{') {
-      // object constructor syntax
-      let entry = () => {
-        let key = expr()
-        let val
-        if (peek == ":") {
-          next(); val = expr()
-        } else {
-          val = key
-        }
-        return [key, val]
-      }
-      let elems = braces(() => commaList(entry))
-      return ast.object(elems.flat())
+      return object()
     } else if (peek == '[') {
-      // array constructor syntax
-      let elems = brackets(() => commaList(expr))
-      return ast.array(elems)
+      return array()
     } else {
       error("atom expected but got '"+sanitize(peek)+"'")
     }
   }
-  function tight() {
-    let res
-    if (peek == ".") { // e.g. .input, to distinguish 'get' from 'ident'  TODO: require no space?
+  function array() {
+    return ast.array(brackets(() => commaList(expr)))
+  }
+  function object() {
+    let entry = () => {
+      let key = expr()
+      let val
+      if (peek == ":") {
+        next(); val = expr()
+      } else {
+        val = key // shorthand, {x} is {x: x}
+      }
+      return [key, val]
+    }
+    return ast.object(braces(() => commaList(entry)).flat())
+  }
+  // Field names, i.e. what may follow a '.'. Deliberately narrower than
+  // atom(): strings, arrays and objects are not keys -- a."x", a.[1] and
+  // a.{x:1} used to parse, silently building a get with a nonsensical key.
+  // Use a["x"] instead.
+  function keyAtom() {
+    if (gap != "")
+      error("no space allowed after '.', got '"+sanitize(peek)+"'")
+    if (peek == "num") {
+      let res = ast.num(Number(str))
       next()
-      let rhs = atom()
-      res = ast.get(rhs)
+      return res
+    } else if (peek == "ident" || peek == "*") {
+      let res = ast.ident(str)
+      next()
+      return res
+    } else if (peek == "hole") {
+      let res = ast.hole(holes[hole])
+      next()
+      return res
+    } else if (peek == "(") {
+      return parens(expr)
+    } else {
+      error("field name expected after '.' but got '"+sanitize(peek)+"'")
+    }
+  }
+  function path() {
+    let res
+    if (peek == ".") { // e.g. .input, to distinguish 'get' from 'ident'
+      next()
+      res = ast.get(keyAtom())
     } else if (peek == "num") {
-      // decimal literal? 0.123 ...
+      // A number at the head of a path is terminal: it is an int or a
+      // float and nothing more. 5.foo, 1.5.3, 1.5[0] and 1(x) are errors.
       let int = str
       res = ast.num(Number(int))
       next()
-      if (peek == ".") {
+      if (gap == "" && peek == ".") {
         next()
-        if (peek != "num") error("number expected but got '"+sanitize(peek)+"'")
+        if (peek != "num" || gap != "")
+          error("number expected but got '"+sanitize(peek)+"'")
         let frac = str
         res = ast.num(Number(int + "." + frac))
         next()
       }
+      if (gap == "" && (peek == "." || peek == "(" || peek == "[" || peek == "?"))
+        error("number literal cannot be followed by '"+sanitize(peek)+"'")
+      return res
     } else {
       res = atom()
     }
@@ -414,18 +407,10 @@ exports.parserImpl = (strings, holes) => {
     while (gap == "" && (peek == "." || peek == "(" || peek == "[")) {
       if (peek == ".") {
         next()
-        let rhs = atom()
-        res = ast.get(res, rhs)
+        res = ast.get(res, keyAtom())
         if (gap == "" && peek == "?") {
           res = ast_postop(next(), res)
         }
-        // TODO: might want to prevent .{}. and .[]. which don't make sense
-        // if (peek == "ident" || peek == "*") {
-        //   let rhs = ast.ident(str)
-        //   res = ast.get(res, rhs)
-        //   next()
-        // } else 
-        //   error("ident expected")
       } else if (peek == "(") {
         let rhs = parens(expr)
         res = ast.call(res, rhs)
@@ -436,12 +421,12 @@ exports.parserImpl = (strings, holes) => {
     }
     return res
   }
-  function loose() {
-    let res = exprTight()
+  function application() { // juxtaposition is a call: 'f x y'
+    let res = binop()
     while (peek == "num" || peek == "str" || peek == "hole" ||
-           peek == "ident" || peek == "*" ||
+           peek == "ident" ||
            peek == "." || peek == "(" || peek == "[" || peek == "{") {
-      res = ast.call(res, exprTight())
+      res = ast.call(res, binop())
     }
     return res
   }
