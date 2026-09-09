@@ -170,7 +170,7 @@ and an unknown name is rejected rather than silently treated as `js`:
   `$display`; this is what the webpack browser build is mainly for.
 
 **Other directories:**
-- `doc/`: `grammar.txt`, the EBNF grammar of the textual syntax that
+- `doc/`: `grammar.md`, a description of the textual query syntax that
   `src/parser.js` implements.
 - `test/`: the test suite (see below).
 - `data/`: JSON and CSV inputs used by the tests.
