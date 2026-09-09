@@ -1,0 +1,121 @@
+(* ===================================================================== *)
+(* Rhyme query language — EBNF grammar                                   *)
+(* Derived from src/parser.js (rhyme-lang/rhyme), with modifications:    *)
+(*   - atoms following '.' are restricted (no strings, arrays, objects)  *)
+(*   - a number at the head of a path is terminal (int or float only)    *)
+(*   - '?' attaches only to an identifier or a field access              *)
+(* Whitespace is implicit between tokens except where noted.             *)
+(* ===================================================================== *)
+
+(* ---------- Top level ---------- *)
+
+expression   = let_expr | pipe_expr ;
+
+let_expr     = "let" , identifier , { identifier } ,      (* params desugar to fns  *)
+               "=" , binop_expr ,                         (* no application in rhs  *)
+               ( ";" | newline ) ,                        (* terminator             *)
+               expression ;
+
+(* '?' marks an optional access (a?, a.b?); it is rejected on anything   *)
+(* other than an identifier or a field access, where it has no meaning.  *)
+
+(* '|' is the lowest-precedence operator; application sits between
+   '|' and all other binary operators *)
+pipe_expr    = application , { "|" , application } ;
+
+application  = binop_expr , { binop_expr } ;              (* juxtaposition = call   *)
+
+(* ---------- Binary operators ---------- *)
+(* Listed loosest to tightest; all left-associative.                     *)
+(* Effective precedence (low to high):                                   *)
+(*   |  <  application  <  &  <  ||  <  &&  <  comparisons  <  ::        *)
+(*   <  + -  <  * / // %  <  path access                                 *)
+
+binop_expr   = and_expr ;
+and_expr     = orelse_expr ,  { "&"  , orelse_expr } ;
+orelse_expr  = andalso_expr , { "||" , andalso_expr } ;
+andalso_expr = cmp_expr ,     { "&&" , cmp_expr } ;
+cmp_expr     = concat_expr ,  { ( "<" | "<=" | ">" | ">=" | "==" | "!=" ) ,
+                                concat_expr } ;
+concat_expr  = add_expr ,     { "::" , add_expr } ;
+add_expr     = mul_expr ,     { ( "+" | "-" ) , mul_expr } ;
+mul_expr     = path ,         { ( "*" | "/" | "//" | "%" ) , path } ;
+
+(* ---------- Paths / postfix ---------- *)
+(* Constraint: NO whitespace is allowed between path elements; a gap     *)
+(* ends the path and switches to application. E.g. `f.a` is field        *)
+(* access, `f .a` is application; `f(x)` is a call, `f (x)` is           *)
+(* application.                                                          *)
+
+path         = decimal                                    (* terminal: no accessors *)
+             | ( "." , key_atom                           (* leading-dot get        *)
+               | atom_nonum ) ,
+               [ "?" ] ,                                  (* identifiers only       *)
+               { accessor } ;
+
+accessor     = "." , key_atom , [ "?" ]                   (* field access           *)
+             | "[" , expression , "]"                     (* index access           *)
+             | "(" , expression , ")" ;                   (* function call          *)
+
+(* atoms allowed after '.' — no strings, arrays, or objects;             *)
+(* a."field", a.[1,2], a.{x:1} are invalid (use a["field"] etc.)         *)
+key_atom     = number
+             | identifier
+             | "*"
+             | hole
+             | "(" , expression , ")" ;
+
+(* ---------- Atoms ---------- *)
+
+(* A bare "*" is the anonymous generator key (data.*, .*.value, "*").    *)
+(* It is an operand wherever one is expected — at the head of a path and *)
+(* after '.' — and the multiplication operator everywhere else; the two  *)
+(* never collide, since an operand is never in operator position. Note   *)
+(* that this makes `f *` multiplication with a missing right operand,    *)
+(* never application: write `f (*)`. A "*"-run of length > 1, and "*?",  *)
+(* lex as single operator tokens, so "**" and "*?" are errors.           *)
+
+(* decimal literals are assembled from two adjacent number tokens; a     *)
+(* number at the head of a path is terminal, so no accessor and no '?'   *)
+(* may follow it: 5.foo, 1.5.3, 1.5[0], 1(x) and 5? are all errors       *)
+decimal      = number , [ "." , number ] ;
+
+atom         = decimal | atom_nonum ;
+
+atom_nonum   = string
+             | identifier                                 (* incl. "true" | "false" *)
+             | "*"                                        (* anonymous key          *)
+             | hole                                       (* ${...} template splice *)
+             | "(" , expression , ")"
+             | array
+             | object ;
+
+array        = "[" , [ expression , { "," , expression } ] , "]" ;
+
+object       = "{" , [ entry , { "," , entry } ] , "}" ;
+entry        = expression , [ ":" , expression ] ;        (* shorthand {x} = {x: x} *)
+
+(* ---------- Lexical tokens ---------- *)
+
+number       = digit , { digit } ;                        (* unsigned               *)
+digit        = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7"
+             | "8" | "9" ;
+
+(* a "*"-run needs at least one trailing ident char to be an identifier  *)
+(* ("*A", "**y"); a bare "*"-run lexes as an operator token              *)
+identifier   = ( letter | "_" ) , { letter | digit | "_" }
+             | "*" , { "*" } ,
+               ( letter | digit | "_" ) , { letter | digit | "_" } ;
+letter       = ? "a".."z" | "A".."Z" ? ;
+
+(* operator tokens lex by maximal munch over these characters *)
+opchar       = "+" | "-" | "*" | "/" | "%" | "<" | ">" | "=" | "!"
+             | "?" | "|" | "&" | "^" | "~" | ":" ;
+
+string       = '"' , { ? any char except '"' and newline ? } , '"' ;
+                                                          (* no escape sequences    *)
+
+hole         = ? template-literal splice ${...} (tagged-template usage) ? ;
+
+comment      = "#" , { ? any char except newline ? } ;    (* treated as whitespace  *)
+whitespace   = " " | newline ;
