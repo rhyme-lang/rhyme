@@ -431,7 +431,7 @@ exports.display = (o, domParent) => {
                 renderHead("")
                 m.end()
             }
-            // colums
+            // columns
             iterateMeta(colmeta1, null, i + 1, node => {
                 m.begin(m.th())
                 m.domParent.colSpan = node.span

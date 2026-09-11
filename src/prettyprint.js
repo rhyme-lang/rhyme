@@ -29,7 +29,7 @@ exports.setEmitPseudoState = st => {
 
 
 // contract: pretty, prettyPath should be stateless, i.e.,
-// do not rely on settings, filters, assigments, etc
+// do not rely on settings, filters, assignments, etc
 
 let prettyPath = es => {
   if (es === undefined) return "[?]"

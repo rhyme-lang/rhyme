@@ -9,7 +9,7 @@ const { runtime } = require('./simple-runtime')
 //       this means we will never emit a statement inside irrelevant loops
 //    4. the statements will be emitted while faithfully following the dependencies
 //       between them
-// We also try to fuse different statements' loops together as mch as possible.
+// We also try to fuse different statements' loops together as much as possible.
 
 
 // This function generate the following dependencies:

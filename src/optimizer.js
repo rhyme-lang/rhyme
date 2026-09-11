@@ -208,7 +208,7 @@ let avoidEvaluation = (q) => {
                     q.op === "lessThan" || q.op === "greaterThan" ||
                     q.op === "lessThanOrEqual" || q.op === "greaterThanOrEqual") {
             // In order to determine if nothing is returned, the exact value of the arguments are necessary to be obtained.
-            // TOOD: X = X is always true.
+            // TODO: X = X is always true.
             return {
                 ...q,
                 arg: [

@@ -49,7 +49,7 @@ function resolveHole(p) {
             return { xxkey: "object", xxparam: Object.entries(p).flat().map(ast.unwrap) }
         }
     } else {
-        console.error("ERROR: unknown obect in query hole: " + JSON.stringify(p))  // user-facing error
+        console.error("ERROR: unknown object in query hole: " + JSON.stringify(p))  // user-facing error
     }
 }
 
