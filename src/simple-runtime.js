@@ -261,13 +261,18 @@ rt.singleton = (x1) => { // 'mkset'
   return {[x1]:true}
 }
 
-rt.pure.mkTuple = (...arg) => {
+// Constant-key record construction: the optimized encoding of an 'update'
+// chain {}{k1 -> v1}{k2 -> v2}..., so it must agree with that chain.
+// A field whose value is nothing is omitted; an all-nothing record is the
+// empty object, not nothing -- matching the chain, whose init value is {}
+// and which therefore cannot fail (see 'Loops are Immune to Failure' in the
+// semantics draft).
+rt.mkTuple = (...arg) => {
   let res = {}
   for (let i = 0; i < arg.length; i += 2) {
     if (arg[i + 1] === undefined) continue
     res[arg[i]] = arg[i + 1]
   }
-  if (Object.keys(res) == 0) return undefined
   return res
 }
 

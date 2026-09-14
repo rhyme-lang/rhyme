@@ -67,6 +67,9 @@ let pretty = q => {
   } else if (q.key == "pure") {
     let es = q.arg.map(pretty)
     return q.op + "(" + es.join(", ") + ")"
+  } else if (q.key == "mkTuple") {
+    let es = q.arg.map(pretty)
+    return "mkTuple(" + es.join(", ") + ")"
   } else if (q.key == "hint") {
     let es = q.arg.map(pretty)
     return q.op + "(" + es.join(", ") + ")"

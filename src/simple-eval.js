@@ -17,29 +17,35 @@ const { unique, union, intersect, diff, subset, same } = sets
 // ----- configuration space -----
 
 let defaultSettings = {
+
+  // frontend -- preprocess.js
+  mkTuple: true,
+
+  // analysis and extraction -- simple-eval.js
   altInfer: false,
   antiSubstGroupKey: false,
   singleResult: true, // TODO: elim flag? 14 tests failing when false globally
-
   extractGroupKeys: false,
   extractAssignments: true,
   extractAssignmentsLate: false, // works, but makes aoc tests go from 5s to 20s!
   extractFilters: true,
   extractFiltersHard: true,
 
-  elimProjections: true,
-  constantFold: true,
-  loopGen: true,
-
-  newCodegen: false,
-  backend: "js",
-
+  // middle tier -- typing.js, optimizer.js
   schema: types.unknown,
   enableOptimizations: true,
 
-  // c backend options
-  format: "json",
+  // backend selection -- simple-eval.js
+  backend: "js",
+  newCodegen: false,
 
+  // js codegen -- simple-codegen.js, simple-loopgen.js
+  loopGen: true,
+  elimProjections: true,
+  constantFold: true,
+
+  // c backend -- cgen/ (also reads options not declared here, see reset() in cgen/codegen.js)
+  format: "json",
   outDir: "out",
   outFile: "tmp"
 }
@@ -109,7 +115,7 @@ let canonicalVarName = (e1, isCorrelatedGroupKey) => {
 }
 
 let extractFlex0 = q => {
-  if (q.key == "pure" && q.op == "mkTuple") {
+  if (q.key == "mkTuple") {
     // return { key:"stateful", op: "single", mode: "reluctant", arg:[{ ...q, arg: q.arg.map(extractFlex0) }], schema: q.schema }
     return { ...q, arg: q.arg.map((e, i) => i % 2 == 0 ? extract0(e) : extractFlex0(e)), schema: q.schema }
   } else if (q.key == "stateful" || q.key == "group" || q.key == "update") // prefix?
@@ -370,7 +376,7 @@ let inferDims = q => {
     q.vars = [q.op]
     q.mind = [q.op]
     q.dims = [q.op]
-  } else if (q.key == "get" || q.key == "pure" || q.key == "hint" || q.key == "mkset" || q.key == "loadInput") {
+  } else if (q.key == "get" || q.key == "pure" || q.key == "mkTuple" || q.key == "hint" || q.key == "mkset" || q.key == "loadInput") {
     let es = q.arg.map(inferDims)
     q.vars = unique(es.flatMap(x => x.vars))
     q.mind = unique(es.flatMap(x => x.mind))
@@ -446,7 +452,7 @@ let inferBound = out => q => {
     q.bnd = []
   } else if (q.key == "var") {
     q.bnd = []
-  } else if (q.key == "get" || q.key == "pure" || q.key == "hint" || q.key == "mkset" || q.key == "loadInput") {
+  } else if (q.key == "get" || q.key == "pure" || q.key == "mkTuple" || q.key == "hint" || q.key == "mkset" || q.key == "loadInput") {
     let es = q.arg.map(inferBound(out))
     q.bnd = []
   } else if (q.key == "stateful" || q.key == "prefix") {
@@ -498,7 +504,7 @@ let inferFree = out => q => {
     // check that variables are always defined -- currently not for K vars
     console.assert(subset([q.op], out))
     q.fre = [q.op]
-  } else if (q.key == "get" || q.key == "pure"  || q.key == "hint" || q.key == "mkset" || q.key == "loadInput") {
+  } else if (q.key == "get" || q.key == "pure" || q.key == "mkTuple" || q.key == "hint" || q.key == "mkset" || q.key == "loadInput") {
     let es = q.arg.map(inferFree(out))
     q.fre = unique(es.flatMap(x => x.fre))
   } else if (q.key == "stateful" || q.key == "prefix") {
@@ -618,7 +624,7 @@ let deno = q => k => {
     let {out} = k({vars:[q.op],dims:[q.op]})
     q.real = [q.op]
     return pretty(q)
-  } else if (q.key == "get" || q.key == "pure") {
+  } else if (q.key == "get" || q.key == "pure" || q.key == "mkTuple") {
     console.assert(q.arg.length == 2)
     let [e1,e2] = q.arg
     let r1 = deno(e1)(v1 => { // todo: support multiple?
@@ -802,7 +808,7 @@ let compile = (q,userSettings={}) => {
 
   // ---- front end ----
   // 1. Preprocess (after parse, desugar)
-  q = preproc(q)
+  q = preproc(q, settings)
   // rh`sum (x)` -> {op: "sum", arg: [x], deps: fre: [], bnd: []}.
   // rh`update a k v` -> {op: "update", arg: [a, k, v]}
 
@@ -1064,7 +1070,7 @@ let compilePrimitive = (q,userSettings={}) => {
   // ---- front end ----
 
   // 1. Preprocess (after parse, desugar)
-  q = preproc(q)
+  q = preproc(q, settings)
   let src = q
 
 

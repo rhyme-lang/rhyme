@@ -870,6 +870,22 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
         } else {
             return performObjectGet(tup1, tup2);
         }
+    } else if (q.key === "mkTuple") {
+        // Constant-key record construction: the encoding of an 'update' chain
+        // {}{k1 -> v1}{k2 -> v2}..., so it must report what that chain reports.
+        // A field whose value is nothing is simply omitted; object types carry
+        // no per-field optionality, so that absence surfaces as a 'nothing'
+        // prop on the record itself (see performObjectGet).
+        let res = {}
+        let tupProps = []
+        for (let i = 0; i < q.arg.length; i += 2) {
+            let argTup1 = $validateIRQuery(q.arg[i]);
+            let argTup2 = $validateIRQuery(q.arg[i + 1]);
+
+            res[argTup1.type] = argTup2.type;
+            tupProps = union(tupProps, union(argTup1.props, argTup2.props));
+        }
+        return {type: createSimpleObject(res), props: tupProps};
     } else if (q.key === "pure") {
         let argTups = q.arg.map($validateIRQuery);
 
@@ -1009,15 +1025,6 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
             throw new Error("Pure operation not implemented: " + q.op);
         } else if (q.op == "combine") {
             return argTups[0];
-        } else if (q.op === "mkTuple") {
-            let res = {}
-            for (let i = 0; i < q.arg.length; i += 2) {
-                let argTup1 = $validateIRQuery(q.arg[i]);
-                let argTup2 = $validateIRQuery(q.arg[i + 1]);
-
-                res[argTup1.type] = argTup2.type;
-            }
-            return intoTup(createSimpleObject(res));
         } else if (q.op == "singleton") {
             // TODO Figure out what singleton does.
             let {type: t1, props: p1} = argTups[0];
@@ -1616,6 +1623,9 @@ let convertAST = (schema, q, completedMap, dontConvertVar = false) => {
         return q;
     } else if (q.key == "hint") {
         throw new Error("Unknown.");
+    } else if (q.key == "mkTuple") {
+        q.arg = q.arg.map($convertAST);
+        return q;
     } else if (q.key == "pure") {
         
         if (q.op == "apply" || q.op == "flatten" || q.op == "join" || q.op == "vars") {
@@ -1679,9 +1689,6 @@ let convertAST = (schema, q, completedMap, dontConvertVar = false) => {
                 return q;
             }
             throw new Error("Pure operation not implemented: " + q.op);
-        } else if (q.op == "mkTuple") {
-            q.arg = q.arg.map($convertAST);
-            return q;
         } else if (q.op == "combine") {
             q.arg = q.arg.map($convertAST);
             return q;

@@ -3,7 +3,6 @@ const { parse } = require('./parser')
 const { sets } = require('./shared')
 const { scc } = require('./scc')
 const { generate } = require('./new-codegen')
-const { preproc } = require('./preprocess')
 const { runtime } = require('./simple-runtime')
 const { pretty } = require('./prettyprint')
 const { typing, types, typeSyms } = require('./typing')
@@ -172,6 +171,9 @@ let codegen = (q, scope) => {
   } else if (q.key == "pure") {
     let es = q.arg.map(x => codegen(x,scope))
     return "rt.pure."+q.op+"("+es.join(",")+")"
+  } else if (q.key == "mkTuple") {
+    let es = q.arg.map(x => codegen(x,scope))
+    return "rt.mkTuple("+es.join(",")+")"
   } else if (q.key == "hint") {
     // no-op!
     return "{}"
@@ -887,6 +889,11 @@ let quoteExpr = q => {
       if (es.length == 0) return "hint"
       else if (es.length == 1) return es[0]
       else return q.op+"("+es.join(",")+")"
+    } else if (q.key == "mkTuple") {
+      let es = q.arg.map(quoteExpr).filter(x => x != "hint")
+      if (es.length == 0) return "hint"
+      else if (es.length == 1) return es[0]
+      else return "mkTuple("+es.join(",")+")"
     } else if (q.key == "hint") {
       // no-op!
       return "hint"
@@ -934,6 +941,11 @@ let codegenCPP = q => {
       if (typing.isInteger(ty)) return "("+es.join(" "+quoteCppOp(q.op)+" ")+")"
       else return "rt_pure_"+q.op+"("+es.join(",")+")"
     }
+  } else if (q.key == "mkTuple") {
+    // no rt_pure_mkTuple in runtime/rhyme.hpp -- record literals are
+    // not supported by the legacy cpp backend
+    console.error("unhandled op ", pretty(q))
+    return "<?"+q.key+"?>"
   } else if (q.key == "hint") {
     // no-op!
     return "hint"

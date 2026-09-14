@@ -476,7 +476,7 @@ let emitStateful1 = (q, map, insertKeyBuf) => {
       let save = currentGroupPath
       currentGroupPath = { root: i, path: [e1] }
 
-      if (e2.key == "pure" && e2.op == "mkTuple") {
+      if (e2.key == "mkTuple") {
         let buf = []
 
         assign(buf, sym, [e1.op], [])
@@ -543,7 +543,7 @@ let emitStateful1 = (q, map, insertKeyBuf) => {
 
       let [e0, e1, e2, e3] = q.arg
       currentGroupPath.path.push(e1)
-      if (e2.key == "pure" && e2.op == "mkTuple") {
+      if (e2.key == "mkTuple") {
         let buf = []
 
         assign(buf, sym, [...q.fre, e1.op], [])
@@ -965,6 +965,20 @@ let emitOrElse = (buf, q) => {
   return res
 }
 
+// Constant-key record construction. Each field is emitted separately, so the
+// record becomes one C value per field rather than a single packed object --
+// this is what lets a group with a record value be laid out as one array per
+// field (see collectHashMap / addHashMapValue).
+let emitMkTuple = (buf, q) => {
+  let schema = utils.convertToArrayOfSchema(q.schema.type)
+  let res = { schema: q.schema.type, val: {}, tag: TAG.OBJECT }
+  for (let i = 0; i < q.arg.length; i += 2) {
+    let { name } = schema[i / 2]
+    res.val[name] = emitPath(buf, q.arg[i + 1])
+  }
+  return res
+}
+
 let emitPure = (buf, q) => {
   if (q.op == "sort") {
     let e = emitPath(buf, q.arg[0])
@@ -976,16 +990,6 @@ let emitPure = (buf, q) => {
       return e
     } else
       throw new Error("Sorting is not supported on this object: " + e)
-  } else if (q.op == "mkTuple") {
-    let schema = utils.convertToArrayOfSchema(q.schema.type)
-    let res = { schema: q.schema.type, val: {}, tag: TAG.OBJECT }
-    for (let i = 0; i < q.arg.length; i += 2) {
-      let k = q.arg[i]
-      let v = q.arg[i + 1]
-      let { name } = schema[i / 2]
-      res.val[name] = emitPath(buf, v)
-    }
-    return res
   } else if (q.op == "and") {
     let [e1, e2] = q.arg.map(e => emitPath(buf, e))
     if (e1.cond && e2.cond) {
@@ -1204,6 +1208,8 @@ let emitPath = (buf, q) => {
     return emitGet(buf, q)
   } else if (q.key == "pure") {
     return emitPure(buf, q)
+  } else if (q.key == "mkTuple") {
+    return emitMkTuple(buf, q)
   } else {
     throw new Error("Unknown op: " + pretty(q))
   }
@@ -1529,7 +1535,7 @@ let collectNestedHashMap = (q, map, name, currentGroupPath) => {
   }
 
   currentGroupPath.path.push(e1.op)
-  if (e2.key == "pure" && e2.op == "mkTuple") {
+  if (e2.key == "mkTuple") {
     for (let j = 0; j < e2.arg.length; j += 2) {
       let key = e2.arg[j]
       let val = e2.arg[j + 1]
@@ -1605,7 +1611,7 @@ let collectHashMap = (q) => {
     let e1 = keyList[0]
     let e2 = valList[0]
     let currentGroupPath = { sym: i, path: [...q.fre, e1.op], keySchema }
-    if (e2.key == "pure" && e2.op == "mkTuple") {
+    if (e2.key == "mkTuple") {
       for (let j = 0; j < e2.arg.length; j += 2) {
         let key = e2.arg[j]
         let val = e2.arg[j + 1]

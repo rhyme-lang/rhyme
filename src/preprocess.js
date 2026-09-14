@@ -62,6 +62,8 @@ let inputFormat = {
   "ndjson": true
 }
 
+let settings = {}
+
 let preproc = q => {
   console.assert(q && q.xxkey && !q.rhyme_ast)
   if (q.xxkey == "raw") {
@@ -133,8 +135,11 @@ let preproc = q => {
       arg.push(e2)
       res = { key: "update", arg: [res,e1,e2] }
     }
-    if (q.xxparam.length > 0 && constKeys)
-      return { key: "pure", op: "mkTuple", arg }
+    // An all-constant-key record can be built in one step instead of as a
+    // chain of updates. The two must stay observationally equal, so this is
+    // a switch, not a semantic choice.
+    if (settings.mkTuple && q.xxparam.length > 0 && constKeys)
+      return { key: "mkTuple", arg }
     return res
   } else if (q.xxkey) {
     // if 'update .. ident ..', convert ident to input ref?
@@ -160,4 +165,9 @@ let preproc = q => {
   }
 }
 
-exports.preproc = preproc
+// Entry point. Callers pass their settings explicitly; the module local above
+// is an implementation detail of the recursion, not shared global state.
+exports.preproc = (q, userSettings = {}) => {
+  settings = { ...userSettings }
+  return preproc(q)
+}

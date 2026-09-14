@@ -961,16 +961,23 @@ test("day11-part1", () => {
     ...udf_stdlib,
   }
 
+  // NOTE: the intermediate records use distinct field names (val0/count0,
+  // val1/count1) from the result records (val/count). A constant object key is
+  // desugared to a grouping variable via mkset, and canonicalVarName hashes the
+  // mkset node, so every literal "val" in the query would otherwise share one
+  // variable K. That aliases the nested and outer records: the inner temps pick
+  // up the outer group key in their index, and the group key's own generator
+  // then reads them back, i.e. K depends on itself.
   let nums = rh`.input | udf.split " " | .*num | udf.toNum | array`
-  let frequency = rh`{val: ${nums}.*x, count: 1} | array`
-  let compact = rh`{val: ${frequency}.*k.val, count: sum ${frequency}.*k.count} | group ${frequency}.*k.val | .* | array`
+  let frequency = rh`{val0: ${nums}.*x, count0: 1} | array`
+  let compact = rh`{val: ${frequency}.*k.val0, count: sum ${frequency}.*k.count0} | group ${frequency}.*k.val0 | .* | array`
   let func = api.compileC2(compact)
   let state = func({input, udf})
 
-  let newSeqNotEven = rh`(ifElse state.*c.val == 0 {val: 1, count: state.*c.count} (ifElse (udf.isEvenDigit state.*c.val) {val: 0, count: 0} {val: 2024 * state.*c.val, count: state.*c.count}))`
-  let newSeqEven = rh`ifElse (udf.isEvenDigit state.*c.val) [{val: udf.splitNum1 state.*c.val, count: state.*c.count}, {val: udf.splitNum2 state.*c.val, count: state.*c.count}].* {val: 0, count: 0}`
+  let newSeqNotEven = rh`(ifElse state.*c.val == 0 {val1: 1, count1: state.*c.count} (ifElse (udf.isEvenDigit state.*c.val) {val1: 0, count1: 0} {val1: 2024 * state.*c.val, count1: state.*c.count}))`
+  let newSeqEven = rh`ifElse (udf.isEvenDigit state.*c.val) [{val1: udf.splitNum1 state.*c.val, count1: state.*c.count}, {val1: udf.splitNum2 state.*c.val, count1: state.*c.count}].* {val1: 0, count1: 0}`
   let newSeq = rh`[${newSeqNotEven}, ${newSeqEven}]`
-  let compact2 = rh`{val: ${newSeq}.*kk.val, count: sum ${newSeq}.*kk.count} | group ${newSeq}.*kk.val | .* | array`
+  let compact2 = rh`{val: ${newSeq}.*kk.val1, count: sum ${newSeq}.*kk.count1} | group ${newSeq}.*kk.val1 | .* | array`
 
   let func1 = api.compileC2(compact2)
   for (let i = 0; i < 25; i++) {
@@ -994,16 +1001,20 @@ test("day11-part2", () => {
     ...udf_stdlib,
   }
 
+  // NOTE: see day11-part1 -- the intermediate records use distinct field names
+  // (val0/count0, val1/count1) from the result records (val/count), so that the
+  // mkset grouping variable for a constant key is not shared between the nested
+  // and outer records.
   let nums = rh`.input | udf.split " " | .*num | udf.toNum | array`
-  let frequency = rh`{val: ${nums}.*x, count: 1} | array`
-  let compact = rh`{val: ${frequency}.*k.val, count: sum ${frequency}.*k.count} | group ${frequency}.*k.val | .* | array`
+  let frequency = rh`{val0: ${nums}.*x, count0: 1} | array`
+  let compact = rh`{val: ${frequency}.*k.val0, count: sum ${frequency}.*k.count0} | group ${frequency}.*k.val0 | .* | array`
   let func = api.compileC2(compact)
   let state = func({input, udf})
 
-  let newSeqNotEven = rh`(ifElse state.*c.val == 0 {val: 1, count: state.*c.count} (ifElse (udf.isEvenDigit state.*c.val) {val: 0, count: 0} {val: 2024 * state.*c.val, count: state.*c.count}))`
-  let newSeqEven = rh`ifElse (udf.isEvenDigit state.*c.val) [{val: udf.splitNum1 state.*c.val, count: state.*c.count}, {val: udf.splitNum2 state.*c.val, count: state.*c.count}].* {val: 0, count: 0}`
+  let newSeqNotEven = rh`(ifElse state.*c.val == 0 {val1: 1, count1: state.*c.count} (ifElse (udf.isEvenDigit state.*c.val) {val1: 0, count1: 0} {val1: 2024 * state.*c.val, count1: state.*c.count}))`
+  let newSeqEven = rh`ifElse (udf.isEvenDigit state.*c.val) [{val1: udf.splitNum1 state.*c.val, count1: state.*c.count}, {val1: udf.splitNum2 state.*c.val, count1: state.*c.count}].* {val1: 0, count1: 0}`
   let newSeq = rh`[${newSeqNotEven}, ${newSeqEven}]`
-  let compact2 = rh`{val: ${newSeq}.*kk.val, count: sum ${newSeq}.*kk.count} | group ${newSeq}.*kk.val | .* | array`
+  let compact2 = rh`{val: ${newSeq}.*kk.val1, count: sum ${newSeq}.*kk.count1} | group ${newSeq}.*kk.val1 | .* | array`
 
   let func1 = api.compileC2(compact2)
   for (let i = 0; i < 75; i++) {

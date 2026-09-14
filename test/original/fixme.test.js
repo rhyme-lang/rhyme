@@ -1,4 +1,5 @@
 const { api, rh } = require('../../src/rhyme')
+const { compile } = require('../../src/simple-eval')
 
 test("siblingFields", () => {
     let data = [{ key: "A", value: 10 }, { key: "B", value: 20}, { key: "C", value: 30 }]
@@ -295,7 +296,110 @@ test("aggregateAsKey_encoded", () => {
 })
 
 
+// Tree-path grouping inserts an empty record for every path that does not
+// contribute a field. Moved here from test/semantics/se-tree-paths.test.js,
+// where these two were testPathGroup3 and testPathGroup4-1.
+//
+// THE EMPTY OBJECTS BELOW ARE NOT EXPECTED. The expected results are the
+// 'expected' values spelled out in each test -- paths A and B are leaves,
+// they have no .B (resp. no .A and .B) child, so they should not appear in
+// the output at all.
+//
+// What happens: '{ "**A": { BOO: ... } }' builds a record per path. For a leaf
+// path the field's value is nothing, so the record comes out empty, and the
+// enclosing group then inserts that empty record under the path key.
+//
+// These used to pass because rt.pure.mkTuple had a special case returning
+// 'undefined' for an all-nothing record, which made the enclosing update skip
+// the key. That special case was removed: it made the mkTuple encoding of a
+// constant-key record disagree with the update chain it is supposed to encode
+// (the chain starts from {} and cannot fail), so a query's meaning depended
+// on whether the optimization had fired.
+//
+// Two candidate fixes, neither taken yet:
+//
+//  1. Suppress the insert in rt.stateful.update when the value is an empty
+//     record. This is what testPathGroup3's own comment proposed ("Could be
+//     done in rt.stateful.update, but there are conflicting demands from
+//     react-todo-app.html"). It works for both encodings, but it is a global
+//     semantic choice: no query could then build an empty record on purpose.
+//
+//  2. Give 'update'/'group' the 'maybe' mode that stateful ops already have
+//     ('sum?', 'count?'). maybe means skip the init, so a record that writes
+//     no field yields nothing rather than {}, and the enclosing group drops
+//     the key. This is opt-in per query and honoured by both encodings, but
+//     it needs: ops.special["group?"] (commented out at shared.js:22-23), the
+//     '?'-stripping in extract0 extended past 'stateful' (simple-eval.js:189),
+//     a mode check at the five init sites that hardcode '|| q.key == "update"',
+//     a matching maybe for mkTuple, and surface syntax -- '?' currently
+//     attaches to an identifier or a get, and these queries are plain JS
+//     objects with nowhere to put it.
+
+test("testPathGroup3-fixme", () => {
+  let data = { A: 7, B: 8, foo1: { A: 17, B: 18, foo2: { A: 27, B: 28 } } }
+  let other = { C: 9, foo1: { B: 12, foo2: { A: 13, C: 15 } } }
+
+  let query = { "**A": { "BOO": rh`data.**A.B` } }
+
+  let func = compile(query)
+  let res = func({data,other})
+
+  let expected = {
+    BOO: 8,
+    foo1: {
+      BOO: 18,
+      foo2: {
+        BOO: 28,
+      }
+    }
+  }
+
+  // actual result: the empty A/B records are the bug
+  let bug = {
+    BOO: 8, A: {}, B: {},
+    foo1: {
+      BOO: 18, A: {}, B: {},
+      foo2: {
+        BOO: 28, A: {}, B: {},
+      }
+    }
+  }
+
+  expect(res).toEqual(bug)
+  expect(res).not.toEqual(expected)
+})
 
 
+test("testPathGroup4-1-fixme", () => {
+  let data = { A: 7, B: 8, foo1: { A: 17, B: 18, foo2: { A: 27, B: 28 } } }
+  let other = { C: 9, foo1: { B: 12, foo2: { A: 13, C: 15 } } }
 
+  let query = { "**A": { "C": rh`data.**A.A + data.**A.B` } }
 
+  let func = compile(query)
+  let res = func({data,other})
+
+  let expected = {
+    C: 15,
+    foo1: {
+      C: 35,
+      foo2: {
+        C: 55,
+      }
+    }
+  }
+
+  // actual result: the empty A/B records are the bug
+  let bug = {
+    C: 15, A: {}, B: {},
+    foo1: {
+      C: 35, A: {}, B: {},
+      foo2: {
+        C: 55, A: {}, B: {},
+      }
+    }
+  }
+
+  expect(res).toEqual(bug)
+  expect(res).not.toEqual(expected)
+})
