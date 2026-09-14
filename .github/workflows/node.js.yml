@@ -9,23 +9,34 @@ on:
   pull_request:
     branches: [ "main" ]
 
+env:
+  # Bump the trailing version when the dataset contents change (scale factor,
+  # bluesky file, etc.) to invalidate the cache.
+  DATA_CACHE_KEY: datasets-tpch-sf1-bluesky-file0001-v1
+  DATA_CACHE_PATHS: |
+    data/SF1
+    data/bluesky
+
 jobs:
-  build:
+  # Generate the large datasets once per run and share them with every matrix
+  # job below, instead of re-downloading them in each one.
+  data:
 
-    runs-on: ubuntu-22.04
-
-    strategy:
-      matrix:
-        node-version: [16.x, 18.x, 20.x]
-        # See supported Node.js release schedule at https://nodejs.org/en/about/releases/
+    name: prepare datasets
+    # The datasets are OS-independent text, so this just needs any supported
+    # runner -- no reason to pin it to a deprecating image.
+    runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
-    - name: Install Nlohmann Json
-      run: |
-        git clone https://github.com/nlohmann/json.git
-        sudo cp -r json/include/* /usr/include/
+    - uses: actions/checkout@v7
+    - name: Cache datasets
+      id: cache
+      uses: actions/cache@v6
+      with:
+        path: ${{ env.DATA_CACHE_PATHS }}
+        key: ${{ env.DATA_CACHE_KEY }}
     - name: Generate TPCH datasets
+      if: steps.cache.outputs.cache-hit != 'true'
       run: |
         git clone https://github.com/electrum/tpch-dbgen.git
         make -C tpch-dbgen
@@ -34,14 +45,44 @@ jobs:
         mkdir -v -p data/SF1
         mv -v *.tbl data/SF1
     - name: Get JSONBench data
+      if: steps.cache.outputs.cache-hit != 'true'
       run: |
         wget --progress=dot:giga --directory-prefix data/bluesky "https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz"
         gzip -d data/bluesky/file_0001.json.gz
+
+  build:
+
+    name: node ${{ matrix.node-version }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    needs: data
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+        node-version: [18.x, 20.x, 22.x, 24.x]
+        # See supported Node.js release schedule at https://nodejs.org/en/about/releases/
+        # Node floor is 18.x: jest 30 requires >=18.14.0, webpack-cli 6 requires >=18.12.0
+
+    steps:
+    - uses: actions/checkout@v7
+    - name: Restore datasets
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ env.DATA_CACHE_PATHS }}
+        key: ${{ env.DATA_CACHE_KEY }}
+        # The tpch/jsonbench tests silently skip when their data is missing, so
+        # fail loudly here rather than reporting a green run that tested less.
+        fail-on-cache-miss: true
+    - name: Install Nlohmann Json
+      run: |
+        git clone https://github.com/nlohmann/json.git
+        sudo cp -r json/include/* /usr/include/
     - name: Compile yyjson
       run: |
         make -C third-party/yyjson
     - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v7
       with:
         node-version: ${{ matrix.node-version }}
         cache: 'npm'
