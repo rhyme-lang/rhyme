@@ -28,9 +28,9 @@
     "url": "https://github.com/rhyme-lang/rhyme/issues"
   },
   "devDependencies": {
-    "jest": "^29.7.0",
-    "webpack": "^5.91.0",
-    "webpack-cli": "^5.1.4"
+    "jest": "^30.5.1",
+    "webpack": "^5.111.0",
+    "webpack-cli": "^7.2.3"
   },
   "exports": {
     ".": "./src/rhyme.js"
