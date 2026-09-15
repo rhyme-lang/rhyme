@@ -74,13 +74,6 @@ jobs:
         # The tpch/jsonbench tests silently skip when their data is missing, so
         # fail loudly here rather than reporting a green run that tested less.
         fail-on-cache-miss: true
-    - name: Install Nlohmann Json
-      run: |
-        git clone https://github.com/nlohmann/json.git
-        sudo cp -r json/include/* /usr/include/
-    - name: Compile yyjson
-      run: |
-        make -C third-party/yyjson
     - name: Use Node.js ${{ matrix.node-version }}
       uses: actions/setup-node@v7
       with:
