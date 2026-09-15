@@ -1827,15 +1827,33 @@ let emitCode = (q, ir, settings) => {
   return generate(newCodegenIR, backend == "cuda" ? "c" : backend)
 }
 
+// Run a command with an argv array rather than a shell string: the include
+// paths we pass are absolute paths into node_modules, which routinely contain
+// spaces on macOS and Windows.
+let run = (file, args) => {
+  const cp = require('child_process')
+  return new Promise((resolve, reject) => {
+    cp.execFile(file, args, (err, stdout, stderr) => {
+      if (err) {
+        err.stderr = stderr
+        reject(err)
+      } else {
+        resolve(stdout)
+      }
+    })
+  })
+}
+
 // Compile the vendored yyjson.c once and cache the object file across runs.
 // The cache key covers the compiler and the flags it was built with, so
 // switching compilers or optimization levels rebuilds rather than silently
 // linking a mismatched object. A cache we cannot write to is not fatal: the
 // caller falls back to handing yyjson.c to the compiler directly.
-let yyjsonObject = async (run, paths, compiler, optFlags) => {
+let buildYyjsonObject = async (compiler, optFlags) => {
   const fs = require('fs').promises
   const path = require('path')
   const crypto = require('crypto')
+  const paths = require('./paths')
 
   let version = ""
   try {
@@ -1866,32 +1884,36 @@ let yyjsonObject = async (run, paths, compiler, optFlags) => {
   return obj
 }
 
+// Memoized per process, on the promise, so that repeated queries neither
+// recompute the key -- which costs a `compiler --version` spawn and a hash of
+// yyjson.c -- nor race each other to build the same object.
+let yyjsonObjects = new Map()
+
+let yyjsonObject = (compiler, optFlags) => {
+  let memoKey = compiler + "\0" + optFlags.join(" ")
+  if (!yyjsonObjects.has(memoKey))
+    yyjsonObjects.set(memoKey, buildYyjsonObject(compiler, optFlags))
+  return yyjsonObjects.get(memoKey)
+}
+
+// Build the C runtime's compiled dependencies ahead of time, so that the first
+// query does not pay for it. Test runners and CI want this: jest gives each
+// test a few seconds, and compiling yyjson.c can eat that on its own.
+let prepareRuntime = async (settings = {}) => {
+  let compiler = settings.compiler || "gcc"
+  let optFlags = settings.optFlags || ["-O3"]
+  return yyjsonObject(compiler, optFlags)
+}
+
 let generateC = (q, ir, settings) => {
   resetSettings(settings)
 
   const fs = require('fs').promises
   const path = require('path')
-  const cp = require('child_process')
   const paths = require('./paths')
 
   let outFile = settings.outFile || "tmp"
   let outDir = settings.outDir || paths.defaultOutDir()
-
-  // run a command with an argv array rather than a shell string: the include
-  // paths below are absolute paths into node_modules, which routinely contain
-  // spaces on macOS and Windows
-  let run = (file, args) => {
-    return new Promise((resolve, reject) => {
-      cp.execFile(file, args, (err, stdout, stderr) => {
-        if (err) {
-          err.stderr = stderr
-          reject(err)
-        } else {
-          resolve(stdout)
-        }
-      })
-    })
-  }
 
   let ext = settings.backend == "c" ? ".c" : ".cu"
 
@@ -1927,7 +1949,7 @@ let generateC = (q, ir, settings) => {
     if (inputFiles["json"] || inputFiles["ndjson"] || usesYYJSON) {
       cFlags.push(`-I${paths.yyjsonDir}`)
       try {
-        cFlags.push(await yyjsonObject(run, paths, compiler, optFlags))
+        cFlags.push(await yyjsonObject(compiler, optFlags))
       } catch (e) {
         // no usable cache -- compile yyjson from source alongside the query
         cFlags.push(paths.yyjsonSrc)
@@ -1951,4 +1973,4 @@ let generateC = (q, ir, settings) => {
   return writeAndCompile()
 }
 
-module.exports = { generateC }
+module.exports = { generateC, prepareRuntime }

@@ -4,6 +4,8 @@
   "version": "0.0.5",
   "description": "Rhyme: An Expressive Data-Centric Query Language",
   "scripts": {
+    "prebuild-runtime": "node scripts/prebuild-runtime.js",
+    "pretest": "npm run prebuild-runtime",
     "test": "jest",
     "shell": "node ./src/shell.js",
     "prepublishOnly": "./node_modules/.bin/webpack",
