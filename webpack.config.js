@@ -18,7 +18,11 @@ module.exports = {
       'node:child_process': false,
       'fs': false,
       'fs/promises': false,
-      'child_process': false
+      'child_process': false,
+      // the C/C++ backends are node-only
+      'path': false,
+      'os': false,
+      'crypto': false
     }
   }
 };

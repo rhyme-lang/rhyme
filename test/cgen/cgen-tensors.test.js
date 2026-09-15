@@ -2,23 +2,12 @@ const { api, rh } = require('../../src/rhyme')
 const { compile } = require('../../src/simple-eval')
 const { typing, types } = require('../../src/typing')
 
-const os = require('child_process')
-
-let sh = (cmd) => {
-  return new Promise((resolve, reject) => {
-    os.exec(cmd, (err, stdout) => {
-      if (err) {
-        reject(err)
-      } else {
-        resolve(stdout)
-      }
-    })
-  })
-}
+const fs = require('fs/promises')
+const { execFileSync } = require('child_process')
 
 let hasCuda = false
 try {
-  os.execSync('nvcc --version', { stdio: 'ignore' })
+  execFileSync('nvcc', ['--version'], { stdio: 'ignore' })
   hasCuda = true
 } catch (e) {}
 let testCuda = hasCuda ? test : test.skip
@@ -26,8 +15,8 @@ let testCuda = hasCuda ? test : test.skip
 let outDir = "out/tensors"
 
 beforeAll(async () => {
-  await sh(`rm -rf ${outDir}`)
-  await sh(`mkdir -p ${outDir}`)
+  await fs.rm(outDir, { recursive: true, force: true })
+  await fs.mkdir(outDir, { recursive: true })
 })
 
 let key = typing.createKey(types.u32)

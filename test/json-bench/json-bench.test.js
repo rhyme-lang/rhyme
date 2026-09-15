@@ -2,7 +2,6 @@ const { rh, api } = require('../../src/rhyme')
 const { compile } = require('../../src/simple-eval')
 const { typing, types } = require('../../src/typing')
 const fs = require("fs")
-const os = require('child_process')
 
 let outDir = "out/json-bench"
 
@@ -19,22 +18,10 @@ if (!hasData)
   console.log(`Skipping JSONBench tests: no file_0001.json in ${dataDir} (see .github/workflows/node.js.yml)`)
 let testJSONBench = hasData ? test : test.skip
 
-let sh = (cmd) => {
-  return new Promise((resolve, reject) => {
-    os.exec(cmd, (err, stdout) => {
-      if (err) {
-        reject(err)
-      } else {
-        resolve(stdout)
-      }
-    })
-  })
-}
-
 beforeAll(async () => {
   if (!hasData) return
-  await sh(`rm -rf ${outDir}`)
-  await sh(`mkdir -p ${outDir}`)
+  await fs.promises.rm(outDir, { recursive: true, force: true })
+  await fs.promises.mkdir(outDir, { recursive: true })
 })
 
 let u32Key = typing.createKey(types.u32)

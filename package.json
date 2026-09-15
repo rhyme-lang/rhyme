@@ -37,7 +37,11 @@
   },
   "files": [
     "src",
-    "umd"
+    "umd",
+    "runtime",
+    "third-party/yyjson/yyjson.c",
+    "third-party/yyjson/yyjson.h",
+    "third-party/json/include"
   ],
   "bin": {
     "rhyme": "./src/cli.js"

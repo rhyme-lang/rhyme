@@ -2,7 +2,6 @@ const { rh, api } = require('../../src/rhyme')
 const { compile } = require('../../src/simple-eval')
 const { typing, types } = require('../../src/typing')
 const fs = require("fs")
-const os = require('child_process')
 
 // point to the data directory
 let dataDir = "data/SF1"
@@ -137,22 +136,10 @@ let partsupp = rh`loadTBL ${partsuppFile} ${partsuppSchema}`
 let region = rh`loadTBL ${regionFile} ${regionSchema}`
 let supplier = rh`loadTBL ${supplierFile} ${supplierSchema}`
 
-let sh = (cmd) => {
-  return new Promise((resolve, reject) => {
-    os.exec(cmd, (err, stdout) => {
-      if (err) {
-        reject(err)
-      } else {
-        resolve(stdout)
-      }
-    })
-  })
-}
-
 beforeAll(async () => {
   if (!hasData) return
-  await sh(`rm -rf ${outDir}`)
-  await sh(`mkdir -p ${outDir}`)
+  await fs.promises.rm(outDir, { recursive: true, force: true })
+  await fs.promises.mkdir(outDir, { recursive: true })
 })
 
 // test("q1-js", () => {

@@ -2,25 +2,13 @@ const { api, rh } = require('../../src/rhyme')
 const { compile } = require('../../src/simple-eval')
 const { typing, types } = require('../../src/typing')
 
-const os = require('child_process')
-
-let sh = (cmd) => {
-  return new Promise((resolve, reject) => {
-    os.exec(cmd, (err, stdout) => {
-      if (err) {
-        reject(err)
-      } else {
-        resolve(stdout)
-      }
-    })
-  })
-}
+const fs = require('fs/promises')
 
 let outDir = "out/csv"
 
 beforeAll(async () => {
-  await sh(`rm -rf ${outDir}`)
-  await sh(`mkdir -p ${outDir}`)
+  await fs.rm(outDir, { recursive: true, force: true })
+  await fs.mkdir(outDir, { recursive: true })
 });
 
 test("testTrivial", async () => {

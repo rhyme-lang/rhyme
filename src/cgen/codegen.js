@@ -148,6 +148,9 @@ let reset = (settings) => {
   linkedBuckets = settings.linkedBuckets || false
   nestedArrays = settings.nestedArrays || false
   usesYYJSON = false
+
+  // read straight off settings by cgen/print.js, so default it in place
+  settings.format = settings.format || "json"
 }
 
 let stripConverts = q => {
@@ -1824,27 +1827,64 @@ let emitCode = (q, ir, settings) => {
   return generate(newCodegenIR, backend == "cuda" ? "c" : backend)
 }
 
+// Compile the vendored yyjson.c once and cache the object file across runs.
+// The cache key covers the compiler and the flags it was built with, so
+// switching compilers or optimization levels rebuilds rather than silently
+// linking a mismatched object. A cache we cannot write to is not fatal: the
+// caller falls back to handing yyjson.c to the compiler directly.
+let yyjsonObject = async (run, paths, compiler, optFlags) => {
+  const fs = require('fs').promises
+  const path = require('path')
+  const crypto = require('crypto')
+
+  let version = ""
+  try {
+    version = await run(compiler, ["--version"])
+  } catch (e) {
+    // compiler without --version: fall back to keying on its name alone
+  }
+  let src = await fs.readFile(paths.yyjsonSrc)
+  let key = crypto.createHash('sha256')
+    .update(compiler).update("\0").update(version).update("\0")
+    .update(optFlags.join(" ")).update("\0").update(src)
+    .digest('hex').slice(0, 16)
+
+  let dir = paths.cacheDir()
+  let obj = path.join(dir, `yyjson-${key}.o`)
+  try {
+    await fs.access(obj)
+    return obj
+  } catch (e) {
+    // not cached yet
+  }
+  // compile to a pid-unique temp name and rename, so that concurrent
+  // processes racing on the same key cannot observe a half-written object
+  let tmp = `${obj}.${process.pid}.tmp`
+  await fs.mkdir(dir, { recursive: true })
+  await run(compiler, [...optFlags, "-c", paths.yyjsonSrc, "-o", tmp])
+  await fs.rename(tmp, obj)
+  return obj
+}
+
 let generateC = (q, ir, settings) => {
   resetSettings(settings)
 
-  let { outDir, outFile } = settings
   const fs = require('fs').promises
-  const os = require('child_process')
-  // const path = require('path')
-  let joinPaths = (...args) => {
-    return args.map((part, i) => {
-      if (i === 0) {
-        return part.trim().replace(/[\/]*$/g, '')
-      } else {
-        return part.trim().replace(/(^[\/]*|[\/]*$)/g, '')
-      }
-    }).filter(x => x.length).join('/')
-  }
+  const path = require('path')
+  const cp = require('child_process')
+  const paths = require('./paths')
 
-  let sh = (cmd) => {
+  let outFile = settings.outFile || "tmp"
+  let outDir = settings.outDir || paths.defaultOutDir()
+
+  // run a command with an argv array rather than a shell string: the include
+  // paths below are absolute paths into node_modules, which routinely contain
+  // spaces on macOS and Windows
+  let run = (file, args) => {
     return new Promise((resolve, reject) => {
-      os.exec(cmd, (err, stdout, stderr) => {
+      cp.execFile(file, args, (err, stdout, stderr) => {
         if (err) {
+          err.stderr = stderr
           reject(err)
         } else {
           resolve(stdout)
@@ -1855,29 +1895,56 @@ let generateC = (q, ir, settings) => {
 
   let ext = settings.backend == "c" ? ".c" : ".cu"
 
-  let cFile = joinPaths(outDir, outFile + ext)
-  let out = joinPaths(outDir, outFile)
+  let cFile = path.join(outDir, outFile + ext)
+  let out = path.join(outDir, outFile)
   let code = emitCode(q, ir, settings)
 
   let compiler = settings.backend == "c" ? (settings.compiler || "gcc") : "nvcc"
-  let cFlags = settings.cFlags || "-Iruntime -O3"
+  let optFlags = settings.optFlags || ["-O3"]
 
   async function func() {
-    let stdout = await sh(`./${out} `)
+    // path.resolve so that an absolute outDir works: a bare relative name
+    // would be looked up on PATH rather than in outDir
+    let stdout = await run(path.resolve(out), [])
     return stdout
   }
 
   func.explain = {}
 
   let writeAndCompile = async () => {
+    await fs.mkdir(outDir, { recursive: true })
     await fs.writeFile(cFile, code)
-    if (inputFiles["json"] || inputFiles["ndjson"] || usesYYJSON) cFlags += " -Ithird-party/yyjson -Lthird-party/yyjson/out -lyyjson"
-    if (backend == "cuda") cFlags += " -lcublas"
-    let cmd = `${compiler} ${cFile} -o ${out} ${cFlags}`
-    console.log("Executing: " + cmd)
+
+    // The runtime ships inside this package, so its include path is derived
+    // from the package location -- not from the cwd, which belongs to whoever
+    // installed us. settings.cFlags adds to this rather than replacing it, so
+    // that passing extra flags cannot accidentally drop -I<runtime>. Flags are
+    // arrays, one argv entry per element, so a path with spaces stays intact.
+    let cFlags = [`-I${paths.runtimeDir}`, ...optFlags]
+
+    for (let dir of settings.includePaths || []) cFlags.push(`-I${dir}`)
+
+    if (inputFiles["json"] || inputFiles["ndjson"] || usesYYJSON) {
+      cFlags.push(`-I${paths.yyjsonDir}`)
+      try {
+        cFlags.push(await yyjsonObject(run, paths, compiler, optFlags))
+      } catch (e) {
+        // no usable cache -- compile yyjson from source alongside the query
+        cFlags.push(paths.yyjsonSrc)
+      }
+    }
+    if (backend == "cuda") cFlags.push("-lcublas")
+
+    // user flags last, so they win on conflicting options
+    cFlags.push(...(settings.cFlags || []))
+
+    let args = [cFile, "-o", out, ...cFlags]
+    if (settings.verbose) console.log("Executing: " + [compiler, ...args].join(" "))
     let time1 = performance.now()
-    await sh(cmd)
-    func.explain.time = time1
+    await run(compiler, args)
+    func.explain.time = performance.now() - time1
+    func.explain.cFile = cFile
+    func.explain.binary = out
     return func
   }
 

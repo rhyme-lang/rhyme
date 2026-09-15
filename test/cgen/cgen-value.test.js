@@ -3,12 +3,17 @@ const { typing, types } = require('../../src/typing')
 const { c } = require("../../src/cgen/utils")
 
 const fs = require("fs").promises
-const os = require("child_process")
+const path = require("path")
+const { execFile } = require("child_process")
+const paths = require("../../src/cgen/paths")
 
-let sh = (cmd) => {
+// argv array rather than a shell string, to match how the compiler is driven
+// in cgen/codegen.js -- both outDir and the runtime path may contain spaces
+let run = (file, args) => {
   return new Promise((resolve, reject) => {
-    os.exec(cmd, (err, stdout) => {
+    execFile(file, args, (err, stdout, stderr) => {
       if (err) {
+        err.stderr = stderr
         reject(err)
       } else {
         resolve(stdout)
@@ -23,19 +28,19 @@ let prolog = ["#include \"rhyme.h\"", "int main() {"]
 let epilog = ["return 0;", "}"]
 
 beforeAll(async () => {
-  await sh(`rm -rf ${outDir}`)
-  await sh(`mkdir -p ${outDir}`)
+  await fs.rm(outDir, { recursive: true, force: true })
+  await fs.mkdir(outDir, { recursive: true })
 })
 
-let cmd = (cFile, exec) => `gcc ${cFile} -o ${exec} -Iruntime`
-
-let run = async (out, code) => {
+// the runtime header ships inside the package, so locate it the same way the
+// compiler driver does rather than assuming the cwd is the repo root
+let compileAndRun = async (out, code) => {
   code = [...prolog, ...code, ...epilog]
-  let exec = outDir + out
+  let exec = path.join(outDir, out)
   let cFile = exec + ".c"
   await fs.writeFile(cFile, code.join("\n"))
-  await sh(cmd(cFile, exec))
-  return sh("./" + exec)
+  await run("gcc", [cFile, "-o", exec, `-I${paths.runtimeDir}`])
+  return run(path.resolve(exec), [])
 }
 
 test("testBasic", async () => {
@@ -55,7 +60,7 @@ test("testBasic", async () => {
   c.printf(code)("\\n")
   str.printJSON(code)
 
-  let res = await run("testBasic", code)
+  let res = await compileAndRun("testBasic", code)
   expect(res.split("\n").map(JSON.parse)).toEqual([2, "hello"])
 })
 
@@ -72,7 +77,7 @@ test("testArray1", async () => {
 
   arr.printJSON(code)
 
-  let res = await run("testArray1", code)
+  let res = await compileAndRun("testArray1", code)
   expect(JSON.parse(res)).toEqual([1, 2, 3, 4])
 })
 
@@ -87,7 +92,7 @@ test("testArray2", async () => {
 
   arr.printJSON(code)
 
-  let res = await run("testArray2", code)
+  let res = await compileAndRun("testArray2", code)
   expect(JSON.parse(res)).toEqual(["Hello", "World"])
 })
 
@@ -115,7 +120,7 @@ test("testArray3", async () => {
 
   arr.printJSON(code)
 
-  let res = await run("testArray3", code)
+  let res = await compileAndRun("testArray3", code)
   expect(JSON.parse(res)).toEqual(
     [{ int: 10, str: "Hello" }, { int: 20, str: "World" }, { int: 30, str: "!" }]
   )
@@ -150,7 +155,7 @@ test("testHashMap1", async () => {
 
   map.printJSON(code1)
 
-  let res = await run("testHashMap1", code1)
+  let res = await compileAndRun("testHashMap1", code1)
   expect(JSON.parse(res)).toEqual({ "Hello,10": 123 })
 })
 
@@ -201,7 +206,7 @@ test("testHashMap2", async () => {
 
   map.printJSON(code1)
 
-  let res = await run("testHashMap2", code1)
+  let res = await compileAndRun("testHashMap2", code1)
   expect(JSON.parse(res)).toEqual({
     "Hello": ["Hi", "there", "A", "B", "C", "DE"],
     "World": ["C", "DE", "FGH"]
@@ -246,7 +251,7 @@ test("testHashMap3", async () => {
 
   map.printJSON(code1)
 
-  let res = await run("testHashMap3", code1)
+  let res = await compileAndRun("testHashMap3", code1)
   expect(JSON.parse(res)).toEqual({ Hello: { World: 124 } })
 })
 
@@ -305,6 +310,6 @@ test("testHashMap4", async () => {
 
   map.printJSON(code1)
 
-  let res = await run("testHashMap4", code1)
+  let res = await compileAndRun("testHashMap4", code1)
   expect(JSON.parse(res)).toEqual({ key1: { key2: { "42": "Hello" } } })
 })

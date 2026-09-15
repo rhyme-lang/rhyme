@@ -42,12 +42,10 @@ let defaultSettings = {
   // js codegen -- simple-codegen.js, simple-loopgen.js
   loopGen: true,
   elimProjections: true,
-  constantFold: true,
+  constantFold: true
 
-  // c backend -- cgen/ (also reads options not declared here, see reset() in cgen/codegen.js)
-  format: "json",
-  outDir: "out",
-  outFile: "tmp"
+  // the c backend defaults its own settings at the point of use,
+  // see reset() in cgen/codegen.js and cgen/collections.js
 }
 
 
@@ -967,32 +965,45 @@ let compile = (q,userSettings={}) => {
     const fs = require('fs/promises')
     const os = require('child_process')
 
-    let execPromise = function(cmd) {
+    // argv array rather than a shell string -- the include paths below are
+    // absolute paths into node_modules and may well contain spaces
+    let execFilePromise = function(file, args) {
       return new Promise(function(resolve, reject) {
-        os.exec(cmd, function(err, stdout) {
-          if (err) return reject(err);
+        os.execFile(file, args, function(err, stdout, stderr) {
+          if (err) { err.stderr = stderr; return reject(err); }
           resolve(stdout);
         });
       });
     }
 
-    let { outDir, outFile } = settings
+    const nodePath = require('path')
+    const paths = require('./cgen/paths')
+
+    let outFile = settings.outFile || "tmp"
+    // baked into the generated code by emitCodeCPP as the location of the
+    // marshalled input files, so default it in place
+    settings.outDir = settings.outDir || paths.defaultOutDir()
+    let outDir = settings.outDir
     let code = emitCodeCPP(q,order)
-    let flags = "-std=c++17 -Iruntime -Ithird-party/json/include"
+    // include paths come from this package's own location, not the cwd
+    let flags = ["-std=c++17", `-I${paths.runtimeDir}`, `-I${paths.jsonIncludeDir}`]
+
+    let cppFile = nodePath.join(outDir, outFile + ".cpp")
+    let out = nodePath.join(outDir, outFile)
 
     let func = (async () => {
       await fs.mkdir(outDir, { recursive: true })
-      await fs.writeFile(`${outDir}/${outFile}.cpp`, code);
-      await execPromise(`g++ ${flags} ${outDir}/${outFile}.cpp -o ${outDir}/${outFile}`)
-      return `${outDir}/${outFile}`
+      await fs.writeFile(cppFile, code);
+      await execFilePromise("g++", [...flags, cppFile, "-o", out])
+      return out
     })()
 
     let wrap = async (input) => {
       let file = await func
       for (let obj in input) {
-        await fs.writeFile(`${outDir}/${obj}.json`, JSON.stringify(input[obj]));
+        await fs.writeFile(nodePath.join(outDir, obj + ".json"), JSON.stringify(input[obj]));
       }
-      let res = await execPromise(file)
+      let res = await execFilePromise(nodePath.resolve(file), [])
       return res
     }
 
