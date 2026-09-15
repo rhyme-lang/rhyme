@@ -1844,39 +1844,24 @@ let run = (file, args) => {
   })
 }
 
-// Compile the vendored yyjson.c once and cache the object file across runs.
-// The cache key covers the compiler and the flags it was built with, so
-// switching compilers or optimization levels rebuilds rather than silently
-// linking a mismatched object. A cache we cannot write to is not fatal: the
-// caller falls back to handing yyjson.c to the compiler directly.
+// Compile the vendored yyjson.c once into the shared cache and reuse it from
+// then on. A cache we cannot write to is not fatal: the caller falls back to
+// handing yyjson.c to the compiler directly, which is only slower.
 let buildYyjsonObject = async (compiler, optFlags) => {
   const fs = require('fs').promises
   const path = require('path')
-  const crypto = require('crypto')
   const paths = require('./paths')
 
-  let version = ""
-  try {
-    version = await run(compiler, ["--version"])
-  } catch (e) {
-    // compiler without --version: fall back to keying on its name alone
-  }
-  let src = await fs.readFile(paths.yyjsonSrc)
-  let key = crypto.createHash('sha256')
-    .update(compiler).update("\0").update(version).update("\0")
-    .update(optFlags.join(" ")).update("\0").update(src)
-    .digest('hex').slice(0, 16)
-
   let dir = paths.cacheDir()
-  let obj = path.join(dir, `yyjson-${key}.o`)
+  let obj = path.join(dir, "yyjson.o")
   try {
     await fs.access(obj)
     return obj
   } catch (e) {
-    // not cached yet
+    // not built yet
   }
   // compile to a pid-unique temp name and rename, so that concurrent
-  // processes racing on the same key cannot observe a half-written object
+  // processes cannot observe a half-written object
   let tmp = `${obj}.${process.pid}.tmp`
   await fs.mkdir(dir, { recursive: true })
   await run(compiler, [...optFlags, "-c", paths.yyjsonSrc, "-o", tmp])
@@ -1884,16 +1869,13 @@ let buildYyjsonObject = async (compiler, optFlags) => {
   return obj
 }
 
-// Memoized per process, on the promise, so that repeated queries neither
-// recompute the key -- which costs a `compiler --version` spawn and a hash of
-// yyjson.c -- nor race each other to build the same object.
-let yyjsonObjects = new Map()
+// Memoized per process, on the promise, so concurrent queries neither stat the
+// cache repeatedly nor race each other to build the object.
+let yyjsonObjectPromise
 
 let yyjsonObject = (compiler, optFlags) => {
-  let memoKey = compiler + "\0" + optFlags.join(" ")
-  if (!yyjsonObjects.has(memoKey))
-    yyjsonObjects.set(memoKey, buildYyjsonObject(compiler, optFlags))
-  return yyjsonObjects.get(memoKey)
+  yyjsonObjectPromise ??= buildYyjsonObject(compiler, optFlags)
+  return yyjsonObjectPromise
 }
 
 // Build the C runtime's compiled dependencies ahead of time, so that the first
