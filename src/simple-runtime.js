@@ -25,7 +25,7 @@ rt.reset = () => {
 }
 
 rt.loadJSON = (path) => {
-  if (oath === undefined) return undefined
+  if (path === undefined) return undefined
   if (!inputFiles[path]) {
     inputFiles[path] = JSON.parse(fs.readFileSync(path))
   }

@@ -435,3 +435,13 @@ test("graphicsBasicTestParsing", () => {
     }
     expect(res).toEqual(expected)
 })
+// Regression: rt.loadJSON referenced an undeclared `oath` instead of `path`,
+// so every call threw a ReferenceError. It went unnoticed because loadJSON
+// appears only in test/cgen, which runs the C backends -- nothing exercised
+// the js runtime's own loader.
+test("loadJSON on the js backend", () => {
+    const { compile } = require('../../src/simple-eval')
+    let data = rh`loadJSON "./data/json/semantics/data.json" ${types.unknown}`
+    expect(compile(rh`sum ${data}.*.value`)()).toBe(70)
+    expect(compile(rh`${data}.*A.value | group *A`)()).toEqual({ A: 40, B: 20, C: 10 })
+})
