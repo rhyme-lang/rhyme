@@ -16,6 +16,7 @@ const { unique, union, intersect, diff, subset, same } = sets
 const { tmpSym, quoteVar } = utils
 
 const { getSettings, resetSettings } = require("./settings")
+const build = require("./build")
 
 // Input simple-eval IR
 let filters
@@ -1827,66 +1828,6 @@ let emitCode = (q, ir, settings) => {
   return generate(newCodegenIR, backend == "cuda" ? "c" : backend)
 }
 
-// Run a command with an argv array rather than a shell string: the include
-// paths we pass are absolute paths into node_modules, which routinely contain
-// spaces on macOS and Windows.
-let run = (file, args) => {
-  const cp = require('child_process')
-  return new Promise((resolve, reject) => {
-    cp.execFile(file, args, (err, stdout, stderr) => {
-      if (err) {
-        err.stderr = stderr
-        reject(err)
-      } else {
-        resolve(stdout)
-      }
-    })
-  })
-}
-
-// Compile the vendored yyjson.c once into the shared cache and reuse it from
-// then on. A cache we cannot write to is not fatal: the caller falls back to
-// handing yyjson.c to the compiler directly, which is only slower.
-let buildYyjsonObject = async (compiler, optFlags) => {
-  const fs = require('fs').promises
-  const path = require('path')
-  const paths = require('./paths')
-
-  let dir = paths.cacheDir()
-  let obj = path.join(dir, "yyjson.o")
-  try {
-    await fs.access(obj)
-    return obj
-  } catch (e) {
-    // not built yet
-  }
-  // compile to a pid-unique temp name and rename, so that concurrent
-  // processes cannot observe a half-written object
-  let tmp = `${obj}.${process.pid}.tmp`
-  await fs.mkdir(dir, { recursive: true })
-  await run(compiler, [...optFlags, "-c", paths.yyjsonSrc, "-o", tmp])
-  await fs.rename(tmp, obj)
-  return obj
-}
-
-// Memoized per process, on the promise, so concurrent queries neither stat the
-// cache repeatedly nor race each other to build the object.
-let yyjsonObjectPromise
-
-let yyjsonObject = (compiler, optFlags) => {
-  yyjsonObjectPromise ??= buildYyjsonObject(compiler, optFlags)
-  return yyjsonObjectPromise
-}
-
-// Build the C runtime's compiled dependencies ahead of time, so that the first
-// query does not pay for it. Test runners and CI want this: jest gives each
-// test a few seconds, and compiling yyjson.c can eat that on its own.
-let prepareRuntime = async (settings = {}) => {
-  let compiler = settings.compiler || "gcc"
-  let optFlags = settings.optFlags || ["-O3"]
-  return yyjsonObject(compiler, optFlags)
-}
-
 let generateC = (q, ir, settings) => {
   resetSettings(settings)
 
@@ -1909,7 +1850,7 @@ let generateC = (q, ir, settings) => {
   async function func() {
     // path.resolve so that an absolute outDir works: a bare relative name
     // would be looked up on PATH rather than in outDir
-    let stdout = await run(path.resolve(out), [])
+    let stdout = await build.run(path.resolve(out), [])
     return stdout
   }
 
@@ -1919,34 +1860,14 @@ let generateC = (q, ir, settings) => {
     await fs.mkdir(outDir, { recursive: true })
     await fs.writeFile(cFile, code)
 
-    // The runtime ships inside this package, so its include path is derived
-    // from the package location -- not from the cwd, which belongs to whoever
-    // installed us. settings.cFlags adds to this rather than replacing it, so
-    // that passing extra flags cannot accidentally drop -I<runtime>. Flags are
-    // arrays, one argv entry per element, so a path with spaces stays intact.
-    let cFlags = [`-I${paths.runtimeDir}`, ...optFlags]
-
-    for (let dir of settings.includePaths || []) cFlags.push(`-I${dir}`)
-
-    if (inputFiles["json"] || inputFiles["ndjson"] || usesYYJSON) {
-      cFlags.push(`-I${paths.yyjsonDir}`)
-      try {
-        cFlags.push(await yyjsonObject(compiler, optFlags))
-      } catch (e) {
-        // no usable cache -- compile yyjson from source alongside the query
-        cFlags.push(paths.yyjsonSrc)
-      }
-    }
-    if (backend == "cuda") cFlags.push("-lcublas")
-
-    // user flags last, so they win on conflicting options
-    cFlags.push(...(settings.cFlags || []))
-
-    let args = [cFile, "-o", out, ...cFlags]
-    if (settings.verbose) console.log("Executing: " + [compiler, ...args].join(" "))
-    let time1 = performance.now()
-    await run(compiler, args)
-    func.explain.time = performance.now() - time1
+    func.explain.time = await build.compile({
+      cFile, out, compiler, optFlags,
+      cFlags: settings.cFlags,
+      includePaths: settings.includePaths,
+      needsYYJSON: !!(inputFiles["json"] || inputFiles["ndjson"] || usesYYJSON),
+      needsCublas: backend == "cuda",
+      verbose: settings.verbose,
+    })
     func.explain.cFile = cFile
     func.explain.binary = out
     return func
@@ -1955,4 +1876,4 @@ let generateC = (q, ir, settings) => {
   return writeAndCompile()
 }
 
-module.exports = { generateC, prepareRuntime }
+module.exports = { generateC, prepareRuntime: build.prepareRuntime }
