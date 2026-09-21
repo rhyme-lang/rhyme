@@ -214,6 +214,65 @@ function buildDeps(assignmentStms, generatorStms, tmpVarWriteRank) {
   return { nodes, assignByTmp, gensBySym, stmtdeps, loopdeps, stmt2stmtByLoop, stmt2stmtloopAfterloop, assign2Node, tmp2Node, gen2Node }
 }
 
+// ----- emission sinks -----
+//
+// A sink receives the lines the scheduler emits, plus openLoop/beginBody/
+// closeLoop markers delimiting every loop it opens.
+//
+// stringSink is the original behaviour: one flat array of text, indented by
+// counting braces. It ignores the loop markers, because "{" and "}" already
+// encode the nesting. A backend that wants to run passes over the scheduled
+// program -- rather than over rendered text -- can supply a sink that builds a
+// tree from those markers instead.
+let stringSink = () => {
+  let code = []
+  let indent = 0
+  return {
+    line(line) {
+      if (line.trim().startsWith('}')) {
+        indent = Math.max(0, indent - 1);
+      }
+
+      const indentedLine = '    '.repeat(indent) + line;
+      code.push(indentedLine);
+
+      if (line.trim().endsWith('{')) {
+        indent++;
+      }
+    },
+    openLoop(sym) { },
+    beginBody() { },
+    closeLoop() { this.line("}") },
+    lines() { return code },
+    result() { return code.join("\n") }
+  }
+}
+
+// treeSink keeps the structure instead: each loop becomes a node holding its
+// generators and its body, so a backend can run passes over the scheduled
+// program and emit text afterwards.
+let treeSink = () => {
+  let root = { k: "block", body: [] }
+  let stack = [root]
+  let curr = () => stack[stack.length - 1]
+  return {
+    line(line) { curr().body.push({ k: "raw", text: line }) },
+    node(n) { curr().body.push(n) },
+    openLoop(sym) {
+      let n = { k: "loop", sym, gens: [], body: [] }
+      curr().body.push(n)
+      stack.push(n)
+    },
+    loopGens(gens) { curr().gens = gens },
+    beginBody() { },
+    closeLoop() { stack.pop() },
+    lines() { return [] },
+    result() { return root }
+  }
+}
+
+let makeSink = (backend) => backend == "c-new" ? treeSink() : stringSink()
+
 exports.generate = (ir, backend = "js") => {
   let assignmentStms = ir.assignmentStms
   let generatorStms = ir.generatorStms
@@ -244,20 +303,14 @@ exports.generate = (ir, backend = "js") => {
   //
   // init codegen
   //
-  let code = []
-  let indent = 0
-  function emit(line) {
-    if (line.trim().startsWith('}')) {
-      indent = Math.max(0, indent - 1);
-    }
-
-    const indentedLine = '    '.repeat(indent) + line;
-    code.push(indentedLine);
-
-    if (line.trim().endsWith('{')) {
-      indent++;
-    }
-  }
+  // Emitted code goes to a sink rather than straight into an array, so that a
+  // backend can keep the loop structure the scheduler just worked out instead
+  // of receiving it flattened into indented text. The scheduler calls
+  // openLoop/beginBody/closeLoop around every loop it opens; a sink is free to
+  // ignore that (the string sink does -- braces already carry the structure)
+  // or to build a tree from it.
+  let sink = makeSink(backend)
+  let emit = line => sink.line(line)
   function emitC(stmt) {
     if (typeof stmt == "string") {
       stmt = scopeTable.applySubst(stmt, scopeTable.curr)
@@ -275,7 +328,9 @@ exports.generate = (ir, backend = "js") => {
       }
     }
   }
-  if (backend == "cpp" || backend == "c") {
+  if (backend == "c-new") {
+    // prolog and epilog are emitted from the program tree, after scheduling
+  } else if (backend == "cpp" || backend == "c") {
     prolog.forEach(emitC)
   } else if (backend == "js") {
     emit("inp => {")
@@ -364,6 +419,8 @@ exports.generate = (ir, backend = "js") => {
     let e = getStmt(i)
     if (backend == "c") {
       e.txt.map(emitC)
+    } else if (backend == "c-new") {
+      sink.node({ k: "stmt", stmt: e })
     } else {
       emit(e.txt)
     }
@@ -376,6 +433,7 @@ exports.generate = (ir, backend = "js") => {
   }
   function emitLoopProlog(s) {
     let [e, ...es] = gensBySym[s] // just pick first -- could be more clever!
+    sink.openLoop(s)
     // loop header
     if (backend == "cpp") {
       emit(e.loopTxt)
@@ -411,6 +469,8 @@ exports.generate = (ir, backend = "js") => {
       for (let loopTxt of loopTxts) {
         loopTxt.rowScanning.map(emitC)
       }
+    } else if (backend == "c-new") {
+      sink.loopGens(gensBySym[s])
     } else if (backend == "js") {
       emit("for (let " + quoteVar(e.sym) + " in " + e.rhs + ") {")
       // filters
@@ -421,6 +481,7 @@ exports.generate = (ir, backend = "js") => {
       console.error(`unsupported backend : ${backend}`)
       return
     }
+    sink.beginBody()
     scopeTable.enter()
 
     openedLoops.push(s)
@@ -431,7 +492,7 @@ exports.generate = (ir, backend = "js") => {
     for (let loop of loops) {
       if (backend == "c" && loop.loopTxt.epilog) loop.loopTxt.epilog.map(emitC)
     }
-    emit("}")
+    sink.closeLoop()
     scopeTable.exit()
     // XXX could be optimized by a two-directional map
     for (let i in closedLoopByStmt) {
@@ -563,20 +624,22 @@ exports.generate = (ir, backend = "js") => {
   //
   // wrap up codegen
   //
-  if (backend == "cpp" || backend == "c") {
+  if (backend == "c-new") {
+    return { tree: sink.result(), res }
+  } else if (backend == "cpp" || backend == "c") {
     epilog.forEach(emitC)
-    let codeString = code.join("\n")
+    let codeString = sink.result()
     return codeString
   } else if (backend == "js") {
     emit("return " + res.txt)
     emit("}")
     if (trace)
-      code.forEach(s => print(s))
-    let codeString = code.join("\n")
+      sink.lines().forEach(s => print(s))
+    let codeString = sink.result()
     let rt = runtime // make available in scope for generated code
     let queryFunc = eval(codeString)
     queryFunc.explain = explain
-    queryFunc.explain.code = code
+    queryFunc.explain.code = sink.lines()
     queryFunc.explain.codeString = codeString
     //
     // execute

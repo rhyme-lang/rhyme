@@ -7,6 +7,7 @@ const { preproc } = require('./preprocess')
 const { runtime } = require('./simple-runtime')
 const { pretty, setEmitPseudoState, emitPseudo } = require('./prettyprint')
 const cgen = require('./cgen/codegen')
+const cgen2 = require('./cgen2')
 const { typing, types, typeSyms } = require('./typing')
 const { optimizer } = require('./optimizer')
 
@@ -959,6 +960,11 @@ let compile = (q,userSettings={}) => {
   if (settings.backend == "c" || settings.backend == "cuda") {
     let ir = {filters, assignments, vars, order, pseudo}
     return cgen.generateC(q, ir, settings)
+  }
+
+  if (settings.backend == "c-new") {
+    let ir = {filters, assignments, vars, order, pseudo}
+    return cgen2.generateCNew(q, ir, settings)
   }
 
   if (settings.backend == "cpp") {
