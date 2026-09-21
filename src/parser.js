@@ -1,31 +1,33 @@
 const { desugar } = require("./desugar")
 const { ast } = require("./shared")
 
+// binary operators: ast key, precedence (higher binds tighter),
+// and associativity (1 for left, 0 for right)
 let binop_table = {
-  "|" : "pipe",
-  "&" : "and",   // low prec, could give it some other grouping semantics
+  "|" : { key: "pipe",               prec:  40, assoc: 1 },
+  "&" : { key: "and",                prec:  50, assoc: 1 },   // low prec, could give it some other grouping semantics
 
-  "||":  "orElse",
-  "&&":  "andAlso",
+  "||": { key: "orElse",             prec:  70, assoc: 1 },
+  "&&": { key: "andAlso",            prec:  80, assoc: 1 },
 
-  "<" :  "lessThan",
-  "<=":  "lessThanOrEqual",
-  ">" :  "greaterThan",
-  ">=":  "greaterThanOrEqual",
-  "==":  "equal",
-  "!=":  "notEqual",
+  "<" : { key: "lessThan",           prec:  90, assoc: 1 },
+  "<=": { key: "lessThanOrEqual",    prec:  90, assoc: 1 },
+  ">" : { key: "greaterThan",        prec:  90, assoc: 1 },
+  ">=": { key: "greaterThanOrEqual", prec:  90, assoc: 1 },
+  "==": { key: "equal",              prec:  90, assoc: 1 },
+  "!=": { key: "notEqual",           prec:  90, assoc: 1 },
 
-  "::" : "concat",
-  "+" : "plus",
-  "-" : "minus",
-  "*" : "times",
-  "/" : "fdiv",  // float div by default
-  "//": "div",   // integer division
-  "%" : "mod",
+  "::": { key: "concat",             prec:  95, assoc: 1 },
+  "+" : { key: "plus",               prec: 100, assoc: 1 },
+  "-" : { key: "minus",              prec: 100, assoc: 1 },
+  "*" : { key: "times",              prec: 200, assoc: 1 },
+  "/" : { key: "fdiv",               prec: 200, assoc: 1 },   // float div by default
+  "//": { key: "div",                prec: 200, assoc: 1 },   // integer division
+  "%" : { key: "mod",                prec: 200, assoc: 1 },
 }
 
 function ast_binop(op, a,b) {
-  let op1 = binop_table[op] ?? op
+  let op1 = binop_table[op]?.key ?? op
   return { xxkey: op1, xxparam: [a,b] }
 }
 
@@ -236,48 +238,6 @@ exports.parserImpl = (strings, holes) => {
   }
 
 
-  // precedence: higher binds tighter
-  let prec = {
-    '|' :  40,
-    '&' :  50,
-    '||':  70,
-    '&&':  80,
-    '<' :  90,
-    '<=':  90,
-    '>' :  90,
-    '>=':  90,
-    '==':  90,
-    '!=':  90,
-    '::':  95,
-    '+' : 100,
-    '-' : 100,
-    '*' : 200,
-    '/' : 200,
-    '//': 200,
-    '%' : 200,
-  }
-  // associativity: 1 for left, 0 for right
-  let assoc = {
-    '|' : 1,
-    '&' : 1,
-    '||': 1,
-    '&&': 1,
-    '=' : 0,
-    '<' : 1,
-    '<=': 1,
-    '>' : 1,
-    '>=': 1,
-    '==': 1,
-    '!=': 1,
-    '::': 1,
-    '+' : 1,
-    '-' : 1,
-    '*' : 1,
-    '/' : 1,
-    '//': 1,
-    '%' : 1,
-  }
-
 
   function expr() {
     if (peek == 'ident' && str == "let") {
@@ -322,16 +282,18 @@ exports.parserImpl = (strings, holes) => {
   }
   function binop(min) {
     let res = loose()
-    while (peek in prec && prec[peek] >= min) {
-      let nextMin = prec[peek] + assoc[peek] // + 1 for left assoc
+    while (peek in binop_table && binop_table[peek].prec >= min) {
+      let op = binop_table[peek]
+      let nextMin = op.prec + op.assoc // + 1 for left assoc
       res = ast_binop(next(), res, binop(nextMin))
     }
     return res
   }
   function binopTight(min) {
     let res = tight()
-    while (peek in prec && prec[peek] >= min) {
-      let nextMin = prec[peek] + assoc[peek] // + 1 for left assoc
+    while (peek in binop_table && binop_table[peek].prec >= min) {
+      let op = binop_table[peek]
+      let nextMin = op.prec + op.assoc // + 1 for left assoc
       res = ast_binop(next(), res, binopTight(nextMin))
     }
     return res
