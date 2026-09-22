@@ -127,9 +127,13 @@ let nativePure = (x, vals) => {
 
 // Lower an expression node to a value object (see ./value.js), choosing its
 // representation from the type the checker gave it: a type that maps through
-// cTypes becomes a native C value, anything else stays boxed. Expressions are
-// pure, so nothing here needs a statement buffer.
-let emitValue = (x, ctx) => {
+// cTypes becomes a native C value, anything else stays boxed.
+//
+// `buf` is the statement buffer of the scope the expression is being lowered
+// into. Almost every node here is a pure C expression and ignores it; a device
+// operation (see emitDot) has to emit transfers and a library call before it
+// has a value at all, and that is what the buffer is for.
+let emitValue = (x, ctx, buf) => {
   switch (x.k) {
     case "const":
       return v.boxed(emitConst(x.v))
@@ -156,23 +160,26 @@ let emitValue = (x, ctx) => {
       return v.boxed(x.path.reduce((acc, p) => `rh_get(${acc}, ${varRef(p, ctx)})`, base))
     }
     case "get": {
-      let obj = emitValue(x.obj, ctx)
+      let obj = emitValue(x.obj, ctx, buf)
       if (obj.repr === "json") {
-        let key = emitValue(x.key, ctx)
+        let key = emitValue(x.key, ctx, buf)
         let acc = jsonAccess(obj, key, x.obj.schema)
         if (acc) return acc
       }
-      return v.boxed(`rh_get(${asBoxed(obj)}, ${cOf(x.key, ctx)})`)
+      return v.boxed(`rh_get(${asBoxed(obj)}, ${cOf(x.key, ctx, buf)})`)
     }
     case "pure": {
-      let vals = x.args.map(a => emitValue(a, ctx))
+      if (x.op === "dot") return emitDot(x, ctx, buf)
+      // An operand that is still on the device comes back first: a pure
+      // operation is host arithmetic, and cuBLAS has no kernel for it.
+      let vals = x.args.map(a => toHost(emitValue(a, ctx, buf), buf))
       let native = nativePure(x, vals)
       if (native) return native
       return v.boxed(`rh_pure_${x.op}(${vals.map(asBoxed).join(", ")})`)
     }
     case "mkset":
       // rt.pure.singleton: a one-entry object keyed by the value
-      return v.boxed(`rh_singleton(${cOf(x.arg, ctx)})`)
+      return v.boxed(`rh_singleton(${cOf(x.arg, ctx, buf)})`)
     default:
       throw new Error("c-new: unsupported expression node " + x.k)
   }
@@ -196,6 +203,13 @@ let asBoxed = (val) => {
     let e = /double|float/.test(val.ctype) ? `rh_f64(${val.expr})` : `rh_i64(${val.expr})`
     return val.cond ? `(${val.cond} ? rh_undef : ${e})` : e
   }
+  // A device value has to come back across the bus before it can be boxed, and
+  // that copy is a statement -- which this boundary, handed an expression and
+  // no buffer, cannot emit. Reaching here means a consumer skipped toHost.
+  if (val.repr === "cuVec" || val.repr === "cuScalar")
+    throw new Error("c-new: a " + val.repr + " reached the boxing boundary " +
+                    "without being copied back -- consume device values " +
+                    "through toHost, which has a statement buffer")
   throw new Error("c-new: cannot box a " + val.repr)
 }
 
@@ -219,11 +233,109 @@ let jsonAccess = (obj, key, objSchema) => {
   return null
 }
 
+// ----- device operations -----
+//
+// `dot` is not an elementwise operation the scheduler can place inside a loop:
+// it consumes two whole vectors at once, and cuBLAS does the reduction itself.
+// So it lowers where it stands, emitting its transfers and its library call
+// into the enclosing statement buffer.
+//
+// The result is a device scalar, not a host float. cuBLAS runs in device
+// pointer mode (runtime/rhyme_cuda.h), so the value stays where it was
+// computed, and what happens next decides whether it ever moves: printing
+// reads it back inside the runtime call, and host code that needs its value
+// gets one copy at the point of use (toHost). Returning a host float here
+// would pay for that copy whether or not anyone wanted it.
+let emitDot = (x, ctx, buf) => {
+  if (!buf)
+    throw new Error("c-new: dot cannot be lowered here -- it needs a statement " +
+                    "buffer to emit its transfers into")
+  ctx.usesCuda = true
+
+  let [a, b] = x.args.map(arg => toDeviceVec(emitValue(arg, ctx, buf), arg, buf))
+
+  let res = symbol.getSymbol("d_dot")
+  buf.push(`float *${res} = rh_cuda_alloc(1);`)
+  // cublasSdot reads n elements from both sides, so a mismatch is an
+  // out-of-bounds device read rather than a wrong answer. The lengths are
+  // runtime values (yyjson_arr_size), so this is a runtime check.
+  buf.push(`if ((size_t)${a.len} != (size_t)${b.len}) ` +
+           `{ fprintf(stderr, "rhyme: dot on vectors of length %zu and %zu\\n", ` +
+           `(size_t)${a.len}, (size_t)${b.len}); exit(1); }`)
+  buf.push(`RH_CUBLAS_CHECK(cublasSdot(rh_cublas_handle, (int)${a.len}, ` +
+           `${a.dev}, 1, ${b.dev}, 1, ${res}));`)
+
+  // A scalar, not a one-element vector: see the two representations in
+  // ./value.js. The storage is the same float* either way.
+  return v.cuScalar(res)
+}
+
+// Whatever the operand lowered to, as a device vector.
+//
+// A typed JSON array is staged into a host buffer and copied up (one runtime
+// call, rh_cuda_from_json). A vector that is already on the device passes
+// through, which is what will make a chain of device operations cost one
+// transfer rather than one per step. Nothing else can become one: an rh_val is
+// a tagged host value, and pulling a hash map apart one entry at a time is not
+// a transfer, it is a different operation -- so say so rather than emit C that
+// will not compile.
+let toDeviceVec = (val, node, buf) => {
+  if (val.repr === "cuVec") return val
+  // A device scalar occupies one float of device memory, so it would pass for
+  // a length-1 vector here. Rejected deliberately: the two are different kinds
+  // of value (./value.js), and a dot of two scalars is a product.
+  if (val.repr === "cuScalar")
+    throw new Error("c-new: dot expects vectors, but one operand is a device " +
+                    "scalar -- multiplying two scalars is `*`, not `dot`")
+  if (val.repr === "json") {
+    let n = symbol.getSymbol("n_vec")
+    let dev = symbol.getSymbol("d_vec")
+    buf.push(`size_t ${n};`)
+    buf.push(`float *${dev} = rh_cuda_from_json(${val.expr}, &${n});`)
+    return v.cuVec(dev, n)
+  }
+  throw new Error("c-new: dot expects a dense vector on both sides, but one " +
+                  "operand lowered to " + val.repr +
+                  (node.schema ? " (type " + typing.prettyPrintType(node.schema) + ")" : "") +
+                  " -- declare the input's schema with typing.createVec")
+}
+
+// The inverse of toDeviceVec: a value host code can actually read.
+//
+// A device scalar is copied back -- four bytes -- and becomes an ordinary C
+// float, so the arithmetic around it lowers exactly as it would over any other
+// scalar. This is where the device boundary is crossed, and it is a statement,
+// which is why it happens at the points that hold a buffer rather than inside
+// asBoxed.
+//
+// A device vector has no scalar host form: turning one into a host value means
+// building an rh_map or an array out of it, which is a different operation than
+// reading a number, so it is not done implicitly.
+//
+// Everything else passes through untouched, so callers can apply this to any
+// operand without asking what it is.
+let toHost = (val, buf) => {
+  if (val.repr === "cuScalar") {
+    // memoized on the value, so a device scalar consumed twice in one
+    // expression is copied back once
+    if (!val.hostCopy) {
+      let h = symbol.getSymbol("h_dev")
+      buf.push(`float ${h} = rh_cuda_to_host_scalar(${val.dev});`)
+      val.hostCopy = v.cScalar("float", h, null)
+    }
+    return val.hostCopy
+  }
+  if (val.repr === "cuVec")
+    throw new Error("c-new: a device vector cannot be read as a host value -- " +
+                    "materializing one as an object is a separate operation")
+  return val
+}
+
 // Shorthand for "lower this node and give me the rh_val C text".
-let cOf = (x, ctx) => asBoxed(emitValue(x, ctx))
+let cOf = (x, ctx, buf) => asBoxed(toHost(emitValue(x, ctx, buf), buf))
 
 // Kept as the name the rest of the backend calls; still yields C text.
-let emitExpr = (x, ctx) => cOf(x, ctx)
+let emitExpr = (x, ctx, buf) => cOf(x, ctx, buf)
 
 // Resolve tmp<sym>[path...] to somewhere assignable.
 //
@@ -318,7 +430,7 @@ let emitStatement = (stm, buf, ctx) => {
       return
     }
     // update: unbox the argument to the accumulator's type, guard on its cond
-    let arg = emitValue(x.arg, ctx)
+    let arg = toHost(emitValue(x.arg, ctx, buf), buf)
     if (arg.repr === "json") arg = materializeJson(buf, arg)
 
     // count never looks at the value, only at whether it is there -- so it
@@ -351,13 +463,13 @@ let emitStatement = (stm, buf, ctx) => {
     case "initCopy": {
       let slot = emitSlot(buf, x.sym, x.path, ctx)
       guarded(buf, slot,
-        `if (rh_is_undef(${slot.lv})) ${slot.lv} = ${emitExpr(x.expr, ctx)};`)
+        `if (rh_is_undef(${slot.lv})) ${slot.lv} = ${emitExpr(x.expr, ctx, buf)};`)
       break
     }
     case "update": {
       let slot = emitSlot(buf, x.sym, x.path, ctx)
       guarded(buf, slot,
-        `${slot.lv} = rh_stateful_${x.op}(${slot.lv}, ${emitExpr(x.arg, ctx)});`)
+        `${slot.lv} = rh_stateful_${x.op}(${slot.lv}, ${emitExpr(x.arg, ctx, buf)});`)
       break
     }
     case "groupUpdate": {
@@ -371,7 +483,7 @@ let emitStatement = (stm, buf, ctx) => {
       buf.push(slot.guard
         ? `rh_val *${dst} = ${slot.guard} ? rh_slot(${base}, ${arr}, ${x.keys.length}) : NULL;`
         : `rh_val *${dst} = rh_slot(${base}, ${arr}, ${x.keys.length});`)
-      buf.push(`if (${dst}) *${dst} = ${emitExpr(x.value, ctx)};`)
+      buf.push(`if (${dst}) *${dst} = ${emitExpr(x.value, ctx, buf)};`)
       break
     }
     default:
@@ -391,7 +503,7 @@ let emitStatement = (stm, buf, ctx) => {
 // variable. The specialized bindings are per-loop and declared inline, which is
 // safe: each reopening re-derives them from the source.
 let emitLoopHeader = (g, buf, ctx) => {
-  let src = emitValue(g.src, ctx)
+  let src = emitValue(g.src, ctx, buf)
   let t = g.src.schema ? typing.removeTag(g.src.schema) : null
   let keyType = t && t.objKey
 

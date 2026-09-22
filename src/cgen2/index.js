@@ -10,6 +10,7 @@ const { symbol } = require('../cgen/symbol')
 const { lower } = require('./lower')
 const { emitExpr, emitValue, asBoxed, emitStatement, emitLoopHeader,
         decideNativeTmps, cSym } = require('./emit')
+const { isDevice } = require('./value')
 const ctypes = require('./ctypes')
 
 // Walk the scheduled tree, emitting C.
@@ -21,7 +22,7 @@ let emitTree = (node, buf, ctx) => {
       // Additional generators bound to the same variable are filters: the JS
       // backend emits `if (rhs[sym] === undefined) continue` (new-codegen.js:418).
       for (let f of rest) {
-        buf.push(`if (rh_is_undef(rh_get(${emitExpr(f.src, ctx)}, ${asBoxed(ctx.vars[g.cvar] || { repr: "boxed", expr: g.cvar })}))) continue;`)
+        buf.push(`if (rh_is_undef(rh_get(${emitExpr(f.src, ctx, buf)}, ${asBoxed(ctx.vars[g.cvar] || { repr: "boxed", expr: g.cvar })}))) continue;`)
       }
       emitTree(n, buf, ctx)
       buf.push("}")
@@ -54,6 +55,7 @@ let emitProgram = (tree, res, tmps, loopVars, stms) => {
     prolog: [],        // the open calls those references emitted
     vars: {},          // loop variable -> representation
     nativeTmps: decideNativeTmps(stms), // tmp -> C type, decided up front
+    usesCuda: false, // set by emit.js when a device operation is lowered
   }
 
   // Emitted after the body, because which tmps turned out to be native is only
@@ -62,8 +64,17 @@ let emitProgram = (tree, res, tmps, loopVars, stms) => {
   emitTree(tree, body, ctx)
 
   // Print the result in whatever representation it ended up in.
-  let out = emitValue(res.txt, ctx)
-  if (out.repr === "cScalar" && ctypes.hasFormat(out.ctype)) {
+  let out = emitValue(res.txt, ctx, body)
+  if (isDevice(out)) {
+    // Straight out of device memory. The copy back lives in the runtime call,
+    // which is also where the program synchronizes with the cuBLAS work that
+    // produced the value (runtime/rhyme_cuda.h). A device scalar prints as a
+    // number and a device vector as a JSON array -- the two do not share a
+    // printer, which is half the reason they are two representations.
+    body.push(out.repr === "cuScalar"
+      ? `rh_cuda_print_scalar(${out.dev});`
+      : `rh_cuda_print_vec(${out.dev}, ${out.len});`)
+  } else if (out.repr === "cScalar" && ctypes.hasFormat(out.ctype)) {
     let fmt = ctypes.formatFor(out.ctype)
     body.push(out.cond
       ? `if (${out.cond}) printf("undefined"); else printf("%${fmt}", ${out.expr});`
@@ -72,6 +83,7 @@ let emitProgram = (tree, res, tmps, loopVars, stms) => {
     body.push(`rh_print_val(${asBoxed(out)});`)
   }
   body.push(`printf("\\n");`)
+  if (ctx.usesCuda) body.push(`rh_cuda_end();`)
   body.push(`return 0;`)
 
   let decls = []
@@ -85,8 +97,14 @@ let emitProgram = (tree, res, tmps, loopVars, stms) => {
     decls.push(`rh_val ${v2} = rh_undef;`)
   body = [...decls, ...body]
 
-  let head = ['#include "rhyme_rt.h"', "", "int main() {"]
-  return [...head, ...indent([...ctx.prolog, ...body]), "}", ""].join("\n")
+  // rhyme_cuda.h includes rhyme_rt.h in turn, so a query that stays on the
+  // host never pulls in a CUDA header -- and the handle is only created by a
+  // program that has something to run on the device.
+  let head = [`#include "${ctx.usesCuda ? "rhyme_cuda.h" : "rhyme_rt.h"}"`,
+              "", "int main() {"]
+  let prolog = ctx.usesCuda ? ["rh_cuda_begin();", ...ctx.prolog] : ctx.prolog
+  let code = [...head, ...indent([...prolog, ...body]), "}", ""].join("\n")
+  return { code, usesCuda: ctx.usesCuda }
 }
 
 let generateCNew = (q, ir, settings) => {
@@ -107,7 +125,7 @@ let generateCNew = (q, ir, settings) => {
   let loopVars = [...new Set(logical.generatorStms.map(g => g.cvar))]
 
   let { tree, res } = generate(logical, "c-new")
-  let code = emitProgram(tree, res, tmps, loopVars, logical.assignmentStms)
+  let { code, usesCuda } = emitProgram(tree, res, tmps, loopVars, logical.assignmentStms)
 
   let cFile = path.join(outDir, outFile + ".c")
   let out = path.join(outDir, outFile)
@@ -133,11 +151,16 @@ let generateCNew = (q, ir, settings) => {
     await fs.writeFile(cFile, code)
     await build.compile({
       cFile, out,
-      compiler: settings.compiler || "gcc",
+      // A program that calls into cuBLAS needs the CUDA toolchain to compile
+      // and link: nvcc compiles the .c file with the host compiler and links
+      // cudart itself, and needsCublas adds -lcublas. settings.compiler still
+      // wins, for a host compiler driving the CUDA libraries directly.
+      compiler: settings.compiler || (usesCuda ? "nvcc" : "gcc"),
       optFlags: settings.optFlags || ["-O1"],
       cFlags: settings.cFlags || [],
       includePaths: settings.includePaths || [],
       needsYYJSON: true,
+      needsCublas: usesCuda,
       verbose: settings.verbose,
     })
     return func
