@@ -75,6 +75,14 @@ let lower = (q, assignments, filters) => {
     } else if (q.key == "get") {
       let [o, k] = q.arg.map(expr)
       return e.get(o, k)
+    } else if (q.key == "pure" && q.op == "apply") {
+      // Deliberately unsupported. `apply` calls a user-defined function, which
+      // reaches a query as a JavaScript closure through the input object --
+      // `udf.inc data.A.value` is apply(udf[inc], ...). There is nothing to
+      // generate: the callee is js, not data, so a C program cannot run it
+      // short of embedding an interpreter. Queries using udfs belong on the js
+      // backend.
+      throw new Error("c-new: udfs are not supported -- " + pretty(q))
     } else if (q.key == "pure") {
       return e.pure(q.op, q.arg.map(expr))
     } else if (q.key == "mkset") {
