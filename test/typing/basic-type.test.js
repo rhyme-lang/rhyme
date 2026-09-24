@@ -1,6 +1,7 @@
 const { api } = require('../../src/rhyme')
 const { rh } = require('../../src/parser')
 const { typing, types, props, typeSyms } = require("../../src/typing");
+const { compileCrossCheck } = require('../utils')
 
 let key = typing.createKey(types.string);
 
@@ -80,7 +81,7 @@ let expectTypeSimilarity = (type, schema) => {
 }
 
 test("intLitTest", () => {
-    let func = api.compile(api.plus(1, 63), types.never);
+    let func = compileCrossCheck(api.plus(1, 63), { schema: types.never });
     expect(func.explain2.resultType).toStrictEqual({
         type: types.i16,
         props: []
@@ -89,13 +90,13 @@ test("intLitTest", () => {
 
 test("plainSumTest", () => {
     let query = api.sum("data.*.value")
-    let func = api.compile(query, schema)
+    let func = compileCrossCheck(query, { schema })
     expect(func.explain2.resultType.type).toBe(types.f64);
 })
 
 test("plainSumTest", () => {
     let query = {"data.*A.key": api.sum("other.*A.value")};
-    let func = api.compile(query, {data: dataSchema, other: otherSchema});
+    let func = compileCrossCheck(query, { schema: {data: dataSchema, other: otherSchema} });
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
     expect(func.explain2.resultType.props).toStrictEqual([]);
@@ -106,7 +107,7 @@ test("plainSumTest", () => {
 
 test("type-double-generator", () => {
     let query = api.first("other.*A.*B");
-    let func = api.compile(query, {data: dataSchema, other: otherSchema});
+    let func = compileCrossCheck(query, { schema: {data: dataSchema, other: otherSchema} });
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
     expect(func.explain2.resultType.props).toStrictEqual([props.nothing]);
@@ -116,7 +117,7 @@ test("type-double-generator", () => {
 
 test("plainAverageTest", () => {
     let query = api.div(api.sum("data.*.value"), api.count("data.*.value"))
-    let func = api.compile(query, schema)
+    let func = compileCrossCheck(query, { schema })
     let type = func.explain2.resultType.type;
     expect(func.explain2.resultType.props).toStrictEqual([]);
     expect(type).toBe(types.f64);
@@ -125,7 +126,7 @@ test("plainAverageTest", () => {
 
 test("uncorrelatedAverageTest", () => {
     let query = api.div(api.sum("data.*A.value"), api.count("data.*B.value"))
-    let func = api.compile(query, schema)
+    let func = compileCrossCheck(query, { schema })
     let type = func.explain2.resultType.type;
     expect(func.explain2.resultType.props).toStrictEqual([]);
     expect(type).toBe(types.f64);
@@ -136,7 +137,7 @@ test("groupByTest", () => {
         total: api.sum("data.*.value"),
         "data.*.key": api.sum("data.*.value"),
     }
-    let func = api.compile(query, schema)
+    let func = compileCrossCheck(query, { schema })
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
     expect(func.explain2.resultType.props).toStrictEqual([]);
@@ -152,7 +153,7 @@ test("groupByAverageTest", () => {
         total: api.sum("data.*.value"),
         "data.*.key": avg("data.*.value"),
     }
-    let func = api.compile(query, schema)
+    let func = compileCrossCheck(query, { schema })
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
     expect(func.explain2.resultType.props).toStrictEqual([]);
@@ -168,7 +169,7 @@ test("groupByRelativeSum", () => {
         total: api.sum("data.*.value"),
         "data.*.key": api.fdiv(api.sum("data.*.value"), api.sum("data.*B.value"))
     }
-    let func = api.compile(query, schema);
+    let func = compileCrossCheck(query, { schema });
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
     expect(func.explain2.resultType.props).toStrictEqual([]);
@@ -186,7 +187,7 @@ test("nestedGroupAggregateTest", () => {
             "data.*.city": api.sum("data.*.population")
         },
     }
-    let func = api.compile(query, {data: countrySchema})
+    let func = compileCrossCheck(query, { schema: {data: countrySchema} })
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
     expect(func.explain2.resultType.props).toStrictEqual([]);
@@ -209,7 +210,7 @@ test("joinSimpleTest1", () => {
             region: api.get(q1,"data.*.country")
         }
     }
-    let func = api.compile(query, {data: countrySchema, other: regionSchema})
+    let func = compileCrossCheck(query, { schema: {data: countrySchema, other: regionSchema} })
     let type = func.explain2.resultType.type;
     // 'region' is absent for any country with no matching row in 'other'.
     // Object types carry no per-field optionality, so that absence is recorded
@@ -234,7 +235,7 @@ test("joinSimpleTest1B", () => { // use explicit 'single' aggregation
             region: api.single(api.get(q1,"data.*.country"))
         }
     }
-    let func = api.compile(query, {data: countrySchema, other: regionSchema})
+    let func = compileCrossCheck(query, { schema: {data: countrySchema, other: regionSchema} })
     let type = func.explain2.resultType.type;
     // Same as joinSimpleTest1: 'region' may be absent, surfacing as 'nothing'
     // on the enclosing object. No errors propagated.
@@ -256,7 +257,7 @@ test("joinSimpleTest2", () => {
             "data.*.city": api.sum("data.*.population")
         }),
     }
-    let func = api.compile(query, {data: countrySchema, other: regionSchema})
+    let func = compileCrossCheck(query, { schema: {data: countrySchema, other: regionSchema} })
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
     expect(func.explain2.resultType.props).toStrictEqual([]);
@@ -278,7 +279,7 @@ test("joinWithAggrTest", () => {
             "data.*.city": api.sum("data.*.population")
         }),
     }
-    let func = api.compile(query, {data: countrySchema, other: regionSchema})
+    let func = compileCrossCheck(query, { schema: {data: countrySchema, other: regionSchema} })
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
     expect(func.explain2.resultType.props).toStrictEqual([]);
@@ -303,7 +304,7 @@ test("udfTest", () => {
         item: "data.*.item",
         price: api.apply("udf.formatDollar", "data.*.price")
     }]
-    let func = api.compile(query, {
+    let func = compileCrossCheck(query, { schema: {
         data: {
             "-": typing.keyval(typing.createKey(types.u32), {
                 item: types.string,
@@ -313,7 +314,7 @@ test("udfTest", () => {
         udf: {
             formatDollar: typing.createFunction(types.string, types.u32)
         }
-    })
+    } })
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
     expect(func.explain2.resultType.props).toStrictEqual([]);
@@ -327,7 +328,7 @@ test("udfTest", () => {
 
 test("arrayTest1", () => {
     let query4 = api.sum(api.sum("data.*.value"))
-    let func = api.compile(query4, {data: dataSchema})
+    let func = compileCrossCheck(query4, { schema: {data: dataSchema} })
     
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
@@ -343,7 +344,7 @@ test("arrayTest2", () => {
     //let query3 = api.join(api.array("data.*.value"))
     let query4 = api.sum(api.sum("data.*.value"))
 
-    let func = api.compile({ query1, query2, query2A, /* query3, */ query4 }, {data: dataSchema});
+    let func = compileCrossCheck({ query1, query2, query2A, /* query3, */ query4 }, { schema: {data: dataSchema} });
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
     expect(func.explain2.resultType.props).toStrictEqual([]);
@@ -368,7 +369,7 @@ test("arrayTest2", () => {
 
 /*test("arrayTest3", () => {
     let query = { "data.*.key": ["Extra1", { foo: "data.*.value" }, "Extra2"] }
-    let func = api.compile(query, {data: dataSchema})
+    let func = compileCrossCheck(query, { schema: {data: dataSchema} })
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
     expect(func.explain2.resultType.props).toStrictEqual([]);
@@ -381,7 +382,7 @@ test("arrayTest2", () => {
 
 test("arrayTest4", () => {
     let query = { "data.*.key": [{ v1: "data.*.value" }, { v2: "data.*.value" }] }
-    let func = api.compile(query)
+    let func = compileCrossCheck(query)
     let res = func({ data })
     let expected = {
       "A": [{"v1": 10},{"v1": 30},{"v2": 10},{"v2": 30}],
@@ -392,7 +393,7 @@ test("arrayTest4", () => {
 // test manual zip and flatten patterns for nested array traversal
 test("arrayTest5Zip", () => {
     let query = { "data.*.key": [api.get({ v1: "data.*.value", v2: "data.*.value" },"*A")] }
-    let func = api.compile(query)
+    let func = compileCrossCheck(query)
     let res = func.c1({ data }) // NOTE: c2 behaves differently now (see test below)
     let expected = {
       "A": [10, 10, 30, 30],
@@ -403,7 +404,7 @@ test("arrayTest5Zip", () => {
 // c2 needs an explicit var *D pulled out to the right level
 test("arrayTest5ZipB", () => {
     let query = { "data.*D.key": [api.and("*D", api.get({ v1: "data.*D.value", v2: "data.*D.value" },"*A"))] }
-    let func = api.compile(query, {data: dataSchema})
+    let func = compileCrossCheck(query, { schema: {data: dataSchema} })
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
     expect(func.explain2.resultType.props).toStrictEqual([]);
@@ -417,7 +418,7 @@ test("arrayTest5ZipB", () => {
 test("arrayTest6Flatten", () => {
     let query0 = { "data.*.key": {v1:["data.*.value"], v2:["data.*.value"]} }
     let query = { "*k": [api.get(api.get(api.get(query0,"*k"), "*A"), "*B")] }
-    let func = api.compile(query, {data: dataSchema})
+    let func = compileCrossCheck(query, { schema: {data: dataSchema} })
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
     expect(func.explain2.resultType.props).toStrictEqual([]);
@@ -431,8 +432,8 @@ test("arrayTest6Flatten", () => {
 test("arrayTest7Eta", () => {
     let query0 = { "data.*.key": ["data.*.value"] }
     let query = { "*k": api.get(query0,"*k") }
-    //let func0 = api.compile(query0)
-    let func = api.compile(query, {data: dataSchema})
+    //let func0 = compileCrossCheck(query0)
+    let func = compileCrossCheck(query, { schema: {data: dataSchema} })
     let type = func.explain2.resultType.type;
     // No nothing or errors propogated.
     expect(func.explain2.resultType.props).toStrictEqual([]);

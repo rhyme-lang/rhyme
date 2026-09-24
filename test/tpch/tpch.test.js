@@ -2,6 +2,7 @@ const { rh, api } = require('../../src/rhyme')
 const { compile } = require('../../src/simple-eval')
 const { typing, types } = require('../../src/typing')
 const fs = require("fs")
+const { compileC1CrossCheck } = require('../utils')
 
 // point to the data directory
 let dataDir = "data/SF1"
@@ -160,8 +161,8 @@ beforeAll(async () => {
 
 //   let query = rh`sort ${query1} "l_returnflag" 0 "l_linestatus" 0`
 
-//   let func = api.compileC1(query1)
-//   console.log(func.explain.code)
+//   let func = compileC1CrossCheck(query1)
+//   console.log(func.explain1.code)
 // })
 
 testTPCH("q1-alt", async () => {

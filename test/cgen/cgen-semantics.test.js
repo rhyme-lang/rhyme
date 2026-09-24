@@ -3,6 +3,7 @@ const { compile } = require('../../src/simple-eval')
 const { typing, types } = require('../../src/typing')
 
 const fs = require('fs/promises')
+const { prepareRuntime } = require('../../src/cgen/codegen')
 
 let outDir = "out/semantics"
 
@@ -10,6 +11,9 @@ beforeAll(async () => {
   await fs.rm(outDir, { recursive: true, force: true })
   await fs.mkdir(outDir, { recursive: true })
 })
+
+// build the C runtime up front, so the first query does not pay for it
+beforeAll(prepareRuntime, 60000)
 
 let key = typing.createKey(types.string)
 

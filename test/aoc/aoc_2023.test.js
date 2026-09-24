@@ -13,6 +13,7 @@
 const { api, rh, pipe } = require('../../src/rhyme')
 const { compile } = require('../../src/simple-eval')
 const { typing, types } = require('../../src/typing')
+const { compileC1CrossCheck, compileC1OptCrossCheck, compileCrossCheck } = require('../utils')
 
 let udf_stdlib = {
   split: d => s => s.split(d),
@@ -77,7 +78,7 @@ treb7uchet`
   let numbers = rh`first(${digits}) * 10 + last(${digits})`
   let query   = rh`${numbers} | group *line | sum .*`
 
-  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ}}`)
+  let func = compileCrossCheck(query, { schema: typing.parseType`{input: string, udf: ${udf_std_typ}}` })
   let res = func({input, udf})
   expect(res).toBe(142)
 })
@@ -110,7 +111,7 @@ zoneight234
   let numbers = rh`first(${digits}) * 10 + last(${digits})`
   let query   = rh`${numbers} | group *line | sum .*`
 
-  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_typ}}`)
+  let func = compileCrossCheck(query, { schema: typing.parseType`{input: string, udf: ${udf_typ}}` })
   let res = func({input, udf})
   expect(res).toBe(281)
 })
@@ -150,7 +151,7 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green`
 
   let query = rh`${lineRes} | group *line | sum .*`
 
-  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ}, bag: {red: i32, green: i32, blue: i32}}`)
+  let func = compileCrossCheck(query, { schema: typing.parseType`{input: string, udf: ${udf_std_typ}, bag: {red: i32, green: i32, blue: i32}}` })
   let res = func({input, udf, bag})
   expect(res).toBe(8)
 })
@@ -178,7 +179,7 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green`
 
   let query = rh`${lineRes} | group *line | sum .*`
 
-  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ}}`)
+  let func = compileCrossCheck(query, { schema: typing.parseType`{input: string, udf: ${udf_std_typ}}` })
   let res = func({input, udf})
   expect(res).toBe(2286)
 })
@@ -255,7 +256,7 @@ let partNum = pipe(api.times(numbers, rh`${isPart} | udf.toNum`))
 
 // NOTE: change to group("*match").group("*row").get("*row").get("*match") will result in repeated generators because of coarse-grained dependencies
 let query = partNum.group("*match").group("*row").get("*0").get("*1").sum()
-let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_typ}}`)
+let func = compileCrossCheck(query, { schema: typing.parseType`{input: string, udf: ${udf_typ}}` })
 let res = func({input, udf})
 expect(res).toBe(4361)
 })
@@ -302,7 +303,7 @@ test("day3-part2", () => {
   let partNumsPerGear = rh`${partNumsPerGear_ungrouped} | group *j | group *i | .*0 | .*1`
   // We only aggregate over the gears that are adjacent to exactly two part numbers
   let query = rh`${partNumsPerGear} | ${filterBy("*f2", rh`udf.isEqual ${partNumsPerGear}.length 2`)} | .0 * .1 | sum`
-  let func = api.compile(query)
+  let func = compileCrossCheck(query)
   let res = func({input, udf})
 
   expect(res).toBe(467835)
@@ -348,7 +349,7 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
   let query = rh`${lineRes} | group *line | sum .*`
 
   // TODO: Loop consolidation - "udf.getNums" returns an array with same keys, so winNum is consolidated with numYouHave, but this is very bad.
-  let func = api.compile(query) // , typing.parseType`{input: string, udf: ${udf_typ}}`
+  let func = compileCrossCheck(query) // , typing.parseType`{input: string, udf: ${udf_typ}}`
   let res = func({input, udf})
   expect(res).toBe(13)
 })
@@ -417,7 +418,7 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11`
 
   // TODO: Figure out why adding typing is so slow.
   // TODO: Loop consolidation makes typing this fail.
-  let func = api.compile(query) // , typing.parseType`{input: string, udf: ${udf_typ}}`)
+  let func = compileCrossCheck(query) // , typing.parseType`{input: string, udf: ${udf_typ}}`)
   let res = func({input, udf})
   expect(res).toBe(30)
 })
@@ -500,7 +501,7 @@ humidity-to-location map:
 
   let query = rh`${locations} | .*final | min`
 
-  let func = api.compileFastPathOnly(query) // FIXME: can't run with ref semantics yet. No cse -> code blowup!
+  let func = compileC1CrossCheck(query) // FIXME: can't run with ref semantics yet. No cse -> code blowup!
   let res = func.c1({input, udf})
 
   expect(res).toBe(35)
@@ -580,7 +581,7 @@ humidity-to-location map:
     maps: rh`${intervals} | group *map`
   }
 
-  let f0 = api.compileNew(query)
+  let f0 = compileC1OptCrossCheck(query)
 
   // XXX: c1_opt (new codegen) and c2 (semantic) are correct, c1 (old codegen) behaves differently
   let result = f0({input, udf})
@@ -619,7 +620,7 @@ humidity-to-location map:
     new:[inRange]
   }
 
-  let f1 = api.compile(query)
+  let f1 = compileCrossCheck(query)
 
   let src = result.sources
   for (let m in result.maps) {
@@ -634,7 +635,7 @@ humidity-to-location map:
 
   query = rh`.src | .*src | .start | min`
 
-  let f2 = api.compile(query)
+  let f2 = compileCrossCheck(query)
 
   let min = f2({src})
 
@@ -665,7 +666,7 @@ Distance:  9  40  200`
 
   let query = rh`${root2Int} - ${root1Int} + 1 | group *pair | product .*`
 
-  let func = api.compile(query)
+  let func = compileCrossCheck(query)
   let res = func({input, udf})
   expect(res).toBe(288)
 })
@@ -696,7 +697,7 @@ Distance:  9  40  200`
 
   let query = rh`${root2Int} - ${root1Int} + 1`
 
-  let func = api.compile(query)
+  let func = compileCrossCheck(query)
   let res = func({input, udf})
   expect(res).toBe(71503)
 })
@@ -733,7 +734,7 @@ let udf = {
   let sortedCards = rh`${stats} | group *line | udf.values | udf.sort udf.cmpCard | .*sc`
   let query = rh`((udf.toNum *sc) + 1) * ${sortedCards}.bid | sum`
 
-  let func = api.compile(query)
+  let func = compileCrossCheck(query)
   let res = func({input, udf})
   expect(res).toBe(6440)
 })
@@ -776,7 +777,7 @@ let ranks = {J:"a", 2:"b", 3:"c", 4:"d", 5:"e", 6:"f", 7:"g", 8:"h", 9:"i", T:"j
   let sortedCards = rh`${stats} | group *line | udf.values | udf.sort udf.cmpCard | .*sc`
   let query = rh`((udf.toNum *sc) + 1) * ${sortedCards}.bid | sum`
 
-  let func = api.compile(query)
+  let func = compileCrossCheck(query)
   let res = func({input, udf})
   expect(res).toBe(5905)
 })
@@ -813,7 +814,7 @@ ZZZ = (ZZZ, ZZZ)`
     steps: rh`state.steps + 1`
   }
 
-  let func = api.compile(query)
+  let func = compileCrossCheck(query)
 
   // initial state and driver loop
   let state = {
@@ -854,7 +855,7 @@ test("day9-part1", () => {
     sum:0
   }
 
-  let f0 = api.compile(q0)
+  let f0 = compileCrossCheck(q0)
   let state = f0({input, udf})
 
   let data = rh`.state | .data`
@@ -888,7 +889,7 @@ test("day9-part1", () => {
     data:newdata,
     sum:rh`.state.sum + (sum ${last})`
   }
-  let f1 = api.compile(q1)
+  let f1 = compileCrossCheck(q1)
   while (state.data.length) {
     state = f1({state, udf})
   }
@@ -915,7 +916,7 @@ test("day9-part2", () => {
     sum:0
   }
 
-  let f0 = api.compile(q0)
+  let f0 = compileCrossCheck(q0)
   let state = f0({input, udf})
 
   let data = rh`.state | .data`
@@ -950,7 +951,7 @@ test("day9-part2", () => {
   }
   // XXX: in c1_opt (new codegen), the last *s loop is splitted into two loops.
   // This is because we require strict ordering of assignments to one tmp.
-  let f1 = api.compile(q1)
+  let f1 = compileCrossCheck(q1)
   while (state.data.length) {
     state = f1({state, udf})
   }
@@ -1015,7 +1016,7 @@ LJ.LJ`
     cell: rh`${grid}.(${startCell}.0).(${startCell}.1)`
   }
 
-  let getInitialState = api.compile(initialState)
+  let getInitialState = compileCrossCheck(initialState)
 
   let state = getInitialState({input, udf, connected})
   state.count = 1
@@ -1040,7 +1041,7 @@ LJ.LJ`
     count: rh`state.count + 1`
   }
 
-  let func = api.compile(query)
+  let func = compileCrossCheck(query)
 
   while (state.cell != "S") {
     state = func({input, udf, state, connected})
@@ -1147,7 +1148,7 @@ L7JLJL-JLJLJL--JLJ.L`
     cell: rh`${grid}.(${startCell}.0).(${startCell}.1)`
   }
 
-  let getInitialState = api.compile(initialState)
+  let getInitialState = compileCrossCheck(initialState)
 
   let state = getInitialState({input, udf, connected})
 
@@ -1176,7 +1177,7 @@ L7JLJL-JLJLJL--JLJ.L`
     cell: rh`${grid}.(${curr}.0).(${curr}.1)`,
   }
 
-  let findPath = api.compile(pathObj)
+  let findPath = compileCrossCheck(pathObj)
 
   while (state.cell != "S") {
     state = findPath({input, udf, state, connected})
@@ -1186,7 +1187,7 @@ L7JLJL-JLJLJL--JLJ.L`
 
   let pathQuery = rh`.path`
   let query = rh`${grid}.*row | udf.getEnclosedArray *row ${pathQuery} ${grid} | sum .*enclosed | group *row | sum .*`
-  let func = api.compile(query)
+  let func = compileCrossCheck(query)
 
   let res = func({input, udf, connected, path})
 
@@ -1238,7 +1239,7 @@ test("day11-part1", () => {
   let dis = rh`${rowdis} + ${coldis}`
   let query = rh`(${dis} | sum) / 2`
   // XXX: old codegen generates incorrect code
-  let func = api.compileNew(query)
+  let func = compileC1OptCrossCheck(query)
   let res = func({input, udf})
   expect(res).toBe(374)
 })
@@ -1287,7 +1288,7 @@ test("day11-part2", () => {
   let coldis = rh`(${colSum} | .${rh`${g1}.col`}) - (${colSum} | .${rh`${g2}.col`}) | udf.abs`
   let dis = rh`${rowdis} + ${coldis}`
   let query = rh`(${dis} | sum) / 2`
-  let func = api.compileNew(query)
+  let func = compileC1OptCrossCheck(query)
   let res = func({input, udf})
   expect(res).toBe(82000210)
 })
@@ -1331,7 +1332,7 @@ test("day12-part1", () => {
 
   let lines = rh`${line} | group *line`
 
-  let getPuzzles = api.compile(lines)
+  let getPuzzles = compileCrossCheck(lines)
   let puzzles = getPuzzles({input, udf})
 
   let zero = rh`udf.result 0`
@@ -1369,7 +1370,7 @@ test("day12-part1", () => {
     count: rh`sum (udf.valueOrDefault ${currInput}.res)`
   }
 
-  let func = api.compile(query)
+  let func = compileCrossCheck(query)
 
   let res = 0
   for (let i in puzzles) {
@@ -1446,7 +1447,7 @@ test("day13-part1", () => {
 
   let query = rh`${horizontal} + ${vertical}`
 
-  let func = api.compileNew(query)
+  let func = compileC1OptCrossCheck(query)
   let res = func({input, udf})
 
   expect(res).toBe(405)
@@ -1496,7 +1497,7 @@ O.#..O.#.#
     n: n
   }
 
-  let func = api.compile(query)
+  let func = compileCrossCheck(query)
   while (state.row < state.n) {
     state = func({input, udf, state})
   }
@@ -1515,7 +1516,7 @@ test("day15-part1", () => {
 
   let input = "rn=1,cm-,qp=3,cm=2,qp-,pc=4,ot=9,ab=5,pc-,pc=6,ot=7";
 
-  let parseInput = api.compile(api.array({
+  let parseInput = compileCrossCheck(api.array({
       string: rh`.input | udf.split "," | .*group`,
       hash: 0
   }));
@@ -1542,7 +1543,7 @@ test("day15-part1", () => {
   let filterBy = (gen, p) => x => rh`udf.andThen (udf.filter ${p}).${gen} ${x}`
   let filterStrings = rh`${updateStrings} | ${filterBy("*f", rh`udf.notEqual state.strings.*strings.string.length (state.index+1)`)}`
 
-  let run = api.compile({
+  let run = compileCrossCheck({
       strings: api.array(filterStrings),
       index: rh`state.index + 1`,
       sum: rh`state.sum + ${partSum}`
@@ -1587,7 +1588,7 @@ test("day15-part2", () => {
       hash: 0,
   })
 
-  let parseInput = api.compile({
+  let parseInput = compileCrossCheck({
       instrs: api.array(instrs),
       maxIndex: api.max(rh`${steps}.*.length - 1`),
       index: 0
@@ -1595,7 +1596,7 @@ test("day15-part2", () => {
 
   let hashState = parseInput({input, udf});
 
-  let runHash = api.compile({
+  let runHash = compileCrossCheck({
       instrs: api.array({
           type: "state.instrs.*.type",
           key: "state.instrs.*.key",
@@ -1653,7 +1654,7 @@ test("day15-part2", () => {
       insertion
   )
 
-  let run = api.compile(replaceArrItem(rh`.hashMap.*box`, "*box", ".instr.hash", newList));
+  let run = compileCrossCheck(replaceArrItem(rh`.hashMap.*box`, "*box", ".instr.hash", newList));
 
   let hashMap = new Array(256).fill([]);
 
@@ -1664,7 +1665,7 @@ test("day15-part2", () => {
 
   // Loop variables using "index in array" syntax are strings, so must be converted to numbers to avoid string concatenation.
   // Probably want to change this, given a generator index is a number.
-  let getFocusingPower = api.compile(api.sum(rh`.hashMap.*a.*b.value * ((udf.toNum *a) + 1) * ((udf.toNum *b) + 1)`));
+  let getFocusingPower = compileCrossCheck(api.sum(rh`.hashMap.*a.*b.value * ((udf.toNum *a) + 1) * ((udf.toNum *b) + 1)`));
   let focusPower = getFocusingPower({hashMap, udf});
 
   expect(focusPower).toEqual(145);
@@ -1732,7 +1733,7 @@ test("day16-part1", () => {
     visited: rh`state.visited`
   }
 
-  let getNextState = api.compile(nextState)
+  let getNextState = compileCrossCheck(nextState)
   
   while (state.curr.length > 0) {
     state = getNextState({input, udf, state})
@@ -1747,7 +1748,7 @@ test("day16-part1", () => {
 
   let query = rh`count state.visited.*i.*j`
 
-  let func = api.compile(query)
+  let func = compileCrossCheck(query)
   let res = func({state})
 
   expect(res).toBe(46)
@@ -1801,7 +1802,7 @@ test("day17-part1-array", () => {
   }
 
   // no need to process input in every iteration
-  let getGraph = api.compile(graphQuery)
+  let getGraph = compileCrossCheck(graphQuery)
   let graph = getGraph({input, udf})
 
   let state = {
@@ -2063,7 +2064,7 @@ test("day17-part1-rbtree", () => {
   }
 
   // no need to process input in every iteration
-  let getGraph = api.compile(graphQuery)
+  let getGraph = compileCrossCheck(graphQuery)
   let graph = getGraph({input, udf})
 
   // The current node we are visiting
@@ -2162,7 +2163,7 @@ test("day17-part1-old", () => {
   }
 
   // no need to process input in every iteration
-  let getGraph = api.compile(graphQuery)
+  let getGraph = compileCrossCheck(graphQuery)
   let graph = getGraph({input, udf})
 
   // console.log(graph)
@@ -2248,7 +2249,7 @@ U 2 (#7a21e3)`
   }
 
   // no need to process input in every iteration
-  let getDigplan = api.compile(digPlanQuery)
+  let getDigplan = compileCrossCheck(digPlanQuery)
   let digPlan = getDigplan({input, udf})
 
   let state = {
@@ -2290,7 +2291,7 @@ U 2 (#7a21e3)`
     x, y, area
   }
 
-  let func = api.compile(query)
+  let func = compileCrossCheck(query)
   while (state.curr < digPlan.n) {
     state = func({digPlan, udf, state})
   }
@@ -2329,7 +2330,7 @@ U 2 (#7a21e3)`
   }
 
   // no need to process input in every iteration
-  let getDigplan = api.compile(digPlanQuery)
+  let getDigplan = compileCrossCheck(digPlanQuery)
   let digPlan = getDigplan({input, udf})
 
   let state = {
@@ -2371,7 +2372,7 @@ U 2 (#7a21e3)`
     x, y, area
   }
 
-  let func = api.compile(query)
+  let func = compileCrossCheck(query)
   while (state.curr < digPlan.n) {
     state = func({digPlan, udf, state})
   }
@@ -2472,7 +2473,7 @@ hdj{m>838:A,pv}
       }
   };
 
-  let parse = api.compile({
+  let parse = compileCrossCheck({
       workflows: workflow_split,
       parts: partsObj
   });
@@ -2515,7 +2516,7 @@ hdj{m>838:A,pv}
   let notAcceptedStates = api.array(rh`${newParts} | .*parts | ${filterBy("*acc1", rh`udf.notEqual ${newParts}.*parts.state "A0"`)}`);
   let filteredStates = rh`${notAcceptedStates} | .*partsNotAccepted | ${filterBy("*rej", rh`udf.notEqual ${notAcceptedStates}.*partsNotAccepted.state "R0"`)}`;
 
-  let run = api.compile({
+  let run = compileCrossCheck({
       transitions: rh`.input.transitions`,
       // Continue work on states not accepted or rejected.
       parts: api.array(filteredStates),
@@ -2606,7 +2607,7 @@ hdj{m>838:A,pv}
   };
 
   // Since parts don't need to be parsed, they can safely be ignored.
-  let parse = api.compile(workflow_split);
+  let parse = compileCrossCheck(workflow_split);
 
   let parsedInput = parse({input, udf});
   let state = {
@@ -2692,7 +2693,7 @@ hdj{m>838:A,pv}
   
   let attrs = rh`${acceptedStates} | .attrs`;
 
-  let run = api.compile({
+  let run = compileCrossCheck({
       transitions: rh`.input.transitions`,
       parts: api.array(filteredStates),
       // For all accepted states, sum the total number of potential parts accepted. (product of ranges)
@@ -2761,7 +2762,7 @@ test("day20-part1", () => {
     nodeStates: rh`${initialNodeState} | group ${node}`,
   }
 
-  let getGraph = api.compile(graphQuery)
+  let getGraph = compileCrossCheck(graphQuery)
   let graph = getGraph({input, udf})
   
   let broadcaster = {
@@ -2809,7 +2810,7 @@ test("day20-part1", () => {
     countHighPulse: 0,
   }
 
-  let func = api.compileNew(query)
+  let func = compileC1OptCrossCheck(query)
 
   let i = 0;
   while (i < 1000) {
@@ -2877,7 +2878,7 @@ test("day21-part1", () => {
     grid: grid
   }
 
-  let getInitialState = api.compile(initialState)
+  let getInitialState = compileCrossCheck(initialState)
   let state = getInitialState({input, udf})
 
   // Iterate through each current cell and add the their neighbors to the array / set
@@ -2890,7 +2891,7 @@ test("day21-part1", () => {
     curr: rh`udf.toSet ${neighbors}`,
     grid: rh`state.grid`
   }
-  let func = api.compile(query)
+  let func = compileCrossCheck(query)
 
   let i = 0
   while (i < 6) {
@@ -2964,7 +2965,7 @@ test("day22-part1", () => {
 
   let bricksQuery = rh`${lines} | udf.sort udf.cmpFn`
 
-  let getBricks = api.compile(bricksQuery)
+  let getBricks = compileCrossCheck(bricksQuery)
   let bricks = getBricks({input, udf})
 
   let state = {
@@ -2984,7 +2985,7 @@ test("day22-part1", () => {
     droppedBricksValues: rh`udf.ifThenElse ${collideWithGroundOrBrick} (udf.prepend ${collisions} state.droppedBricksValues) state.droppedBricksValues`
   } 
 
-  let next = api.compile(nextState)
+  let next = compileCrossCheck(nextState)
 
   while (state.bricks.length > 0) {
     state = next({input, udf, state})
@@ -2994,7 +2995,7 @@ test("day22-part1", () => {
   let nonDisintegrableBricks = [rh`state.droppedBricksValues.*.0  | ${filterBy("*f", onlyOneSupportingBrick)}`]
   let query = rh`bricks.length - (udf.toSet ${nonDisintegrableBricks}).size`
 
-  let func = api.compile(query)
+  let func = compileCrossCheck(query)
   let res = func({input, udf, state, bricks})
 
   expect(res).toBe(5)
@@ -3101,7 +3102,7 @@ test("day23-part1", () => {
         forceMap(tuples[3]),
     );
 
-    let parse = api.compile({
+    let parse = compileCrossCheck({
         steps: rh`udf.sort ${steps}`,
         force: rh`udf.sort ${force}`,
         keys: api.array(rh`udf.andThen ${grid}.*y.*x ((udf.asString *y) :: "," :: (udf.asString *x))`),
@@ -3128,7 +3129,7 @@ test("day23-part1", () => {
         )
     };
 
-    let func = api.compile(distsCalc);
+    let func = compileCrossCheck(distsCalc);
 
     let distsObj = {"1,0": [0]};
     let lastRes = {};
@@ -3215,7 +3216,7 @@ test("day24-part1", () => {
   // count the number of intersections
   let query = rh`${will_intersect_all} | sum .*`
 
-  let func = api.compile(query)
+  let func = compileCrossCheck(query)
   let res = func({input, udf})
 
   expect(res).toBe(2)

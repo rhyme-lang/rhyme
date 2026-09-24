@@ -1,7 +1,6 @@
 const { rh } = require('./parser');
 const { api } = require('./rhyme');
 const { types, typing } = require('./typing');
-const simpleEval = require('./simple-eval');
 const { backends } = require('./shared');
 const parser = require('./parser');
 const readline = require('node:readline');
@@ -73,10 +72,10 @@ let generateSchema = (q) => {
                     let query = parser.parse(query_str);
                     let func;
                     if (backend != "js") {
-                        func = simpleEval.compile(query, {backend: backend, schema: generateSchema({data: queryData})});
+                        func = api.compile(query, {backend: backend, schema: generateSchema({data: queryData})});
                         console.log(await func({data: queryData}));
                     } else {
-                        func = api.compileC2(query);
+                        func = api.compile(query);
                         console.log(func({data: queryData}));
                     }
                 } catch(e) {

@@ -4,6 +4,7 @@ const { typing, types } = require('../../src/typing')
 
 const fs = require('fs/promises')
 const { execFileSync } = require('child_process')
+const { prepareRuntime } = require('../../src/cgen/codegen')
 
 let hasCuda = false
 try {
@@ -18,6 +19,9 @@ beforeAll(async () => {
   await fs.rm(outDir, { recursive: true, force: true })
   await fs.mkdir(outDir, { recursive: true })
 })
+
+// build the C runtime up front, so the first query does not pay for it
+beforeAll(prepareRuntime, 60000)
 
 let key = typing.createKey(types.u32)
 

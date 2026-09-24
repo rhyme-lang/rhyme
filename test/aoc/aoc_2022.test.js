@@ -10,6 +10,7 @@
  */
 
 const { api, rh, pipe } = require('../../src/rhyme')
+const { compileCrossCheck } = require('../utils')
 
 
 // 2022
@@ -44,7 +45,7 @@ test("day1-A", () => {
           "*chunk")),
         "*line")))
   },"*"))
-  let func = api.compile(query)
+  let func = compileCrossCheck(query)
   let res = func({input, udf})
   expect(res).toBe(24000)
 })
@@ -82,7 +83,7 @@ test("day1-B", () => {
     .sum()
     .group("*chunk").get("*")
     .max()
-  let func = api.compile(query)
+  let func = compileCrossCheck(query)
   let res = func({input, udf})
   expect(res).toBe(24000)
 })
@@ -115,7 +116,7 @@ test("day1-C", () => {
   let query = rh`.input | udf.splitNN | .*chunk
                         | udf.splitN  | .*line | udf.toNum
                         | sum | group *chunk | .* | max`
-  let func = api.compile(query)
+  let func = compileCrossCheck(query)
   let res = func({input, udf})
   expect(res).toBe(24000)
 })

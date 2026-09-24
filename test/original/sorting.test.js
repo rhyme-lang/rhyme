@@ -1,4 +1,5 @@
 const { api, rh } = require('../../src/rhyme')
+const { compileCrossCheck } = require('../utils')
 
 // some sample data for testing
 let data = [
@@ -42,7 +43,7 @@ test("plainSortTest1", () => {
     let permutation = api.apply("udf.order", ["countryData.*.population"])
     let query = [rh`countryData.(${permutation}.*S).city`]
 
-    let res = api.compile(query)({ countryData, udf })
+    let res = compileCrossCheck(query)({ countryData, udf })
     let expected = ["Paris", "London", "Beijing", "Tokyo"]
     expect(res).toEqual(expected)
 })
@@ -51,7 +52,7 @@ test("plainSortTest1", () => {
 test("plainSortTest2", () => {
     let query = [rh`countryData.${sorted("countryData.*.population")}.city`]
 
-    let func = api.compile(query)
+    let func = compileCrossCheck(query)
     let res = func({ countryData, udf })
     let expected = ["Paris", "London", "Beijing", "Tokyo"]
     expect(res).toEqual(expected)
@@ -61,7 +62,7 @@ test("plainSortTest3", () => {
     let sp = sorted("countryData.*D.population")
     let query = api.group(rh`countryData.${sp}.population`, rh`countryData.${sp}.city`)
 
-    let func = api.compile(query)
+    let func = compileCrossCheck(query)
     let res = func({ countryData, udf })
     let expected = [["Paris",10], ["London",10], ["Beijing",20], ["Tokyo",30]]
     expect(Object.entries(res)).toEqual(expected) // order matters!

@@ -1,4 +1,5 @@
 const { api, rh } = require('../../src/rhyme')
+const { compileCrossCheck } = require('../utils')
 
 
 test("statelessGrouping", () => {
@@ -8,8 +9,8 @@ test("statelessGrouping", () => {
     let q1 = { "*A": "data.*A" }
     let q2 = api.get({ "foo": { "*A": "data.*A" }}, "foo")
 
-    let f1 = api.compile(q1)
-    let f2 = api.compile(q2)
+    let f1 = compileCrossCheck(q1)
+    let f2 = compileCrossCheck(q2)
     let res1 = f1({data})
     let res2 = f2({data})
 
@@ -26,8 +27,8 @@ test("statelessRepeatedGrouping1", () => {
     let q1 = { "*A": { "*A": "data.*A" }}
     let q2 = api.get({ "foo": { "*A": { "*A": "data.*A" }}}, "foo")
 
-    let f1 = api.compile(q1)
-    let f2 = api.compile(q2)
+    let f1 = compileCrossCheck(q1)
+    let f2 = compileCrossCheck(q2)
     let res1 = f1({data})
     let res2 = f2({data})
 
@@ -51,8 +52,8 @@ test("statelessRepeatedGrouping2", () => {
     let q1 = { "data.*.key": { "data.*.key": "data.*.value" }}
     let q2 = api.get({ "foo": { "data.*.key": { "data.*.key": "data.*.value" }}}, "foo")
 
-    let f1 = api.compile(q1)
-    let f2 = api.compile(q2)
+    let f1 = compileCrossCheck(q1)
+    let f2 = compileCrossCheck(q2)
     let res1 = f1({data})
     let res2 = f2({data})
 
@@ -76,8 +77,8 @@ test("statelessRepeatedGrouping3", () => {
     let q1 = { "data.*.key": { "data.*.key": 7 }}
     let q2 = api.get({ "foo": { "data.*.key": { "data.*.key": 7 }}}, "foo")
 
-    let f1 = api.compile(q1)
-    let f2 = api.compile(q2)
+    let f1 = compileCrossCheck(q1)
+    let f2 = compileCrossCheck(q2)
 
     let res1 = f1({data})
     let res2 = f2({data})
@@ -141,9 +142,9 @@ test("arrayWithinGrouping", () => {
         Asia: [{ Beijing: 20}, {Tokyo: 21}, {Seoul: 22}]
     }
 
-    let f0 = api.compile(q0)
-    let f1 = api.compile(q1)
-    let f2 = api.compile(q2)
+    let f0 = compileCrossCheck(q0)
+    let f1 = compileCrossCheck(q1)
+    let f2 = compileCrossCheck(q2)
 
     let r0 = f0({ data })
     let r1 = f1({ data })
@@ -190,8 +191,8 @@ test("subQueryGrouping", () => {
 
   let q1 = {"*q": api.get(q0, "*q")}
 
-  let f0 = api.compile(q0)
-  let f1 = api.compile(q1)
+  let f0 = compileCrossCheck(q0)
+  let f1 = compileCrossCheck(q1)
 
   let r0 = f0({data})
   let r1 = f1({data})

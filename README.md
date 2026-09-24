@@ -149,20 +149,20 @@ code that is compiled and run against the input data.
 and an unknown name is rejected rather than silently treated as `js`:
 - `src/simple-codegen.js`, `src/simple-loopgen.js`: generate JavaScript (the default).
   The generated code is evaluated with `src/simple-runtime.js` in scope, which
-  implements the built-in operations at runtime. `simple-codegen.js` also holds the
-  legacy `cpp` backend, which emits C++ against the vendored nlohmann/json.
+  implements the built-in operations at runtime.
 - `src/new-codegen.js`: a loop-scheduling code generator that emits each assignment
-  exactly once and fuses loops where possible. Used both for the JavaScript backend
+  exactly once. Used both for the JavaScript backend
   (`newCodegen: true`) and by the C backend.
-- `src/cgen/`: the C and CUDA backend. Emits a C file, compiles it with `gcc`/`nvcc`
+- `src/cgen/`: the C backend. Emits a C file
   against the runtime header in `runtime/`, and runs the resulting binary. This is the
   backend described in the VLDB paper linked below.
 - `src/c1-ir.js`, `src/c1-codegen.js`: the original ("c1") pipeline. It is superseded
-  by `simple-eval.js`, and is kept because `api.compile` still cross-checks against it.
+  by `simple-eval.js`, and is kept as a reference that the tests cross-check against
+  (and as `api.compileC1`/`api.compileC1Opt`).
 
 **Entry points:**
 - `src/rhyme.js`: the main APIs exposed to the user — the syntax API (`api.sum`,
-  `api.get`, ...), the compilation API (`api.compile`, `api.compileC2`, ...), and
+  `api.get`, ...), the compilation API (`api.compile`, `api.compileC1`, `api.compileC1Opt`), and
   `api.display`.
 - `src/cli.js`: the `rhyme` command-line tool.
 - `src/shell.js`: an interactive REPL (`npm run shell`) that keeps data across queries.
@@ -183,7 +183,9 @@ and an unknown name is rejected rather than silently treated as `js`:
 
 The tests are grouped as follows:
 - `test/original/`, `test/semantics/`: language and compiler semantics — the former
-  goes through `api.compile`, the latter calls `simple-eval` directly.
+  goes through `compileCrossCheck` in `test/utils.js`, which runs every
+  query through all four JavaScript pipelines and checks they agree; the latter
+  calls `simple-eval` directly.
 - `test/typing/`: the type system.
 - `test/cgen/`: the C backend. These compile generated C with `gcc` and run it, so
   they need a working C toolchain.

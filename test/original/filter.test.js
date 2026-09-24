@@ -1,4 +1,5 @@
 const { api, rh } = require('../../src/rhyme')
+const { compileCrossCheck } = require('../utils')
 
 // some sample data for testing
 let data = [
@@ -26,7 +27,7 @@ test("simpleFilterTest", () => {
     // sum data.*.value where data.*.key == "A"
     let query = rh`sum data.*.value | group data.*.key | .A`
     let expected = 40 // note: no predicate pushdown, we materialize the entire "group by" first
-    let res = api.compile(query)({ data })
+    let res = compileCrossCheck(query)({ data })
     expect(res).toEqual(expected)
 })
 
@@ -35,7 +36,7 @@ test("simpleFilterTest2", () => {
     let udf = { ne: (a,b) => a != b }
     let query = rh`sum data.*.value | group (udf.ne data.*.key "B") | .true`
     let expected = 40 // note: no predicate pushdown, we materialize the entire "group by" first
-    let res = api.compile(query)({ data, udf })
+    let res = compileCrossCheck(query)({ data, udf })
     expect(res).toEqual(expected)
 })
 
@@ -75,8 +76,8 @@ test("correlatedNestedFilter", () => {
     // This still requires two full table scans. Fully incremental versions
     // would be possible using RPAI indexes (SIGMOD'22).
 
-    let func = api.compile(query)
-    // console.dir(func.explain.code)
+    let func = compileCrossCheck(query)
+    // console.dir(func.explain1.code)
     let res = func({data, udf})
     expect(res).toEqual(40)
 })
@@ -124,13 +125,13 @@ test("generatorAsFilter", () => {
     // The key is passed through, but all the values are filtered out.
 
     let expected = { "A": 40 }
-    let func = api.compile(query)
+    let func = compileCrossCheck(query)
 
-    // console.log(func.explain.pseudo)
-    // console.log(func.explain.code)
+    // console.log(func.explain1.pseudo)
+    // console.log(func.explain1.code)
 
 
-    // console.dir(func.explain.code)
+    // console.dir(func.explain1.code)
     let res = func({ data, udf })
     expect(res).toEqual(expected)
 })
@@ -154,10 +155,10 @@ test("generatorAsFilter2", () => {
     }
 
     let expected = { "A": 40, "B": 0 }
-    let func = api.compile(query)//.c2 // C2 only!
+    let func = compileCrossCheck(query)//.c2 // C2 only!
 
-    // console.log(func.explain.pseudo)
-    // console.log(func.explain.code)
+    // console.log(func.explain1.pseudo)
+    // console.log(func.explain1.code)
 
     let res = func({ data, udf })
     expect(res).toEqual(expected)
@@ -175,7 +176,7 @@ test("generatorAsFilter3", () => {
     }
 
     let expected = { "A": 40, "B": 0 }
-    let func = api.compile(query).c2 // C2 only! relies on undef
+    let func = compileCrossCheck(query).c2 // C2 only! relies on undef
 
     // console.log(func.explain.pseudo)
     // console.log(func.explain.code)

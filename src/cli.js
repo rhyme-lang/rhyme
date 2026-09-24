@@ -45,7 +45,7 @@ const readline = require('node:readline');
 
         // compile and run
         let query = parser.parse(query_str);
-        let func = api.compileC2(query);
+        let func = api.compile(query);
         let input = {
             argv: process.argv.slice(3),
             argv0: file,

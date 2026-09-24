@@ -2,6 +2,7 @@ const { rh, api } = require('../../src/rhyme')
 const { compile } = require('../../src/simple-eval')
 const { typing, types } = require('../../src/typing')
 const fs = require("fs")
+const { prepareRuntime } = require('../../src/cgen/codegen')
 
 let outDir = "out/json-bench"
 
@@ -23,6 +24,9 @@ beforeAll(async () => {
   await fs.promises.rm(outDir, { recursive: true, force: true })
   await fs.promises.mkdir(outDir, { recursive: true })
 })
+
+// build the C runtime up front, so the first query does not pay for it
+beforeAll(prepareRuntime, 60000)
 
 let u32Key = typing.createKey(types.u32)
 

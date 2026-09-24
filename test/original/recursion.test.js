@@ -1,4 +1,5 @@
 const { api, rh } = require('../../src/rhyme')
+const { compileCrossCheck } = require('../utils')
 
 // some sample data for testing
 let data = [
@@ -14,7 +15,7 @@ test("fact1", () => {
     let arg = n => ({ data: { n }, udf: ".udf"})
     let query = rh`data.n * (udf.func ${arg("data.n - 1")})`
 
-    let func = api.compile(query)
+    let func = compileCrossCheck(query)
     let f2 = x => x.data.n ? func(x) : 1 // external stopping condition
 
     let input = {
@@ -43,7 +44,7 @@ test("fact2", () => {
         ne: (a,b) => a != b,
     }
 
-    let func = api.compile(query)
+    let func = compileCrossCheck(query)
     let f2 = x => x && func(x)
 
     let input = {

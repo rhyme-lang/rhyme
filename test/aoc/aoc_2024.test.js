@@ -13,6 +13,7 @@
 
 const { api, rh } = require('../../src/rhyme')
 const { typing } = require('../../src/typing')
+const { compileC2CrossCheck, compileCrossCheck } = require('../utils')
 
 let udf_stdlib = {
   split: d => s => s.split(d),
@@ -83,7 +84,7 @@ test("day1-part1", () => {
   let right = rh`${pairs}.1 | udf.toNum | array | udf.sort`
   let query   = rh`${left}.*i - ${right}.*i | udf.abs | sum`
 
-  let func = api.compile(query, typing.parseType`{input: string, udf: ${udf_std_typ} & {sort: (any) => {*u16: i16}}}`)
+  let func = compileCrossCheck(query, { schema: typing.parseType`{input: string, udf: ${udf_std_typ} & {sort: (any) => {*u16: i16}}}` })
   let res = func({input, udf})
   expect(res).toBe(11)
 })
@@ -109,7 +110,7 @@ test("day1-part2", () => {
 
   let query   = rh`${left} * ${histogram}.${left} | sum`
 
-  let func = api.compileC2(query, typing.parseType`{input: string, udf: ${udf_std_typ}}`)
+  let func = compileC2CrossCheck(query, { schema: typing.parseType`{input: string, udf: ${udf_std_typ}}` })
   let res = func({input, udf})
   expect(res).toBe(31)
 })
@@ -141,7 +142,7 @@ test("day2-part1", () => {
 
   let query   = rh`count (*line & ${safe})`
 
-  let func = api.compileC2(query)
+  let func = compileC2CrossCheck(query)
   let res = func({input, udf})
   expect(res).toBe(2)
 })
@@ -173,7 +174,7 @@ test("day2-part2", () => {
   let safe = rh`${monotonic(1)} || ${monotonic(-1)} | group *report`
   let query = rh`count (*line & count?(${safe}.*A))`
 
-  let func = api.compileC2(query)
+  let func = compileC2CrossCheck(query)
   let res = func({input, udf})
   expect(res).toBe(4)
 })
@@ -193,7 +194,7 @@ test("day3-part1", () => {
   let mul = rh`${first} * ${second}`
   let query   = rh`sum ${mul}`
 
-  let func = api.compileC2(query)
+  let func = compileC2CrossCheck(query)
   let res = func({input, udf})
   expect(res).toBe(161)
 })
@@ -216,7 +217,7 @@ test("day3-part2", () => {
   let match = rh`.input | udf.matchAll "(mul\\\\((\\\\d{1,3}),(\\\\d{1,3})\\\\)|do\\\\(\\\\)|don't\\\\(\\\\))" "g"`
   let query   = rh`udf.reduce ${match}`
 
-  let func = api.compileC2(query)
+  let func = compileC2CrossCheck(query)
   let res = func({input, udf})
   expect(res).toBe(48)
 })
@@ -250,7 +251,7 @@ MXMXAXMASX`
   let isXMAS = rh`${substring} == "XMAS"`
   let query = rh`${substring} | ${filterBy("*f0", isXMAS)} | count`
   
-  let func = api.compileC2(query)
+  let func = compileC2CrossCheck(query)
   let res = func({input, udf})
   expect(res).toBe(18)
 })
@@ -285,7 +286,7 @@ MXMXAXMASX`
   let isXMAS = rh`${isMAS1} & ${isMAS2}`
   let query = rh`${substring1} | ${filterBy("*f0", isXMAS)} | count`
   
-  let func = api.compileC2(query)
+  let func = compileC2CrossCheck(query)
   let res = func({input, udf})
   expect(res).toBe(9)
 })
@@ -344,7 +345,7 @@ test("day5-part1", () => {
   let mid = rh`udf.arrMid ${update}`
   let query = rh`sum(*line & (${mid} | ${filterBy("*f0", isValid)}))`
 
-  let func = api.compileC2(query)
+  let func = compileC2CrossCheck(query)
   let res = func({input, udf})
   expect(res).toBe(143)
 })
@@ -408,7 +409,7 @@ test("day5-part2", () => {
   let sortedUpdate = rh`udf.customSort ${rule} ${invalidUpdate}`
   let query = rh`sum(*line & (udf.arrMid ${sortedUpdate}))`
 
-  let func = api.compileC2(query)
+  let func = compileC2CrossCheck(query)
   let res = func({input, udf})
   expect(res).toBe(123)
 })
@@ -443,7 +444,7 @@ test("day6-part1", () => {
     grid: grid,
     isBound: false
   }
-  let getInitialState = api.compileC2(initialState)
+  let getInitialState = compileC2CrossCheck(initialState)
   let state = getInitialState({input, udf})
 
   let moveCoord = rh`[state.curr.0 + ${delta}.(state.curr.2).0, state.curr.1 + ${delta}.(state.curr.2).1, ${delta}.(state.curr.2).2]`
@@ -458,12 +459,12 @@ test("day6-part1", () => {
     grid: rh`(update_inplace state.grid.(${nextCoord}.0) (${nextCoord}.1) "^") & state.grid`,
     isBound: isBound
   }
-  let func = api.compileC2(query)
+  let func = compileC2CrossCheck(query)
   while(!state.isBound)
     state = func({input, udf, state})
 
   let count = rh`state.grid.*x.*y | ${filterBy("*f1", `state.grid.*x.*y == "^"`)} | count`
-  let func2 = api.compileC2(count)
+  let func2 = compileC2CrossCheck(count)
   let res = func2({state, udf})
   expect(res).toBe(41)
 })
@@ -494,7 +495,7 @@ test("day6-part2", () => {
   let startPos = rh`[(udf.toNum *i), (udf.toNum *j), 0] | ${filterBy("*f0", isStart)} | single`
   let isEmpty = rh`${grid}.*i.*j == "."`
   let emptyPos = rh`[(udf.toNum *i), (udf.toNum *j)] | ${filterBy("*", isEmpty)} | array`
-  let getEmptyPos = api.compileC2(emptyPos)
+  let getEmptyPos = compileC2CrossCheck(emptyPos)
   let emptyPoses = getEmptyPos({input, udf})
   let initialState = {
     curr: startPos,
@@ -503,7 +504,7 @@ test("day6-part2", () => {
     isLoop: false,
     steps: 0
   }
-  let getInitialState = api.compileC2(initialState)
+  let getInitialState = compileC2CrossCheck(initialState)
 
   let res = 0
   let moveCoord = rh`[state.curr.0 + ${delta}.(state.curr.2).0, state.curr.1 + ${delta}.(state.curr.2).1, ${delta}.(state.curr.2).2]`
@@ -521,7 +522,7 @@ test("day6-part2", () => {
     isLoop: isLoop,
     steps: rh`state.steps + 1`
   }
-  let func = api.compileC2(query)
+  let func = compileC2CrossCheck(query)
 
   emptyPoses.forEach((coord, _) => {
     let state = getInitialState({input, udf})
@@ -560,14 +561,14 @@ test("day7-part1", () => {
     nums: nums,
     goal: goal
   }
-  let getInputs = api.compileC2(inputs)
+  let getInputs = compileC2CrossCheck(inputs)
   let inputState = getInputs({input, udf})
 
   let initialState = {
     curr: rh`.elems | udf.slice 1`,
     evaluates: rh`[.elems[0]]`,
   }
-  let getInitialState = api.compileC2(initialState)
+  let getInitialState = compileC2CrossCheck(initialState)
 
   let plus = rh`state.evaluates.*e + state.curr.0`
   let mult = rh`state.evaluates.*e * state.curr.0`
@@ -575,12 +576,12 @@ test("day7-part1", () => {
     curr: rh`state.curr | udf.slice 1`,
     evaluates: rh`[${plus}, ${mult}]`,
   }
-  let func = api.compileC2(query)
+  let func = compileC2CrossCheck(query)
 
   let isGoal = rh`state.evaluates.*e == ${inputState}.goal[.index]`
   let searchGoal = rh`state.evaluates.*e | ${filterBy("*f1", isGoal)} | single`
   let goalOrZero = rh`${searchGoal} || 0`
-  let getRowRes = api.compileC2(goalOrZero)
+  let getRowRes = compileC2CrossCheck(goalOrZero)
 
   let res = 0
   Object.values(inputState.nums).forEach((elems, index) => {
@@ -620,14 +621,14 @@ test("day7-part2", () => {
     nums: nums,
     goal: goal
   }
-  let getInputs = api.compileC2(inputs)
+  let getInputs = compileC2CrossCheck(inputs)
   let inputState = getInputs({input, udf})
 
   let initialState = {
     curr: rh`.elems | udf.slice 1`,
     evaluates: rh`[.elems[0]]`,
   }
-  let getInitialState = api.compileC2(initialState)
+  let getInitialState = compileC2CrossCheck(initialState)
 
   let plus = rh`state.evaluates.*e + state.curr.0`
   let mult = rh`state.evaluates.*e * state.curr.0`
@@ -636,12 +637,12 @@ test("day7-part2", () => {
     curr: rh`state.curr | udf.slice 1`,
     evaluates: rh`[${plus}, ${mult}, ${concate}]`,
   }
-  let func = api.compileC2(query)
+  let func = compileC2CrossCheck(query)
 
   let isGoal = rh`state.evaluates.*e == ${inputState}.goal[.index]`
   let searchGoal = rh`state.evaluates.*e | ${filterBy("*f1", isGoal)} | single`
   let goalOrZero = rh`${searchGoal} || 0`
-  let getRowRes = api.compileC2(goalOrZero)
+  let getRowRes = compileC2CrossCheck(goalOrZero)
 
   let res = 0
   Object.values(inputState.nums).forEach((elems, index) => {
@@ -695,7 +696,7 @@ test("day8-part1", () => {
   let antinode = rh`${grid}.*i1.*j1 & ([(udf.toNum *i1), (udf.toNum *j1)] | ${filterBy("*", isAntinode)})`
   let query = rh`${antinode} | count`
 
-  let func = api.compileC2(query)
+  let func = compileC2CrossCheck(query)
   let res = func({input, udf})
   expect(res).toBe(14)
 })
@@ -736,7 +737,7 @@ test("day8-part2", () => {
   let antinode = rh`${grid}.*i1.*j1 & ([(udf.toNum *i1), (udf.toNum *j1)] | ${filterBy("*", isAntinode)})`
   let query = rh`${antinode} | count`
   
-  let func = api.compileC2(query)
+  let func = compileC2CrossCheck(query)
   let res = func({input, udf})
   expect(res).toBe(34)
 })
@@ -761,7 +762,7 @@ test("day9-part1", () => {
     digit: rh`ifElse state.file (state.digit + 1) state.digit`,
     index: rh`state.index + 1`,
   }
-  let func = api.compileC2(createDisk)
+  let func = compileC2CrossCheck(createDisk)
   while (state.index < input.length)
     state = func({input, udf, state})
 
@@ -777,7 +778,7 @@ test("day9-part1", () => {
     sum: rh`ifElse (res.disk.(res.index) == ".") res.sum (res.sum + res.disk.(res.index) * res.index)`,
     last: rh`ifElse (res.disk.(res.index) == ".") (res.last - 1) res.last`,
   }
-  let compactRec = api.compileC2(compact)
+  let compactRec = compileC2CrossCheck(compact)
 
   while (res.index <= res.last)
     res = compactRec({udf, res})
@@ -793,7 +794,7 @@ test("day9-part2", () => {
   }
 
   let rh_length = rh`.input | udf.split "" | .*col | count`
-  let func_length = api.compileC2(rh_length)
+  let func_length = compileC2CrossCheck(rh_length)
   let length = func_length({input, udf})
 
   let state = {
@@ -809,7 +810,7 @@ test("day9-part2", () => {
     digit: rh`ifElse state.file (state.digit + 1) state.digit`,
     index: rh`state.index + 1`,
   }
-  let func = api.compileC2(createDisk)
+  let func = compileC2CrossCheck(createDisk)
   while (state.index < length)
     state = func({input, udf, state})
 
@@ -825,7 +826,7 @@ test("day9-part2", () => {
     index: rh`ifElse (state2.disk.(state2.index).index == 0 - 1 || (state2.disk.(state2.leftindex).index == 0 - 1 & state2.disk.(state2.leftindex).size >= state2.disk.(state2.index).size) || (state2.index == state2.leftindex)) 
       (state2.index - 1) state2.index`,
   }
-  let compact_func = api.compileC2(compact)
+  let compact_func = compileC2CrossCheck(compact)
   while (state2.index > 1)
     state2 = compact_func({udf, state2})
 
@@ -839,7 +840,7 @@ test("day9-part2", () => {
     sumindex: rh`state3.sumindex + state2.disk.(state3.index).size`,
     sum: rh`ifElse (state2.disk.(state3.index).index == 0 - 1) state3.sum (state3.sum + state2.disk.(state3.index).index * state2.disk.(state3.index).size * (state3.sumindex * 2 + state2.disk.(state3.index).size - 1) / 2)`,
   }
-  let checksum_func = api.compileC2(checksum)
+  let checksum_func = compileC2CrossCheck(checksum)
   while (state3.index < state2.disk.length)
     state3 = checksum_func({udf, state3, state2})
   expect(state3.sum).toBe(2858)
@@ -876,7 +877,7 @@ test("day10-part1", () => {
     rowlen: rh`(${lines} | count | udf.toNum) - 1`,
     collen: rh`(${lines}.*0 | count | group *line | .0 | udf.toNum) - 1`,
   }
-  let func = api.compileC2(rh_initialState)
+  let func = compileC2CrossCheck(rh_initialState)
   let initialState = func({input, udf})
 
   let state = {
@@ -889,12 +890,12 @@ test("day10-part1", () => {
     positions: rh`${newPos}.*p | ${filterBy("*f0", isValid)} | array | udf.toSet`,
     index: rh`state.index + 1`,
   }
-  let func2 = api.compileC2(computeGraph)
+  let func2 = compileC2CrossCheck(computeGraph)
   while (state.index < 9)
     state = func2({udf, state, delta, initialState})
 
   let query = rh`state.positions.*p.x | count`
-  let func3 = api.compileC2(query)
+  let func3 = compileC2CrossCheck(query)
   let res = func3({udf, state})
   expect(res).toBe(36)
 })
@@ -927,7 +928,7 @@ test("day10-part2", () => {
     rowlen: rh`(${lines} | count | udf.toNum) - 1`,
     collen: rh`(${lines}.*0 | count | group *line | .0 | udf.toNum) - 1`,
   }
-  let func = api.compileC2(rh_initialState)
+  let func = compileC2CrossCheck(rh_initialState)
   let initialState = func({input, udf})
 
   let state = {
@@ -940,12 +941,12 @@ test("day10-part2", () => {
     positions: rh`${newPos}.*p | ${filterBy("*f0", isValid)} | array`,
     index: rh`state.index + 1`,
   }
-  let func2 = api.compileC2(computeGraph)
+  let func2 = compileC2CrossCheck(computeGraph)
   while (state.index < 9)
     state = func2({udf, state, delta, initialState})
 
   let query = rh`state.positions.*p.x | count`
-  let func3 = api.compileC2(query)
+  let func3 = compileC2CrossCheck(query)
   let res = func3({udf, state})
   expect(res).toBe(81)
 })
@@ -971,7 +972,7 @@ test("day11-part1", () => {
   let nums = rh`.input | udf.split " " | .*num | udf.toNum | array`
   let frequency = rh`{val0: ${nums}.*x, count0: 1} | array`
   let compact = rh`{val: ${frequency}.*k.val0, count: sum ${frequency}.*k.count0} | group ${frequency}.*k.val0 | .* | array`
-  let func = api.compileC2(compact)
+  let func = compileC2CrossCheck(compact)
   let state = func({input, udf})
 
   let newSeqNotEven = rh`(ifElse state.*c.val == 0 {val1: 1, count1: state.*c.count} (ifElse (udf.isEvenDigit state.*c.val) {val1: 0, count1: 0} {val1: 2024 * state.*c.val, count1: state.*c.count}))`
@@ -979,13 +980,13 @@ test("day11-part1", () => {
   let newSeq = rh`[${newSeqNotEven}, ${newSeqEven}]`
   let compact2 = rh`{val: ${newSeq}.*kk.val1, count: sum ${newSeq}.*kk.count1} | group ${newSeq}.*kk.val1 | .* | array`
 
-  let func1 = api.compileC2(compact2)
+  let func1 = compileC2CrossCheck(compact2)
   for (let i = 0; i < 25; i++) {
     state = func1({udf, state})
   }
 
   let query = rh`state.*c.count | sum`
-  let func2 = api.compileC2(query)
+  let func2 = compileC2CrossCheck(query)
   let res = func2({state, udf})
   expect(res).toBe(55312)
 })
@@ -1008,7 +1009,7 @@ test("day11-part2", () => {
   let nums = rh`.input | udf.split " " | .*num | udf.toNum | array`
   let frequency = rh`{val0: ${nums}.*x, count0: 1} | array`
   let compact = rh`{val: ${frequency}.*k.val0, count: sum ${frequency}.*k.count0} | group ${frequency}.*k.val0 | .* | array`
-  let func = api.compileC2(compact)
+  let func = compileC2CrossCheck(compact)
   let state = func({input, udf})
 
   let newSeqNotEven = rh`(ifElse state.*c.val == 0 {val1: 1, count1: state.*c.count} (ifElse (udf.isEvenDigit state.*c.val) {val1: 0, count1: 0} {val1: 2024 * state.*c.val, count1: state.*c.count}))`
@@ -1016,13 +1017,13 @@ test("day11-part2", () => {
   let newSeq = rh`[${newSeqNotEven}, ${newSeqEven}]`
   let compact2 = rh`{val: ${newSeq}.*kk.val1, count: sum ${newSeq}.*kk.count1} | group ${newSeq}.*kk.val1 | .* | array`
 
-  let func1 = api.compileC2(compact2)
+  let func1 = compileC2CrossCheck(compact2)
   for (let i = 0; i < 75; i++) {
     state = func1({udf, state})
   }
 
   let query = rh`state.*c.count | sum`
-  let func2 = api.compileC2(query)
+  let func2 = compileC2CrossCheck(query)
   let res = func2({state, udf})
   expect(res).toBe(65601038650482)
 })
@@ -1058,7 +1059,7 @@ MMMISSJEEE`
     cell: rh`${grid}.*i.*j & {x: (udf.toNum *i), y: (udf.toNum *j)} | array`,
     grid: grid,
   }
-  let func = api.compileC2(parseInput)
+  let func = compileC2CrossCheck(parseInput)
   let initialState = func({input, udf})
 
   let state = {
@@ -1089,7 +1090,7 @@ MMMISSJEEE`
     price: rh`ifElse ${regionFilled} state.price + ${area} * ${perimeter} state.price`,
     symbol: rh`ifElse ${regionFilled} initialState.grid.(state.cell.0.x).(state.cell.0.y) state.symbol`,
   }
-  let func1 = api.compileC2(fill)
+  let func1 = compileC2CrossCheck(fill)
   while (state.region.length != 0)
     state = func1({state, udf, delta, initialState})  
   expect(state.price).toBe(1930)
@@ -1127,7 +1128,7 @@ MMMISSJEEE`
     cell: rh`${grid}.*i.*j & {x: (udf.toNum *i), y: (udf.toNum *j)} | array`,
     grid: grid,
   }
-  let func = api.compileC2(parseInput)
+  let func = compileC2CrossCheck(parseInput)
   let initialState = func({input, udf})
 
   let state = {
@@ -1169,7 +1170,7 @@ MMMISSJEEE`
     price: rh`ifElse ${regionFilled} state.price + ${area} * ${perimeter} state.price`,
     symbol: rh`ifElse ${regionFilled} initialState.grid.(state.cell.0.x).(state.cell.0.y) state.symbol`,
   }
-  let func1 = api.compileC2(fill, null)
+  let func1 = compileC2CrossCheck(fill, { schema: null })
   while (state.region.length != 0)
     state = func1({state, udf, delta, delta2, initialState})  
   expect(state.price).toBe(1206)
@@ -1206,7 +1207,7 @@ Prize: X=18641, Y=10279`
   let number = rh`${word} | udf.slice 2 | group *word | group *line | group *machine`
   let createobject = rh`{ax: (udf.splice ${number}.*num.0.2 | udf.toNum), ay: (${number}.*num.0.3 | udf.toNum), bx: (udf.splice ${number}.*num.1.2 | udf.toNum), by: (${number}.*num.1.3 | udf.toNum), px: (udf.splice ${number}.*num.2.1 | udf.toNum), py: (${number}.*num.2.2 | udf.toNum)} | array`
 
-  let func = api.compileC2(createobject)
+  let func = compileC2CrossCheck(createobject)
   let machineData = func({input, udf})
 
   let state = {
@@ -1222,11 +1223,11 @@ Prize: X=18641, Y=10279`
     indexa: rh`ifElse state.indexb == 100 state.indexa + 1 state.indexa`,
     indexb: rh`ifElse state.indexb == 100 0 state.indexb + 1`,
   }
-  let func1 = api.compileC2(solve)
+  let func1 = compileC2CrossCheck(solve)
   while (!(state.indexa == 100 && state.indexb == 100))
     state = func1({state, udf, machineData})
   let sum = rh`state.token.*t | ${filterBy("*", rh`state.token.*t != 1000`)} | sum`
-  let func2 = api.compileC2(sum)
+  let func2 = compileC2CrossCheck(sum)
   let res = func2({state, udf})
   expect(res).toBe(480)
 })
@@ -1271,7 +1272,7 @@ Prize: X=18641, Y=10279`
   let isValid = rh`${bdenominator} != 0 & ${bnumerator} % ${bdenominator} == 0 & ${createobject}.*m.ax != 0 & ${anumerator} % ${createobject}.*m.ax == 0`
   let token = rh`ifElse ${isValid} (${a} * 3 + ${b}) 0`
   let query = rh`sum ${token}`
-  let func = api.compileC2(query, null)
+  let func = compileC2CrossCheck(query, { schema: null })
   let res = func({input, udf})
   expect(res).toBe(875318608908)
 })
@@ -1315,7 +1316,7 @@ p=9,5 v=-3,-3`
   let quadrant3 = rh`${location}.*l |  ${filterBy("*", inbound3)} | count`
   let query = rh`${quadrant0} * ${quadrant1} * ${quadrant2} * ${quadrant3}`
 
-  let func = api.compileC2(query)
+  let func = compileC2CrossCheck(query)
   let res = func({input, wide, tall, udf})
   expect(res).toBe(12)
 })
@@ -1352,7 +1353,7 @@ p=9,5 v=-3,-3`
   let line = rh`.input | udf.split "\\n" | .*line`
   let robot = rh`${line} | udf.split " " | .*robot`
   let pairs = rh`${robot} | udf.slice 2 | udf.split "," | .*nums | udf.toNum | group *nums | group *robot | group *line`
-  let func = api.compileC2(pairs)
+  let func = compileC2CrossCheck(pairs)
   let initialState = func({input, udf})
 
   let state = {
@@ -1372,7 +1373,7 @@ p=9,5 v=-3,-3`
     index: rh`state.index + 1`,
     isTree: rh`${countlineX} >= 2 & ${countlineY} >= 2`,
   }
-  let func1 = api.compileC2(iterate)
+  let func1 = compileC2CrossCheck(iterate)
   while (state.index <= wide * tall && state.isTree == undefined)
     state = func1({udf, state, initialState, wide, tall, wlength, tlength})
   expect(state.index - 1).toBe(6)
@@ -1412,7 +1413,7 @@ test("day15-part1", () => {
     collen: rh`(${lines}.*0 | count | group *line | .0 | udf.toNum)`,
     moves: rh`${splitInput}.1 | udf.split "\\n" | .*mline | udf.split "" | .*col | array`
   }
-  let getInputPos = api.compileC2(initialState)
+  let getInputPos = compileC2CrossCheck(initialState)
   let inputPoses = getInputPos({input, udf})
   let state = {
     curr: inputPoses.startPos,
@@ -1444,12 +1445,12 @@ test("day15-part1", () => {
     boxesPos: rh`ifElse (${inBound} & ${notBox} & ${notWall}) state.boxesPos (ifElse (${consecutive} > 0 & ${endPosIsnotWall} & ${endPosInBound}) [${newBoxesPos},${endPos}] state.boxesPos)`,
     index: rh`state.index + 1`,
   }
-  let func = api.compileC2(step, null)
+  let func = compileC2CrossCheck(step, { schema: null })
   while (state.index < inputPoses.moves.length)
     state = func({udf, state, delta, inputPoses})
 
   let query = rh`state.boxesPos.*box.x * 100 + state.boxesPos.*box.y | sum`
-  let func2 = api.compileC2(query)
+  let func2 = compileC2CrossCheck(query)
   let res = func2({udf, state})
   expect(res).toBe(2028)
 })

@@ -1,4 +1,5 @@
 const { api, rh } = require('../../src/rhyme')
+const { compileCrossCheck } = require('../utils')
 
 // some sample data for testing
 let data = [
@@ -20,7 +21,7 @@ test("decorrelation1", () => {
         "A": { "my_total": 40, "full_total": 60 },
         "B": { "my_total": 20, "full_total": 60 }
     }
-    let func = api.compile(query)
+    let func = compileCrossCheck(query)
     let res = func({ data })
     expect(res).toEqual(expected)
 })
@@ -35,7 +36,7 @@ test("decorrelation2", () => {
         "A": 0.6666666666666666,
         "B": 0.3333333333333333
     }
-    let res = api.compile(query)({ data })
+    let res = compileCrossCheck(query)({ data })
     expect(res).toEqual(expected)
 })
 
@@ -54,7 +55,7 @@ test("nestedIterators1", () => {
         "A": { "my_total": 40, "A": 40, "B": 20 },
         "B": { "my_total": 20, "A": 40, "B": 20 }
     }
-    let exec = api.compile(query)
+    let exec = compileCrossCheck(query)
     let res = exec({ data })
     expect(res).toEqual(expected)
 })
@@ -76,7 +77,7 @@ test("nestedIterators1-explicitlyHoisted", () => {
         "A": { "my_total": 40, "A": 40, "B": 20 },
         "B": { "my_total": 20, "A": 40, "B": 20 }
     }
-    let exec = api.compile(query)
+    let exec = compileCrossCheck(query)
     // console.log(exec.explain2.pseudo)
     // console.log(exec.explain2.code)
     let res = exec({ data })
@@ -93,7 +94,7 @@ test("nestedIterators2", () => {
         "A": { "A": 1, "B": 2},
         "B": { "A": 0.5, "B": 1}
     }
-    let res = api.compile(query)({ data })
+    let res = compileCrossCheck(query)({ data })
     expect(res).toEqual(expected)
 })
 
@@ -110,7 +111,7 @@ test("nestedIterators2-explicitlyHoisted", () => {
         "A": { "A": 1, "B": 2 },
         "B": { "A": 0.5, "B": 1 }
     }
-    let res = api.compile(query)({ data })
+    let res = compileCrossCheck(query)({ data })
     expect(res).toEqual(expected)
 })
 
@@ -131,7 +132,7 @@ test("nestedIterators3", () => {
         "A": { "total": 40, "A": { "total": 40, "ratio": 1 }, "B": { "total": 20, "ratio": 2 } },
         "B": { "total": 20, "A": { "total": 40, "ratio": 0.5 }, "B": { "total": 20, "ratio": 1 } }
     }
-    let exec = api.compile(query)
+    let exec = compileCrossCheck(query)
     let res = exec({ data })
     expect(res).toEqual(expected)
 })
@@ -153,7 +154,7 @@ test("nestedIterators3-explicitlyHoisted", () => {
         "A": { "total": 40, "A": { "ratio": 1, "total": 40, }, "B": { "ratio": 2, "total": 20 } },
         "B": { "total": 20, "A": { "ratio": 0.5, "total": 40 }, "B": { "ratio": 1, "total": 20 } }
     }
-    let exec = api.compile(query)
+    let exec = compileCrossCheck(query)
     let res = exec({ data })
     expect(res).toEqual(expected)
 })

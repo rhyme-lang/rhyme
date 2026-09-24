@@ -1599,7 +1599,6 @@ let collectHashMap = (q) => {
     keyList.push(q1.arg[1])
     valList.push(q1.arg[2])
     if (typing.sameType(q1.arg[2].schema.type, e2.schema.type)) {
-      console.log("hererererere")
     }
     if (q1.arg[3]) {
       collectHashMapsInPath(q1.arg[3])

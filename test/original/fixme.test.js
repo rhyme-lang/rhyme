@@ -1,5 +1,6 @@
 const { api, rh } = require('../../src/rhyme')
 const { compile } = require('../../src/simple-eval')
+const { compileCrossCheck } = require('../utils')
 
 test("siblingFields", () => {
     let data = [{ key: "A", value: 10 }, { key: "B", value: 20}, { key: "C", value: 30 }]
@@ -13,11 +14,11 @@ test("siblingFields", () => {
         q2, q3
     }
 
-    let func = api.compile(query)
+    let func = compileCrossCheck(query)
     // c1 produces incorrect code
 
-    // console.dir(func.explain.code)
-    // console.dir(func.explain_opt.code)
+    // console.dir(func.explain1.code)
+    // console.dir(func.explain1_opt.code)
     // let res = func({data})
     // console.dir(res) 
 })
@@ -46,8 +47,8 @@ test("statelessRepeatedGrouping4", () => {
         key: "data.*A.key", // use "*" in sibling fields!
         data: { "data.*A.key": "data.*A.value" }}]
 
-    let f1 = api.compile(q1)
-    let f2 = api.compile(q2)
+    let f1 = compileCrossCheck(q1)
+    let f2 = compileCrossCheck(q2)
 
     let res1 = f1({data})
     let res2 = f2.c1({data})
@@ -95,7 +96,7 @@ test("asymmetricPartialSum", () => {
     let items = rh`(sum data.*A.value) + other.*A.value`
     let query = api.array(items)
 
-    let func = api.compile(query)
+    let func = compileCrossCheck(query)
     let res = func.c1({data, other})
     let res_new = func.c2({data, other})
 
@@ -137,7 +138,7 @@ test("undefinedVal", () => {
         "index.*": "data.(index.*)"
     }
 
-    let f = api.compile(q)
+    let f = compileCrossCheck(q)
     let res = f.c1({data, index})
     let res_new = f.c2({data, index})
 
@@ -159,7 +160,7 @@ test("undefinedKey", () => {
         "index.*.key": "count(index.*)"
     }
 
-    let f = api.compile(q)
+    let f = compileCrossCheck(q)
     let res = f.c1({data, index})
     let res_new = f.c2({data, index})
 
@@ -203,8 +204,8 @@ test("aggregateAsKey", () => {
 
 */
 
-    let f1 = api.compile(q1)
-    let f2 = api.compile(q2)
+    let f1 = compileCrossCheck(q1)
+    let f2 = compileCrossCheck(q2)
 
     let res1 = f1.c1({data})
     let res2 = f2.c1({data})
@@ -283,7 +284,7 @@ test("aggregateAsKey_encoded", () => {
 
 */
 
-    let f1 = api.compile(q1)
+    let f1 = compileCrossCheck(q1)
 
     let res1_new = f1.c2({data})
 

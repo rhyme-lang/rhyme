@@ -1,5 +1,6 @@
 const { api, rh } = require('../../src/rhyme')
 const { desugar } = require('../../src/desugar')
+const { compileCrossCheck } = require('../utils')
 
 
 test("pipeTest1", () => {
@@ -28,7 +29,7 @@ test("pipeTest1", () => {
   expect(q3d).toEqual(q3.rhyme_ast)
   expect(q4d).toEqual(q4.rhyme_ast)
 
-  let func = api.compile(q0)
+  let func = compileCrossCheck(q0)
   let res = func({input})
   expect(res).toBe(input.foo)
 })
@@ -56,7 +57,7 @@ test("pipeTest2", () => {
   expect(q2d).toEqual(q2.rhyme_ast)
   expect(q3d).toEqual(q3.rhyme_ast)
 
-  let func = api.compile(q0)
+  let func = compileCrossCheck(q0)
   let res = func({input})
   expect(res).toBe(7)
 })
@@ -98,7 +99,7 @@ test("pipeTest3", () => {
   expect(q6d).toEqual(q6.rhyme_ast)
   expect(q7d).toEqual(q7.rhyme_ast)
 
-  let func = api.compile(q0)
+  let func = compileCrossCheck(q0)
   let res = func({input})
   expect(res).toBe(7)
 })
@@ -142,7 +143,7 @@ test("letTest1", () => {
 
   expect(q1d).toEqual(q1.rhyme_ast)
 
-  let func = api.compile(q1)
+  let func = compileCrossCheck(q1)
   let res = func({})
   expect(res).toBe(7)
 })
@@ -160,7 +161,7 @@ test("letTest2", () => {
 
   expect(q1d).toEqual(q1.rhyme_ast)
 
-  let func = api.compile(q1)
+  let func = compileCrossCheck(q1)
   let res = func({input})
   expect(res).toBe(7)
 })
@@ -192,7 +193,7 @@ test("lambdaTest1", () => {
   expect(q3d).toEqual(q3.rhyme_ast)
   expect(q4d).toEqual(q4.rhyme_ast)
 
-  let func = api.compile(q1)
+  let func = compileCrossCheck(q1)
   let res = func({input})
   expect(res).toBe(7)
 })
@@ -210,7 +211,7 @@ test("lambdaTest2", () => {
 
   expect(q1d).toEqual(q1.rhyme_ast)
 
-  let func = api.compile(q1)
+  let func = compileCrossCheck(q1)
   let res = func({input})
   expect(res).toBe(7)
 })
@@ -231,8 +232,8 @@ test("arrayTest0", () => {
   let q1 = []
   let q2 = rh`[]`
   
-  let func1 = api.compile(q1)
-  let func2 = api.compile(q2)
+  let func1 = compileCrossCheck(q1)
+  let func2 = compileCrossCheck(q2)
   let res1 = func1({input})
   let res2 = func1({input})
   expect(res2).toEqual(res1)
@@ -245,8 +246,8 @@ test("arrayTest1", () => {
   let q1 = [1,2,3]
   let q2 = rh`[1, 2, 3]`
   
-  let func1 = api.compile(q1)
-  let func2 = api.compile(q2)
+  let func1 = compileCrossCheck(q1)
+  let func2 = compileCrossCheck(q2)
   let res1 = func1({input})
   let res2 = func1({input})
   expect(res2).toEqual(res1)
@@ -259,8 +260,8 @@ test("objectTest0", () => {
   let q1 = {}
   let q2 = rh`{}`
   
-  let func1 = api.compile(q1)
-  let func2 = api.compile(q2)
+  let func1 = compileCrossCheck(q1)
+  let func2 = compileCrossCheck(q2)
   let res1 = func1({input})
   let res2 = func1({input})
   expect(res2).toEqual(res1)
@@ -273,8 +274,8 @@ test("objectTest1", () => {
   let q1 = {a:1, b:2, c:3}
   let q2 = rh`{a:1, b:2, c:3}`
   
-  let func1 = api.compile(q1)
-  let func2 = api.compile(q2)
+  let func1 = compileCrossCheck(q1)
+  let func2 = compileCrossCheck(q2)
   let res1 = func1({input})
   let res2 = func1({input})
   expect(res2).toEqual(res1)
@@ -294,7 +295,7 @@ test("letTest3", () => {
 
   expect(q1d).toEqual(q1.rhyme_ast)
 
-  let func = api.compile(q0)
+  let func = compileCrossCheck(q0)
   let res = func({input})
   expect(res).toEqual({all: [1,2,3]})
 })
@@ -313,7 +314,7 @@ test("letTest4", () => {
 
   expect(q1d).toEqual(q1.rhyme_ast)
 
-  let func = api.compile(q0)
+  let func = compileCrossCheck(q0)
   let res = func({input})
   expect(res).toEqual({all: [1,2,3]})
 })

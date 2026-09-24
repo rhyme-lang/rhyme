@@ -6,6 +6,7 @@ const fs = require("fs").promises
 const path = require("path")
 const { execFile } = require("child_process")
 const paths = require("../../src/cgen/paths")
+const { prepareRuntime } = require('../../src/cgen/codegen')
 
 // argv array rather than a shell string, to match how the compiler is driven
 // in cgen/codegen.js -- both outDir and the runtime path may contain spaces
@@ -31,6 +32,9 @@ beforeAll(async () => {
   await fs.rm(outDir, { recursive: true, force: true })
   await fs.mkdir(outDir, { recursive: true })
 })
+
+// build the C runtime up front, so the first query does not pay for it
+beforeAll(prepareRuntime, 60000)
 
 // the runtime header ships inside the package, so locate it the same way the
 // compiler driver does rather than assuming the cwd is the repo root

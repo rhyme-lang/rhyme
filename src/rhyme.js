@@ -8,7 +8,6 @@ const ir = require('./c1-ir')
 const graphics = require('./graphics')
 
 const simpleEval = require('./simple-eval')
-const { types } = require('./typing')
 const { rh } = require('./parser')
 
 const { ops, ast } = require('./shared')
@@ -133,146 +132,19 @@ function logDebugOutput(info) {
 
 api.logDebugOutput = logDebugOutput
 
-api["query"] = api["compile"] = (query, schema = types.unknown) => {
-    query = ast.unwrap(query)
-    let rep = ir.createIR(query)
-    let c1 = codegen.generate(rep)
-    let c1_opt = new_codegen.generate(rep)
-    let c2 = simpleEval.compile(query, {schema: schema})
-    let c2_new = simpleEval.compile(query, {schema: schema, newCodegen: true })
-    let wrapper = (x) => {
-        let res1 = c1(x)
-        let res1_opt = c1_opt(x)
-        let res2 = c2(x)
-        let res2_new = c2_new(x)
+api["query"] = api["compile"] = api["compileC2"] = (query, opts = {}) =>
+  simpleEval.compile(ast.unwrap(query), opts)
 
-        let cmp = src => ({
-          toEqual: dst => {
-            let ssrc = JSON.stringify(src)
-            let sdst = JSON.stringify(dst)
-            console.assert(ssrc == sdst, "result mismatch")
-          }})
-        try { cmp = expect } catch (e) {} // use test runner if available
-
-        cmp(res1_opt).toEqual(res1)
-        cmp(res2).toEqual(res1)
-        cmp(res2_new).toEqual(res2)
-        return res2
-    }
-    logDebugOutput({
-      c1: c1.explain.codeString,
-      c1_opt: c1_opt.explain.codeString,
-      c2: c2.explain.code,
-      c2_new: c2_new.explain.codeString,
-    })
-    wrapper.c1 = c1
-    wrapper.c1_opt = c1_opt
-    wrapper.c2 = c2
-    wrapper.c2_new = c2_new
-    wrapper.explain = c1.explain
-    wrapper.explain_opt = c1_opt.explain
-    wrapper.explain2 = c2.explain
-    wrapper.explain2_new = c2_new.explain
-    return wrapper
-}
+// legacy C1 pipeline
 api["compileC1"] = api["compileFastPathOnly"] = (query) => {
-    query = ast.unwrap(query)
-    let rep = ir.createIR(query)
-    let c1 = codegen.generate(rep)
-    let c1_opt = new_codegen.generate(rep)
-    let wrapper = (x) => {
-        let res1 = c1(x)
-        let res1_opt = c1_opt(x)
-
-        let cmp = src => ({
-          toEqual: dst => {
-            let ssrc = JSON.stringify(src)
-            let sdst = JSON.stringify(dst)
-            console.assert(ssrc == sdst, "result mismatch")
-          }})
-        try { cmp = expect } catch (e) {} // use test runner if available
-
-        cmp(res1_opt).toEqual(res1)
-        return res1
-    }
-    logDebugOutput({
-      c1: c1.explain.codeString,
-      c1_opt: c1_opt.explain.codeString,
-    })
-    wrapper.c1 = c1
-    wrapper.c1_opt = c1_opt
-    wrapper.explain = c1.explain
-    wrapper.explain_opt = c1_opt.explain
-    return wrapper
+  let rep = ir.createIR(ast.unwrap(query))
+  return codegen.generate(rep)
 }
 
-api["compileNew"] = (query, schema = types.unknown) => {
-  query = ast.unwrap(query)
-  let rep = ir.createIR(query)
-  let c1 = new_codegen.generate(rep)
-  let c2 = simpleEval.compile(query, { schema })
-  let c2_new = simpleEval.compile(query, { newCodegen: true, schema })
-  let wrapper = (x) => {
-      let res1 = c1(x)
-      let res2 = c2(x)
-      let res2_new = c2_new(x)
-
-      let cmp = src => ({
-        toEqual: dst => {
-          let ssrc = JSON.stringify(src)
-          let sdst = JSON.stringify(dst)
-          console.assert(ssrc == sdst, "result mismatch")
-        }})
-      try { cmp = expect } catch (e) {} // use test runner if available
-
-      cmp(res2).toEqual(res1)
-      cmp(res2_new).toEqual(res2)
-      return res2
-  }
-  logDebugOutput({
-    c1: c1.explain.codeString,
-    c2: c2.explain.codeString,
-    c2_new: c2_new.explain.codeString,
-  })
-  wrapper.c1 = c1
-  wrapper.c2 = c2
-  wrapper.c2_new = c2_new
-  wrapper.explain = c1.explain
-  wrapper.explain2 = c2.explain
-  wrapper.explain2_new = c2_new.explain
-  return wrapper
-}
-
-api["compileC2"] = (query, schema = types.unknown) => {
-  query = ast.unwrap(query)
-  // let rep = ir.createIR(query)
-  let c2 = simpleEval.compile(query, { schema })
-  let c2_new = simpleEval.compile(query, { newCodegen: true, schema })
-  let wrapper = (x) => {
-      let res2 = c2(x)
-      let res2_new = c2_new(x)
-
-      let cmp = src => ({
-        toEqual: dst => {
-          let ssrc = JSON.stringify(src)
-          let sdst = JSON.stringify(dst)
-          console.assert(ssrc == sdst, "result mismatch")
-        }})
-      try { cmp = expect } catch (e) {} // use test runner if available
-
-      cmp(res2_new).toEqual(res2)
-      return res2
-  }
-  logDebugOutput({
-    c2: c2.explain.codeString,
-    c2_new: c2_new.explain.codeString,
-  })
-  wrapper.c2 = c2
-  wrapper.c2_new = c2_new
-  wrapper.explain = c2.explain
-  wrapper.explain2 = c2.explain
-  wrapper.explain2_new = c2_new.explain
-  return wrapper
+// C1 IR with new-codegen
+api["compileC1Opt"] = (query) => {
+  let rep = ir.createIR(ast.unwrap(query))
+  return new_codegen.generate(rep)
 }
 
 // displaying graphics/visualizations in the browser
