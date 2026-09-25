@@ -1,6 +1,13 @@
 const { api, rh } = require('../../src/rhyme')
 const { typing, types } = require('../../src/typing')
-const { compileC2CrossCheck, compileCrossCheck } = require('../utils')
+const utils = require('../utils')
+
+// This suite exists to exercise the optimizer, so every query in it opts in --
+// enableOptimizations defaults to off. An explicit setting at a call site still
+// wins.
+let withOpt = f => (query, opts = {}) => f(query, { enableOptimizations: true, ...opts })
+const compileC2CrossCheck = withOpt(utils.compileC2CrossCheck)
+const compileCrossCheck = withOpt(utils.compileCrossCheck)
 
 // some sample data for testing
 let data = [

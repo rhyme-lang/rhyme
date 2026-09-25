@@ -19,7 +19,11 @@ const { unique, union, intersect, diff, subset, same } = sets
 let defaultSettings = {
 
   // frontend -- preprocess.js
-  mkTuple: true,
+  //
+  // Off by default: an all-constant-key record then desugars to a chain of
+  // stateful updates rather than a single pure node. The original C backend
+  // needs the pure node and opts back in below.
+  mkTuple: false,
 
   // analysis and extraction -- simple-eval.js
   altInfer: false,
@@ -33,7 +37,7 @@ let defaultSettings = {
 
   // middle tier -- typing.js, optimizer.js
   schema: types.unknown,
-  enableOptimizations: true,
+  enableOptimizations: false,
 
   // backend selection -- simple-eval.js
   backend: "js",
@@ -65,6 +69,14 @@ let reset = (userSettings) => {
   settings = { ...defaultSettings, ...userSettings }
 
   checkBackend(settings.backend)
+
+  // The original C backend (cgen.generateC, shared by "c" and "cuda") has no
+  // rt_pure_mkTuple and builds record literals from the pure node directly, so
+  // it needs mkTuple even though the default is off. An explicit setting still
+  // wins -- this only supplies a different default.
+  if (userSettings?.mkTuple === undefined &&
+      (settings.backend == "c" || settings.backend == "cuda"))
+    settings.mkTuple = true
 
   prefixes = []
   path = []

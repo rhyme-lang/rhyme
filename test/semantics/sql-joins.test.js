@@ -236,7 +236,12 @@ test("fullOuterJoin2", () => {
     orderDesc: (${ordersMap}.*A? || .orderDefault).*.description
   }]`
 
-  let func = compile(phase2)
+  // Needs mkTuple, which is off by default. Desugaring these record literals
+  // into update chains produces temporaries the filter-ordering solver cannot
+  // schedule -- it reports "no suitable generator for variable *A" and then
+  // emits a duplicate `let gen13`. The outer-join disjunction is what makes
+  // this query, alone in the file, sensitive to the difference.
+  let func = compile(phase2, { mkTuple: true })
   let res = func({
     orders,
     customers,
