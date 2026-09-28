@@ -404,9 +404,12 @@ let emitStatement = (stm, buf, ctx) => {
       break
     }
     case "initCopy": {
+      // rt.stateful.update_init copies ({...x0}), and the copy matters: the
+      // same source seeds this slot for every value of the keys not in its own
+      // path, so assigning it directly would leave them all sharing one map.
       let slot = emitSlot(buf, x.sym, x.path, ctx)
       guarded(buf, slot,
-        `if (rh_is_undef(${slot.lv})) ${slot.lv} = ${emitExpr(x.expr, ctx)};`)
+        `if (rh_is_undef(${slot.lv})) ${slot.lv} = rh_map_copy(${emitExpr(x.expr, ctx)});`)
       break
     }
     case "update": {

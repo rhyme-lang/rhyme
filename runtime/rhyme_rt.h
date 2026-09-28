@@ -520,6 +520,37 @@ static inline void rh_map_set(rh_map *m, rh_str key, rh_val v) {
   rh_map_slot(m, key, NULL)->val = v;
 }
 
+// rt.uniqueMutableCopy: {...x0}, a shallow copy, used by rt.stateful.update_init.
+//
+// The copy is the point, not an optimization detail. One source can seed
+// several slots -- `{*A.key: {*B.key: ...}}` initializes tmp[K4][K5] from the
+// same tmp3[K4] for every K5 -- and without it they would all share one map,
+// so a later update to one would be visible through all of them.
+//
+// A borrowed JSON object is materialized into a map, since the copy has to be
+// mutable. Anything that is not an object comes back unchanged, matching
+// update_init's own `return x0`.
+static inline rh_val rh_map_copy(rh_val v) {
+  if (v.tag == RH_MAP) {
+    rh_map *src = v.u.map;
+    rh_map *m = rh_map_new();
+    for (uint32_t i = 0; i < src->count; i++)
+      rh_map_set(m, src->entries[i].key, src->entries[i].val);
+    return rh_mapv(m);
+  }
+  if (v.tag == RH_JSON && yyjson_is_obj(v.u.json)) {
+    rh_map *m = rh_map_new();
+    yyjson_obj_iter it;
+    yyjson_obj_iter_init(v.u.json, &it);
+    yyjson_val *k;
+    while ((k = yyjson_obj_iter_next(&it)))
+      rh_map_set(m, rh_str_lit(yyjson_get_str(k), (uint32_t)yyjson_get_len(k)),
+                 rh_jsonv(yyjson_obj_iter_get_val(k)));
+    return rh_mapv(m);
+  }
+  return v;
+}
+
 static inline rh_val rh_singleton(rh_val x) {
   rh_map *m = rh_map_new();
   if (!rh_is_undef(x)) rh_map_set(m, rh_to_key(x), rh_bool(true));
