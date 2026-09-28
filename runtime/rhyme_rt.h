@@ -15,6 +15,7 @@
 #define RHYME_RT_H
 
 #include <math.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -525,11 +526,160 @@ static inline rh_val rh_singleton(rh_val x) {
   return rh_mapv(m);
 }
 
+// ----- arrays -----
+//
+// Backs the `array` stateful op. Arena-allocated and grown by
+// doubling; like everything else here it is never freed.
+
+typedef struct rh_arr {
+  rh_val *items;
+  uint32_t count, cap;
+} rh_arr;
+
+static inline rh_val rh_arrv(rh_arr *a) {
+  rh_val v = {RH_ARR, {0}};
+  v.u.arr = a;
+  return v;
+}
+
+static inline rh_arr *rh_arr_new(void) {
+  rh_arr *a = (rh_arr *)rh_alloc(sizeof(rh_arr));
+  a->cap = 8;
+  a->count = 0;
+  a->items = (rh_val *)rh_alloc(sizeof(rh_val) * a->cap);
+  return a;
+}
+
+static inline void rh_arr_push(rh_arr *a, rh_val x) {
+  if (a->count == a->cap) {
+    rh_val *old = a->items;
+    a->cap *= 2;
+    a->items = (rh_val *)rh_alloc(sizeof(rh_val) * a->cap);
+    memcpy(a->items, old, sizeof(rh_val) * a->count);
+  }
+  a->items[a->count++] = x;
+}
+
+// rt.stateful.array: append, skipping undefined
+static inline rh_val rh_stateful_array_init(void) { return rh_arrv(rh_arr_new()); }
+static inline rh_val rh_stateful_array(rh_val s, rh_val x) {
+  if (rh_is_undef(x)) return s;
+  if (s.tag != RH_ARR) s = rh_stateful_array_init();
+  rh_arr_push(s.u.arr, x);
+  return s;
+}
+
+// ----- pure operations over arrays -----
+//
+// join and flatten live down here rather than with the other pure ops, because
+// they are the two that need the array representation above.
+
+// One element as Array.prototype.join renders it: a string verbatim, a number
+// through String(x). Writes into `out` when it is non-NULL and only measures
+// when it is NULL, returning the length either way -- or -1 for anything else,
+// which makes the whole join undefined.
+//
+// snprintf writes a terminating NUL past the digits. That is always in bounds
+// (the buffer is one byte longer than the join) and always overwritten, by the
+// separator that follows or by the final NUL.
+static inline int rh_join_elem(rh_val e, char *out, size_t cap) {
+  e = rh_unwrap(e);
+  switch (e.tag) {
+    case RH_STR:
+      if (out) memcpy(out, e.u.str.ptr, e.u.str.len);
+      return (int)e.u.str.len;
+    case RH_I64:
+      return snprintf(out, cap, "%lld", (long long)e.u.i64);
+    case RH_F64:
+      return rh_fmt_double(out, cap, e.u.f64);
+    default:
+      return -1;
+  }
+}
+
+// Every element, separated by ",". Walked twice: once to measure with out ==
+// NULL, then once to fill. Returns the total length, or -1 if some element is
+// neither a string nor a number.
+static inline long rh_join_walk(rh_val x, char *out, size_t cap) {
+  long total = 0;
+  if (x.tag == RH_ARR) {
+    for (uint32_t i = 0; i < x.u.arr->count; i++) {
+      if (i) { if (out) out[total] = ','; total++; }
+      int n = rh_join_elem(x.u.arr->items[i], out ? out + total : NULL,
+                           out ? cap - (size_t)total : 0);
+      if (n < 0) return -1;
+      total += n;
+    }
+    return total;
+  }
+  size_t idx, max;
+  yyjson_val *it;
+  yyjson_arr_foreach(x.u.json, idx, max, it) {
+    if (idx) { if (out) out[total] = ','; total++; }
+    int n = rh_join_elem(rh_jsonv(it), out ? out + total : NULL,
+                         out ? cap - (size_t)total : 0);
+    if (n < 0) return -1;
+    total += n;
+  }
+  return total;
+}
+
+// rt.pure.join: x1.join(), so the separator is ",".
+//
+// Strings and numbers, nothing else -- a boolean, an object, a nested array or
+// a missing element is a type mismatch like any other and yields undefined, as
+// does a non-array argument.
+//
+// One known divergence: a non-integral double renders through rh_fmt_double's
+// %.17g, while JS uses the shortest round-tripping form, so join(0.1 + 0.2)
+// differs from the js backend in the *value*, not just in printed output.
+// Integers, which is what the corpus joins, agree exactly.
+static inline rh_val rh_pure_join(rh_val x) {
+  if (rh_is_undef(x)) return rh_undef;
+  if (x.tag != RH_ARR && !(x.tag == RH_JSON && yyjson_is_arr(x.u.json)))
+    return rh_undef;
+  long n = rh_join_walk(x, NULL, 0);
+  if (n < 0) return rh_undef;
+  char *d = (char *)rh_alloc((size_t)n + 1);
+  rh_join_walk(x, d, (size_t)n + 1);
+  d[n] = 0;
+  return rh_strv(d, (uint32_t)n);
+}
+
+// rt.pure.flatten: the js definition takes a rest parameter and flattens the
+// resulting array one level, so an array argument is spliced in and anything
+// else -- including undefined -- is appended as it stands. Being variadic, it
+// takes the argument count up front.
+static inline rh_val rh_pure_flatten(int n, ...) {
+  rh_arr *out = rh_arr_new();
+  va_list ap;
+  va_start(ap, n);
+  for (int i = 0; i < n; i++) {
+    rh_val a = va_arg(ap, rh_val);
+    if (a.tag == RH_ARR) {
+      for (uint32_t j = 0; j < a.u.arr->count; j++) rh_arr_push(out, a.u.arr->items[j]);
+    } else if (a.tag == RH_JSON && yyjson_is_arr(a.u.json)) {
+      size_t idx, max;
+      yyjson_val *it;
+      yyjson_arr_foreach(a.u.json, idx, max, it) rh_arr_push(out, rh_jsonv(it));
+    } else {
+      rh_arr_push(out, a);
+    }
+  }
+  va_end(ap);
+  return rh_arrv(out);
+}
+
 // ----- generic get: obj[key] over maps and borrowed JSON -----
 
 static inline rh_val rh_get(rh_val obj, rh_val key) {
   if (rh_is_undef(obj) || rh_is_undef(key)) return rh_undef;
   if (obj.tag == RH_MAP) return rh_map_get(obj.u.map, rh_to_key(key));
+  if (obj.tag == RH_ARR) {
+    double d = rh_num(key);
+    if (isnan(d) || d < 0 || d >= obj.u.arr->count) return rh_undef;
+    return obj.u.arr->items[(uint32_t)d];
+  }
   if (obj.tag == RH_JSON) {
     yyjson_val *j = obj.u.json;
     if (yyjson_is_obj(j)) {
@@ -552,12 +702,20 @@ static inline rh_val rh_singleton(rh_val x);
 //
 // Mirrors JS `for (let k in obj)`: object keys in insertion order, array
 // indices in order. Arrays yield an integer key, which rh_to_key renders as
-// "0", "1", ... exactly as for-in does.
+// "0", "1", ... exactly as for-in does. Both array representations iterate --
+// a borrowed JSON array and an rh_arr built by the `array` stateful op.
 
+// A borrowed JSON container is walked with yyjson's own cursor, never by
+// position: yyjson_arr_get is linear whenever the array is not flat -- and an
+// array of objects, which is the usual input shape, is not flat -- so indexing
+// each step in turn would make a single loop quadratic.
 typedef struct {
   rh_val obj;
   uint32_t i, n;
-  yyjson_obj_iter oit;
+  union {
+    yyjson_obj_iter obj_it;
+    yyjson_arr_iter arr_it;
+  } jit;
 } rh_iter;
 
 static inline rh_iter rh_iter_begin(rh_val v) {
@@ -568,12 +726,15 @@ static inline rh_iter rh_iter_begin(rh_val v) {
   it.n = 0;
   if (v.tag == RH_MAP) {
     it.n = v.u.map->count;
+  } else if (v.tag == RH_ARR) {
+    it.n = v.u.arr->count;
   } else if (v.tag == RH_JSON) {
     if (yyjson_is_obj(v.u.json)) {
       it.n = (uint32_t)yyjson_obj_size(v.u.json);
-      yyjson_obj_iter_init(v.u.json, &it.oit);
+      yyjson_obj_iter_init(v.u.json, &it.jit.obj_it);
     } else if (yyjson_is_arr(v.u.json)) {
       it.n = (uint32_t)yyjson_arr_size(v.u.json);
+      yyjson_arr_iter_init(v.u.json, &it.jit.arr_it);
     }
   }
   return it;
@@ -591,14 +752,21 @@ static inline bool rh_iter_next(rh_iter *it, rh_val *key, rh_val *val) {
     }
     *key = rh_strv(e->key.ptr, e->key.len);
     *val = e->val;
+  } else if (it->obj.tag == RH_ARR) {
+    // an index is enumerable even when the element is undefined, the same way
+    // for-in enumerates an explicit hole-free undefined in a JS array
+    *key = rh_i64(it->i);
+    *val = it->obj.u.arr->items[it->i];
   } else if (yyjson_is_obj(it->obj.u.json)) {
-    yyjson_val *k = yyjson_obj_iter_next(&it->oit);
+    yyjson_val *k = yyjson_obj_iter_next(&it->jit.obj_it);
     if (!k) return false;
     *key = rh_strv(yyjson_get_str(k), (uint32_t)yyjson_get_len(k));
     *val = rh_jsonv(yyjson_obj_iter_get_val(k));
   } else {
+    yyjson_val *e = yyjson_arr_iter_next(&it->jit.arr_it);
+    if (!e) return false;
     *key = rh_i64(it->i);
-    *val = rh_jsonv(yyjson_arr_get(it->obj.u.json, it->i));
+    *val = rh_jsonv(e);
   }
   it->i++;
   return true;
@@ -687,6 +855,17 @@ static inline void rh_print_val(rh_val v) {
     case RH_STR: rh_print_str(v.u.str); break;
     case RH_JSON: rh_print_json(v.u.json); break;
     case RH_MAP: rh_print_map(v.u.map); break;
+    case RH_ARR: {
+      putchar('[');
+      for (uint32_t i = 0; i < v.u.arr->count; i++) {
+        if (i) putchar(',');
+        // JSON.stringify has no undefined, and writes null in an array
+        if (rh_is_undef(v.u.arr->items[i])) fputs("null", stdout);
+        else rh_print_val(v.u.arr->items[i]);
+      }
+      putchar(']');
+      break;
+    }
     default: fputs("null", stdout);
   }
 }
