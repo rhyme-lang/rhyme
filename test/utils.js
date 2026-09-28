@@ -127,3 +127,27 @@ exports.compileC2CrossCheck = (query, opts = {}) => {
   wrapper.explain2_new = c2_new.explain
   return wrapper
 }
+
+// c-new against the js pipeline. Compiling for C is async and writes a program
+// to disk, so unlike the helpers above this one returns an async wrapper and
+// takes the outDir/outFile it should generate into.
+//
+// The query has to name its inputs with loadJSON: c-new has no `inp` object,
+// by design, so there is nothing to pass at call time and the wrapper takes no
+// arguments.
+exports.compileCCrossCheck = async (query, opts = {}) => {
+  query = ast.unwrap(query)
+  let c2 = simpleEval.compile(query, opts)
+  let cnew = await simpleEval.compile(query, { ...opts, backend: "c-new" })
+  let wrapper = async () => {
+    let expected = c2()
+    let actual = await cnew()
+    expect(actual).toEqual(expected)
+    return actual
+  }
+  wrapper.c2 = c2
+  wrapper.cnew = cnew
+  wrapper.explain2 = c2.explain
+  wrapper.explainC = cnew.explain
+  return wrapper
+}

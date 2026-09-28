@@ -10,7 +10,7 @@
 const { sets } = require('../shared')
 const { runtime } = require('../simple-runtime')
 const { pretty } = require('../prettyprint')
-const { e, s, gen } = require('./ir')
+const { s, gen } = require('./ir')
 
 const { union } = sets
 
@@ -47,52 +47,12 @@ let lower = (q, assignments, filters) => {
   }
 
   // ----- expressions -----
-
-  // Every expression node carries the type the checker gave it. That is the
-  // whole input to the specialization decision in emit.js: a type that maps
-  // through cTypes gets a native C representation, anything else stays boxed.
-  let expr = (q) => {
-    let node = expr1(q)
-    if (node.schema === undefined) node.schema = q.schema?.type
-    return node
-  }
-
-  let expr1 = (q) => {
-    if (q.key == "loadInput") {
-      // the file name is a constant in the query
-      return e.load(q.op, q.arg[0].op)
-    } else if (q.key == "input") {
-      throw new Error(
-        "c-new: queries must name their input with loadJSON; " +
-        "there is no `inp` object")
-    } else if (q.key == "const") {
-      return e.const(q.op)
-    } else if (q.key == "var") {
-      return e.var(quoteVar(q.op))
-    } else if (q.key == "ref") {
-      let q1 = assignments[q.op]
-      return e.ref(q.op, q1.fre.map(quoteVar))
-    } else if (q.key == "get") {
-      let [o, k] = q.arg.map(expr)
-      return e.get(o, k)
-    } else if (q.key == "pure" && q.op == "apply") {
-      // Deliberately unsupported. `apply` calls a user-defined function, which
-      // reaches a query as a JavaScript closure through the input object --
-      // `udf.inc data.A.value` is apply(udf[inc], ...). There is nothing to
-      // generate: the callee is js, not data, so a C program cannot run it
-      // short of embedding an interpreter. Queries using udfs belong on the js
-      // backend.
-      throw new Error("c-new: udfs are not supported -- " + pretty(q))
-    } else if (q.key == "pure") {
-      return e.pure(q.op, q.arg.map(expr))
-    } else if (q.key == "mkset") {
-      return e.mkset(expr(q.arg[0]))
-    } else if (q.key == "hint") {
-      return e.const({}) // no-op, as in the JS backend
-    } else {
-      throw new Error("c-new: unsupported expression " + q.key + " in " + pretty(q))
-    }
-  }
+  //
+  // Statements carry simple-eval's own expression nodes, unchanged. An earlier
+  // version renamed them into a parallel set here, which turned out to be
+  // almost purely a rename -- emit.js reads them directly instead, through the
+  // three accessors at the top of that file, and rejects what it cannot
+  // generate as it walks them.
 
   // ----- assignments -----
 
@@ -111,7 +71,7 @@ let lower = (q, assignments, filters) => {
       if (q.key == "update") {
         let init_arg = q.arg[0]
         init_deps = [...init_arg.fre, ...init_arg.tmps.map(tmpSym)]
-        assign(s.initCopy(i, path, expr(init_arg)), sym, q.fre, init_deps)
+        assign(s.initCopy(i, path, init_arg), sym, q.fre, init_deps)
       } else {
         assign(s.init(i, path, q.op, q.schema?.type), sym, q.fre, init_deps)
       }
@@ -123,10 +83,10 @@ let lower = (q, assignments, filters) => {
       let deps = [...fv, ...q.tmps.map(tmpSym)]
 
       if (q.key == "stateful") {
-        assign(s.update(i, path, q.op, expr(q.arg[0]), q.schema?.type), sym, q.fre, deps)
+        assign(s.update(i, path, q.op, q.arg[0], q.schema?.type), sym, q.fre, deps)
       } else if (q.key == "update") {
         let keys = q.arg[1].vars.map(quoteVar)
-        assign(s.groupUpdate(i, path, keys, expr(q.arg[2])), sym, q.fre, deps)
+        assign(s.groupUpdate(i, path, keys, q.arg[2]), sym, q.fre, deps)
       } else {
         throw new Error("c-new: unsupported assignment " + q.key + " in " + pretty(q))
       }
@@ -137,7 +97,7 @@ let lower = (q, assignments, filters) => {
 
   for (let i in filters) {
     let f = filters[i]
-    let src = expr(f.arg[0])
+    let src = f.arg[0]
     let sym = f.arg[1].op
     let g = gen(sym, quoteVar(sym), src)
     g.txt = "FOR"
@@ -145,7 +105,7 @@ let lower = (q, assignments, filters) => {
     generatorStms.push(g)
   }
 
-  let res = { txt: expr(q), deps: getDeps(q) }
+  let res = { txt: q, deps: getDeps(q) }
 
   return { assignmentStms, generatorStms, tmpVarWriteRank, res }
 }
