@@ -1,31 +1,16 @@
-// Logical IR for the c-new backend.
+// Statement IR for the c-new backend.
 //
 // The existing C backend renders C text during the tree walk, so by the time
 // new-codegen schedules a statement its payload is already a string. These
 // nodes are what c-new carries instead: the statement keeps its structure
 // through scheduling, and emit.js turns the scheduled program into C.
 //
+// Only statements and generators live here. Expressions stay as simple-eval's
+// own nodes -- wrapping them gained nothing over reading `key`/`arg` directly.
+//
 // Deliberately close to the shape of src/simple-runtime.js, because the JS
 // backend is the reference semantics and every node here lowers to a call into
 // the matching rh_* function in runtime/rhyme_rt.h.
-
-// ----- expressions -----
-
-let e = {}
-
-e.const = (v) => ({ k: "const", v })
-
-// A JSON file named by the query, as in the "c" backend: the generated program
-// opens it itself rather than having data marshalled in from the caller.
-e.load = (fmt, path) => ({ k: "load", fmt, path })
-e.var = (name) => ({ k: "var", name })
-
-// tmp<sym> indexed by the free variables it is grouped under
-e.ref = (sym, path) => ({ k: "ref", sym, path })
-
-e.get = (obj, key) => ({ k: "get", obj, key })
-e.pure = (op, args) => ({ k: "pure", op, args })
-e.mkset = (arg) => ({ k: "mkset", arg })
 
 // ----- statements -----
 //
@@ -57,6 +42,4 @@ s.groupUpdate = (sym, path, keys, value) =>
 // pointer declaration.
 let gen = (sym, cvar, src) => ({ k: "gen", sym, cvar, src })
 
-let isExpr = (x) => x && typeof x === "object" && typeof x.k === "string"
-
-module.exports = { e, s, gen, isExpr }
+module.exports = { s, gen }

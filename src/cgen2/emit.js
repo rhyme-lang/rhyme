@@ -5,13 +5,31 @@
 // indented text. Every node lowers to a call into runtime/rhyme_rt.h, whose
 // operations mirror src/simple-runtime.js one for one.
 
-const { symbol } = require('../cgen/symbol')
+const { symbol } = require('./symbol')
+const { c } = require('./cutils')
 const { v, isBoxed, condOf } = require('./value')
 const { typing } = require('../typing')
+const { pretty } = require('../prettyprint')
 const ctypes = require('./ctypes')
 
 // tmp-3 is not a C identifier
 let cSym = i => "tmp" + String(i).replace(/-/g, "_")
+
+// ----- reading simple-eval's expression nodes -----
+//
+// Statements carry those nodes unchanged (see lower.js), so the three places
+// where their shape differs from what emission wants go through these.
+
+// the type the checker gave an expression; statement nodes store it flattened
+// already, so this is for expressions only
+let schemaOf = (q) => q.schema?.type
+
+// *A as a C identifier
+let quoteVar = (s) => s.replaceAll("*", "x")
+
+// a `ref` names an assignment by index; the free variables it is grouped under
+// live on that assignment, not on the reference
+let refPath = (q, assignments) => assignments[q.op].fre.map(quoteVar)
 
 let cStr = (str) => {
   let out = ""
@@ -46,8 +64,8 @@ let loadOnce = (ctx, path) => {
   if (!sym) {
     sym = "in" + ctx.loads.size
     ctx.loads.set(path, sym)
-    ctx.prolog.push(`yyjson_doc *${sym}_doc = rh_load_json("${path}");`)
-    ctx.prolog.push(`yyjson_val *${sym} = yyjson_doc_get_root(${sym}_doc);`)
+    c.declarePtr(ctx.prolog)("yyjson_doc", `${sym}_doc`, c.call("rh_load_json", `"${path}"`))
+    c.declarePtr(ctx.prolog)("yyjson_val", sym, c.call("yyjson_doc_get_root", `${sym}_doc`))
   }
   return sym
 }
@@ -90,16 +108,6 @@ let unboxJson = (val, schema) => {
 let negate = (cond) =>
   /^!/.test(cond) && !/[|&]/.test(cond) ? cond.slice(1) : `!(${cond})`
 
-// Bind a json value to a local. Without this the accessor chain is emitted
-// once in the type check and again in the value, which squares with nesting
-// depth -- two yyjson_obj_getn chains become four.
-let materializeJson = (buf, val) => {
-  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(val.expr)) return val // already a name
-  let t = symbol.getSymbol("j")
-  buf.push(`yyjson_val *${t} = ${val.expr};`)
-  return v.json(t, val.cond)
-}
-
 let binOps = {
   plus: "+", minus: "-", times: "*", fdiv: "/", div: "/", mod: "%",
 }
@@ -108,20 +116,22 @@ let binOps = {
 let nativePure = (x, vals) => {
   if (x.op.startsWith("convert_")) {
     let a = vals[0]
-    if (a.repr !== "cScalar" || !x.schema || !ctypes.isCType(x.schema)) return null
-    let ctype = ctypes.convertToCType(typing.removeTag(x.schema))
-    return v.cScalar(ctype, `(${ctype})${a.expr}`, a.cond)
+    let sc = schemaOf(x)
+    if (a.repr !== "cScalar" || !sc || !ctypes.isCType(sc)) return null
+    let ctype = ctypes.convertToCType(typing.removeTag(sc))
+    return v.cScalar(ctype, c.cast(ctype, a.expr), a.cond)
   }
   let op = binOps[x.op]
   if (!op || vals.length !== 2) return null
   if (!vals.every(a => a.repr === "cScalar")) return null
-  if (!x.schema || !ctypes.isCType(x.schema)) return null
-  let ctype = ctypes.convertToCType(typing.removeTag(x.schema))
+  let sc = schemaOf(x)
+  if (!sc || !ctypes.isCType(sc)) return null
+  let ctype = ctypes.convertToCType(typing.removeTag(sc))
   // undefined in either operand propagates, so the conds merge
   let cond = [vals[0].cond, vals[1].cond].filter(Boolean).join(" || ") || null
   let expr = x.op === "fdiv"
-    ? `((double)${vals[0].expr} / (double)${vals[1].expr})`
-    : `(${vals[0].expr} ${op} ${vals[1].expr})`
+    ? c.div(c.cast("double", vals[0].expr), c.cast("double", vals[1].expr))
+    : c.binary(vals[0].expr, vals[1].expr, op)
   return v.cScalar(ctype, expr, cond)
 }
 
@@ -130,51 +140,72 @@ let nativePure = (x, vals) => {
 // cTypes becomes a native C value, anything else stays boxed. Expressions are
 // pure, so nothing here needs a statement buffer.
 let emitValue = (x, ctx) => {
-  switch (x.k) {
+  switch (x.key) {
     case "const":
-      return v.boxed(emitConst(x.v))
-    case "load": {
+      return v.boxed(emitConst(x.op))
+    case "hint":
+      return v.boxed("rh_mapv(rh_map_new())") // no-op, as in the JS backend
+    case "loadInput": {
       // Opened on first sight and reused thereafter -- the same first-seen
       // memoization that makes a repeated subexpression emit once. A separate
       // collection pass would only rediscover what walking the IR here already
       // knows.
-      let sym = loadOnce(ctx, x.path)
+      let sym = loadOnce(ctx, x.arg[0].op)
       // Keep it as a yyjson value when the schema lets us walk it; otherwise
       // hand back an rh_val expression. rh_jsonv only stores the pointer, so
       // there is nothing to hoist into a variable.
-      return jsonWalkable(x.schema) ? v.json(sym, null) : v.boxed(`rh_jsonv(${sym})`)
+      return jsonWalkable(schemaOf(x)) ? v.json(sym, null) : v.boxed(`rh_jsonv(${sym})`)
     }
-    case "var":
+    case "var": {
       // however the loop that binds it decided to represent it
-      return ctx.vars[x.name] || v.boxed(x.name)
+      let name = quoteVar(x.op)
+      return ctx.vars[name] || v.boxed(name)
+    }
     case "ref": {
-      let base = cSym(x.sym)
-      if (x.path.length === 0 && ctx.nativeTmps[base])
+      let base = cSym(x.op)
+      let path = refPath(x, ctx.assignments)
+      if (path.length === 0 && ctx.nativeTmps[base])
         return v.cScalar(ctx.nativeTmps[base], base, null)
-      if (x.path.length === 0) return v.boxed(base)
+      if (path.length === 0) return v.boxed(base)
       // grouped tmp: index it back out by the free variables
-      return v.boxed(x.path.reduce((acc, p) => `rh_get(${acc}, ${varRef(p, ctx)})`, base))
+      return v.boxed(path.reduce((acc, p) => `rh_get(${acc}, ${varRef(p, ctx)})`, base))
     }
     case "get": {
-      let obj = emitValue(x.obj, ctx)
+      let obj = emitValue(x.arg[0], ctx)
       if (obj.repr === "json") {
-        let key = emitValue(x.key, ctx)
-        let acc = jsonAccess(obj, key, x.obj.schema)
+        let key = emitValue(x.arg[1], ctx)
+        let acc = jsonAccess(obj, key, schemaOf(x.arg[0]))
         if (acc) return acc
       }
-      return v.boxed(`rh_get(${asBoxed(obj)}, ${cOf(x.key, ctx)})`)
+      return v.boxed(`rh_get(${asBoxed(obj)}, ${cOf(x.arg[1], ctx)})`)
     }
+    case "input":
+      throw new Error(
+        "c-new: queries must name their input with loadJSON; " +
+        "there is no `inp` object")
     case "pure": {
-      let vals = x.args.map(a => emitValue(a, ctx))
+      // Deliberately unsupported. `apply` calls a user-defined function, which
+      // reaches a query as a JavaScript closure through the input object --
+      // `udf.inc data.A.value` is apply(udf[inc], ...). There is nothing to
+      // generate: the callee is js, not data, so a C program cannot run it
+      // short of embedding an interpreter. Queries using udfs belong on the js
+      // backend.
+      if (x.op === "apply")
+        throw new Error("c-new: udfs are not supported -- " + pretty(x))
+      let vals = x.arg.map(a => emitValue(a, ctx))
       let native = nativePure(x, vals)
       if (native) return native
-      return v.boxed(`rh_pure_${x.op}(${vals.map(asBoxed).join(", ")})`)
+      let args = vals.map(asBoxed)
+      // rt.pure.flatten takes a rest parameter, so its C counterpart is
+      // variadic and needs the argument count up front.
+      if (x.op === "flatten") args.unshift(String(args.length))
+      return v.boxed(`rh_pure_${x.op}(${args.join(", ")})`)
     }
     case "mkset":
       // rt.pure.singleton: a one-entry object keyed by the value
-      return v.boxed(`rh_singleton(${cOf(x.arg, ctx)})`)
+      return v.boxed(`rh_singleton(${cOf(x.arg[0], ctx)})`)
     default:
-      throw new Error("c-new: unsupported expression node " + x.k)
+      throw new Error("c-new: unsupported expression " + x.key + " in " + pretty(x))
   }
 }
 
@@ -239,15 +270,15 @@ let varRef = (name, ctx) =>
 let emitSlot = (buf, sym, path, ctx) => {
   if (path.length === 0) return { lv: cSym(sym), guard: null }
   let arr = symbol.getSymbol("keys")
-  buf.push(`rh_val ${arr}[] = { ${path.map(p => varRef(p, ctx)).join(", ")} };`)
+  c.declareArr(buf)("rh_val", arr, "", `{ ${path.map(p => varRef(p, ctx)).join(", ")} }`)
   let ptr = symbol.getSymbol("slot")
-  buf.push(`rh_val *${ptr} = rh_slot(&${cSym(sym)}, ${arr}, ${path.length});`)
+  c.declarePtr(buf)("rh_val", ptr, c.call("rh_slot", c.addr(cSym(sym)), arr, path.length))
   return { lv: `*${ptr}`, guard: ptr }
 }
 
 // `if (guard) stmt` when the path walk could have bailed, plain stmt otherwise
 let guarded = (buf, slot, stmt) => {
-  buf.push(slot.guard ? `if (${slot.guard}) ${stmt}` : stmt)
+  buf.push(slot.guard ? c.if1(slot.guard, stmt) : stmt)
 }
 
 // An ungrouped accumulator whose result type is a C scalar becomes a plain
@@ -258,42 +289,58 @@ let guarded = (buf, slot, stmt) => {
 // an unknown schema the checker still declares sum's *result* f64, so the init
 // looks specializable while the update, whose argument is untyped, is not --
 // and the accumulator ends up a double being passed to rh_stateful_sum.
-let canBeNative = (x) => {
+// A C-typed schema on the argument is not enough: it says what the value *is*,
+// not how it will be represented. `sum(sum(x))` over an unknown input types the
+// inner sum f64, so the outer one looks specializable, but its argument is a
+// ref to a tmp that stayed boxed -- and a boxed value cannot feed a native
+// fold. So a ref argument is only acceptable if the tmp it names is itself
+// native, which is why this takes the decisions made so far.
+let argIsNative = (arg, decided, assignments) => {
+  let sc = arg && schemaOf(arg)
+  if (!sc || !ctypes.isCType(sc)) return false
+  if (arg.key === "ref")
+    return assignments[arg.op].fre.length === 0 && !!decided[cSym(arg.op)]
+  return true
+}
+
+let canBeNative = (x, decided, assignments) => {
   if (x.path.length !== 0) return false
   if (!x.schema || !ctypes.isCType(x.schema)) return false
   if (typing.isString(typing.removeTag(x.schema))) return false
   if (x.k === "init") return nativeSeed(x.op, x.schema) !== null
   if (x.k === "update")
     return !!nativeFold[x.op] &&
-           // the argument must be unboxable too, or the fold cannot stay in C
-           (x.op === "count" || (x.arg && x.arg.schema && ctypes.isCType(x.arg.schema)))
+           (x.op === "count" || argIsNative(x.arg, decided, assignments))
   return false // initCopy / groupUpdate are never a plain scalar
 }
 
 // tmp symbol -> C type, for every accumulator that can shed its tag. A tmp is
 // native only if *every* statement writing it can be.
-let decideNativeTmps = (stms) => {
+let decideNativeTmps = (stms, assignments) => {
   let bySym = {}
+  let out = {}
+  // In statement order, so that a tmp reading an earlier one sees the decision
+  // already made for it. References always point backwards.
   for (let stm of stms) {
     let x = stm.txt
     let sym = cSym(x.sym)
     if (!(sym in bySym)) bySym[sym] = { ok: true, schema: x.schema }
-    if (!canBeNative(x)) bySym[sym].ok = false
+    if (!canBeNative(x, out, assignments)) bySym[sym].ok = false
+    out[sym] = bySym[sym].ok
+      ? ctypes.convertToCType(typing.removeTag(bySym[sym].schema))
+      : undefined
+    if (!out[sym]) delete out[sym]
   }
-  let out = {}
-  for (let sym in bySym)
-    if (bySym[sym].ok)
-      out[sym] = ctypes.convertToCType(typing.removeTag(bySym[sym].schema))
   return out
 }
 
 // The C fold for a stateful op on native scalars.
 let nativeFold = {
-  sum: (acc, val) => `${acc} = ${acc} + ${val};`,
-  product: (acc, val) => `${acc} = ${acc} * ${val};`,
-  count: (acc, val) => `${acc} = ${acc} + 1;`,
-  min: (acc, val) => `if (${val} < ${acc}) ${acc} = ${val};`,
-  max: (acc, val) => `if (${val} > ${acc}) ${acc} = ${val};`,
+  sum: (acc, val) => c.stmt1(c.assign(acc, c.add(acc, val))),
+  product: (acc, val) => c.stmt1(c.assign(acc, c.mul(acc, val))),
+  count: (acc, val) => c.stmt1(c.assign(acc, c.add(acc, "1"))),
+  min: (acc, val) => c.if1(c.lt(val, acc), c.stmt1(c.assign(acc, val))),
+  max: (acc, val) => c.if1(c.gt(val, acc), c.stmt1(c.assign(acc, val))),
 }
 
 // The identity each fold starts from, in the accumulator's own C type.
@@ -314,30 +361,38 @@ let emitStatement = (stm, buf, ctx) => {
   if ((x.k === "init" || x.k === "update") && ctx.nativeTmps[cSym(x.sym)]) {
     let acc = cSym(x.sym)
     if (x.k === "init") {
-      buf.push(`${acc} = ${nativeSeed(x.op, x.schema)};`)
+      c.stmt(buf)(c.assign(acc, nativeSeed(x.op, x.schema)))
       return
     }
     // update: unbox the argument to the accumulator's type, guard on its cond
+    //
+    // Emitted in place. A json argument's accessor chain therefore appears
+    // once in the type check and again in the value, which compounds with
+    // nesting depth -- deliberate for now, since binding it to a local here
+    // would be one ad-hoc case of a CSE that belongs across the whole emitter.
     let arg = emitValue(x.arg, ctx)
-    if (arg.repr === "json") arg = materializeJson(buf, arg)
 
     // count never looks at the value, only at whether it is there -- so it
     // stays native even when the argument itself is boxed
     if (x.op === "count") {
       let cond = condOf(arg)
-      buf.push(cond ? `if (${negate(cond)}) ${acc} = ${acc} + 1;`
-                    : `${acc} = ${acc} + 1;`)
+      let bump = nativeFold.count(acc)
+      buf.push(cond ? c.if1(negate(cond), bump) : bump)
       return
     }
 
     let native = arg.repr === "json" ? unboxJson(arg, x.schema) : arg
     if (native && native.repr === "cScalar") {
       let stmt = nativeFold[x.op](acc, native.expr)
-      buf.push(native.cond ? `if (${negate(native.cond)}) ${stmt}` : stmt)
+      buf.push(native.cond ? c.if1(negate(native.cond), stmt) : stmt)
       return
     }
-    throw new Error("c-new: tmp " + acc + " was marked native but its " +
-                    x.op + " update could not be lowered natively")
+    // The decision was wrong: the argument's schema is a C type but its
+    // representation is not. index.js catches this, marks the tmp boxed and
+    // re-emits -- see emitBody there for why that is preferable to predicting.
+    let err = new Error("c-new: tmp " + acc + " cannot stay native")
+    err.notNative = acc
+    throw err
   }
 
   switch (x.k) {
@@ -365,13 +420,13 @@ let emitStatement = (stm, buf, ctx) => {
       guarded(buf, slot,
         `if (rh_is_undef(${slot.lv})) ${slot.lv} = rh_mapv(rh_map_new());`)
       let arr = symbol.getSymbol("gkeys")
-      buf.push(`rh_val ${arr}[] = { ${x.keys.map(k => varRef(k, ctx)).join(", ")} };`)
+      c.declareArr(buf)("rh_val", arr, "", `{ ${x.keys.map(k => varRef(k, ctx)).join(", ")} }`)
       let dst = symbol.getSymbol("gslot")
       let base = slot.guard ? slot.guard : `&${slot.lv}`
       buf.push(slot.guard
         ? `rh_val *${dst} = ${slot.guard} ? rh_slot(${base}, ${arr}, ${x.keys.length}) : NULL;`
         : `rh_val *${dst} = rh_slot(${base}, ${arr}, ${x.keys.length});`)
-      buf.push(`if (${dst}) *${dst} = ${emitExpr(x.value, ctx)};`)
+      buf.push(c.if1(dst, c.stmt1(c.assign(c.deref(dst), emitExpr(x.value, ctx)))))
       break
     }
     default:
@@ -392,16 +447,16 @@ let emitStatement = (stm, buf, ctx) => {
 // safe: each reopening re-derives them from the source.
 let emitLoopHeader = (g, buf, ctx) => {
   let src = emitValue(g.src, ctx)
-  let t = g.src.schema ? typing.removeTag(g.src.schema) : null
+  let t = schemaOf(g.src) ? typing.removeTag(schemaOf(g.src)) : null
   let keyType = t && t.objKey
 
   if (src.repr === "json" && keyType && typing.isNumber(typing.removeTag(keyType))) {
     // array: iterate by index
     let idx = symbol.getSymbol("i"), max = symbol.getSymbol("n"), row = symbol.getSymbol("e")
     let ctype = ctypes.convertToCType(typing.removeTag(keyType))
-    buf.push(`size_t ${idx}, ${max};`)
-    buf.push(`yyjson_val *${row};`)
-    buf.push(`yyjson_arr_foreach(${src.expr}, ${idx}, ${max}, ${row}) {`)
+    c.declareVar(buf)("size_t", `${idx}, ${max}`)
+    c.declarePtr(buf)("yyjson_val", row)
+    buf.push(c.call("yyjson_arr_foreach", src.expr, idx, max, row) + " {")
     ctx.vars[g.cvar] = v.cScalar(ctype, `(${ctype})${idx}`, null)
     return
   }
@@ -409,10 +464,10 @@ let emitLoopHeader = (g, buf, ctx) => {
   if (src.repr === "json" && keyType) {
     // object: iterate key/value pairs, key borrowed straight from the document
     let it = symbol.getSymbol("oit"), k = symbol.getSymbol("k")
-    buf.push(`yyjson_obj_iter ${it};`)
-    buf.push(`yyjson_obj_iter_init(${src.expr}, &${it});`)
-    buf.push(`yyjson_val *${k};`)
-    buf.push(`while ((${k} = yyjson_obj_iter_next(&${it}))) {`)
+    c.declareVar(buf)("yyjson_obj_iter", it)
+    c.stmt(buf)(c.call("yyjson_obj_iter_init", src.expr, c.addr(it)))
+    c.declarePtr(buf)("yyjson_val", k)
+    buf.push(`while ((${c.assign(k, c.call("yyjson_obj_iter_next", c.addr(it)))})) {`)
     ctx.vars[g.cvar] = v.cStr(`yyjson_get_str(${k})`, `(int)yyjson_get_len(${k})`, null)
     return
   }
@@ -420,11 +475,12 @@ let emitLoopHeader = (g, buf, ctx) => {
   // dynamic: the generic iterator over an rh_val
   let it = symbol.getSymbol("it")
   let valSym = symbol.getSymbol("v")
-  buf.push(`rh_iter ${it} = rh_iter_begin(${asBoxed(src)});`)
-  buf.push(`rh_val ${valSym};`)
-  buf.push(`while (rh_iter_next(&${it}, &${g.cvar}, &${valSym})) {`)
+  c.declareVar(buf)("rh_iter", it, c.call("rh_iter_begin", asBoxed(src)))
+  c.declareVar(buf)("rh_val", valSym)
+  buf.push(`while (${c.call("rh_iter_next", c.addr(it), c.addr(g.cvar), c.addr(valSym))}) {`)
   ctx.vars[g.cvar] = v.boxed(g.cvar)
 }
 
-module.exports = { emitExpr, emitValue, asBoxed, emitStatement, emitLoopHeader, loadOnce,
+module.exports = {
+  schemaOf, quoteVar, refPath, emitExpr, emitValue, asBoxed, emitStatement, emitLoopHeader, loadOnce,
                    decideNativeTmps, cSym, strVal, emitConst }

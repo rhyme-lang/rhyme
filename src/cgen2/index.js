@@ -6,7 +6,8 @@
 // written against it later instead of against rendered text.
 
 const { generate } = require('../new-codegen')
-const { symbol } = require('../cgen/symbol')
+const { symbol } = require('./symbol')
+const { c } = require('./cutils')
 const { lower } = require('./lower')
 const { emitExpr, emitValue, asBoxed, emitStatement, emitLoopHeader,
         decideNativeTmps, cSym } = require('./emit')
@@ -21,7 +22,10 @@ let emitTree = (node, buf, ctx) => {
       // Additional generators bound to the same variable are filters: the JS
       // backend emits `if (rhs[sym] === undefined) continue` (new-codegen.js:418).
       for (let f of rest) {
-        buf.push(`if (rh_is_undef(rh_get(${emitExpr(f.src, ctx)}, ${asBoxed(ctx.vars[g.cvar] || { repr: "boxed", expr: g.cvar })}))) continue;`)
+        buf.push(c.if1(
+          c.call("rh_is_undef", c.call("rh_get", emitExpr(f.src, ctx),
+            asBoxed(ctx.vars[g.cvar] || { repr: "boxed", expr: g.cvar }))),
+          "continue;"))
       }
       emitTree(n, buf, ctx)
       buf.push("}")
@@ -44,7 +48,7 @@ let indent = (lines) => {
   return out
 }
 
-let emitProgram = (tree, res, tmps, loopVars, stms) => {
+let emitProgram = (tree, res, tmps, loopVars, stms, assignments) => {
   // `vars` records how each loop variable is represented, filled in by the
   // loop header: a loop over a typed JSON object binds its key as a borrowed
   // (const char*, int) pair, a loop over an unknown value binds an rh_val.
@@ -53,36 +57,59 @@ let emitProgram = (tree, res, tmps, loopVars, stms) => {
     loads: new Map(),  // path -> C symbol, filled in on first reference
     prolog: [],        // the open calls those references emitted
     vars: {},          // loop variable -> representation
-    nativeTmps: decideNativeTmps(stms), // tmp -> C type, decided up front
+    nativeTmps: decideNativeTmps(stms, assignments), // tmp -> C type, decided up front
+    assignments,       // a `ref` resolves its grouping path through this
   }
 
   // Emitted after the body, because which tmps turned out to be native is only
   // known once their statements have been lowered.
-  let body = []
-  emitTree(tree, body, ctx)
+  // Emit the body, retrying if a tmp turns out not to be able to stay native.
+  //
+  // Whether a value ends up in a native C representation is not something the
+  // schema alone decides -- `convert_f64(ref tmp0)` is typed f64 while tmp0 may
+  // still be boxed, and a loop variable's representation is only fixed when its
+  // loop is emitted. Predicting that would mean duplicating emitValue. Instead
+  // emitStatement reports the tmp it could not keep native, and we drop it to
+  // boxed and start over. Tmps only ever move native -> boxed, so this settles.
+  let body
+  for (;;) {
+    body = []
+    ctx.vars = {}
+    ctx.loads = new Map()
+    ctx.prolog = []
+    symbol.reset()
+    try {
+      emitTree(tree, body, ctx)
+      break
+    } catch (e) {
+      if (!e.notNative || !ctx.nativeTmps[e.notNative]) throw e
+      delete ctx.nativeTmps[e.notNative]
+    }
+  }
 
   // Print the result in whatever representation it ended up in.
   let out = emitValue(res.txt, ctx)
   if (out.repr === "cScalar" && ctypes.hasFormat(out.ctype)) {
     let fmt = ctypes.formatFor(out.ctype)
+    let show = c.stmt1(c.call("printf", `"%${fmt}"`, out.expr))
     body.push(out.cond
-      ? `if (${out.cond}) printf("undefined"); else printf("%${fmt}", ${out.expr});`
-      : `printf("%${fmt}", ${out.expr});`)
+      ? c.if1(out.cond, c.stmt1(c.call("printf", '"undefined"'))) + " else " + show
+      : show)
   } else {
-    body.push(`rh_print_val(${asBoxed(out)});`)
+    c.stmt(body)(c.call("rh_print_val", asBoxed(out)))
   }
-  body.push(`printf("\\n");`)
-  body.push(`return 0;`)
+  c.printf(body)("\\n")
+  c.return(body)("0")
 
   let decls = []
   for (let t of tmps) {
     let sym = cSym(t)
     decls.push(ctx.nativeTmps[sym]
-      ? `${ctx.nativeTmps[sym]} ${sym} = 0;`
+      ? c.stmt1(c.assign(`${ctx.nativeTmps[sym]} ${sym}`, "0"))
       : `rh_val ${sym} = rh_undef;`)
   }
   for (let v2 of loopVars) if (!ctx.vars[v2] || ctx.vars[v2].repr === "boxed")
-    decls.push(`rh_val ${v2} = rh_undef;`)
+    c.declareVar(decls)("rh_val", v2, "rh_undef")
   body = [...decls, ...body]
 
   let head = ['#include "rhyme_rt.h"', "", "int main() {"]
@@ -107,7 +134,7 @@ let generateCNew = (q, ir, settings) => {
   let loopVars = [...new Set(logical.generatorStms.map(g => g.cvar))]
 
   let { tree, res } = generate(logical, "c-new")
-  let code = emitProgram(tree, res, tmps, loopVars, logical.assignmentStms)
+  let code = emitProgram(tree, res, tmps, loopVars, logical.assignmentStms, ir.assignments)
 
   let cFile = path.join(outDir, outFile + ".c")
   let out = path.join(outDir, outFile)
