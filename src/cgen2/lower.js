@@ -71,7 +71,12 @@ let lower = (q, assignments, filters) => {
       if (q.key == "update") {
         let init_arg = q.arg[0]
         init_deps = [...init_arg.fre, ...init_arg.tmps.map(tmpSym)]
-        assign(s.initCopy(i, path, init_arg), sym, q.fre, init_deps)
+        // Same split as simple-codegen.js:201: a source that is already newly
+        // constructed, or an in-place update, is installed as it stands; only
+        // an existing value has to be copied first. (Its isFresh also admits
+        // `apply` under the udf contract, which c-new rejects outright.)
+        let fresh = q.mode == "inplace" || init_arg.key == "const"
+        assign(s.initCopy(i, path, init_arg, fresh), sym, q.fre, init_deps)
       } else {
         assign(s.init(i, path, q.op, q.schema?.type), sym, q.fre, init_deps)
       }

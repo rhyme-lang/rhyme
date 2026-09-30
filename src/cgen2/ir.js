@@ -22,8 +22,11 @@ let s = {}
 // tmp<sym>[path...] = <op>_init(), if not already set
 s.init = (sym, path, op, schema) => ({ k: "init", sym, path, op, schema })
 
-// tmp<sym>[path...] = <init>, a fresh copy for group/update assignments
-s.initCopy = (sym, path, expr) => ({ k: "initCopy", sym, path, expr })
+// tmp<sym>[path...] = <init>, seeding a group/update assignment.
+//
+// `fresh` says the value is already newly constructed, so installing it needs
+// no copy -- see the isFresh check in lower.js.
+s.initCopy = (sym, path, expr, fresh) => ({ k: "initCopy", sym, path, expr, fresh })
 
 // tmp<sym>[path...] = <op>(previous, arg)
 s.update = (sym, path, op, arg, schema) => ({ k: "update", sym, path, op, arg, schema })
