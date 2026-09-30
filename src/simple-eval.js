@@ -37,6 +37,7 @@ let defaultSettings = {
 
   // middle tier -- typing.js, optimizer.js
   schema: types.unknown,
+  typeConversions: true,   // insert convert_<type> nodes (see typing.validateIR)
   enableOptimizations: false,
 
   // backend selection -- simple-eval.js
@@ -911,7 +912,7 @@ let compile = (q,userSettings={}) => {
   q = optimizer.deduplicate(q, {});
   // Perform type checking, and modify ast to include types.
   if(settings.schema) {
-    q = typing.validateIR(settings.schema, q);
+    q = typing.validateIR(settings.schema, q, settings.typeConversions);
   }
 
   // ---- middle tier, imperative form ----

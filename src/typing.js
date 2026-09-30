@@ -1840,7 +1840,7 @@ let removeVarDeps = (q) => {
         q.arg.map(removeVarDeps);
 }
 
-typing.validateIR = (schema, q) => {
+typing.validateIR = (schema, q, convert = true) => {
     if (schema === undefined)
         return undefined;
     schema = typing.parseType(schema);
@@ -1854,5 +1854,6 @@ typing.validateIR = (schema, q) => {
     inferVarTypes(varMap, schema, cseMap, nonEmptyGuarantees);
 
     validateIRQuery(schema, cseMap, varMap, nonEmptyGuarantees, q);
+    if (!convert) return q;
     return convertAST(schema, q, {});
 }
