@@ -1,0 +1,8 @@
+[
+    { "region": "Europe", "name": "London", "value": 10 },
+    { "region": "Europe", "name": "Paris", "value": 11 },
+    { "region": "Europe", "name": "Berlin", "value": 12 },
+    { "region": "Asia", "name": "Beijing", "value": 20 },
+    { "region": "Asia", "name": "Tokyo", "value": 21 },
+    { "region": "Asia", "name": "Seoul", "value": 22 }
+]
