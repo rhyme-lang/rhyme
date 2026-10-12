@@ -1,4 +1,5 @@
 const { typing } = require('../typing')
+const { prettyType } = require('../prettyprint')
 const { symbol } = require("./symbol")
 
 let cTypes = {
@@ -169,20 +170,20 @@ let convertToCType = (type) => {
   if (type.typeSym === "dynkey")
     return convertToCType(type.keySupertype)
   if (type.typeSym === "union")
-    throw new Error("Unable to convert union type to C type currently: " + typing.prettyPrintType(type))
+    throw new Error("Unable to convert union type to C type currently: " + prettyType(type))
   if (type.typeSym in cTypes)
     return cTypes[type.typeSym]
-  throw new Error("Unknown type: " + typing.prettyPrintType(type))
+  throw new Error("Unknown type: " + prettyType(type))
 }
 
 let getFormatSpecifier = (type) => {
   if (type.typeSym === "dynkey")
     return getFormatSpecifier(type.keySupertype)
   if (type.typeSym === "union")
-    throw new Error("Unable to get type specifier for union tpyes currently: " + typing.prettyPrintType(type))
+    throw new Error("Unable to get type specifier for union tpyes currently: " + prettyType(type))
   if (type.typeSym in formatSpecifierMap)
     return formatSpecifierMap[type.typeSym]
-  throw new Error("Unknown type: " + typing.prettyPrintType(type))
+  throw new Error("Unknown type: " + prettyType(type))
 }
 
 let convertToArrayOfSchema = (schema) => {
@@ -292,10 +293,10 @@ let getDataTypeLimits = (type) => {
   if (type.typeSym === "dynkey")
     return getDataTypeLimits(type.keySupertype)
   if (type.typeSym === "union")
-    throw new Error("Unable to get type specifier for union tpyes currently: " + typing.prettyPrintType(type))
+    throw new Error("Unable to get type specifier for union tpyes currently: " + prettyType(type))
   if (type.typeSym in dataTypeLimits)
     return dataTypeLimits[type.typeSym]
-  throw new Error("Unknown type: " + typing.prettyPrintType(type))
+  throw new Error("Unknown type: " + prettyType(type))
 }
 
 let stringToHexBytes = (str) => {

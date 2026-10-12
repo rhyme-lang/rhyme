@@ -4,7 +4,7 @@ const { symbol } = require("./symbol")
 const { typing, types, typeSyms } = require('../typing')
 const { TAG, value } = require("./value")
 
-const { pretty } = require('../prettyprint')
+const { pretty, prettyType } = require('../prettyprint')
 
 const { tmpSym, quoteVar } = utils
 
@@ -501,7 +501,7 @@ let hash = (buf, key) => {
     } else if (typing.isNumber(schema) || schema.typeSym == typeSyms.char || schema.typeSym == typeSyms.date) {
       c.declareULong(buf)(tmpHash, c.cast("unsigned long", key.val))
     } else {
-      throw new Error("Cannot hash key with type " + typing.prettyPrintType(schema))
+      throw new Error("Cannot hash key with type " + prettyType(schema))
     }
 
     if (i != 0) {

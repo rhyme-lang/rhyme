@@ -3,7 +3,7 @@ const { symbol } = require("./symbol")
 const { value, TAG } = require('./value')
 const { typing, types, typeSyms } = require('../typing')
 
-const { pretty } = require('../prettyprint')
+const { pretty, prettyType } = require('../prettyprint')
 const { quoteVar } = utils
 
 // Convert JSON value to concrete typed value
@@ -39,7 +39,7 @@ let convertJSONTo = (json, schema) => {
     if (json.cond) cond = c.or(json.cond, cond)
     return value.primitive(schema, val, undefined, cond)
   } else {
-    throw new Error("Cannot convert JSON val to type: " + typing.prettyPrintType(schema))
+    throw new Error("Cannot convert JSON val to type: " + prettyType(schema))
   }
 }
 
@@ -66,7 +66,7 @@ let wrapJSON = (buf, dstPtr, val) => {
       setF = "yyjson_set_sint"
     c.stmt(buf)(c.call(setF, dstPtr, val.val))
   } else {
-    throw new Error("Cannot wrap value into yyjson_val: " + typing.prettyPrintType(schema))
+    throw new Error("Cannot wrap value into yyjson_val: " + prettyType(schema))
   }
 }
 

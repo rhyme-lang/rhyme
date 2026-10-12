@@ -1,5 +1,6 @@
 const { desugar } = require("./desugar")
 const { ast } = require("./shared")
+const { typing } = require("./typing")
 
 // binary operators: ast key, precedence (higher binds tighter),
 // and associativity (1 for left, 0 for right)
@@ -343,6 +344,14 @@ exports.parserImpl = (strings, holes) => {
       // array constructor syntax
       let elems = brackets(() => commaList(expr))
       return ast.array(elems)
+    } else if (peek == '@') {
+      next()
+      if (gap != "") {
+        error("no space allowed after '@'")
+      }
+      let res = atom()
+      let schema = typing.parseTypeAST(res)
+      return ast.hole(schema)
     } else {
       error("atom expected but got '"+sanitize(peek)+"'")
     }
@@ -402,7 +411,7 @@ exports.parserImpl = (strings, holes) => {
     let res = exprTight()
     while (peek == "num" || peek == "str" || peek == "hole" ||
            peek == "ident" || peek == "*" ||
-           peek == "." || peek == "(" || peek == "[" || peek == "{") {
+           peek == "." || peek == "(" || peek == "[" || peek == "{" || peek == "@") {
       res = ast.call(res, exprTight())
     }
     return res

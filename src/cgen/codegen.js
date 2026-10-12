@@ -9,7 +9,7 @@ const { printEmitter } = require("./print")
 const { generate } = require("../new-codegen")
 const { typing, types, typeSyms } = require('../typing')
 const { sets } = require('../shared')
-const { pretty } = require('../prettyprint')
+const { pretty, prettyType } = require('../prettyprint')
 const { runtime } = require('../simple-runtime')
 
 const { unique, union, intersect, diff, subset, same } = sets
@@ -1516,7 +1516,7 @@ let collectNestedHashMap = (q, map, name, currentGroupPath) => {
     keyList.push(q1.arg[1])
     valList.push(q1.arg[2])
     if (!typing.sameType(q1.arg[2].schema.type, e2.schema.type)) {
-      console.log("hererererere", typing.prettyPrintType(q1.arg[2].schema.type), typing.prettyPrintType(e2.schema.type))
+      console.log("hererererere", prettyType(q1.arg[2].schema.type), prettyType(e2.schema.type))
       dynamic = true
     }
     if (q1.arg[3]) {
