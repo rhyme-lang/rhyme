@@ -1,54 +1,14 @@
-const { pretty } = require('./prettyprint')
+const { pretty, prettyType, prettyTypeTuple } = require('./prettyprint')
 const { sets } = require('./shared')
+const { types, typeSyms, props } = require('./types')
 
 const { unique, union, intersect, diff, subset, same } = sets
 
-
 let typing = {}
-let types = {}
-let typeSyms = {}
-let props = {}
 exports.typing = typing;
 exports.types = types;
 exports.typeSyms = typeSyms;
 exports.props = props;
-
-
-// ----- type definitions -----
-
-let createType = (str) => {
-    typeSyms[str] = str;
-    types[str] = {typeSym: str};
-};
-
-createType("any"); // Supertype of every type. Set of all possible values
-createType("never"); // Subtype of every type. Empty set.
-createType("unknown"); // Castable to any type. Propagates error if casting is not guaranteed to succeed.
-
-createType("nothing"); // TODO: Add type for front-end, to specify the nothing property.
-
-createType("boolean");
-createType("string"); // All string literal types are a subset of this type.
-
-createType("u8");
-createType("u16");
-createType("u32");
-createType("u64");
-// u8 <: u16 <: u32 <: u64 (subtypes)
-
-createType("i8");
-createType("i16");
-createType("i32");
-createType("i64");
-// i8 <: i16 <: i32 <: i64
-
-createType("f32");
-createType("f64");
-// f32 <: f64
-//types["emptyObject"] = [];
-
-createType("date");
-createType("char");
 
 let numberTypes = [
     types.u8, types.u16, types.u32, types.u64,
@@ -56,29 +16,9 @@ let numberTypes = [
     types.f32, types.f64,
 ];
 
-props["nothing"] = "nothing";
-props["error"] = "error";
 let nothingSet = [props.nothing];
 let errorSet = [props.error];
 
-// u8 <: i16, u16 <: i32, u32 <: i64
-// Implicitly or explicitly convert signed to unsigned, and unsigned to same-size signed when needed?
-// And also consider conversion between floats and integers.
-
-typeSyms["object"] = "object"; // {}{K: V}{K2: V2}...
-typeSyms["intersect"] = "intersect"; // arg1 n arg2 n arg3 ...
-typeSyms["union"] = "union"; // arg1 U arg2 U arg3 ...
-typeSyms["dynkey"] = "dynkey"; // wrapped arg is subtype of arg
-typeSyms["function"] = "function"; // (p1, p2, ...) -> r1
-typeSyms["tagged_type"] = "tagged_type"; // object with a specialized interface to it used by codegen.
-typeSyms["keyval"] = "keyval"; // Not a proper type. Used for constructing types easier.
-
-// Type hierarchy order: (Top to bottom level)
-// - Unions
-// - Intersections
-// - TaggedTypes
-// - Base Types
-// -- Then inside any base types (e.g. K_n(T) ), the hierarchy restarts for said inner types.
 
 let typeEquals = (t1, t2) => {
     if (isSubtype(t1, t2) && isSubtype(t2, t1))
@@ -187,7 +127,7 @@ let createIntersection = (t1, t2) => {
     if (isSubtype(t2, t1))
         return t2;
     if (typeDoesntIntersect(t1, t2)) {
-        // console.warn(`Intersection of non-intersecting types results in Never: ${prettyPrintType(t1)} and ${prettyPrintType(t2)}`);
+        // console.warn(`Intersection of non-intersecting types results in Never: ${prettyType(t1)} and ${prettyType(t2)}`);
         return types.never;
     }
     // According to type hierarchy, unions should be above intersections.
@@ -373,7 +313,7 @@ let performObjectGet = (objectTup, keyTup) => {
                 props: union(props, nothingSet)
             };
         default:
-            throw new Error("Unable to perform access on non-object type: " + prettyPrintType(objectTup.type));
+            throw new Error("Unable to perform access on non-object type: " + prettyType(objectTup.type));
     }
 }
 typing.performObjectGet = performObjectGet;
@@ -685,7 +625,7 @@ let generalizeNumber = (type) => {
         return types.f64;
     }
     if (!isNumber(type))
-        throw new Error("Unable to generalize non-number type: " + prettyPrintType(type));
+        throw new Error("Unable to generalize non-number type: " + prettyType(type));
     switch (type.typeSym) {
         case typeSyms.union:
             return createUnion(
@@ -723,54 +663,6 @@ let isString = (type) => {
 
 typing.isString = isString
 
-let prettyPrintType = (schema) => {
-    if (schema === undefined)
-        return "~Undefined~";
-    if (schema === null)
-        return "~Null~";
-    if (schema.typeSym in types)
-        return schema.typeSym
-    if (typeof schema === "string")
-        return "\"" + schema + "\"";
-    if (schema.typeSym === typeSyms.union)
-        return "(" + Array.from(schema.unionSet).map(type => prettyPrintType(type)).join(" | ") + ")";
-    if (schema.typeSym === typeSyms.intersect)
-        return "(" + Array.from(schema.intersectSet).map(type => prettyPrintType(type)).join(" & ") + ")";
-    if (schema.typeSym === typeSyms.function)
-        return "(" + schema.funcParams.map(type => prettyPrintType(type)).join(", ") + ") -> " + prettyPrintType(schema.funcResult);
-    if (schema.typeSym === typeSyms.dynkey)
-        return `<${schema.keySymbol}: ${prettyPrintType(schema.keySupertype)}>`;
-    if (schema.typeSym === typeSyms.tagged_type)
-        return schema.tag +":"+prettyPrintType(schema.tagInnertype);
-    if (isObject(schema)) {
-        if (schema.objKey === null)
-            return "{}";
-        else
-            return `${prettyPrintType(schema.objParent)}{${prettyPrintType(schema.objKey)}: ${prettyPrintType(schema.objValue)}}`;
-    }
-    if (typeof schema === "object")
-        return "~UNK:" + JSON.stringify(schema) + "~";
-    return "~Invalid~";
-}
-typing.prettyPrintType = prettyPrintType;
-
-let prettyPrintTuple = (tuple) => {
-    if (tuple === undefined)
-        return "~Undefined~";
-    let propStr = "";
-    if (tuple.props.includes(props.nothing)) {
-        if (tuple.props.includes(props.error))
-            propStr = "N,E";
-        else
-            propStr = "N";
-    } else if (tuple.props.includes(props.error))
-        propStr = "E";
-    else
-        propStr = "/";
-    return prettyPrintType(tuple.type) + " | " + propStr;
-}
-typing.prettyPrintTuple = prettyPrintTuple;
-
 let indent = (str) => str.split("\n").join("\n  ");
 
 let symIndex = 0;
@@ -805,7 +697,7 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
         let argTups = q.arg.map($validateIRQuery);
         let t1 = argTups[0].type;
         if (!isUnknown(t1) && !isString(t1)) {
-            throw new Error("Filename in loadInput expected to be a string but got " + prettyPrintType(t1))
+            throw new Error("Filename in loadInput expected to be a string but got " + prettyType(t1))
         }
         return {type: q.inputSchema, props: argTups[0].props};
     } else if (q.key === "const") {
@@ -858,7 +750,7 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
             }
         }
         if (!isObject(t1)) {
-            throw new Error("Unable to perform get operation on non-object type: " + prettyPrintType(t1) + "\nReceived from query: " + pretty(q.arg[0]));
+            throw new Error("Unable to perform get operation on non-object type: " + prettyType(t1) + "\nReceived from query: " + pretty(q.arg[0]));
         }
         if (q.arg[1].key == "vars") {
             let objTup = tup1;
@@ -899,7 +791,7 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
                 };
             }
             if (t1.typeSym != typeSyms.function)
-                throw new Error(`Unable to apply a value to a non-function value (type ${prettyPrintType(t1)})\nApplying to non-function: ${pretty(q.arg[0])}\nWith argument: ${pretty(q.arg[1])}`)
+                throw new Error(`Unable to apply a value to a non-function value (type ${prettyType(t1)})\nApplying to non-function: ${pretty(q.arg[0])}\nWith argument: ${pretty(q.arg[1])}`)
             if (t1.funcParams.length + 1 != argTups.length)
                 throw new Error(`Unable to apply function "${pretty(q.arg[0])}". Number of args do not align.`);
             let props = [];
@@ -907,7 +799,7 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
                 let {type, props: argProps} = argTups[i + 1];
                 let expType = t1.funcParams[i];
                 if (!isSubtype(type, expType)) {
-                    throw new Error(`Unable to apply function "${pretty(q.arg[0])}". Argument ${i + 1} does not align.\nExpected: ${prettyPrintType(expType)}\nReceived: ${prettyPrintType(type)}.`);
+                    throw new Error(`Unable to apply function "${pretty(q.arg[0])}". Argument ${i + 1} does not align.\nExpected: ${prettyType(expType)}\nReceived: ${prettyType(type)}.`);
                 }
                 props = union(props,argProps);
             }
@@ -946,7 +838,7 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
 
             let argTypes = argTups.map((tup) => {
                 if (tup.type.typeSym != typeSyms.unknown && !isObject(tup.type)) {
-                    throw new Error("Unable to perform join operation on non-object: " + prettyPrintType(tup));
+                    throw new Error("Unable to perform join operation on non-object: " + prettyType(tup));
                 }
                 return tup.type
             });
@@ -989,10 +881,10 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
                         type: types.string,
                         props: union(p1, p2)
                     };
-                throw new Error(`Unable to concatenate non-strings of type ${prettyPrintType(t1)} and ${prettyPrintType(t2)}. ` + pretty(q.arg[0]) + " and " + pretty(q.arg[1]));
+                throw new Error(`Unable to concatenate non-strings of type ${prettyType(t1)} and ${prettyType(t2)}. ` + pretty(q.arg[0]) + " and " + pretty(q.arg[1]));
             } else if (q.op == "plus" || q.op == "minus" || q.op == "times" || q.op == "div" || q.op == "mod") {
                 if ((!isUnknown(t1) && !isNumber(t1)) || (!isUnknown(t2) && !isNumber(t2))) {
-                    throw new Error(`Unable to perform plus on non-numbers of type ${prettyPrintType(t1)} and ${prettyPrintType(t2)}. ` + pretty(q.arg[0]) + " and " + pretty(q.arg[1]));
+                    throw new Error(`Unable to perform plus on non-numbers of type ${prettyType(t1)} and ${prettyType(t2)}. ` + pretty(q.arg[0]) + " and " + pretty(q.arg[1]));
                 }
                 let resType = generalizeNumber(createUnion(t1, t2));
                 return {
@@ -1043,13 +935,13 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
             // arg has to be of type date
             let {type: t1, props: p1} = argTups[0];
             if (isInteger(argTups[0]))
-                throw new Error("Unable to perform hour operation on non-integer type: " + prettyPrintType(t1) + "\nReceived from query: " + pretty(q.arg[0]));
+                throw new Error("Unable to perform hour operation on non-integer type: " + prettyType(t1) + "\nReceived from query: " + pretty(q.arg[0]));
             return argTups[0]
         } else if (q.op == "year") {
             // arg has to be of type date
             let {type: t1, props: p1} = argTups[0];
             if (t1.typeSym != typeSyms.date)
-                throw new Error("Unable to perform year operation on non-date type: " + prettyPrintType(t1) + "\nReceived from query: " + pretty(q.arg[0]));
+                throw new Error("Unable to perform year operation on non-date type: " + prettyType(t1) + "\nReceived from query: " + pretty(q.arg[0]));
             return argTups[0]
         } else if (q.op == "substr") {
             // arg has to be of type date
@@ -1057,13 +949,13 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
             let {type: t2, props: p2} = argTups[1];
             let {type: t3, props: p3} = argTups[2];
             if (!isString(t1))
-                throw new Error("Unable to perform substr operation on non-string type: " + prettyPrintType(t1) + "\nReceived from query: " + pretty(q.arg[0]));
+                throw new Error("Unable to perform substr operation on non-string type: " + prettyType(t1) + "\nReceived from query: " + pretty(q.arg[0]));
 
             if (!isInteger(t2))
-                throw new Error("Unable to perform substr operation on non-integer indices: " + prettyPrintType(t2) + "\nReceived from query: " + pretty(q.arg[1]));
+                throw new Error("Unable to perform substr operation on non-integer indices: " + prettyType(t2) + "\nReceived from query: " + pretty(q.arg[1]));
 
             if (!isInteger(t3))
-                throw new Error("Unable to perform substr operation on non-integer indices: " + prettyPrintType(t3) + "\nReceived from query: " + pretty(q.arg[2]));
+                throw new Error("Unable to perform substr operation on non-integer indices: " + prettyType(t3) + "\nReceived from query: " + pretty(q.arg[2]));
 
             return {
                 type: types.string,
@@ -1074,10 +966,10 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
             let {type: t1, props: p1} = argTups[0];
             let {type: t2, props: p2} = argTups[1];
             if (!isString(t1))
-                throw new Error("Unable to perform substr operation on non-string type: " + prettyPrintType(t1) + "\nReceived from query: " + pretty(q.arg[0]));
+                throw new Error("Unable to perform substr operation on non-string type: " + prettyType(t1) + "\nReceived from query: " + pretty(q.arg[0]));
 
             if (!isString(t2))
-                throw new Error("Unable to perform substr operation on non-string regex: " + prettyPrintType(t2) + "\nReceived from query: " + pretty(q.arg[1]));
+                throw new Error("Unable to perform substr operation on non-string regex: " + prettyType(t2) + "\nReceived from query: " + pretty(q.arg[1]));
 
             return {
                 type: types.boolean,
@@ -1094,10 +986,10 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
             let {type: t2, props: p2} = argTups[1];
 
             if (!isDense(t1) || t1.tagData.dim != 1)
-                throw new Error("Expect dense vector of dim 1 but got: " + prettyPrintType(t1) + "\nReceived from query: " + pretty(q.arg[0]));
+                throw new Error("Expect dense vector of dim 1 but got: " + prettyType(t1) + "\nReceived from query: " + pretty(q.arg[0]));
 
             if (!isDense(t1) || t1.tagData.dim != 1)
-                throw new Error("Expect dense vector of dim 1 but got: " + prettyPrintType(t2) + "\nReceived from query: " + pretty(q.arg[1]));
+                throw new Error("Expect dense vector of dim 1 but got: " + prettyType(t2) + "\nReceived from query: " + pretty(q.arg[1]));
 
             return {type: types.f32, props: p1}
         } else if (q.op == "matmul") {
@@ -1105,10 +997,10 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
             let {type: t2, props: p2} = argTups[1];
 
             if (!isDense(t1)  || t1.tagData.dim != 2)
-                throw new Error("Expect dense tensor of dim 2 but got: " + prettyPrintType(t1) + "\nReceived from query: " + pretty(q.arg[0]));
+                throw new Error("Expect dense tensor of dim 2 but got: " + prettyType(t1) + "\nReceived from query: " + pretty(q.arg[0]));
 
             if (!isDense(t2) || t1.tagData.dim != 2)
-                throw new Error("Expect dense tensor of dim 2 but got: " + prettyPrintType(t2) + "\nReceived from query: " + pretty(q.arg[1]));
+                throw new Error("Expect dense tensor of dim 2 but got: " + prettyType(t2) + "\nReceived from query: " + pretty(q.arg[1]));
 
             return {type: t1, props: p1}
         }
@@ -1142,7 +1034,7 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
         if (q.op === "sum" || q.op === "product") {
             // Check if each arg is a number.
             if (!isUnknown(argType) && !isNumber(argType))
-                throw new Error(`Unable to ${q.op} non-number values currently. Got: ${prettyPrintType(argType)}`);
+                throw new Error(`Unable to ${q.op} non-number values currently. Got: ${prettyType(argType)}`);
             if (argType == types.unknown)
                 argType = types.f64
             return {type: argType, props: diff(argTup.props,nothingSet)};
@@ -1172,7 +1064,7 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
         if (q.op === "sum" || q.op === "product") {
             // Check if each arg is a number.
             if (!isUnknown(argType) && !isNumber(argType))
-                throw new Error(`Unable to ${q.op} non-number values currently. Got: ${prettyPrintType(argType)}`);
+                throw new Error(`Unable to ${q.op} non-number values currently. Got: ${prettyType(argType)}`);
             if (isUnknown(argType))
                 argType = types.f64
             return {type: argType, props: props};
@@ -1187,7 +1079,7 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
             return {type: types.u32, props: props};
         } else if (q.op === "all" || q.op === "any") {
             if (!isUnknown(argType) && !isBoolean(argType))
-                throw new Error(`Unable to use "all" operator on non-boolean type. Got: ${prettyPrintType(argType)}`);
+                throw new Error(`Unable to use "all" operator on non-boolean type. Got: ${prettyType(argType)}`);
             // As long as the argument is valid, it doesn't matter what type it is.
             return {type: types.boolean, props: union(props, nothingSet)};
         } else if (q.op === "single" || q.op === "first" || q.op === "last") {
@@ -1237,7 +1129,7 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
 
         let {type: parentType, props: p1} = argTup1;
         if (!isUnknown(parentType) && !isObject(parentType))
-            throw new Error("Unable to update field of type: " + prettyPrintType(parentType));
+            throw new Error("Unable to update field of type: " + prettyType(parentType));
         //let t3 = argTups[2].type;
         let arg2 = q.arg[1];
         let argTup2;
@@ -1265,7 +1157,7 @@ let _validateIRQuery = (schema, cseMap, varMap, nonEmptyGuarantees, q) => {
 
         let {type: valueType, props: p3} = argTup3;
         if (!isUnknown(keyType) && !isKey(keyType))
-            throw new Error("Unable to use type: " + prettyPrintType(keyType) + " as object key");
+            throw new Error("Unable to use type: " + prettyType(keyType) + " as object key");
 
         let props = union(p2, p3);
         // If the key and value are not nothing, then the key must not be empty.
@@ -1508,6 +1400,47 @@ typing.parseType = (schema, ...typeHoles) => {
             return schema;
         default:
             return schema;
+    }
+}
+
+
+typing.parseTypeAST = (q) => {
+    let error = (msg) => { throw new Error("Error when parsing type: " + msg + ": " + JSON.stringify(q)) };
+    switch (q.xxkey) {
+        case "hole": // a type spliced in from JS
+            if (typeof q.xxop === "object" && q.xxop !== null && q.xxop.typeSym !== undefined)
+                return q.xxop;
+            error("type expected in hole");
+        case "ident": {
+            if (q.xxop.startsWith("*")) {
+                let name = q.xxop.substring(1);
+                if (!Object.hasOwn(types, name)) error("unknown key type '" + name + "'");
+                return createKey(types[name]);
+            }
+            if (!Object.hasOwn(types, q.xxop)) error("unknown type '" + q.xxop + "'");
+            return types[q.xxop];
+        }
+        case "const":
+            if (typeof q.xxop !== "string") error("unsupported literal type");
+            return q.xxop;
+        case "object": {
+            let builder = objBuilder();
+            for (let i = 0; i < q.xxparam.length; i += 2) {
+                let k = q.xxparam[i];
+                let key = k.xxkey == "ident" && !k.xxop.startsWith("*") ? k.xxop : typing.parseTypeAST(k);
+                builder.add(key, typing.parseTypeAST(q.xxparam[i+1]));
+            }
+            return builder.build();
+        }
+        case "array":
+            if (q.xxparam.length != 1) error("array type expects one element type");
+            return objBuilder().add(createKey(types.u32), typing.parseTypeAST(q.xxparam[0])).build();
+        case "pipe":
+            return createUnion(typing.parseTypeAST(q.xxparam[0]), typing.parseTypeAST(q.xxparam[1]));
+        case "and":
+            return createIntersection(typing.parseTypeAST(q.xxparam[0]), typing.parseTypeAST(q.xxparam[1]));
+        default:
+            error("unsupported type syntax");
     }
 }
 

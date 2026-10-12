@@ -4,7 +4,7 @@ const { sets } = require('./shared')
 const { scc } = require('./scc')
 const { generate } = require('./new-codegen')
 const { runtime } = require('./simple-runtime')
-const { pretty } = require('./prettyprint')
+const { pretty, prettyType } = require('./prettyprint')
 const { typing, types, typeSyms } = require('./typing')
 
 const { unique, union, intersect, diff, subset, same } = sets
@@ -1015,7 +1015,7 @@ let quoteTypeCPP = ty => {
 
     if (ty.typeSym in ctypeMap) {
       return ctypeMap[ty.typeSym]
-      // throw new Error("Unknown CPP type of: " + typing.prettyPrintType(ty));
+      // throw new Error("Unknown CPP type of: " + prettyType(ty));
     }
     if (typing.isObject(ty))
         return "rh";
@@ -1045,7 +1045,7 @@ let quoteFileReadCPP = ty => {
     if (typing.isObject(ty)) {
         return "read_json";
     } else {
-        throw new Error("Unknown how to read: " + typing.prettyPrintType(ty));
+        throw new Error("Unknown how to read: " + prettyType(ty));
     }
   }
 }
@@ -1127,7 +1127,7 @@ let emitCodeCPP = (q, order) => {
     if (typing.isObject(ty)) {
         return `for (const auto& [${sym}, ${sym}_val] : ${source}.items()) {`
     }
-    throw new Error("Unknown loop type: " + typing.prettyPrintType(ty));
+    throw new Error("Unknown loop type: " + prettyType(ty));
   }
 
   function selectGenFilter(gen, loops) {

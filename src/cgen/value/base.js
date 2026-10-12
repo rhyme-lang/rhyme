@@ -3,6 +3,7 @@
 
 const { c, utils } = require("../utils")
 const { typing, types, typeSyms } = require("../../typing")
+const { prettyType } = require("../../prettyprint")
 const { symbol } = require("../symbol")
 
 exports.copy = function (obj) {
@@ -91,7 +92,7 @@ class CJSON extends CValue {
       if (this.cond) cond = c.or(this.cond, cond)
       return new CPrim(this.schema, val)
     } else {
-      throw new Error("Cannot convert JSON val to type: " + typing.prettyPrintType(schema))
+      throw new Error("Cannot convert JSON val to type: " + prettyType(schema))
     }
   }
 
@@ -115,7 +116,7 @@ class CPrim extends CBasicValue {
       this.schema.typeSym != typeSyms.char &&
       this.schema.typeSym != typeSyms.date) {
       utils.internalError(
-        "Cannot hash value with type " + typing.prettyPrintType(this.schema))
+        "Cannot hash value with type " + prettyType(this.schema))
     }
     c.declareULong(buf)(hashed, c.cast("unsigned long", this.val))
     return hashed
