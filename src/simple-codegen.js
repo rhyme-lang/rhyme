@@ -44,6 +44,11 @@ exports.setCodegenState = st => {
 // 10-11. Analysis
 //
 
+let statefulInitRequired = q =>
+  q.key == "stateful" && q.mode != "maybe" && (q.op+"_init") in runtime.stateful
+
+let initRequired = q => statefulInitRequired(q) || q.key == "update"
+
 // does the expression produce a result that's
 // not aliased with any other mutable value?
 let isFresh = q => {
@@ -528,7 +533,7 @@ let emitStmInline = (q, scope) => {
   }
 
   // emit initialization
-  if (q.key == "stateful" && q.mode != "maybe" && (q.op+"_init") in runtime.stateful || q.key == "update") {
+  if (initRequired(q)) {
       buf.push("let tmp"+i+" = "+ emitStmInit(q, scope)+"()")
   } else {
       buf.push("let tmp"+i)
@@ -565,7 +570,7 @@ let emitCode = (q, order) => {
       let scope = { vars:[], filters:[], buf }
 
       // emit initialization first (so that sum empty = 0)
-      if (q.key == "stateful" && q.mode != "maybe" && (q.op+"_init") in runtime.stateful || q.key == "update") {
+      if (initRequired(q)) {
         let needProject = !settings.elimProjections
         emitFilters1(scope, q.fre, [], q.extInit, needProject)(buf, codegen)(scope1 => {
           let xs = [i,...q.fre.map(quoteVar)]
@@ -1254,7 +1259,7 @@ let emitCodeCPP = (q, order) => {
     let q = assignments[i]
 
     // emit initialization (see 'emitCode')
-    if (q.key == "stateful" && q.mode != "maybe" && (q.op+"_init") in runtime.stateful) {
+    if (statefulInitRequired(q)) {
         let xs = [...q.fre.map(quoteVar)]
         let ys = xs.map(x => "[\""+x+"\"]").join("")
 
@@ -1394,7 +1399,7 @@ let translateToNewCodegen = q => {
     let q = assignments[i]
 
     // emit initialization (see 'emitCode')
-    if (q.key == "stateful" && q.mode != "maybe" && (q.op+"_init") in runtime.stateful || q.key == "update") {
+    if (initRequired(q)) {
         let xs = [i,...q.fre.map(quoteVar)]
         let ys = xs.map(x => ","+x).join("")
 
@@ -1453,6 +1458,8 @@ let translateToNewCodegen = q => {
 }
 
 
+
+exports.initRequired = initRequired
 
 exports.pretty = pretty
 
