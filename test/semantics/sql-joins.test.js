@@ -1,5 +1,6 @@
 const { rh } = require("../../src/rhyme")
 const { compile } = require("../../src/simple-eval")
+const { compileC2CrossCheck } = require("../utils")
 
 let orders = [
   { id: 1, description: "order1", customerID: 1 },
@@ -58,7 +59,7 @@ test("innerJoin1", () => {
     orderDesc: ${phase1}.(customers.*c.id).*o2.description
   }]`
 
-  let func = compile(phase2)
+  let func = compileC2CrossCheck(phase2)
   let res = func({ orders, customers })
 
   expect(res).toEqual(innerJoinExpected)
@@ -86,7 +87,7 @@ test("innerJoin2", () => {
     orderDesc: (${ordersMap}.*A || .orderDefault).*.description
   }]`
 
-  let func = compile(phase2)
+  let func = compileC2CrossCheck(phase2)
   let res = func({
     orders,
     customers,
@@ -111,7 +112,7 @@ test("leftJoin1", () => {
     orderDesc: (${phase1}.(customers.*c.id) || .orderDefault).*o2.description
   }]`
 
-  let func = compile(phase2)
+  let func = compileC2CrossCheck(phase2)
   let res = func({
     orders,
     customers,
@@ -143,7 +144,7 @@ test("leftJoin2", () => {
     orderDesc: (${ordersMap}.*A? || .orderDefault).*.description
   }]`
 
-  let func = compile(phase2)
+  let func = compileC2CrossCheck(phase2)
   let res = func({
     orders,
     customers,
@@ -167,12 +168,44 @@ test("leftJoinAlter", () => {
     order: ${phase1}.(customers.*c.id) || .null
   }]`
 
-  let func = compile(phase2)
+  let func = compileC2CrossCheck(phase2)
   let res = func({
     orders,
     customers,
     null: null
   })
+})
+
+test("leftJoinAggregate", () => {
+  let ordersMap = rh`{
+    orders.*o1.customerID: [{
+      id: orders.*o1.id
+    }]
+  }`
+
+  let customersMap = rh`{
+    customers.*c1.id: [{
+      id: customers.*c1.id
+    }]
+  }`
+
+  // Aggregate over the optional side, grouped by a key taken from the total
+  // side. The group key puts the outer-joined variable in the assignment's
+  // 'fre', so this covers the initialization loop as well as the update one --
+  // a left join that only collects values does not.
+  let phase2 = rh`{
+    (${customersMap}.*A).*.id: count((${ordersMap}.*A? || .orderDefault).*.id)
+  }`
+
+  let func = compileC2CrossCheck(phase2)
+  let res = func({
+    orders,
+    customers,
+    orderDefault: [{ id: null }]
+  })
+
+  // customers 2 and 4 have no orders, so they count the single default row
+  expect(res).toEqual({ 1: 2, 2: 1, 3: 2, 4: 1, 5: 1 })
 })
 
 test("fullOuterJoin1", () => {
@@ -203,7 +236,7 @@ test("fullOuterJoin1", () => {
     orderDesc: (${ordersMap}.(${phase1}.*) || .orderDefault).*.description
   }]`
 
-  let func = compile(phase2)
+  let func = compileC2CrossCheck(phase2)
   let res = func({
     orders,
     customers,
@@ -241,6 +274,11 @@ test("fullOuterJoin2", () => {
   // schedule -- it reports "no suitable generator for variable *A" and then
   // emits a duplicate `let gen13`. The outer-join disjunction is what makes
   // this query, alone in the file, sensitive to the difference.
+  //
+  // Not cross-checked: newCodegen has no way to express a union domain, so it
+  // compiles this to an inner join and drops the three outer rows. Every
+  // generator of *A here is 'maybe', which is exactly the case
+  // translateToNewCodegen does not handle.
   let func = compile(phase2, { mkTuple: true })
   let res = func({
     orders,
@@ -267,7 +305,7 @@ test("leftJoinIncorrect", () => {
     orderDesc: ${phase1}.(customers.*c.id).*o2.description || .null
   }]`
 
-  let func = compile(phase2)
+  let func = compileC2CrossCheck(phase2)
   let res = func({
     orders,
     customers,

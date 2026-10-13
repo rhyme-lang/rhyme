@@ -1423,9 +1423,15 @@ let translateToNewCodegen = q => {
   }
 
   // map filters/generators
+  let gensForVar = getFilterIndex()
   for (let i in filters) {
     let q = filters[i]
     if (settings.constantFold && resolveConstForVar(q.arg[1].op))
+      continue
+    // Mirror outer join semantics, new-codegen does not need to emit maybe filters
+    // Need to handle all-maybe case correctly (full-outer joins)
+    if (q.mode == "maybe" &&
+        gensForVar[q.arg[1].op].some(j => filters[j].mode != "maybe"))
       continue
     let scope = { vars: q.fre, filters: [] } // XXX filters?
     let [a,b] = q.arg.map(x => transExpr(x, scope))
