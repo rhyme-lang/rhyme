@@ -59,7 +59,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04]
+        os: ubuntu-24.04
         node-version: [18.x, 20.x, 22.x, 24.x]
         # See supported Node.js release schedule at https://nodejs.org/en/about/releases/
         # Node floor is 18.x: jest 30 requires >=18.14.0, webpack-cli 6 requires >=18.12.0
