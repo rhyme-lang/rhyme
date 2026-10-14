@@ -44,8 +44,9 @@ let defaultSettings = {
   backend: "js",
   newCodegen: false,
 
-  // js codegen -- simple-codegen.js, simple-loopgen.js
+  // js codegen -- simple-codegen.js, simple-loopgen.js, opt-loopgen.js
   loopGen: true,
+  fuseLoops: false, // schedule with opt-loopgen instead of emitLoops
   elimProjections: true,
   constantFold: true
 
@@ -788,6 +789,11 @@ const {
   emitLoops,
 } = require('./simple-loopgen')
 
+const {
+  setOptLoopgenState,
+  schedule,
+} = require('./opt-loopgen')
+
 
 const { 
   setCodegenState, 
@@ -960,6 +966,7 @@ let compile = (q,userSettings={}) => {
   setEmitPseudoState(backendIR)
   setCodegenState(backendIR)
   setLoopgenState(backendIR)
+  setOptLoopgenState(backendIR)
 
   // 11. Pretty print (debug out)
   let pseudo = emitPseudo(q)
@@ -1039,7 +1046,7 @@ let compile = (q,userSettings={}) => {
 
     let code0 = code
 
-    let loops = emitLoops(q,order)
+    let loops = settings.fuseLoops ? schedule(q,order) : emitLoops(q,order)
 
     code = emitCodeLowLevel(loops)
     code = fixIndent(code)
