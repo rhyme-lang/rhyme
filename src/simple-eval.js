@@ -46,7 +46,7 @@ let defaultSettings = {
 
   // js codegen -- simple-codegen.js, simple-loopgen.js, opt-loopgen.js
   loopGen: true,
-  fuseLoops: false, // schedule with opt-loopgen instead of emitLoops
+  optLoopgen: false, // schedule with opt-loopgen instead of emitLoops
   elimProjections: true,
   constantFold: true
 
@@ -1046,7 +1046,7 @@ let compile = (q,userSettings={}) => {
 
     let code0 = code
 
-    let loops = settings.fuseLoops ? schedule(q,order) : emitLoops(q,order)
+    let loops = settings.optLoopgen ? schedule(q,order) : emitLoops(q,order)
 
     code = emitCodeLowLevel(loops)
     code = fixIndent(code)
