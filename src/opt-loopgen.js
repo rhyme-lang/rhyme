@@ -5,36 +5,23 @@ const { emitFilters1 } = require('./simple-loopgen')
 
 const { union, same } = sets
 
-
 //
-// A fusing loop scheduler for the c2 pipeline.
+// A scheduling loopgen approach for the c2 pipeline
+// 
+// Mostly the same approach as new-codegen but it attemps to use all analysis
+// that are already done on the c2 ir to reduce the amount of bookkeeping.
+// 
+// This loop scheduler also adheres to c2's semantics on projections where
+// necessary, and it also supports outer joins (maybe mode filters).
 //
-// Same contract as emitLoops (simple-loopgen.js): it takes the analyzed IR and
-// a statement order, and returns the statement IR that emitStmListLowLevel
-// renders. The difference is what it does with the loops. emitLoops gives each
-// assignment its own nest, so a query over one input walks it once per
-// assignment. This emits every statement exactly once, inside exactly the loops
-// it depends on, fusing the nests of statements that share them.
+// Currently, statements that needs an explicit projection is only emitted at
+// the top level of the generated code since it emitts its own loop nests.
 //
-// That scheduling idea is new-codegen.js's. This is a separate implementation
-// rather than a use of it, for two reasons:
+// One test is not covered by both this scheduler: testZipNestedRec3.
+// Also not handled by new-codegen.
 //
-//  - new-codegen.js is shared with the c1 pipeline (c1-ir.js), whose statements
-//    carry different information. Everything here speaks c2: a statement knows
-//    its fre/bnd/ext, not a list of strings to be sorted by a "tmp" prefix.
-//  - new-codegen renders text while it schedules. This emits the statement IR
-//    instead, so expressions are rendered afterwards, by a walk that carries a
-//    live scope. That is what lets generator variables (genN) be reused: being
-//    in scope is a fact at emission time rather than a prediction.
-//
-// Because the c2 sets are already computed, most of new-codegen's bookkeeping
-// is unnecessary here: a statement's loops are union(fre, bnd), its transitive
-// loop dependencies come from the closure in vars[], and the two writes to a
-// tmp are init-then-update rather than an arbitrary ranked sequence.
-//
-// Not handled yet, both as in translateToNewCodegen and both fine in emitLoops:
-// a variable whose generators are all 'maybe' (full outer join), and a
-// generator that depends on its own variable (testZipNestedRec3).
+// Notably, the scheduled code is in the shape of simple-loopgen's generated
+// statements. So it is then passed to emitStmListLowLevel.
 //
 
 let settings
@@ -52,16 +39,9 @@ exports.setOptLoopgenState = st => {
 
 // ----- generators -----
 
-// The filters that act as a loop over each variable.
-//
-// A 'maybe' generator does not constrain the domain, so where a total one
-// supplies it the maybe ones are dropped -- the optional side is still read
-// through its path expression, where a missing key yields undefined. (A
-// variable whose generators are *all* maybe is a full outer join, whose domain
-// is their union; not handled yet, as in translateToNewCodegen.)
-//
-// Constant-folded variables are deliberately kept: emitStmListLowLevel drops
-// the loop and keeps the body for those, so the decision belongs there.
+// build c1 style generater statements from filters
+// maybe mode filters are dropped if there is at least one filter that is not
+// 'maybe'
 let buildGenerators = () => {
   let byVar = {}
   // Group the filters by var
@@ -87,14 +67,19 @@ let buildGenerators = () => {
 
 // ----- statements -----
 
-// Writes whose multiplicity cannot be observed: running one twice for the same
-// key is the same as running it once. Mirrors the whitelist in emitLoops.
+// build c1 style assignment statements
+// determines if projection if necessary
+// mirror the idea in emitFilters1
 let idempotentWrite = q =>
   q.key == "stateful" && ["single", "first", "last", "all", "any"].includes(q.op) ||
   q.key == "update" && q.arg[2].key == "ref"
 
+// A variable whose generators are *all* 'maybe' is a full outer join: its
+let allMaybe = (gens, v) =>
+  gens[v] !== undefined && gens[v].every(i => filters[i].mode == "maybe")
+
 // Two statements per assignment, init before update.
-let buildStatements = () => {
+let buildStatements = (gens) => {
   let stmts = []
   for (let i in assignments) {
     let q = assignments[i]
@@ -105,21 +90,26 @@ let buildStatements = () => {
     // when projections are not being eliminated at all.
     if (initRequired(q))
       stmts.push({
-        tmp, kind: "init", q, project: false,
+        tmp, kind: "init", q,
+        fre: q.fre, bnd: [], ext: q.extInit,
         loops: q.fre,
         tmps: q.key == "update" ? q.arg[0].tmps : [],
+        project: q.fre.some(v => allMaybe(gens, v)),
       })
 
     // ext holds the variables that have to be enumerated to produce this
     // statement's keys and are then projected away. Nesting the statement under
     // them directly would run it once per *source row* rather than once per
     // distinct key, which double-counts any fold that is not idempotent.
+    let loops = union(q.fre, q.bnd)
     stmts.push({
       tmp, kind: "update", q,
-      loops: union(q.fre, q.bnd),
+      fre: q.fre, bnd: q.bnd, ext: q.ext,
+      loops,
       tmps: q.tmps,
       project: q.ext.length > 0 &&
-        !(settings.elimProjections && idempotentWrite(q)),
+        !(settings.elimProjections && idempotentWrite(q)) ||
+        loops.some(v => allMaybe(gens, v)),
     })
   }
   return stmts
@@ -205,9 +195,6 @@ let buildDeps = (stmts, gens) => {
 
 
 // ----- scheduling -----
-
-// 'order' is part of emitLoops' signature but unused here: the schedule is
-// derived from the dependencies below rather than given.
 let schedule = (q, order) => {
   if (!settings.extractAssignments) {
     console.error("opt-loopgen only works if settings.extractAssignments = true")
@@ -215,7 +202,7 @@ let schedule = (q, order) => {
   }
 
   let gens = buildGenerators()
-  let stmts = buildStatements()
+  let stmts = buildStatements(gens)
   let { stmtDeps, loopDeps, byLoop, afterLoop } = buildDeps(stmts, gens)
 
   let root = []
@@ -248,7 +235,7 @@ let schedule = (q, order) => {
     if (s.project) {
       // reuse the projection emitter: PROJECT the iteration space into a temp,
       // then TRAVERSE it, so the body runs once per distinct key
-      emitFilters1({ vars: [], filters: [], buf }, s.q.fre, s.q.bnd, s.q.ext, true)(
+      emitFilters1({ vars: [], filters: [], buf }, s.fre, s.bnd, s.ext, true)(
         scope1 => scope1.buf.push(node))
     } else {
       buf.push(node)
@@ -261,6 +248,8 @@ let schedule = (q, order) => {
 
   // the for/if chain for one variable: the first generator is the loop, the
   // rest guard it -- the same split emitFilters2 makes
+
+  // TODO: Optimize the selection here?
   let openLoop = (v, buf) => {
     let [i0, ...rest] = gens[v]
     let body = []
@@ -281,10 +270,7 @@ let schedule = (q, order) => {
     })
   }
 
-  // Which loop to open next. Prefer one that lets the most ready statements be
-  // emitted, so their nests fuse; break ties by total interest in the loop.
-  // A projected statement carries its own nest, so it never goes inside a loop
-  // we open -- it waits until the nest unwinds back to the top level.
+  // Which loop to open next. Currently same heuristics as new-codegen
   let fusable = t => !stmts[t].project
 
   let nextLoop = (pending, ready) => {
@@ -299,9 +285,6 @@ let schedule = (q, order) => {
     let cands = Object.keys(readyCnt)
     if (!cands.length) return undefined
 
-    // A loop that has to come after another unopened one is a poor choice: it
-    // would have to be closed halfway and reopened. Only a hint -- correctness
-    // rests on stmtDeps and byLoop.
     let after = {}
     for (let t of pending)
       for (let p of pending)
@@ -322,26 +305,34 @@ let schedule = (q, order) => {
     return best
   }
 
+  // core scheduling loop, each recursive call represents a level of loop nest
   let emitAll = (pending, buf) => {
+    // proceed if there are some statements that
+    // have their dependencies available
     while (pending.some(depsAvailable)) {
+      // but not all of them might be immediately emittable
       let now = pending.filter(emittable)
       pending = pending.filter(t => !emittable(t))
       while (now.length) {
         now.forEach(t => emitStmt(t, buf))
+        // new statements might become emittable
         now = pending.filter(emittable)
         pending = pending.filter(t => !emittable(t))
       }
       if (!pending.length) return pending
 
+      // the ones that are only waiting for loops
       let ready = pending.filter(t => fusable(t) && depsAvailable(t))
       if (!ready.length) return pending
 
+      // select a loop to open
       let l = nextLoop(pending.filter(fusable), ready)
       if (l === undefined) return pending
 
       let body = openLoop(l, buf)
       // only statements that depend on this loop belong inside it
       let inner = pending.filter(t => fusable(t) && loopDeps[t].includes(l))
+      // recurse
       let left = emitAll(inner, body)
       closeLoop()
       if (inner.length == left.length)

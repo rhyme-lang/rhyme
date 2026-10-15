@@ -119,6 +119,30 @@ exports.compileC1OptCrossCheck = (query, opts = {}) => {
   return wrapper
 }
 
+// c2 against opt-loopgen only, returns c2's result. For queries newCodegen
+// does not handle (full outer joins), where compileC2CrossCheck would fail on
+// its c2_new arm.
+exports.compileC2OptCrossCheck = (query, opts = {}) => {
+  query = ast.unwrap(query)
+  let c2 = simpleEval.compile(query, opts)
+  let c2_opt = simpleEval.compile(query, { ...opts, optLoopgen: true })
+  let wrapper = (x) => {
+    let res2 = c2(x)
+    let res2_opt = c2_opt(x)
+    expect(res2_opt).toEqual(res2)
+    return res2
+  }
+  api.logDebugOutput({
+    c2: c2.explain.code,
+    c2_opt: c2_opt.explain.code,
+  })
+  wrapper.c2 = c2
+  wrapper.c2_opt = c2_opt
+  wrapper.explain2 = c2.explain
+  wrapper.explain2_opt = c2_opt.explain
+  return wrapper
+}
+
 // the two C2 pipelines, returns c2's result (formerly api.compileC2)
 exports.compileC2CrossCheck = (query, opts = {}) => {
   query = ast.unwrap(query)
