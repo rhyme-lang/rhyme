@@ -62,8 +62,9 @@ exports.setOptLoopgenState = st => {
 //
 // Constant-folded variables are deliberately kept: emitStmListLowLevel drops
 // the loop and keeps the body for those, so the decision belongs there.
-let buildGens = () => {
+let buildGenerators = () => {
   let byVar = {}
+  // Group the filters by var
   for (let i in filters) {
     let v = filters[i].arg[1].op
     byVar[v] ??= []
@@ -72,6 +73,10 @@ let buildGens = () => {
   let gens = {}
   for (let v in byVar) {
     let is = byVar[v]
+    // Drop the filter for a gen if:
+    //   the filter itself is 'maybe' AND
+    //   at least one filter in the gen is not 'maybe'
+    //   (i.e.) not a full-outer join
     let keep = is.filter(i =>
       !(filters[i].mode == "maybe" && is.some(j => filters[j].mode != "maybe")))
     if (keep.length) gens[v] = keep
@@ -90,7 +95,7 @@ let idempotentWrite = q =>
 
 // Two statements per assignment, init before update.
 let buildStatements = () => {
-  let stms = []
+  let stmts = []
   for (let i in assignments) {
     let q = assignments[i]
     let tmp = Number(i)
@@ -99,7 +104,7 @@ let buildStatements = () => {
     // projection -- the same reason emitLoops passes needProject there only
     // when projections are not being eliminated at all.
     if (initRequired(q))
-      stms.push({
+      stmts.push({
         tmp, kind: "init", q, project: false,
         loops: q.fre,
         tmps: q.key == "update" ? q.arg[0].tmps : [],
@@ -109,49 +114,44 @@ let buildStatements = () => {
     // statement's keys and are then projected away. Nesting the statement under
     // them directly would run it once per *source row* rather than once per
     // distinct key, which double-counts any fold that is not idempotent.
-    stms.push({
+    stmts.push({
       tmp, kind: "update", q,
       loops: union(q.fre, q.bnd),
       tmps: q.tmps,
       project: q.ext.length > 0 &&
-               !(settings.elimProjections && idempotentWrite(q)),
+        !(settings.elimProjections && idempotentWrite(q)),
     })
   }
-  return stms
+  return stmts
 }
 
 
 // ----- dependencies -----
 
-// Every loop a statement transitively sits under. vars[v].vars is already the
-// transitive closure (computeDependencies writes it back), so this is a union
-// rather than a traversal.
-let loopClosure = v => union([v], vars[v]?.vars ?? [])
+// mirror the trans helper from simple-eval.js
+let trans = vs => union(vs, vs.flatMap(v => vars[v].vars))
 
-let buildDeps = (stms, gens) => {
+let buildDeps = (stmts, gens) => {
   // the statement that leaves a tmp in its final state
   let lastWriter = {}
-  stms.forEach((s, ix) => { if (s.kind == "update") lastWriter[s.tmp] = ix })
+  stmts.forEach((s, ix) => { if (s.kind == "update") lastWriter[s.tmp] = ix })
 
-  // what each loop needs: the loops its generators range over, and the tmps
-  // their sources read
-  let loopLoops = {}
+  // getting ready for stmt -> stmt dependencies
+  // get what tmp a loop depends on
   let loopTmps = {}
   for (let v in gens) {
-    loopLoops[v] = []
     loopTmps[v] = []
     for (let i of gens[v]) {
       let g = filters[i].arg[0]
-      loopLoops[v] = union(loopLoops[v], g.fre)
       loopTmps[v] = union(loopTmps[v], g.tmps ?? [])
     }
   }
 
-  let loopdeps = stms.map(s =>
-    s.loops.reduce((acc, v) => union(acc, loopClosure(v)), []))
+  // full iteration space, see emitFilters1
+  let loopDeps = stmts.map(s => trans(s.loops))
 
-  // direct statement -> statement edges
-  let pre = stms.map((s, ix) => {
+  // direct stmt -> stmt edges
+  let pre = stmts.map((s, ix) => {
     let ds = {}
     let need = t => {
       let w = lastWriter[t]
@@ -159,40 +159,40 @@ let buildDeps = (stms, gens) => {
     }
     for (let t of s.tmps) need(t)
     // a loop this statement sits under may itself read a tmp
-    for (let v of loopdeps[ix]) for (let t of loopTmps[v] ?? []) need(t)
+    for (let v of loopDeps[ix]) for (let t of loopTmps[v] ?? []) need(t)
     // init before update
     if (s.kind == "update")
-      stms.forEach((s2, j) => { if (s2.tmp == s.tmp && s2.kind == "init") ds[j] = true })
+      stmts.forEach((s2, j) => { if (s2.tmp == s.tmp && s2.kind == "init") ds[j] = true })
     return ds
   })
 
   // transitive closure
-  let stmtdeps = stms.map(() => ({}))
+  let stmtDeps = stmts.map(() => ({}))
   let visit = (root, cur, seen) => {
     for (let p in pre[cur]) {
       if (seen[p]) continue
       seen[p] = true
-      stmtdeps[root][p] = true
+      stmtDeps[root][p] = true
       visit(root, p, seen)
     }
   }
-  stms.forEach((_, ix) => visit(ix, ix, {}))
+  stmts.forEach((_, ix) => visit(ix, ix, {}))
 
   // Which of a dependency's loops have to close before we can read its result.
   // If both statements sit in the same loop they can share it; a loop only the
   // dependency sits in must finish first, or its tmp is read half-accumulated.
-  let byLoop = stms.map(() => ({}))
-  let afterLoop = stms.map(() => ({}))
-  stms.forEach((s, t) => {
-    for (let p in stmtdeps[t]) {
+  let byLoop = stmts.map(() => ({}))
+  let afterLoop = stmts.map(() => ({}))
+  stmts.forEach((s, t) => {
+    for (let p in stmtDeps[t]) {
       byLoop[t][p] = {}
       afterLoop[t][p] = {}
-      if (stms[p].tmp == s.tmp) continue
-      for (let l of stms[p].loops) {
+      if (stmts[p].tmp == s.tmp) continue
+      for (let l of stmts[p].loops) {
         if (s.loops.includes(l)) continue
         byLoop[t][p][l] = true
         for (let l1 of s.loops) {
-          if (stms[p].loops.includes(l1)) continue
+          if (stmts[p].loops.includes(l1)) continue
           afterLoop[t][p][l1] ??= {}
           afterLoop[t][p][l1][l] = true
         }
@@ -200,7 +200,7 @@ let buildDeps = (stms, gens) => {
     }
   })
 
-  return { stmtdeps, loopdeps, byLoop, afterLoop, loopLoops }
+  return { stmtDeps, loopDeps, byLoop, afterLoop }
 }
 
 
@@ -214,14 +214,14 @@ let schedule = (q, order) => {
     return []
   }
 
-  let gens = buildGens()
-  let stms = buildStatements()
-  let { stmtdeps, loopdeps, byLoop, afterLoop, loopLoops } = buildDeps(stms, gens)
+  let gens = buildGenerators()
+  let stmts = buildStatements()
+  let { stmtDeps, loopDeps, byLoop, afterLoop } = buildDeps(stmts, gens)
 
   let root = []
   let openedLoops = []
   let emitted = {}
-  let closedByStmt = stms.map(() => ({}))
+  let closedByStmt = stmts.map(() => ({}))
 
   let isOpened = l => openedLoops.includes(l)
 
@@ -229,21 +229,21 @@ let schedule = (q, order) => {
   // have closed
   let available = (t, p) =>
     emitted[p] && Object.keys(byLoop[t][p] ?? {}).every(l => closedByStmt[p][l])
-  let depsAvailable = t => Object.keys(stmtdeps[t]).every(p => available(t, p))
+  let depsAvailable = t => Object.keys(stmtDeps[t]).every(p => available(t, p))
 
   // A projected statement brings its own complete nest (project then traverse),
   // so it needs no loop open -- but it must not be emitted inside one either,
   // or the whole nest would re-run per iteration.
   let placeable = t =>
-    stms[t].project ? openedLoops.length == 0 : stms[t].loops.every(isOpened)
+    stmts[t].project ? openedLoops.length == 0 : stmts[t].loops.every(isOpened)
   let emittable = t => placeable(t) && depsAvailable(t)
 
   let loopEmittable = l =>
     !isOpened(l) && gens[l] &&
-    (loopLoops[l] ?? []).every(l2 => l2 === l || isOpened(l2))
+    (vars[l].vars).every(l2 => l2 === l || isOpened(l2))
 
   let emitStmt = (t, buf) => {
-    let s = stms[t]
+    let s = stmts[t]
     let node = { key: s.kind, arg: [{ key: "ref", op: s.tmp }, s.q] }
     if (s.project) {
       // reuse the projection emitter: PROJECT the iteration space into a temp,
@@ -276,7 +276,7 @@ let schedule = (q, order) => {
 
   let closeLoop = () => {
     let l = openedLoops.pop()
-    stms.forEach((s, i) => {
+    stmts.forEach((s, i) => {
       if (s.loops.includes(l) && closedByStmt[i][l] === false) closedByStmt[i][l] = true
     })
   }
@@ -285,12 +285,12 @@ let schedule = (q, order) => {
   // emitted, so their nests fuse; break ties by total interest in the loop.
   // A projected statement carries its own nest, so it never goes inside a loop
   // we open -- it waits until the nest unwinds back to the top level.
-  let fusable = t => !stms[t].project
+  let fusable = t => !stmts[t].project
 
   let nextLoop = (pending, ready) => {
     let readyCnt = {}, totalCnt = {}
     for (let t of pending)
-      for (let l of loopdeps[t]) {
+      for (let l of loopDeps[t]) {
         if (!loopEmittable(l)) continue
         totalCnt[l] = (totalCnt[l] ?? 0) + 1
         if (ready.includes(t)) readyCnt[l] = (readyCnt[l] ?? 0) + 1
@@ -301,7 +301,7 @@ let schedule = (q, order) => {
 
     // A loop that has to come after another unopened one is a poor choice: it
     // would have to be closed halfway and reopened. Only a hint -- correctness
-    // rests on stmtdeps and byLoop.
+    // rests on stmtDeps and byLoop.
     let after = {}
     for (let t of pending)
       for (let p of pending)
@@ -316,7 +316,7 @@ let schedule = (q, order) => {
     for (let l of cands) {
       if (best === undefined) { best = l; continue }
       if (readyCnt[l] > readyCnt[best] ||
-          (readyCnt[l] === readyCnt[best] && (totalCnt[l] ?? 0) > (totalCnt[best] ?? 0)))
+        (readyCnt[l] === readyCnt[best] && (totalCnt[l] ?? 0) > (totalCnt[best] ?? 0)))
         best = l
     }
     return best
@@ -341,7 +341,7 @@ let schedule = (q, order) => {
 
       let body = openLoop(l, buf)
       // only statements that depend on this loop belong inside it
-      let inner = pending.filter(t => fusable(t) && loopdeps[t].includes(l))
+      let inner = pending.filter(t => fusable(t) && loopDeps[t].includes(l))
       let left = emitAll(inner, body)
       closeLoop()
       if (inner.length == left.length)
@@ -351,11 +351,11 @@ let schedule = (q, order) => {
     return pending
   }
 
-  let left = emitAll(stms.map((_, i) => i), root)
+  let left = emitAll(stmts.map((_, i) => i), root)
   if (left.length) {
     for (let t of left)
-      console.error("opt-loopgen: could not emit " + stms[t].kind +
-                    " tmp" + stms[t].tmp + " := " + pretty(stms[t].q))
+      console.error("opt-loopgen: could not emit " + stmts[t].kind +
+        " tmp" + stmts[t].tmp + " := " + pretty(stmts[t].q))
   }
 
   console.assert(same(q.fre, []))
