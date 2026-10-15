@@ -1,5 +1,6 @@
 const { api, rh } = require('../../src/rhyme')
 const { compile } = require('../../src/simple-eval')
+const { compileC2OptCrossCheck } = require('../utils')
 
 
 
@@ -515,7 +516,7 @@ test("testFullOuterJoin1", () => {
 
   let query = rh`[(data.*A? || 0) + (other.*A? || 0)]`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
 
@@ -530,7 +531,7 @@ test("testFullOuterJoin2", () => {
 
   let query = rh`[data.*A? + other.*A? || data.*A? || other.*A?]`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
 
@@ -565,7 +566,7 @@ test("testFullOuterJoin_other2", () => {
   // generator, missing values cannot be observed
   let query = rh`{ A: sum(data.*A?), B: sum(other.*A?), C: [*A] }`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
 
