@@ -1,5 +1,6 @@
 const { api, rh } = require('../../src/rhyme')
 const { compile } = require('../../src/simple-eval')
+const { compileC2OptCrossCheck } = require('../utils')
 
 
 
@@ -19,7 +20,7 @@ test("scalarTest0", () => {
       total: api.sum(api.sum("data.*.value")),
       all: [["data.*.value"]]
     }
-    let func = compile(query)
+    let func = compileC2OptCrossCheck(query)
     let res = func({ data })
     let expected = { total: 60, all: [[10,20,30]] }
     expect(res).toEqual(expected)
@@ -31,7 +32,7 @@ test("groupTest0", () => {
         "total": api.sum("data.*.value"),
         "data.*.key": api.sum("data.*.value")
     }
-    let func = compile(query)
+    let func = compileC2OptCrossCheck(query)
     let res = func({ data })
     let expected = { "total": 60, "A": 40, "B": 20 }
     expect(res).toEqual(expected)
@@ -42,7 +43,7 @@ test("groupTest1", () => {
         "total": api.sum("data.*.value"),
         "data.*.key": api.plus(api.sum("data.*.value"), 0)
     }
-    let func = compile(query)
+    let func = compileC2OptCrossCheck(query)
     let res = func({ data })
     let expected = { "total": 60, "A": 40, "B": 20 }
     expect(res).toEqual(expected)
@@ -53,7 +54,7 @@ test("groupTest2", () => { // BUG!!!
         "total": api.sum(api.sum("data.*.value")),
         "data.*.key": api.sum(api.sum("data.*.value"))  // XXXX !!!!
     }
-    let func = compile(query)
+    let func = compileC2OptCrossCheck(query)
     let res = func({ data })
     let expected = { "total": 60, "A": 40, "B": 20 }
     let bug = { "total": 60, "A": 80, "B": 20 }
@@ -65,7 +66,7 @@ test("groupTest3", () => { // BUG!!!
         "total": api.sum(api.sum("data.*.value")),
         "data.*.key": [([("data.*.value")])]  // XXXX !!!!
     }
-    let func = compile(query)
+    let func = compileC2OptCrossCheck(query)
 
     // console.log(func.explain.pseudo)
     // console.log(func.explain.code)
@@ -96,7 +97,7 @@ test("groupTestNested_pre1", () => {
         "data3.*.key": rh`array(*B)`
     }
     let query2 = rh`count(data3.*.sub.*B) & ${query1}`
-    let func = compile(query2)
+    let func = compileC2OptCrossCheck(query2)
 
     // console.log(func.explain.pseudo)
     // console.log(func.explain.code)
@@ -115,7 +116,7 @@ test("groupTestNested_pre2", () => {
     let query1 = {
         "data3.*D.key": rh`array(*B & array(data3.*D.sub.*B))`
     }
-    let func = compile(query1)
+    let func = compileC2OptCrossCheck(query1)
 
     //  gen0: data3[*D]
     //  gen1: data3[*D][sub][*B]
@@ -155,7 +156,7 @@ test("groupTestNested1", () => {
         }
     }
 
-    let func = compile(query1)
+    let func = compileC2OptCrossCheck(query1)
 
     // console.log(func.explain.pseudo)
     // console.log(func.explain.code)
@@ -201,7 +202,7 @@ test("groupTestNested2", () => {
     }
 
 
-    let func = compile(query1)
+    let func = compileC2OptCrossCheck(query1)
 
     // console.log(func.explain.pseudo)
     // console.log(func.explain.code)
@@ -257,7 +258,7 @@ test("groupTestNested2_encoding1", () => {
     // contextual way, subject to a path filter. One could
     // try doing that in emitFilters. 
 
-    let func = compile(q1)
+    let func = compileC2OptCrossCheck(q1)
     let res = func({ data3, udf: {guard: (x,y) => y }})
 
     let expected = { 
@@ -284,7 +285,7 @@ test("groupTestNested2_encoding2", () => {
     // NOTE (2): have to use *K to iterate, can't just 
     //           use data3.*C.key (without the bugfix!!)
 
-    let func = compile(q1)
+    let func = compileC2OptCrossCheck(q1)
     let res = func({ data3, udf: {guard: (x,y) => y }})
 
     // console.log(func.explain.pseudo)
@@ -304,7 +305,7 @@ test("groupTestNested2_encoding3", () => {
     let q1 = rh`udf.guard *K (array (udf.guard *B (
                         array (udf.guard ${q0}.*K data3.*C.sub.*B))))`
 
-    let func = compile(q1)
+    let func = compileC2OptCrossCheck(q1)
     let res = func({ data3, udf: {guard: (x,y) => y }})
 
     let expected = { 
@@ -324,7 +325,7 @@ test("groupTestNested2_encoding3", () => {
 test("gt1", () => {
     let q0 = {"data.*.key": "array data.*.value"}
 
-    let func = compile(q0)
+    let func = compileC2OptCrossCheck(q0)
     let res = func({ data, udf: {guard: (x,y) => y }})
 
     // console.log(func.explain.pseudo)
@@ -340,7 +341,7 @@ test("gt1", () => {
 test("gt2", () => {
     let q0 = {"data.*.key": "data.*.value"}
 
-    let func = compile(q0, {singleResult:false})
+    let func = compileC2OptCrossCheck(q0, {singleResult:false})
     let res = func({ data, udf: {guard: (x,y) => y }})
 
     // console.log(func.explain.pseudo)
@@ -357,7 +358,7 @@ test("gt2", () => {
 test("gt3", () => {
     let q0 = {foo: {"data.*.key": { bar: "sum data.*.value" }}}
 
-    let func = compile(q0)
+    let func = compileC2OptCrossCheck(q0)
     let res = func({ data, udf: {guard: (x,y) => y }})
 
     // console.log(func.explain.pseudo)
@@ -374,7 +375,7 @@ test("gt4", () => {
     let q0 = { foo: 1,//{"data.*.key": "sum data.*.value" },
                bar: 1}//{"data.*.key": "sum data.*.value" }}
 
-    let func = compile(q0)
+    let func = compileC2OptCrossCheck(q0)
     let res = func({ data, udf: {guard: (x,y) => y }})
 
     // console.log(func.explain.pseudo)
@@ -404,7 +405,7 @@ test("gt4", () => {
 test("groupTest_explicitHoisting", () => {
     let q0 = { "data.*.key": "array(data.*.key)" }
 
-    let func = compile(q0)
+    let func = compileC2OptCrossCheck(q0)
     let res = func({ data })
 
     let expected = { 
@@ -428,7 +429,7 @@ test("undefinedFields1", () => {
         {product: "Galaxy", model: "S6", quantity: 20},
     ]
     let q0 = { "data.*.product": { "data.*.model": "sum(data.*.quantity)" }}
-    let func = compile(q0)
+    let func = compileC2OptCrossCheck(q0)
     let res = func({ data })
 
     let expected = { 
@@ -444,7 +445,7 @@ test("undefinedFields2", () => {
         {product: "Galaxy", model: "S6", quantity: 20},
     ]
     let q0 = { "data.*.product": { "data.*.model": {Q:"sum(data.*.quantity)" }}}
-    let func = compile(q0)
+    let func = compileC2OptCrossCheck(q0)
     let res = func({ data })
 
     let expected = { 
@@ -476,7 +477,7 @@ test("undefinedFields3", () => {
         {product: "Galaxy", model: "S6", quantity: 20},
     ]
     let q0 = { "data.*.product": { "data.*.model": true}}
-    let func = compile(q0)
+    let func = compileC2OptCrossCheck(q0)
     let res = func({ data })
 
     // console.log(func.explain.pseudo0)
@@ -512,7 +513,7 @@ test("eta-kv-rec1", () => { // OK -- no eta
         {product: "Galaxy", model: "S6", quantity: 20},
     ]
     let q0 = rh`sum data.*A.quantity | group data.*A.product`
-    let func = compile(q0)
+    let func = compileC2OptCrossCheck(q0)
     let res = func({ data })
 
     // console.log(func.explain.pseudo0)
@@ -534,7 +535,7 @@ test("eta-kv-rec2", () => { // OK -- eta in body of group expr
     let data0 = "data"
     let data1 = {"*E": "data.*E"}
     let q0 = rh`sum data.*A.quantity | group ${data1}.*A.product`
-    let func = compile(q0)
+    let func = compileC2OptCrossCheck(q0)
     let res = func({ data })
 
     // console.log(func.explain.pseudo0)
@@ -557,7 +558,7 @@ test("eta-kv-rec2-alt", () => { // consistent index var for data.*E
     let data0 = "data"
     let data1 = {"*E": "data.*E"}
     let q0 = rh`sum data.*E.quantity | group ${data1}.*A.product`
-    let func = compile(q0)
+    let func = compileC2OptCrossCheck(q0)
     let res = func({ data })
 
     // console.log(func.explain.pseudo0)
@@ -584,7 +585,7 @@ test("eta-kv-rec3", () => { // BUG -- eta in key of group expr
     let data0 = "data"
     let data1 = {"*E": "data.*E"}
     let q0 = rh`sum ${data1}.*A.quantity | group data.*A.product`
-    let func = compile(q0)
+    let func = compileC2OptCrossCheck(q0)
     let res = func({ data })
 
     // console.log(func.explain.pseudo0)
@@ -607,7 +608,7 @@ test("eta-kv-rec3-alt", () => { // consistent index var for data.*E
     let data0 = "data"
     let data1 = {"*E": "data.*E"}
     let q0 = rh`sum ${data1}.*A.quantity | group data.*E.product`
-    let func = compile(q0)
+    let func = compileC2OptCrossCheck(q0)
     let res = func({ data })
 
     // console.log(func.explain.pseudo0)
@@ -630,7 +631,7 @@ test("eta-kv-rec4", () => { // BUG -- eta in key of group expr
     let data0 = "data"
     let data1 = {"*E": "data.*E"}
     let q0 = rh`sum ${data1}.*A.quantity | group ${data1}.*A.product`
-    let func = compile(q0)
+    let func = compileC2OptCrossCheck(q0)
     let res = func({ data })
 
     // console.log(func.explain.pseudo0)
@@ -654,7 +655,7 @@ test("eta-kv-array2", () => {
     let data0 = "data"
     let data1 = ["data.*E"]
     let q0 = rh`sum data.*A.quantity | group ${data1}.*A.product`
-    let func = compile(q0)
+    let func = compileC2OptCrossCheck(q0)
     let res = func({ data })
 
     // console.log(func.explain.pseudo0)
@@ -676,7 +677,7 @@ test("eta-kv-array2-alt", () => {
     let data0 = "data"
     let data1 = ["data.*E"]
     let q0 = rh`sum data.*E.quantity | group ${data1}.*A.product`
-    let func = compile(q0)
+    let func = compileC2OptCrossCheck(q0)
     let res = func({ data })
 
     // console.log(func.explain.pseudo0)
@@ -703,7 +704,7 @@ test("eta-kv-array3", () => { // BUG -- eta in key of group expr
     let data0 = "data"
     let data1 = ["data.*E"]
     let q0 = rh`sum ${data1}.*A.quantity | group data.*A.product`
-    let func = compile(q0)
+    let func = compileC2OptCrossCheck(q0)
     let res = func({ data })
 
     // console.log(func.explain.pseudo0)
@@ -726,7 +727,7 @@ test("eta-kv-array3-alt", () => { // consistent index var for data.*E
     let data0 = "data"
     let data1 = ["data.*E"]
     let q0 = rh`sum ${data1}.*A.quantity | group data.*E.product`
-    let func = compile(q0)
+    let func = compileC2OptCrossCheck(q0)
     let res = func({ data })
 
     // console.log(func.explain.pseudo0)
@@ -750,7 +751,7 @@ test("eta-kv-array4", () => { // BUG -- eta via array constr
     let data0 = "data"
     let data1 = ["data.*E"]
     let q0 = rh`sum ${data1}.*A.quantity | group ${data1}.*A.product`
-    let func = compile(q0)
+    let func = compileC2OptCrossCheck(q0)
     let res = func({ data })
 
     // console.log(func.explain.pseudo0)
@@ -768,7 +769,7 @@ test("eta-kv-array4", () => { // BUG -- eta via array constr
 test("etaIndirect1", () => { // OK
     let data = { foo: [1,2,2,4,4,5] }
     let q0 = { "*FOO": rh`count data.*FOO.*A | group data.*FOO.*A` }
-    let func = compile(q0)
+    let func = compileC2OptCrossCheck(q0)
     let res = func({ data })
 
     // console.log(func.explain.pseudo0)
@@ -791,7 +792,7 @@ test("etaIndirect2", () => { // BUG -- eta via array constr
     let data0 = "data.*FOO"
     let data1 = ["data.foo.*E"]
     let q0 = { "foo": rh`count ${data1}.*A | group ${data1}.*A` }
-    let func = compile(q0)
+    let func = compileC2OptCrossCheck(q0)
     let res = func({ data })
 
     // console.log(func.explain.pseudo0)
@@ -813,7 +814,7 @@ test("etaIndirect2-simpl", () => { // BUG -- eta via array constr
     let data = { 0: 2, 1: 2, 2: 2 }
     let data1 = ["data.*E"]
     let q0 = rh`count ${data1}.*A | group ${data1}.*A`
-    let func = compile(q0)
+    let func = compileC2OptCrossCheck(q0)
     let res = func({ data })
 
     // console.log(func.explain.pseudo0)
@@ -860,7 +861,7 @@ for (*E <- data)
 test("etaSame0", () => { // baseline
     let data = [1,2,3]
     let q = rh`(sum data.*) + (sum data.*)`
-    let func = compile(q)
+    let func = compileC2OptCrossCheck(q)
     let res = func({ data })
 
     // console.log(func.explain.pseudo0)
@@ -874,7 +875,7 @@ test("etaSame0", () => { // baseline
 test("etaSame1", () => { 
     let data = [1,2,3]
     let q = rh`(sum data.*) + (sum (array data.*).*)`
-    let func = compile(q)
+    let func = compileC2OptCrossCheck(q)
     let res = func({ data })
 
     // console.log(func.explain.pseudo0)
@@ -888,7 +889,7 @@ test("etaSame1", () => {
 test("etaSame2", () => { 
     let data = [1,2,3]
     let q = rh`sum (data.* + (array data.*).*)`
-    let func = compile(q)
+    let func = compileC2OptCrossCheck(q)
     let res = func({ data })
 
     // console.log(func.explain.pseudo0)
@@ -902,7 +903,7 @@ test("etaSame2", () => {
 test("etaSame3", () => { 
     let data = [1,2,3]
     let q = rh`sum (data.*A + (array data.*A).*B)`
-    let func = compile(q)
+    let func = compileC2OptCrossCheck(q)
     let res = func({ data })
 
     // console.log(func.explain.pseudo0)
@@ -916,7 +917,7 @@ test("etaSame3", () => {
 test("etaSame4", () => { 
     let data = [1,2,3]
     let q = rh`sum (data.*A + (group *A data.*A).*B)`
-    let func = compile(q)
+    let func = compileC2OptCrossCheck(q)
     let res = func({ data })
 
     // console.log(func.explain.pseudo0)
@@ -944,7 +945,7 @@ test("testIndirectCorrelation1", () => {
 
   let query = { "data.*A.key": rh`sum(other.*B.*A & data.*B.value)` }
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
   expect(res).toEqual({
@@ -964,7 +965,7 @@ test("testIndirectCorrelation2", () => {
 
   let query = { "data.*A.key": rh`sum(data.*B.value)` }
 
-  let func = compile(rh`sum(other.*A.*B) & ${query}`)
+  let func = compileC2OptCrossCheck(rh`sum(other.*A.*B) & ${query}`)
   let res = func({data, other})
 
   expect(res).toEqual({
@@ -986,7 +987,7 @@ test("testIndirectCorrelation3", () => {
 
   let query = { "data.*A.key": rh`sum(data.*B.value)` }
 
-  let func = compile(rh`sum(other.*B.*A) & ${query}`)
+  let func = compileC2OptCrossCheck(rh`sum(other.*B.*A) & ${query}`)
   let res = func({data, other})
 
   expect(res).toEqual({
@@ -1019,7 +1020,7 @@ test("testIndirectCorrelation4", () => {
 
   let query = { "data.*A.region": rh`array(partner.*A.*B & *B)` }
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, partner})
 
   expect(res).toEqual({
@@ -1046,7 +1047,7 @@ test("testIndirectCorrelation5", () => {
 
   let query = { "data.*A.region": rh`array(*B)` }
 
-  let func = compile(rh`sum(partner.*A.*B) & ${query}`)
+  let func = compileC2OptCrossCheck(rh`sum(partner.*A.*B) & ${query}`)
   let res = func({data, partner})
 
   let bug = {
@@ -1121,7 +1122,7 @@ group_{*A} (group^{*A}_{*B}
     sum^{*A}_{*C}(data[*C])))))
 */
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
 
   // console.log(func.explain.pseudo)
   // console.log(func.explain.code)
@@ -1150,7 +1151,7 @@ test("testIndirectFreeVars0", () => {
 
   let query = rh`${filter1} & ${expr}`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
   expect(res).toEqual({
@@ -1179,7 +1180,7 @@ test("testIndirectFreeVars1", () => {
 
   let query = rh`${filter1} & ${filter2} & ${filter3} & ${filter4} & ${expr}`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
   expect(res).toEqual({
@@ -1205,7 +1206,7 @@ test("testIndirectFreeVars2", () => {
 
   let query = rh`${filter1} & ${filter2} & ${filter3} & ${filter4} & ${expr}`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
   expect(res).toEqual({
@@ -1217,7 +1218,7 @@ test("testIndirectFreeVars2", () => {
 test("testSingleArgGroup0", () => {
   let query = rh`data.*A.key` // implicit top-level group
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data})
 
   // console.log(func.explain.pseudo)
@@ -1230,7 +1231,7 @@ test("testSingleArgGroup0", () => {
 test("testSingleArgGroup1", () => {
   let query = rh`group data.*A.key`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data})
 
   // console.log(func.explain.pseudo)
@@ -1294,7 +1295,7 @@ test("day5-part2-debug", () => {
   let starts1 = rh`${starts0}.*A`
   let lengths1 = rh`${lengths0}.*A`
 
-  let f0 = compile([{startX: starts1, lengthX: lengths1}])
+  let f0 = compileC2OptCrossCheck([{startX: starts1, lengthX: lengths1}])
 
   let res = f0({udf, extra})
 
@@ -1356,10 +1357,10 @@ test("day4-part1-debug1", () => {
     1: 2, 2: 2, 3: 2, 4: 1 
   }
 
-  let func1 = compile(q1)
-  let func2 = compile(q2)
-  let func3 = compile(q3)
-  let func4 = compile(q4)
+  let func1 = compileC2OptCrossCheck(q1)
+  let func2 = compileC2OptCrossCheck(q2)
+  let func3 = compileC2OptCrossCheck(q3)
+  let func4 = compileC2OptCrossCheck(q4)
 
   let res1 = func1({xs})
   let res2 = func2({xs})
@@ -1389,8 +1390,8 @@ test("day4-part1-debug2", () => {
 
   let bug = { 0: {} }
 
-  let func1 = compile(q1)
-  let func2 = compile(q2)
+  let func1 = compileC2OptCrossCheck(q1)
+  let func2 = compileC2OptCrossCheck(q2)
 
   let res1 = func1({xs})
   let res2 = func2({xs})
