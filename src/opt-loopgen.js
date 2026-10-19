@@ -37,9 +37,14 @@ const { union, same } = sets
 // which any consumer of the simple-eval IR has.
 //
 //   gens[v]   = [filter index, ...]   first drives the loop, rest guard it
-//   stmts[i]  = { tmp, kind, q, fre, bnd, ext, loops, tmps, project }
+//   stmts[i]  = { tmp, key, q, fre, bnd, ext, loops, tmps, project }
 //     tmp     what it writes -- statements sharing a tmp may share loops, and
-//             are ordered by position in the array
+//             run in array order, the last one leaving it final. The scheduler
+//             needs nothing else to order them; `key` and `q` are only read
+//             when emitting.
+//     key    the node key this statement emits as: "init" or "update".
+//             Not the same as q.key, which is the assignment's own node key
+//             ("stateful", "update"): a stateful sum is emitted as an "update"
 //     loops   the loops it must sit inside
 //     tmps    the tmps it reads
 //     project it brings its own loop nest, so it only goes at the top level
@@ -111,7 +116,7 @@ let buildStatements = (gens) => {
     // when projections are not being eliminated at all.
     if (initRequired(q))
       stmts.push({
-        tmp, kind: "init", q,
+        tmp, key: "init", q,
         fre: q.fre, bnd: [], ext: q.extInit,
         loops: q.fre,
         tmps: q.key == "update" ? q.arg[0].tmps : [],
@@ -124,7 +129,7 @@ let buildStatements = (gens) => {
     // distinct key, which double-counts any fold that is not idempotent.
     let loops = union(q.fre, q.bnd)
     stmts.push({
-      tmp, kind: "update", q,
+      tmp, key: "update", q,
       fre: q.fre, bnd: q.bnd, ext: q.ext,
       loops,
       tmps: q.tmps,
@@ -143,9 +148,10 @@ let buildStatements = (gens) => {
 let trans = vs => union(vs, vs.flatMap(v => vars[v].vars))
 
 let buildDeps = (stmts, gens) => {
-  // the statement that leaves a tmp in its final state
+  // the statement that leaves a tmp in its final state -- statements writing
+  // one tmp run in array order, so that is the last of them
   let lastWriter = {}
-  stmts.forEach((s, ix) => { if (s.kind == "update") lastWriter[s.tmp] = ix })
+  stmts.forEach((s, ix) => { lastWriter[s.tmp] = ix })
 
   // getting ready for stmt -> stmt dependencies
   // get what tmp a loop depends on
@@ -171,9 +177,8 @@ let buildDeps = (stmts, gens) => {
     for (let t of s.tmps) need(t)
     // a loop this statement sits under may itself read a tmp
     for (let v of loopDeps[ix]) for (let t of loopTmps[v] ?? []) need(t)
-    // init before update
-    if (s.kind == "update")
-      stmts.forEach((s2, j) => { if (s2.tmp == s.tmp && s2.kind == "init") ds[j] = true })
+    // earlier writes to the same tmp come first (init before update)
+    stmts.forEach((s2, j) => { if (s2.tmp == s.tmp && j < ix) ds[j] = true })
     return ds
   })
 
@@ -247,7 +252,7 @@ let schedule = (gens, stmts) => {
 
   let emitStmt = (t, buf) => {
     let s = stmts[t]
-    let node = { key: s.kind, arg: [{ key: "ref", op: s.tmp }, s.q] }
+    let node = { key: s.key, arg: [{ key: "ref", op: s.tmp }, s.q] }
     if (s.project) {
       // reuse the projection emitter: PROJECT the iteration space into a temp,
       // then TRAVERSE it, so the body runs once per distinct key
@@ -376,7 +381,7 @@ let scheduleC2 = (q) => {
   let { root, left } = schedule(gens, stmts)
 
   for (let t of left)
-    console.error("opt-loopgen: could not emit " + stmts[t].kind +
+    console.error("opt-loopgen: could not emit " + stmts[t].key +
       " tmp" + stmts[t].tmp + " := " + pretty(stmts[t].q))
 
   console.assert(same(q.fre, []))
