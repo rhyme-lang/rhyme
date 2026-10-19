@@ -791,7 +791,7 @@ const {
 
 const {
   setOptLoopgenState,
-  schedule,
+  scheduleC2,
 } = require('./opt-loopgen')
 
 
@@ -1046,7 +1046,7 @@ let compile = (q,userSettings={}) => {
 
     let code0 = code
 
-    let loops = settings.optLoopgen ? schedule(q,order) : emitLoops(q,order)
+    let loops = settings.optLoopgen ? scheduleC2(q) : emitLoops(q,order)
 
     code = emitCodeLowLevel(loops)
     code = fixIndent(code)

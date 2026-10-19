@@ -23,6 +23,27 @@ const { union, same } = sets
 // Notably, the scheduled code is in the shape of simple-loopgen's generated
 // statements. So it is then passed to emitStmListLowLevel.
 //
+// The file is in three parts:
+//
+//   buildGenerators / buildStatements   c2 IR  ->  gens + stmts
+//   schedule(gens, stmts)               the scheduler proper
+//   scheduleC2(q)                       what simple-eval calls,
+//                                       a driver for JS backend
+//
+// Only the middle one is meant to be shared. It takes its problem as two
+// arguments and never looks at `assignments`, so another front end -- cgen2 --
+// can build the same gens and stmts its own way and schedule them. What it
+// still reads from c2 state is `vars` (loop deps) and `filters` (loop sources),
+// which any consumer of the simple-eval IR has.
+//
+//   gens[v]   = [filter index, ...]   first drives the loop, rest guard it
+//   stmts[i]  = { tmp, kind, q, fre, bnd, ext, loops, tmps, project }
+//     tmp     what it writes -- statements sharing a tmp may share loops, and
+//             are ordered by position in the array
+//     loops   the loops it must sit inside
+//     tmps    the tmps it reads
+//     project it brings its own loop nest, so it only goes at the top level
+//
 
 let settings
 let vars          // deps var->var (transitively closed by computeDependencies)
@@ -195,14 +216,9 @@ let buildDeps = (stmts, gens) => {
 
 
 // ----- scheduling -----
-let schedule = (q, order) => {
-  if (!settings.extractAssignments) {
-    console.error("opt-loopgen only works if settings.extractAssignments = true")
-    return []
-  }
 
-  let gens = buildGenerators()
-  let stmts = buildStatements(gens)
+// Returns the statement list, plus whatever could not be placed.
+let schedule = (gens, stmts) => {
   let { stmtDeps, loopDeps, byLoop, afterLoop } = buildDeps(stmts, gens)
 
   let root = []
@@ -343,11 +359,25 @@ let schedule = (q, order) => {
   }
 
   let left = emitAll(stmts.map((_, i) => i), root)
-  if (left.length) {
-    for (let t of left)
-      console.error("opt-loopgen: could not emit " + stmts[t].kind +
-        " tmp" + stmts[t].tmp + " := " + pretty(stmts[t].q))
+  return { root, left }
+}
+
+
+// ----- the c2 driver -----
+
+let scheduleC2 = (q) => {
+  if (!settings.extractAssignments) {
+    console.error("opt-loopgen only works if settings.extractAssignments = true")
+    return []
   }
+
+  let gens = buildGenerators()
+  let stmts = buildStatements(gens)
+  let { root, left } = schedule(gens, stmts)
+
+  for (let t of left)
+    console.error("opt-loopgen: could not emit " + stmts[t].kind +
+      " tmp" + stmts[t].tmp + " := " + pretty(stmts[t].q))
 
   console.assert(same(q.fre, []))
   root.push({ key: "return", arg: [q] })
@@ -355,4 +385,7 @@ let schedule = (q, order) => {
 }
 
 
+exports.buildGenerators = buildGenerators
+exports.buildStatements = buildStatements
 exports.schedule = schedule
+exports.scheduleC2 = scheduleC2
