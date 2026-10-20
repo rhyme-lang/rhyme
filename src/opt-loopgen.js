@@ -17,8 +17,8 @@ const { union, same } = sets
 // Currently, statements that needs an explicit projection is only emitted at
 // the top level of the generated code since it emitts its own loop nests.
 //
-// One test is not covered by both this scheduler: testZipNestedRec3.
-// Also not handled by new-codegen.
+// One test is not covered by this scheduler: testZipNestedRec3 due to a
+// circular dependency. That test is also not handled by new-codegen.
 //
 // Notably, the scheduled code is in the shape of simple-loopgen's generated
 // statements. So it is then passed to emitStmListLowLevel.
@@ -30,23 +30,12 @@ const { union, same } = sets
 //   scheduleC2(q)                       what simple-eval calls,
 //                                       a driver for JS backend
 //
-// Only the middle one is meant to be shared. It takes its problem as two
-// arguments and never looks at `assignments`, so another front end -- cgen2 --
-// can build the same gens and stmts its own way and schedule them. What it
-// still reads from c2 state is `vars` (loop deps) and `filters` (loop sources),
-// which any consumer of the simple-eval IR has.
-//
 //   gens[v]   = [filter index, ...]   first drives the loop, rest guard it
 //   stmts[i]  = { tmp, key, q, fre, bnd, ext, loops, tmps, project }
-//     tmp     what it writes -- statements sharing a tmp may share loops, and
-//             run in array order, the last one leaving it final. The scheduler
-//             needs nothing else to order them; `key` and `q` are only read
-//             when emitting.
-//     key    the node key this statement emits as: "init" or "update".
-//             Not the same as q.key, which is the assignment's own node key
-//             ("stateful", "update"): a stateful sum is emitted as an "update"
-//     loops   the loops it must sit inside
-//     tmps    the tmps it reads
+//     tmp     which tmp variable it writes to
+//     key     the statement key. (init, update, etc.)
+//     loops   the loops it must sit inside, union(fre, bnd)
+//     tmps    the tmps it depends on, from q.tmps
 //     project it brings its own loop nest, so it only goes at the top level
 //
 
@@ -111,9 +100,6 @@ let buildStatements = (gens) => {
     let q = assignments[i]
     let tmp = Number(i)
 
-    // rt.init writes with ??=, so it is idempotent and never needs a
-    // projection -- the same reason emitLoops passes needProject there only
-    // when projections are not being eliminated at all.
     if (initRequired(q))
       stmts.push({
         tmp, key: "init", q,
@@ -123,10 +109,6 @@ let buildStatements = (gens) => {
         project: q.fre.some(v => allMaybe(gens, v)),
       })
 
-    // ext holds the variables that have to be enumerated to produce this
-    // statement's keys and are then projected away. Nesting the statement under
-    // them directly would run it once per *source row* rather than once per
-    // distinct key, which double-counts any fold that is not idempotent.
     let loops = union(q.fre, q.bnd)
     stmts.push({
       tmp, key: "update", q,
