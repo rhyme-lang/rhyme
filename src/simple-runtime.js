@@ -241,6 +241,42 @@ rt.pure.sort = (x1, ...x2) => {
   })
 }
 
+rt.pure.year = () => { throw new Error("'year' is not supported in simple-runtime") }
+rt.pure.hour = () => { throw new Error("'hour' is not supported in simple-runtime") }
+rt.pure.dot = () => { throw new Error("'dot' is not supported in simple-runtime") }
+
+// number of characters of a string, or of entries of an array or object
+rt.pure.length = (x1) => {
+  if (x1 === undefined) return undefined
+  if (typeof x1 === "string" || Array.isArray(x1)) return x1.length
+  if (typeof x1 === "object" && x1 !== null) return Object.keys(x1).length
+  return undefined
+}
+
+// SQL LIKE restricted to '%' (any run of characters), matching the whole
+// string. Like the comparisons, the result is true or nothing.
+rt.pure.like = (x1, x2) => {
+  if (x1 === undefined) return undefined
+  if (x2 === undefined) return undefined
+  let parts = String(x2).split("%").map(s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+  let re = new RegExp("^" + parts.join("[\\s\\S]*") + "$")
+  return re.test(String(x1)) ? true : undefined
+}
+
+// characters [start, end) of a string
+rt.pure.substr = (x1, x2, x3) => {
+  if (x1 === undefined) return undefined
+  if (x2 === undefined) return undefined
+  if (x3 === undefined) return undefined
+  return String(x1).substring(Number(x2), Number(x3))
+}
+
+// true exactly when the argument is nothing -- the one op that turns a
+// missing value into a present one
+rt.pure.isUndef = (x1) => {
+  return x1 === undefined ? true : undefined
+}
+
 rt.pure.convert_u8 = (x) => x === undefined ? undefined : (Number(x) & 0xff);
 rt.pure.convert_u16 = (x) => x === undefined ? undefined : (Number(x) & 0xffff);
 rt.pure.convert_u32 = (x) => x === undefined ? undefined : (Number(x) & 0xffffffff);
