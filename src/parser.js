@@ -313,7 +313,7 @@ exports.parserImpl = (strings, holes) => {
         }
         res = ast.str(s)
       } else if (s == "true" || s == "false") {
-        res = ast.num(Boolean(s))
+        res = ast.num(s == "true")
       } else {
         res = ast.ident(s)
       }

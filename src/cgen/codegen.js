@@ -1843,6 +1843,12 @@ let generateC = (q, ir, settings) => {
   let out = path.join(outDir, outFile)
   let code = emitCode(q, ir, settings)
 
+  // emitCode leaves these in module state, which the next generateC resets.
+  // Read them now: writeAndCompile only gets to them after awaiting, by which
+  // time a concurrent compile may have overwritten them.
+  let needsYYJSON = !!(inputFiles["json"] || inputFiles["ndjson"] || usesYYJSON)
+  let needsCublas = backend == "cuda"
+
   let compiler = settings.backend == "c" ? (settings.compiler || "gcc") : "nvcc"
   let optFlags = settings.optFlags || ["-O3"]
 
@@ -1863,8 +1869,8 @@ let generateC = (q, ir, settings) => {
       cFile, out, compiler, optFlags,
       cFlags: settings.cFlags,
       includePaths: settings.includePaths,
-      needsYYJSON: !!(inputFiles["json"] || inputFiles["ndjson"] || usesYYJSON),
-      needsCublas: backend == "cuda",
+      needsYYJSON,
+      needsCublas,
       verbose: settings.verbose,
     })
     func.explain.cFile = cFile
