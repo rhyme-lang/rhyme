@@ -12,15 +12,23 @@ let getSize = (q) => {
     return 1;
 }
 
-let deduplicate = (q, cseMap) => {
-    let qString = JSON.stringify(q);
-    if(cseMap[qString])
-        return cseMap[qString];
-    cseMap[qString] = q;
-    if(q.arg)
-        q.arg = q.arg.map(arg => deduplicate(arg, cseMap));
-    return q;
+
+let deduplicate = (q) => {
+    let list = []
+    let map = {}
+    let go = (q) => {
+        let argIds = q.arg?.map(go);
+        let key = JSON.stringify({...q, arg: argIds})
+        if (map[key] !== undefined) return map[key]
+        if (q.arg) q.arg = argIds.map(i => list[i])
+        let id = list.length
+        list.push(q)
+        map[key] = id
+        return id
+    }
+    return list[go(q)];
 }
+
 optimizer.deduplicate = deduplicate;
 
 let getConstantObjectExp = (q) => {

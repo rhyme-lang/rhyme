@@ -323,7 +323,7 @@ test("testGroup0", () => {
   (but here we don't group ...)
 */
 
-console.log(func.explain.code)
+// console.log(func.explain.code)
 
   expect(res).toEqual(
     {"A": {"U": 40}, "B": {"U": 20}, "C": {"V": 10}}
