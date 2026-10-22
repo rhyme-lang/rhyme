@@ -384,6 +384,11 @@ let emitFilters2 = (scope, trueFree, iter, disjunctToDrop) => (buf, codegen) => 
       pending.push(Number(i))
   }
 
+  // filters this nest may emit: only these can block availability,
+  // any other dependency (e.g. a dropped 'maybe' filter) is lazily
+  // generated when referenced
+  let candidates = new Set(pending)
+
   let filtersInScope = [...scope.filters]
   let varsInScope = [...scope.vars]
 
@@ -407,7 +412,7 @@ let emitFilters2 = (scope, trueFree, iter, disjunctToDrop) => (buf, codegen) => 
       // as far upwards as they are used!
 
       if (settings.extractFilters)
-         avail &&= subset(g1.filters??[], filtersInScope) // plusTest4a has g1.filters null?
+         avail &&= subset(g1.filters.filter(j => candidates.has(j)), filtersInScope)
 
       if (avail)
         available.push(i) // TODO: insert in proper place

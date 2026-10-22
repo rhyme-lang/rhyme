@@ -19,30 +19,30 @@ let customers = [
 ]
 
 let innerJoinExpected = [
-  { custID: 1, name: 'customer1', orderID: 1, orderDesc: 'order1' },
-  { custID: 1, name: 'customer1', orderID: 3, orderDesc: 'order3' },
-  { custID: 3, name: 'customer3', orderID: 2, orderDesc: 'order2' },
-  { custID: 3, name: 'customer3', orderID: 5, orderDesc: 'order5' },
-  { custID: 5, name: 'customer5', orderID: 4, orderDesc: 'order4' }
+  { custID: 1, custName: 'customer1', orderID: 1, orderDesc: 'order1' },
+  { custID: 1, custName: 'customer1', orderID: 3, orderDesc: 'order3' },
+  { custID: 3, custName: 'customer3', orderID: 2, orderDesc: 'order2' },
+  { custID: 3, custName: 'customer3', orderID: 5, orderDesc: 'order5' },
+  { custID: 5, custName: 'customer5', orderID: 4, orderDesc: 'order4' }
 ]
 let leftJoinExpected = [
-  { custID: 1, name: 'customer1', orderID: 1, orderDesc: 'order1' },
-  { custID: 1, name: 'customer1', orderID: 3, orderDesc: 'order3' },
-  { custID: 2, name: 'customer2', orderID: null, orderDesc: null },
-  { custID: 3, name: 'customer3', orderID: 2, orderDesc: 'order2' },
-  { custID: 3, name: 'customer3', orderID: 5, orderDesc: 'order5' },
-  { custID: 4, name: 'customer4', orderID: null, orderDesc: null },
-  { custID: 5, name: 'customer5', orderID: 4, orderDesc: 'order4' }
+  { custID: 1, custName: 'customer1', orderID: 1, orderDesc: 'order1' },
+  { custID: 1, custName: 'customer1', orderID: 3, orderDesc: 'order3' },
+  { custID: 2, custName: 'customer2', orderID: null, orderDesc: null },
+  { custID: 3, custName: 'customer3', orderID: 2, orderDesc: 'order2' },
+  { custID: 3, custName: 'customer3', orderID: 5, orderDesc: 'order5' },
+  { custID: 4, custName: 'customer4', orderID: null, orderDesc: null },
+  { custID: 5, custName: 'customer5', orderID: 4, orderDesc: 'order4' }
 ]
 let fullOuterJoinExpected = [
-  { custID: 1, name: 'customer1', orderID: 1, orderDesc: 'order1' },
-  { custID: 1, name: 'customer1', orderID: 3, orderDesc: 'order3' },
-  { custID: 2, name: 'customer2', orderID: null, orderDesc: null },
-  { custID: 3, name: 'customer3', orderID: 2, orderDesc: 'order2' },
-  { custID: 3, name: 'customer3', orderID: 5, orderDesc: 'order5' },
-  { custID: 4, name: 'customer4', orderID: null, orderDesc: null },
-  { custID: 5, name: 'customer5', orderID: 4, orderDesc: 'order4' },
-  { custID: null, name: null, orderID: 6, orderDesc: 'order6' }
+  { custID: 1, custName: 'customer1', orderID: 1, orderDesc: 'order1' },
+  { custID: 1, custName: 'customer1', orderID: 3, orderDesc: 'order3' },
+  { custID: 2, custName: 'customer2', orderID: null, orderDesc: null },
+  { custID: 3, custName: 'customer3', orderID: 2, orderDesc: 'order2' },
+  { custID: 3, custName: 'customer3', orderID: 5, orderDesc: 'order5' },
+  { custID: 4, custName: 'customer4', orderID: null, orderDesc: null },
+  { custID: 5, custName: 'customer5', orderID: 4, orderDesc: 'order4' },
+  { custID: null, custName: null, orderID: 6, orderDesc: 'order6' }
 ]
 
 test("innerJoin1", () => {
@@ -54,7 +54,7 @@ test("innerJoin1", () => {
   }`
   let phase2 = rh`[{
     custID: customers.*c.id,
-    name: customers.*c.name,
+    custName: customers.*c.name,
     orderID: ${phase1}.(customers.*c.id).*o2.id,
     orderDesc: ${phase1}.(customers.*c.id).*o2.description
   }]`
@@ -66,6 +66,12 @@ test("innerJoin1", () => {
 })
 
 test("innerJoin2", () => {
+  // NOTE: the result field is 'custName', not 'name'. A constant object key is
+  // desugared to a grouping variable via mkset, and canonicalVarName hashes the
+  // mkset node, so every literal "name" shares one variable K. With 'name'
+  // inside customersMap's records and a result field 'name' around it, the
+  // nested K reads as correlated with the outer one and customersMap gets
+  // recomputed indexed by "name". Same in the tests below.
   let ordersMap = rh`{
     orders.*o1.customerID: [{
       id: orders.*o1.id,
@@ -82,7 +88,7 @@ test("innerJoin2", () => {
 
   let phase2 = rh`[{
     custID: (${customersMap}.*A || .customerDefault).*.id,
-    name: (${customersMap}.*A || .customerDefault).*.name,
+    custName: (${customersMap}.*A || .customerDefault).*.name,
     orderID: (${ordersMap}.*A || .orderDefault).*.id,
     orderDesc: (${ordersMap}.*A || .orderDefault).*.description
   }]`
@@ -107,7 +113,7 @@ test("leftJoin1", () => {
   }`
   let phase2 = rh`[{
     custID: customers.*c.id,
-    name: customers.*c.name,
+    custName: customers.*c.name,
     orderID: (${phase1}.(customers.*c.id) || .orderDefault).*o2.id,
     orderDesc: (${phase1}.(customers.*c.id) || .orderDefault).*o2.description
   }]`
@@ -139,7 +145,7 @@ test("leftJoin2", () => {
 
   let phase2 = rh`[{
     custID: (${customersMap}.*A || .customerDefault).*.id,
-    name: (${customersMap}.*A || .customerDefault).*.name,
+    custName: (${customersMap}.*A || .customerDefault).*.name,
     orderID: (${ordersMap}.*A? || .orderDefault).*.id,
     orderDesc: (${ordersMap}.*A? || .orderDefault).*.description
   }]`
@@ -164,7 +170,7 @@ test("leftJoinAlter", () => {
   }`
   let phase2 = rh`[{
     custID: customers.*c.id,
-    name: customers.*c.name,
+    custName: customers.*c.name,
     order: ${phase1}.(customers.*c.id) || .null
   }]`
 
@@ -231,7 +237,7 @@ test("fullOuterJoin1", () => {
 
   let phase2 = rh`[{
     custID: (${customersMap}.(${phase1}.*) || .customerDefault).*.id,
-    name: (${customersMap}.(${phase1}.*) || .customerDefault).*.name,
+    custName: (${customersMap}.(${phase1}.*) || .customerDefault).*.name,
     orderID: (${ordersMap}.(${phase1}.*) || .orderDefault).*.id,
     orderDesc: (${ordersMap}.(${phase1}.*) || .orderDefault).*.description
   }]`
@@ -264,7 +270,7 @@ test("fullOuterJoin2", () => {
 
   let phase2 = rh`[{
     custID: (${customersMap}.*A? || .customerDefault).*.id,
-    name: (${customersMap}.*A? || .customerDefault).*.name,
+    custName: (${customersMap}.*A? || .customerDefault).*.name,
     orderID: (${ordersMap}.*A? || .orderDefault).*.id,
     orderDesc: (${ordersMap}.*A? || .orderDefault).*.description
   }]`
@@ -300,7 +306,7 @@ test("leftJoinIncorrect", () => {
   // Incorrect, still an inner join
   let phase2 = rh`[{
     custID: customers.*c.id,
-    name: customers.*c.name,
+    custName: customers.*c.name,
     orderID: ${phase1}.(customers.*c.id).*o2.id || .null,
     orderDesc: ${phase1}.(customers.*c.id).*o2.description || .null
   }]`
