@@ -1,5 +1,6 @@
 // const { api } = require('./rhyme')
 const { sets } = require('./shared')
+const { types, typeSyms, props } = require('./types')
 
 const { unique, union, intersect, diff, subset, same } = sets
 
@@ -99,7 +100,58 @@ let pretty = q => {
 
 exports.pretty = pretty
 
-const { typing } = require('./typing')
+
+// ----- types -----
+
+let prettyType = (schema) => {
+    if (schema === undefined)
+        return "~Undefined~";
+    if (schema === null)
+        return "~Null~";
+    if (schema.typeSym in types)
+        return schema.typeSym
+    if (typeof schema === "string")
+        return "\"" + schema + "\"";
+    if (schema.typeSym === typeSyms.union)
+        return "(" + Array.from(schema.unionSet).map(type => prettyType(type)).join(" | ") + ")";
+    if (schema.typeSym === typeSyms.intersect)
+        return "(" + Array.from(schema.intersectSet).map(type => prettyType(type)).join(" & ") + ")";
+    if (schema.typeSym === typeSyms.function)
+        return "(" + schema.funcParams.map(type => prettyType(type)).join(", ") + ") -> " + prettyType(schema.funcResult);
+    if (schema.typeSym === typeSyms.dynkey)
+        return `<${schema.keySymbol}: ${prettyType(schema.keySupertype)}>`;
+    if (schema.typeSym === typeSyms.tagged_type)
+        return schema.tag +":"+prettyType(schema.tagInnertype);
+    if (schema.typeSym === typeSyms.object) {
+        if (schema.objKey === null)
+            return "{}";
+        else
+            return `${prettyType(schema.objParent)}{${prettyType(schema.objKey)}: ${prettyType(schema.objValue)}}`;
+    }
+    if (typeof schema === "object")
+        return "~UNK:" + JSON.stringify(schema) + "~";
+    return "~Invalid~";
+}
+
+let prettyTypeTuple = (tuple) => {
+    if (tuple === undefined)
+        return "~Undefined~";
+    let propStr = "";
+    if (tuple.props.includes(props.nothing)) {
+        if (tuple.props.includes(props.error))
+            propStr = "N,E";
+        else
+            propStr = "N";
+    } else if (tuple.props.includes(props.error))
+        propStr = "E";
+    else
+        propStr = "/";
+    return prettyType(tuple.type) + " | " + propStr;
+}
+
+exports.prettyType = prettyType
+exports.prettyTypeTuple = prettyTypeTuple
+
 
 let pseudoVerbose = false
 
@@ -109,7 +161,7 @@ let emitPseudo = (q) => {
   for (let i in filters) {
     let q = filters[i]
     buf.push(("gen"+i + prettyPath(q.fre)).padEnd(margin) + " = " + pretty(q))
-    buf.push("".padEnd(margin) + " : " + typing.prettyPrintTuple(q.schema))
+    buf.push("".padEnd(margin) + " : " + prettyTypeTuple(q.schema))
     if (pseudoVerbose && q.fre.length)
       buf.push("  " + q.fre)
   }
@@ -117,7 +169,7 @@ let emitPseudo = (q) => {
   for (let i in hints) {
     let q = hints[i]
     buf.push(("hint"+i + prettyPath(q.fre)).padEnd(margin) + " = " + pretty(q))
-    buf.push("".padEnd(margin) + " : " + typing.prettyPrintTuple(q.schema))
+    buf.push("".padEnd(margin) + " : " + prettyTypeTuple(q.schema))
     if (pseudoVerbose && q.fre.length)
       buf.push("  " + q.fre)
   }
@@ -140,7 +192,7 @@ let emitPseudo = (q) => {
   for (let i in assignments) {
     let q = assignments[i]
     buf.push(("tmp"+i + prettyPath(q.fre) + prettyPath(q.bnd)).padEnd(margin) + " = " + pretty(q))
-    buf.push("".padEnd(margin) + " : " + typing.prettyPrintTuple(q.schema))
+    buf.push("".padEnd(margin) + " : " + prettyTypeTuple(q.schema))
     if (!pseudoVerbose) continue
     if (q.path?.length > 0)
       buf.push("  pth: " + q.path.map(pretty))
@@ -168,7 +220,7 @@ let emitPseudo = (q) => {
       buf.push("  bnd: " + q.bnd)
   }
   buf.push(pretty(q))
-  buf.push(": " + typing.prettyPrintTuple(q.schema))
+  buf.push(": " + prettyTypeTuple(q.schema))
   if (q.fre?.length > 0)
     buf.push("  " + q.fre)
   return buf.join("\n")
