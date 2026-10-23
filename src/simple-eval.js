@@ -302,6 +302,14 @@ let extract1 = q => {
 //    NOTE: the input is NOT a tree, it is a DAG
 let extract2 = (q, seen = new WeakMap()) => {
   if (seen.get(q)) return seen.get(q)
+  if (q.key == "genref") {
+    // late mode: filters[q.op] is already extracted
+    // not a real leaf node
+    // so inherit its tmp dependencies
+    let res = { ...q, tmps: filters[q.op].tmps }
+    seen.set(q, res)
+    return res
+  }
   if (!q.arg) {
     let res = { ...q, tmps:[] }
     seen.set(q, res)
@@ -316,11 +324,10 @@ let extract2 = (q, seen = new WeakMap()) => {
     let res = { ...q, key: "ref", op: ix, arg: [], tmps:[ix] }
     seen.set(q, res)
     return res
-  } else {
-    let res = { ...q, arg: es, tmps }
-    seen.set(q, res)
-    return res
   }
+  let res = { ...q, arg: es, tmps }
+  seen.set(q, res)
+  return res
 }
 
 
@@ -344,7 +351,9 @@ let extract3 = (q, seen = new WeakMap()) => {
       e2 = e2.arg[0]
     if (e2.key == "var") {
       let ix = filters.length
-      filters.push(q1)
+      // hard mode: keep the raw generator, so that filters never
+      // reference each other through genrefs
+      filters.push(settings.extractFiltersHard ? q : q1)
       // NOTE: in soft mode we leave the expression in place, and
       // just add a 'filter' field. This way, we can either generate
       // the expression or a reference, depending on scope.
@@ -918,6 +927,8 @@ let compile = (q,userSettings={}) => {
   // ---- middle tier, imperative form ----
   if(settings.enableOptimizations && settings.schema) {
     q = optimizer.loopsConsolidate(q, vars);
+    // consolidation renames vars, which can make distinct nodes equal
+    q = optimizer.deduplicate(q);
   }
 
   if (settings.extractAssignments && !((settings.enableOptimizations && settings.schema) || settings.extractAssignmentsLate)) {
