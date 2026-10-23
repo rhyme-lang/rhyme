@@ -296,7 +296,7 @@ let emitFilters1 = (scope, free, bnd, ext, careAboutOrderingAndMultiplicity) => 
   // This is necessary!
   // TODO: keep track of which filters were run in scope, not just vars (?)
 
-  if (ext.length == 0 && disjunct.length == 0 || !careAboutOrderingAndMultiplicity) { // XXX should not disregard order?
+  if ((ext.length == 0 || !careAboutOrderingAndMultiplicity) && disjunct.length == 0) { // XXX should not disregard order?
     emitFilters2(scope, intersect(free, scope.vars), full, -1)(buf, codegen)(body)
   } else {
 

@@ -37,7 +37,7 @@ let defaultSettings = {
 
   // middle tier -- typing.js, optimizer.js
   schema: types.unknown,
-  typeConversions: true,   // insert convert_<type> nodes (see typing.validateIR)
+  typeConversions: false,  // insert convert_<type> nodes (see typing.validateIR)
   enableOptimizations: false,
 
   // backend selection -- simple-eval.js
@@ -145,7 +145,7 @@ let extractKey0 = q => {
 
 let extract0 = q => {
   if (q.key == "var") {
-    if (q.op == "*") throw console.error("cannot support free-standing *")
+    if (q.op == "*") throw new Error("cannot support free-standing *")
     return q
   } else if (q.key == "get" || q.key == "get?") {
     let [e1,e2] = q.arg

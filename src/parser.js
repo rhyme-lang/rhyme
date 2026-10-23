@@ -144,8 +144,9 @@ exports.parserImpl = (strings, holes) => {
   }
 
   function whitespace(excludeComment) {
+    let iswhitespace = () => input[pos] == ' ' || input[pos] == '\n' || input[pos] == '\t' || input[pos] == '\r'
     let start = pos
-    while (input[pos] == ' ' || input[pos] == '\n') ++pos
+    while (iswhitespace()) ++pos
     let commentStart = pos
     // if (input[pos] == '/' && input[pos+1] == '/') {
     //   pos += 2
@@ -156,7 +157,7 @@ exports.parserImpl = (strings, holes) => {
       pos += 1
       while (input[pos] && input[pos] != '\n') ++pos
       //if (input[pos] == '\n') ++pos
-      while (input[pos] == ' ' || input[pos] == '\n') ++pos
+      while (iswhitespace()) ++pos
     }
     // todo: multiple single-line comments (?)
     //       --> maybe not!

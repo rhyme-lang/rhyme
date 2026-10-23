@@ -38,7 +38,7 @@ exports.desugar = (p) => {
   function transPrimitiveApply(p, args) {
     if (p == "get" || p == "get?") { // XXX others? plus, minus, etc?
       return transPath(p, args)
-    } else if (ops.stateful[p]) {
+    } else if (Object.hasOwn(ops.stateful, p)) {
       return transStateful(p, args) // unpack!
     } else if (p == "group" && args.length < 2) {
       // partial application -- this will later turn into a keyval object
@@ -135,7 +135,9 @@ exports.desugar = (p) => {
   function trans(p) {
     console.assert(p && p.xxkey && !p.rhyme_ast)
     if (p.xxkey == "ident") {
-      if (p.xxop in env)
+      // own properties only: plain-object env, so 'in' would also find
+      // Object.prototype members for idents like 'toString', 'constructor'
+      if (Object.hasOwn(env, p.xxop))
         return env[p.xxop]
       return p
     } else if (p.xxkey == "raw") {

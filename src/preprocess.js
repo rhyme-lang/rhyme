@@ -77,7 +77,7 @@ let preproc = q => {
     if (q.xxparam[1] === undefined || q.xxparam[1].xxkey != "hole") {
       console.error("schema expected for " + q.xxkey)
     }
-    if (!inputFormat[q.xxkey.substring(4).toLowerCase()]) {
+    if (!Object.hasOwn(inputFormat, q.xxkey.substring(4).toLowerCase())) {
       console.error("unknown file format for loadInput " + q.xxkey.substring(4).toLowerCase())
     }
     return { key: "loadInput", op: q.xxkey.substring(4).toLowerCase(), arg: [e1], inputSchema: q.xxparam[1].xxop }
@@ -151,13 +151,14 @@ let preproc = q => {
     //   return { key: "pure", op: op, arg: [e1, e2] }
     // }
     let es2 = q.xxparam?.map(preproc)
-    if (op in ops.special)
+    // Object.hasOwn rather than 'in': op may be any user ident, e.g. 'toString'
+    if (Object.hasOwn(ops.special, op))
       return { key: op, arg: es2 }
-    else if (op in ops.pure) {
+    else if (Object.hasOwn(ops.pure, op)) {
       return { key: "pure", op: op, arg: es2 }
-    } else if (op in ops.stateful || op == "print")
+    } else if (Object.hasOwn(ops.stateful, op) || op == "print")
       return { key: "stateful", op: op, arg: es2 }
-    else if (op.startsWith && op.startsWith("prefix_") && op.substring(7) in ops.stateful)
+    else if (op.startsWith && op.startsWith("prefix_") && Object.hasOwn(ops.stateful, op.substring(7)))
       return { key: "prefix", op: op.substring(7), arg: es2 }
     console.error("unknown op", q)
   } else {
