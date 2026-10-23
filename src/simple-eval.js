@@ -299,72 +299,77 @@ let extract1 = q => {
 
 // 8: extract assignments
 //    - runs after inferFree()
-let extract2 = q => {
-  if (!q.arg) return { ...q, tmps:[] }
-  let es = q.arg.map(extract2)
+//    NOTE: the input is NOT a tree, it is a DAG
+let extract2 = (q, seen = new WeakMap()) => {
+  if (seen.get(q)) return seen.get(q)
+  if (q.key == "genref") {
+    // late mode: filters[q.op] is already extracted
+    // not a real leaf node
+    // so inherit its tmp dependencies
+    let res = { ...q, tmps: filters[q.op].tmps }
+    seen.set(q, res)
+    return res
+  }
+  if (!q.arg) {
+    let res = { ...q, tmps:[] }
+    seen.set(q, res)
+    return res
+  }
+  let es = q.arg.map(e => extract2(e, seen))
   let tmps = unique(es.flatMap(x => x.tmps))
   if (q.key == "prefix" || q.key == "stateful" || q.key == "update") {
     let q1 = { ...q, arg: es, tmps }
-    let str = JSON.stringify(q1) // extract & cse
-    let ix = assignments.map(JSON.stringify).indexOf(str)
-    if (ix < 0) {
-      ix = assignments.length
-      assignments.push(q1)
-    }
-    return { ...q, key: "ref", op: ix, arg: [], tmps:[ix] }
-  } else {
-    return { ...q, arg: es, tmps }
+    let ix = assignments.length
+    assignments.push(q1)
+    let res = { ...q, key: "ref", op: ix, arg: [], tmps:[ix] }
+    seen.set(q, res)
+    return res
   }
+  let res = { ...q, arg: es, tmps }
+  seen.set(q, res)
+  return res
 }
 
 
 // 9: extract filters and hints
 //    - runs after inferFree()
-let extract3 = q => {
-  if (!q.arg) return { ...q, filters:[] }
-  let es = q.arg.map(extract3)
-  let deps = unique(q.arg.flatMap(x => x.filters??[]))
+let extract3 = (q, seen = new WeakMap()) => {
+  if (seen.get(q)) return seen.get(q)
+  if (!q.arg) {
+    let res = { ...q, filters:[] }
+    seen.set(q, res)
+    return res
+  }
+  let es = q.arg.map(e => extract3(e, seen))
+  let deps = unique(es.flatMap(x => x.filters))
+  let q1 = { ...q, arg: es, filters: deps }
+  let res = q1
   if (q.key == "get") {
     let [e1,e2] = q.arg
     // Unwrap type conversions.
     while(e2.key == "pure" && e2.op.startsWith("convert_"))
       e2 = e2.arg[0]
     if (e2.key == "var") {
-      let str = JSON.stringify(q) // extract & cse
-      let ix = filters.map(JSON.stringify).indexOf(str)
-      if(q.filter !== undefined) {
-        ix = q.filter
-      }
-      if (ix < 0) {
-        ix = filters.length
-        let q1 = JSON.parse(str)
-        filters.push(q1) // deep copy...
-      }
-      // NOTE: we leave the expression in place, and just add
-      // a 'filter' field. This way, we can either generate
+      let ix = filters.length
+      // hard mode: keep the raw generator, so that filters never
+      // reference each other through genrefs
+      filters.push(settings.extractFiltersHard ? q : q1)
+      // NOTE: in soft mode we leave the expression in place, and
+      // just add a 'filter' field. This way, we can either generate
       // the expression or a reference, depending on scope.
-      // An alternative would be to return a ref expression
-      // instead.
+      // In hard mode we return a ref expression instead.
       if (settings.extractFiltersHard)
-        return { ...q, key: "genref", op: ix, arg: [], filters:[ix] }
-      q.filter = ix
-      q.filters = [...deps, ix]
+        res = { ...q, key: "genref", op: ix, arg: [], filters: [ix] }
+      else
+        res = { ...q1, filter: ix } // XXX: filters excludes ix (was [...deps, ix], then overwritten)
     }
+  } else if (q.key == "hint" && !settings.extractFiltersHard) {
+    let ix = hints.length
+    hints.push(q1)
+    res = { ...q1, hint: ix }
   }
-  if (settings.extractFiltersHard)
-    return { ...q, arg: es, filters: deps }
-  q.filters = deps
-  if (q.key == "hint") {
-    let str = JSON.stringify(q) // extract & cse
-    let ix = hints.map(JSON.stringify).indexOf(str)
-    if (ix < 0) {
-      ix = hints.length
-      let q1 = JSON.parse(str)
-      hints.push(q1) // deep copy...
-    }
-    q.hint = ix
-  }
-  return q
+  seen.set(q, res)
+  return res
 }
 
 
@@ -909,7 +914,11 @@ let compile = (q,userSettings={}) => {
   }
 
   // Deduplicate
+  //   deduplication turns the tree-structure IR into a DAG
+  //   so later passes on the IR should be aware of that and
+  //   avoid revisiting or rewriting the IR back into a tree
   q = optimizer.deduplicate(q, {});
+
   // Perform type checking, and modify ast to include types.
   if(settings.schema) {
     q = typing.validateIR(settings.schema, q, settings.typeConversions);
@@ -918,6 +927,8 @@ let compile = (q,userSettings={}) => {
   // ---- middle tier, imperative form ----
   if(settings.enableOptimizations && settings.schema) {
     q = optimizer.loopsConsolidate(q, vars);
+    // consolidation renames vars, which can make distinct nodes equal
+    q = optimizer.deduplicate(q);
   }
 
   if (settings.extractAssignments && !((settings.enableOptimizations && settings.schema) || settings.extractAssignmentsLate)) {
@@ -926,9 +937,11 @@ let compile = (q,userSettings={}) => {
   }
 
   // 9. Extract filters
+  //    one memo shared across all roots: assignments and q share nodes
+  let seen3 = new WeakMap()
   for (let i in assignments)
-    assignments[i] = extract3(assignments[i])
-  q = extract3(q)
+    assignments[i] = extract3(assignments[i], seen3)
+  q = extract3(q, seen3)
 
   if(settings.enableOptimizations && settings.schema) {
     // Assignments must not be extracted yet.
@@ -936,9 +949,10 @@ let compile = (q,userSettings={}) => {
   }
 
   if (settings.extractAssignments  && ((settings.enableOptimizations && settings.schema) || settings.extractAssignmentsLate)) {
+    let seen2 = new WeakMap()
     for (let i in filters)
-      filters[i] = extract2(filters[i])
-    q = extract2(q)
+      filters[i] = extract2(filters[i], seen2)
+    q = extract2(q, seen2)
   }
 
   // 10. Compute legal order of assignments
@@ -1156,7 +1170,7 @@ let compilePrimitive = (q,userSettings={}) => {
 
 
   // 8. Extract filters
-  extract3(q)
+  q = extract3(q)
 
   // ---- back end ----
 
