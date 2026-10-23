@@ -1,6 +1,6 @@
 const { rh } = require("../../src/rhyme")
 const { compile } = require("../../src/simple-eval")
-const { compileC2CrossCheck } = require("../utils")
+const { compileC2CrossCheck, compileC2OptCrossCheck } = require("../utils")
 
 let orders = [
   { id: 1, description: "order1", customerID: 1 },
@@ -275,11 +275,10 @@ test("fullOuterJoin2", () => {
   // emits a duplicate `let gen13`. The outer-join disjunction is what makes
   // this query, alone in the file, sensitive to the difference.
   //
-  // Not cross-checked: newCodegen has no way to express a union domain, so it
-  // compiles this to an inner join and drops the three outer rows. Every
-  // generator of *A here is 'maybe', which is exactly the case
-  // translateToNewCodegen does not handle.
-  let func = compile(phase2, { mkTuple: true })
+  // Cross-checked against opt-loopgen only: newCodegen has no way to express a
+  // union domain, so it compiles this to an inner join and drops the three
+  // outer rows. Every generator of *A here is 'maybe'.
+  let func = compileC2OptCrossCheck(phase2, { mkTuple: true })
   let res = func({
     orders,
     customers,

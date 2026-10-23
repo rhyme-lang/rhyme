@@ -1,5 +1,6 @@
 const { api, rh } = require('../../src/rhyme')
 const { compile } = require('../../src/simple-eval')
+const { compileC2OptCrossCheck } = require('../utils')
 
 
 
@@ -96,7 +97,7 @@ test("test_NCG_Scalar1", () => {
 test("testScalar0", () => {
   let query = rh`data.*.value`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
   // console.log(res)
@@ -108,7 +109,7 @@ test("testScalar0", () => {
 test("testScalar1", () => {
   let query = rh`sum data.*.value`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
   // console.log(res)
@@ -122,7 +123,7 @@ test("testScalar1", () => {
 test("testZipScalar2", () => {
   let query = rh`data.*A.value + other.*A.value`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
   // console.log(res)
@@ -134,7 +135,7 @@ test("testZipScalar2", () => {
 test("testZipScalar3", () => {
   let query = rh`(sum data.*A.value) + (sum other.*A.value)`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
   // console.log(res)
@@ -147,7 +148,7 @@ test("testZipScalar4", () => {
   let query = rh`(sum data.*A.value) + other.*A.value` 
   // NONSENSICAL? SHAPE ERROR? -- no, can just take sum of single element...
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
   // console.log(res)
@@ -160,7 +161,7 @@ test("testZipScalar4", () => {
 
 test("testJoinScalar2", () => {
   let query = rh`data.*A.value + other.*B.value`
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
   // console.log(res)
@@ -180,7 +181,7 @@ test("testJoinScalar2", () => {
 test("testJoinScalar3", () => {
   let query = rh`(sum data.*A.value) + (sum other.*B.value)`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
   // console.log(res)
@@ -192,7 +193,7 @@ test("testJoinScalar3", () => {
 test("testJoinScalar4", () => {
   let query = rh`(sum data.*A.value) + other.*B.value` 
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
   // console.log(res)
@@ -206,7 +207,7 @@ test("testJoinScalar4", () => {
 test("testNested0", () => {
   let query = rh`nested.*A.*B.value` 
 // debug = true
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({nested, other})
 
   // console.log(res)
@@ -226,7 +227,7 @@ test("testNested0", () => {
 test("testNested1", () => {
   let query = rh`sum nested.*A.*B.value` 
 // debug = true
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({nested, other})
 
   // console.log(res)
@@ -238,7 +239,7 @@ test("testNested1", () => {
 test("testZipNested2", () => {
   let query = rh`nested.*A.*B.value + other.*B.value` 
 // debug = true
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({nested, other})
 
   // console.log(res)
@@ -263,7 +264,7 @@ test("testZipNested2", () => {
 test("testZipNested3", () => {
   let query = rh`nested.*A.*B.value + nestedB.*C.*B.value` // neither *B dominates!
 // debug = true
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({nested, nestedB})
 
   // console.log(res)
@@ -333,7 +334,7 @@ test("testGroup0", () => {
 test("testGroup0-a", () => {
   let query = {"data.*.key": rh`array(data.*.value)`}
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
   expect(res).toEqual(
@@ -344,7 +345,7 @@ test("testGroup0-a", () => {
 test("testGroup0-b", () => {
   let query = [{"data.*.key": rh`data.*.value`}]
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
   expect(res).toEqual([
@@ -355,7 +356,7 @@ test("testGroup0-b", () => {
 test("testGroup1", () => {
   let query = {"data.*.key": rh`sum(data.*.value)`}
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
 /* plausible:
@@ -376,7 +377,7 @@ test("testGroup1", () => {
 test("testGroup2", () => {
   let query = {"data.*.key": rh`sum(data.*B.value)`}
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
 /* uncorrelated -- test decorrelation */
@@ -392,7 +393,7 @@ test("testGroup2", () => {
 test("testPrefixSum1", () => {
   let query = "prefix_sum(data.*.value)"
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
   expect(res).toEqual([40,60,70])
@@ -401,7 +402,7 @@ test("testPrefixSum1", () => {
 test("testGroupPrefixSum1", () => {
   let query = {"data.*.key": rh`prefix_sum(data.*.value)`}
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
   expect(res).toEqual({
@@ -417,7 +418,7 @@ test("testMaybeSum", () => {
 
   let query = { A: "sum? data.*.value", B: "sum data.*.value" }
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
   expect(res).toEqual({ B: 0 })
@@ -440,7 +441,7 @@ test("testOuterJoin_pre1", () => {
   // *inner* join behavior works ok
   let query = rh`mkset(*A).*B & other.*B & data.*A.val`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
 
@@ -462,7 +463,7 @@ test("testOuterJoin_pre2", () => {
   // default (inner join) behavior: 
   let query = rh`other.(data.*A.key)` // undefined if not found
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
 
@@ -483,7 +484,7 @@ test("testOuterJoin_pre3", () => {
   // outer join behavior: observe missing value
   let query = rh`other.(data.*A.key) || "not found"` 
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
 
@@ -500,7 +501,7 @@ test("testLeftOuterJoin", () => {
 
   let query = rh`[data.*A + (other.*A? || 0)]`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
 
@@ -515,7 +516,7 @@ test("testFullOuterJoin1", () => {
 
   let query = rh`[(data.*A? || 0) + (other.*A? || 0)]`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
 
@@ -530,7 +531,7 @@ test("testFullOuterJoin2", () => {
 
   let query = rh`[data.*A? + other.*A? || data.*A? || other.*A?]`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
 
@@ -547,7 +548,7 @@ test("testFullOuterJoin_other1", () => {
   // generator, missing values cannot be observed
   let query = rh`data.*A? || 0`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
 
@@ -565,7 +566,7 @@ test("testFullOuterJoin_other2", () => {
   // generator, missing values cannot be observed
   let query = rh`{ A: sum(data.*A?), B: sum(other.*A?), C: [*A] }`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func({data, other})
 
 
@@ -577,7 +578,7 @@ test("testFullOuterJoin_other2", () => {
 test("testEqualTrue", () => {
   let query = rh`1 == 1`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func()
   expect(res).toEqual(true)
 })
@@ -585,7 +586,7 @@ test("testEqualTrue", () => {
 test("testEqualUndefined", () => {
   let query = rh`1 == 2`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func()
   expect(res).toEqual(undefined)
 })
@@ -593,7 +594,7 @@ test("testEqualUndefined", () => {
 test("testNotEqualTrue", () => {
   let query = rh`1 != 2`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func()
   expect(res).toEqual(true)
 })
@@ -601,7 +602,7 @@ test("testNotEqualTrue", () => {
 test("testNotEqualUndefined", () => {
   let query = rh`1 != 1`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func()
   expect(res).toEqual(undefined)
 })
@@ -609,7 +610,7 @@ test("testNotEqualUndefined", () => {
 test("testLessThanTrue", () => {
   let query = rh`1 < 2`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func()
   expect(res).toEqual(true)
 })
@@ -617,7 +618,7 @@ test("testLessThanTrue", () => {
 test("testLessThanUndefined", () => {
   let query = rh`1 < 0`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func()
   expect(res).toEqual(undefined)
 })
@@ -625,7 +626,7 @@ test("testLessThanUndefined", () => {
 test("testLessThanOrEqualTrue", () => {
   let query = rh`1 <= 2`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func()
   expect(res).toEqual(true)
 })
@@ -633,7 +634,7 @@ test("testLessThanOrEqualTrue", () => {
 test("testLessThanOrEqualUndefined", () => {
   let query = rh`1 <= 0`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func()
   expect(res).toEqual(undefined)
 })
@@ -641,7 +642,7 @@ test("testLessThanOrEqualUndefined", () => {
 test("testGreaterThanTrue", () => {
   let query = rh`2 > 1`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func()
   expect(res).toEqual(true)
 })
@@ -649,7 +650,7 @@ test("testGreaterThanTrue", () => {
 test("testGreaterThanUndefined", () => {
   let query = rh`0 > 1`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func()
   expect(res).toEqual(undefined)
 })
@@ -657,7 +658,7 @@ test("testGreaterThanUndefined", () => {
 test("testGreaterThanOrEqualTrue", () => {
   let query = rh`2 >= 1`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func()
   expect(res).toEqual(true)
 })
@@ -665,7 +666,7 @@ test("testGreaterThanOrEqualTrue", () => {
 test("testGreaterThanOrEqualUndefined", () => {
   let query = rh`0 >= 1`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func()
   expect(res).toEqual(undefined)
 })
@@ -673,7 +674,7 @@ test("testGreaterThanOrEqualUndefined", () => {
 test("testAndTrue", () => {
   let query = rh`1 == 1 & 2 == 2`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func()
   expect(res).toEqual(true)
 })
@@ -681,7 +682,7 @@ test("testAndTrue", () => {
 test("testAndUndefined", () => {
   let query = rh`1 == 1 & 2 == 3`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func()
   expect(res).toEqual(undefined)
 })
@@ -689,7 +690,7 @@ test("testAndUndefined", () => {
 test("testAndAlsoTrue", () => {
   let query = rh`1 == 1 && 2 == 2`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func()
   expect(res).toEqual(true)
 })
@@ -697,7 +698,7 @@ test("testAndAlsoTrue", () => {
 test("testAndAlsoUndefined", () => {
   let query = rh`1 == 1 && 2 == 3`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func()
   expect(res).toEqual(undefined)
 })
@@ -705,7 +706,7 @@ test("testAndAlsoUndefined", () => {
 test("testOrElseTrue", () => {
   let query = rh`1 == 2 || 2 == 2`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func()
   expect(res).toEqual(true)
 })
@@ -713,7 +714,7 @@ test("testOrElseTrue", () => {
 test("testOrElseUndefined", () => {
   let query = rh`1 == 2 || 2 == 3`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func()
   expect(res).toEqual(undefined)
 })
@@ -721,7 +722,7 @@ test("testOrElseUndefined", () => {
 test("testIfElseThenBranch", () => {
   let query = rh`ifElse (1 == 1) 3 5`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func()
   expect(res).toEqual(3)
 })
@@ -729,7 +730,7 @@ test("testIfElseThenBranch", () => {
 test("testIfElseElseBranch", () => {
   let query = rh`ifElse (1 != 1) 3 5`
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
   let res = func()
   expect(res).toEqual(5)
 })
