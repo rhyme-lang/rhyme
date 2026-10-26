@@ -49,7 +49,8 @@ test("overflow-basic", () => {
         "i32": {0: i32, 1: u8},
         "i64": {0: i64, 1: u8}
     }`;
-    let func = compile(query, {schema});
+    // wrap-around on overflow comes from the inserted convert_<type> nodes
+    let func = compile(query, {schema, typeConversions: true});
     let res = func(data);
     expect(res.u8Overflow).toBe(0)
     expect(res.u16Overflow).toBe(0)
