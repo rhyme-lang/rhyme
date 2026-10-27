@@ -50,6 +50,7 @@ let sameType = (t1, t2) => {
                 return false;
             return sameType(t1.objKey, t2.objKey) && 
                 sameType(t1.objValue, t2.objValue) && 
+                same(fieldProps(t1), fieldProps(t2)) &&
                 sameType(t1.objParent, t2.objParent);
         case "function":
             if (t1.funcParams.length != t2.funcParams.length)
@@ -90,13 +91,14 @@ let getObjectKeys = (obj) => {
         return types.never;
     if (isUnknown(obj))
         return types.unknown;//typing.createKey(typing.createUnion(types.string, types.u64));
-    if (!isObject(obj))
-        return types.never;
+    // the keys of either member: one that is no object has none
     if (obj.typeSym == typeSyms.union)
         return createUnion(
             getObjectKeys(obj.unionSet[0]),
             getObjectKeys(obj.unionSet[1]),
         );
+    if (!isObject(obj))
+        return types.never;
     // An intersection of objects combines their fields (see createIntersection,
     // which merges {a} & {b} into {a, b}), so its keys are those of either.
     if (obj.typeSym == typeSyms.intersect)
@@ -160,10 +162,10 @@ let createIntersection = (t1, t2) => {
         typeDoesntIntersect(getObjectKeys(t1), getObjectKeys(t2))) {
         let newObj = objBuilder();
         for (let obj = t1; obj.objParent != null; obj = obj.objParent) {
-            newObj.add(obj.objKey, obj.objValue);
+            newObj.add(obj.objKey, obj.objValue, isOptionalField(obj));
         }
         for (let obj = t2; obj.objParent != null; obj = obj.objParent) {
-            newObj.add(obj.objKey, obj.objValue);
+            newObj.add(obj.objKey, obj.objValue, isOptionalField(obj));
         }
         return newObj.build();
     }
@@ -220,19 +222,25 @@ let createTaggedType = (tag, data, innerType) => {
 }
 typing.createTaggedType = createTaggedType;
 
+// An object type is a chain of fields, the last added outermost. A field is
+// a key, and the tuple of its value: the type objValue and the props
+// objProps, which hold 'nothing' if the field may be absent (an optional
+// field). Errors stay on the object, not the field.
 let objBuilder = () => {
     let obj = {
         typeSym: typeSyms["object"], 
         objKey: null,
         objValue: null,
+        objProps: null,
         objParent: null
     };
     let builderObj = {
-        add: (key, value) => {
+        add: (key, value, optional = false) => {
             obj = {
                 typeSym: typeSyms["object"], 
                 objKey: key,
                 objValue: value,
+                objProps: optional ? [props.nothing] : [],
                 objParent: obj
             };
             return builderObj;
@@ -244,6 +252,11 @@ let objBuilder = () => {
     return builderObj;
 }
 typing.objBuilder = objBuilder;
+
+// The props of a field (see objBuilder); a type built by hand may have none.
+let fieldProps = (obj) => obj.objProps ?? [];
+let isOptionalField = (obj) => fieldProps(obj).includes(props.nothing);
+typing.isOptionalField = isOptionalField;
 
 let createSimpleObject = (obj) => {
     let builder = objBuilder();
@@ -271,7 +284,7 @@ typing.createVecs = (vecType, keyType, dim, dataTypes) => {
   return typing.objBuilder().add(keyTy, typing.createVec(vecType, keyType, dim - 1, dataTypes)).build().map(ty => typing.createTaggedType(vecType, {dim: dim}, ty));
 }
 
-let performObjectGet = (objectTup, keyTup) => {
+let lookupKey = (objectTup, keyTup) => {
     let resProps = union(objectTup.props, keyTup.props);
     switch (objectTup.type.typeSym) {
         case typeSyms.unknown:
@@ -280,12 +293,12 @@ let performObjectGet = (objectTup, keyTup) => {
                 props: union(resProps, errorSet)
             };
         case typeSyms.tagged_type:
-            return performObjectGet(
+            return lookupKey(
                 {type: removeTag(objectTup.type), props: objectTup.props},
                 keyTup);
         case typeSyms.union: {
-            let res1 = performObjectGet({type: objectTup.type.unionSet[0], props: objectTup.props}, keyTup);
-            let res2 = performObjectGet({type: objectTup.type.unionSet[1], props: objectTup.props}, keyTup);
+            let res1 = lookupKey({type: objectTup.type.unionSet[0], props: objectTup.props}, keyTup);
+            let res2 = lookupKey({type: objectTup.type.unionSet[1], props: objectTup.props}, keyTup);
             return {
                 type: createUnion(res1.type, res2.type),
                 props: union(res1.props, res2.props)
@@ -302,11 +315,17 @@ let performObjectGet = (objectTup, keyTup) => {
             let valueType = objectTup.type.objValue;
             let parent = objectTup.type.objParent;
             if (isSubtype(keyTup.type, keyType)) {
+                if (!isOptionalField(objectTup.type))
+                    return {
+                        type: valueType, props: resProps
+                    };
+                // an optional field that is absent leaves the parent's
+                let {type: tp, props: pp} = lookupKey(intoTup(parent), keyTup);
                 return {
-                    type: valueType, props: resProps
+                    type: createUnion(valueType, tp), props: union(resProps, pp)
                 };
             }
-            let {type: t3, props: p3} = performObjectGet(intoTup(parent), keyTup);
+            let {type: t3, props: p3} = lookupKey(intoTup(parent), keyTup);
             resProps = union(resProps, p3);
             if (typeDoesntIntersect(keyType, keyTup.type)) {
                 return {
@@ -325,7 +344,7 @@ let performObjectGet = (objectTup, keyTup) => {
             };
         case typeSyms.intersect: {
             let found = objectTup.type.intersectSet
-                .map(type => performObjectGet({type, props: objectTup.props}, keyTup))
+                .map(type => lookupKey({type, props: objectTup.props}, keyTup))
                 .filter(res => !isNever(res.type));
             if (found.length == 0)
                 return {type: types.never, props: union(resProps, nothingSet)};
@@ -337,8 +356,35 @@ let performObjectGet = (objectTup, keyTup) => {
             return {type, props: surely.length > 0 ? diff(foundProps, nothingSet) : foundProps};
         }
         default:
+            // a number or boolean has no fields: a lookup finds nothing
+            if (hasNoFields(objectTup.type))
+                return {type: types.never, props: union(resProps, nothingSet)};
             throw new Error("Unable to perform access on non-object type: " + prettyType(objectTup.type));
     }
+}
+
+// The value at key keyTup of an object, and whether it may be missing.
+// A union key is looked up member by member, so it is missing only if one of
+// its members may be: {a, b} at "a" | "b" is surely present.
+let performObjectGet = (objectTup, keyTup) => {
+    let keyType = keyTup.type;
+    if (keyType.typeSym == typeSyms.union) {
+        let res1 = performObjectGet(objectTup, {type: keyType.unionSet[0], props: keyTup.props});
+        let res2 = performObjectGet(objectTup, {type: keyType.unionSet[1], props: keyTup.props});
+        return {
+            type: createUnion(res1.type, res2.type),
+            props: union(res1.props, res2.props)
+        };
+    }
+    let res = lookupKey(objectTup, keyTup);
+    // A dynamic key is one of its supertype's values, so it is surely present
+    // if all of those are: {A, B} at <K: "A" | "B">.
+    if (keyType.typeSym == typeSyms.dynkey && res.props.includes(props.nothing)) {
+        let all = performObjectGet(objectTup, {type: keyType.keySupertype, props: keyTup.props});
+        if (!all.props.includes(props.nothing))
+            return {type: res.type, props: all.props};
+    }
+    return res;
 }
 typing.performObjectGet = performObjectGet;
 
@@ -417,10 +463,8 @@ let typeConforms_NonUnion = (type, expectedType) => {
             // Empty object is supertype of all objects.
             return true;
         }
-        if (type.objKey === null) {
-            // Empty object is not a subtype of any non-empty object.
-            return false;
-        }
+        // (an empty object is a subtype only of one whose fields are all
+        // optional: looking them up finds nothing)
         let keyvals = [];
         let tup = intoTup(type);
         for (let nestedObj = expectedType; nestedObj.objKey != null; nestedObj = nestedObj.objParent) {
@@ -432,7 +476,10 @@ let typeConforms_NonUnion = (type, expectedType) => {
                     continue;
                 expectedRes = createUnion(expectedRes, keyval[1])
             }
-            if (!isSubtype(lookupType, expectedRes) || lookupProps.length != 0) {
+            // A field that may be absent only fits an optional one. (An
+            // overlapping field shadowing it from outside cannot make it
+            // absent: an absent outer field leaves this one.)
+            if (!isSubtype(lookupType, expectedRes) || !subset(lookupProps, fieldProps(nestedObj))) {
                 return false;
             }
             keyvals.push([nestedObj.objKey, nestedObj.objValue]);
@@ -525,6 +572,12 @@ let typeDoesntIntersect = (t1, t2) => {
     if (isSubtype(t1, t2) || isSubtype(t2, t1)) {
         return false;
     }
+    // A dynamic key is some subset of its supertype's values, so it is
+    // disjoint from whatever its supertype is disjoint from.
+    if (t1.typeSym == typeSyms.dynkey)
+        return typeDoesntIntersect(t1.keySupertype, t2);
+    if (t2.typeSym == typeSyms.dynkey)
+        return typeDoesntIntersect(t1, t2.keySupertype);
     // A property name spelling a number ('0') is also a key of a number key
     // type that holds it, e.g. an array index.
     if (typeof t1 === "string" && isNumber(t2))
@@ -552,12 +605,8 @@ let typeDoesntIntersect = (t1, t2) => {
     if (strT1 != "" && strT2 != "")
         if (strT1 != strT2)
             return true;
-    if (isString(t1) && isString(t2)) {
-        // TODO: Non-empty guarantee of intersection of keys.
-        if (t1.typeSym == typeSyms.dynkey || t2.typeSym == typeSyms.dynkey)
-            return false;
+    if (isString(t1) && isString(t2))
         return true;
-    }
     // TODO Other checks?
     return false;
 }
@@ -573,6 +622,18 @@ let integerType = unionOf(types.u64, types.i64);
 let numberType = unionOf(types.u64, types.i64, types.f64);
 let keyType = unionOf(types.u64, types.i64, types.f64, types.string, types.char, types.date);
 let emptyObject = objBuilder().build(); // a supertype of every object
+
+// Values without fields: looking one up finds nothing, as at runtime. Not a
+// string, which the js backend indexes by character ("abc".0 is "a").
+let fieldless = unionOf(types.u64, types.i64, types.f64, types.boolean);
+let hasNoFields = (type) => isSubtype(type, fieldless);
+
+// Whether a value of this type can be looked up in: an object, or a union of
+// objects and values without fields -- with some object, else there is
+// nothing to look up.
+let canLookup = (type) => isObject(type) ||
+    isSubtype(type, unionOf(emptyObject, fieldless)) && !hasNoFields(type);
+typing.canLookup = canLookup;
 typing.integerType = integerType;
 typing.numberType = numberType;
 
@@ -717,18 +778,64 @@ let fitsNumber = (n, t) => {
     return range !== undefined && Number.isInteger(n) && range[0] <= n && n <= range[1];
 }
 
-// The type of operand q (typed t) next to another operand typed other: a
-// number literal whose value fits takes the other's type, so x_u32 + 1 is u32
-// and x_f32 + 0.5 is f32, as in Rust or Swift. Otherwise (it does not fit,
-// both are literals, or other is unknown or missing) it keeps its own.
-let literalInContext = (q, t, other) => {
-    if (q.key != "const" || typeof q.op != "number")
+const CONST_OPS = ["plus", "minus", "times", "div", "mod", "fdiv"];
+
+// The value of a constant number expression -- a number literal, or
+// arithmetic on constants only, e.g. 1 + 2 -- computed as the runtime would,
+// and whether it is a float: it has a fractional literal or a '/' (float
+// division) in it. Undefined for anything else, including a constant that is
+// not finite (1 / 0). Like an untyped constant in Go, it is exact, and only
+// takes a type where it is used.
+let constNumber = (q) => {
+    if (q.key == "const")
+        return typeof q.op == "number" && Number.isFinite(q.op)
+            ? {n: q.op, float: !Number.isInteger(q.op)} : undefined;
+    if (q.key != "pure" || !CONST_OPS.includes(q.op) || q.arg.length != 2)
+        return undefined;
+    let [c1, c2] = q.arg.map(constNumber);
+    if (!c1 || !c2)
+        return undefined;
+    let n = runtime.pure[q.op](c1.n, c2.n);
+    if (!Number.isFinite(n))
+        return undefined;
+    return {n, float: c1.float || c2.float || q.op == "fdiv"};
+}
+
+// The type of a constant on its own, as of a literal (see literalType).
+let constType = (c) => c.float ? types.f64 : literalType(c.n);
+
+// The type of operand q (typed t) next to the operand otherQ (typed other).
+// A constant (see constNumber) takes the other operand's type, as in Rust or
+// Go: x_u8 + 1 and 1 + 2 + x_u8 are u8, x_f32 + 0.1 is f32 (a float constant
+// rounds). One that cannot be a value of that type is an error (x_u8 + 300),
+// except that a float constant next to an integer keeps f64 (x_u32 * 0.5).
+// With nothing typed to take a type from -- the other side is a constant too,
+// unknown, or missing -- a constant keeps its own type. A branch (x_u8 || 1000) is not computed with
+// the other side, so there a literal that does not fit just keeps its own
+// type, and the branches join.
+let literalInContext = (q, t, otherQ, other, strict = true) => {
+    let c = constNumber(q);
+    if (!c || constNumber(otherQ))
         return t;
     if (isUnknown(other) || isNever(other) || !isNumber(other))
         return t;
     let target = generalizeNumber(other);
-    return fitsNumber(q.op, target) ? target : t;
+    let n = c.n;
+    let fits;
+    if (isInteger(target)) {
+        if (c.float)
+            return t;
+        fits = fitsNumber(n, target);
+    } else {
+        fits = target === types.f64 || Math.abs(n) <= F32_MAX;
+    }
+    if (!fits && !strict)
+        return t;
+    if (!fits)
+        throw new Error("Number constant " + n + " does not fit " + prettyType(target) + ", the type of " + pretty(otherQ));
+    return target;
 }
+const F32_MAX = 3.4028234663852886e38;
 
 
 
@@ -788,16 +895,15 @@ let _validateIRQuery = (schema, varMap, q) => {
                 props: union(tup1.props, union(tup2.props, union(nothingSet, errorSet)))
             }
         }
-        if (!isObject(t1)) {
+        if (!canLookup(t1)) {
             throw new Error("Unable to perform get operation on non-object type: " + prettyType(t1) + "\nReceived from query: " + pretty(q.arg[0]));
         }
         return performObjectGet(tup1, keyTupOf(q.arg[1], tup2));
     } else if (q.key === "mkTuple") {
         // Constant-key record construction: the encoding of an 'update' chain
         // {}{k1 -> v1}{k2 -> v2}..., so it must report what that chain reports.
-        // A field whose value is nothing is simply omitted; object types carry
-        // no per-field optionality, so that absence surfaces as a 'nothing'
-        // prop on the record itself (see performObjectGet).
+        // A field whose value is nothing is simply omitted, so it is an
+        // optional field; the record itself is always there (see 'update').
         let res = {}
         let tupProps = []
         for (let i = 0; i < q.arg.length; i += 2) {
@@ -807,10 +913,13 @@ let _validateIRQuery = (schema, varMap, q) => {
             // Keys are constants (see preprocess), so name the field by the
             // key's value, as rt.mkTuple does -- its type is not a string for
             // a number key.
-            res[q.arg[i].op] = argTup2.type;
-            tupProps = union(tupProps, union(argTup1.props, argTup2.props));
+            res[q.arg[i].op] = argTup2;
+            tupProps = union(tupProps, intersect(union(argTup1.props, argTup2.props), errorSet));
         }
-        return {type: createSimpleObject(res), props: tupProps};
+        let builder = objBuilder();
+        for (let key of Object.keys(res))
+            builder.add(key, res[key].type, res[key].props.includes(props.nothing));
+        return {type: builder.build(), props: tupProps};
     } else if (q.key === "pure") {
         let argTups = q.arg.map(arg => validateIRQuery(schema, varMap, arg));
 
@@ -898,9 +1007,13 @@ let _validateIRQuery = (schema, varMap, q) => {
                 if (!accepts(t1, numberType) || !accepts(t2, numberType)) {
                     throw new Error(`Unable to perform ${q.op} on non-numbers of type ${prettyType(t1)} and ${prettyType(t2)}. ` + pretty(q.arg[0]) + " and " + pretty(q.arg[1]));
                 }
+                // A constant on its own is exact, as a literal would be.
+                let c = constNumber(q);
+                if (c)
+                    return {type: constType(c), props: union(p1, p2)};
                 // Computed in the operands' joined type, and wraps around
                 // on overflow there (u8 + u8 is u8).
-                let [c1, c2] = [literalInContext(q.arg[0], t1, t2), literalInContext(q.arg[1], t2, t1)];
+                let [c1, c2] = [literalInContext(q.arg[0], t1, q.arg[1], t2), literalInContext(q.arg[1], t2, q.arg[0], t1)];
                 let resType = generalizeNumber(createUnion(c1, c2));
                 return {
                     type: resType,
@@ -913,6 +1026,9 @@ let _validateIRQuery = (schema, varMap, q) => {
                 q.op === "lessThan" || q.op === "greaterThan" ||
                 q.op === "lessThanOrEqual" || q.op === "greaterThanOrEqual") {
                 // TODO: validate types for comparison and logical ops
+                // (a number literal must fit the other side's type)
+                literalInContext(q.arg[0], t1, q.arg[1], t2);
+                literalInContext(q.arg[1], t2, q.arg[0], t1);
                 return {type: types.boolean, props: union(p1,union(p2, nothingSet))};
             } else if (q.op == "and") {
                 // TODO: validate types for and
@@ -922,12 +1038,18 @@ let _validateIRQuery = (schema, varMap, q) => {
                 return {type: t2, props: union(p1, p2)};
             } else if (q.op == "orElse") {
                 // TODO: validate types for orElse
+                // Both sides are evaluated, so the errors of either surface,
+                // but only a side that can be taken contributes its value.
+                let errors = intersect(union(p1, p2), errorSet);
+                if (isNever(t1))
+                    return {type: t2, props: union(p2, errors)};
+                if (!p1.includes(props.nothing))
+                    return {type: t1, props: union(p1, errors)};
                 let qProps = [];
-                if(p1.includes(props.nothing) && p2.includes(props.nothing))
+                if(p2.includes(props.nothing))
                     qProps.push(props.nothing)
-                if(p1.includes(props.error) || p2.includes(props.error))
-                    qProps.push(props.error)
-                return {type: joinBranches(literalInContext(q.arg[0], t1, t2), literalInContext(q.arg[1], t2, t1)), props: qProps};
+                qProps = union(qProps, errors);
+                return {type: joinBranches(literalInContext(q.arg[0], t1, q.arg[1], t2, false), literalInContext(q.arg[1], t2, q.arg[0], t1, false)), props: qProps};
             }
             throw new Error("Pure operation not implemented: " + q.op);
         } else if (q.op == "combine") {
@@ -947,10 +1069,18 @@ let _validateIRQuery = (schema, varMap, q) => {
             // TODO Figure out what ifElse does.
             let {type: t2, props: p2} = argTups[1];
             let {type: t3, props: p3} = argTups[2];
-            // the condition only selects a branch, but its errors still surface
-            let p1 = intersect(argTups[0].props, errorSet);
-            let [c2, c3] = [literalInContext(q.arg[1], t2, t3), literalInContext(q.arg[2], t3, t2)];
-            return {type: joinBranches(c2, c3), props: union(p1, union(p2, p3))};
+            // The condition only selects a branch, but its errors still
+            // surface, as do those of the branch not taken (rt.pure.ifElse
+            // evaluates all three). A condition that is never missing, or
+            // always is, selects one branch only.
+            let {type: t1, props: c1Props} = argTups[0];
+            let errors = intersect(unionProps(argTups), errorSet);
+            if (isNever(t1))
+                return {type: t3, props: union(p3, errors)};
+            if (!c1Props.includes(props.nothing))
+                return {type: t2, props: union(p2, errors)};
+            let [c2, c3] = [literalInContext(q.arg[1], t2, q.arg[2], t3, false), literalInContext(q.arg[2], t3, q.arg[1], t2, false)];
+            return {type: joinBranches(c2, c3), props: union(errors, union(p2, p3))};
         } else if (q.op == "sort") {
             // rt.pure.sort: the values of an array or object, as an array
             let {type: t1, props: p1} = argTups[0];
@@ -1007,11 +1137,20 @@ let _validateIRQuery = (schema, varMap, q) => {
                 props: union(unionProps(argTups), nothingSet)
             }
         } else if (q.op == "isUndef") {
+            // true exactly when the argument is missing
             let {type: t1, props: p1} = argTups[0];
-            return {type: types.boolean, props: union(p1, nothingSet)};
+            let errors = intersect(p1, errorSet);
+            if (isNever(t1))
+                return {type: types.boolean, props: errors};
+            if (!p1.includes(props.nothing))
+                return {type: types.never, props: union(errors, nothingSet)};
+            return {type: types.boolean, props: union(errors, nothingSet)};
         } else if (q.op == "length") {
-            // u32 like array keys; u64 would force BigInt in the js backend
+            // u32 like array keys; u64 would force BigInt in the js backend.
+            // rt.pure.length is missing for anything but a string or object.
             let {type: t1, props: p1} = argTups[0];
+            if (!isUnknown(t1) && !isNever(t1) && (isString(t1) || isObject(t1)))
+                return {type: types.u32, props: p1};
             return {type: types.u32, props: union(p1, nothingSet)};
         } else if (q.op == "dot") {
             let {type: t1, props: p1} = argTups[0];
@@ -1160,14 +1299,12 @@ let _validateIRQuery = (schema, varMap, q) => {
             for (let argI = q.arg[1].arg.length - 1; argI > 0; argI--) {
                 let keyTup = validateIRQuery(schema, varMap, q.arg[1].arg[argI]);
                 // inner levels of a key (vars *A *B ...): {*B: value}, ...
+                // An inner level only exists once it holds a value (see
+                // rt.deepUpdate), so if its value may be missing, so may it.
+                let levelProps = union(keyTup.props, argTup3.props);
                 argTup3 = {
-                    type: {
-                        typeSym: typeSyms.object,
-                        objKey: keyTup.type,
-                        objValue: argTup3.type,
-                        objParent: objBuilder().build()
-                    },
-                    props: union(keyTup.props, argTup3.props)
+                    type: objBuilder().add(keyTup.type, argTup3.type, levelProps.includes(props.nothing)).build(),
+                    props: levelProps
                 };
             }
             argTup2 = validateIRQuery(schema, varMap, q.arg[1].arg[0]);
@@ -1182,15 +1319,19 @@ let _validateIRQuery = (schema, varMap, q) => {
         if (!isKey(keyType))
             throw new Error("Unable to use type: " + prettyType(keyType) + " as object key");
 
-        let resProps = union(p2, p3);
+        // A missing key or value leaves the field out, so the field is
+        // optional, but the object is still there: it starts out as the
+        // parent (rt.stateful.update_init).
+        let fieldTupProps = union(p2, p3);
         return {
             type: {
                 typeSym: typeSyms.object,
                 objKey: key,
                 objValue: valueType,
+                objProps: intersect(fieldTupProps, nothingSet),
                 objParent: parentType
             },
-            props: union(resProps, p1) // TODO: Nothing property? {*a: nothing} -> nothing, so nothing property should be included?
+            props: union(p1, intersect(fieldTupProps, errorSet))
         };
     }
     throw new Error("Unable to determine type of query: " + pretty(q));
@@ -1264,17 +1405,21 @@ let parseTypeString_Atom = (stream, vars) => {
     if (stream.peek() == "{") {
         stream.expect("{");
         let objResult = typing.objBuilder();
-        if (stream.peek() != "}") {
+        // a field is 'key: type', or 'key?: type' if it is optional
+        let field = () => {
             let key = parseTypeString_Infix(stream, vars);
+            let optional = stream.peek() == "?";
+            if (optional)
+                stream.expect("?");
             stream.expect(":");
             let val = parseTypeString_Infix(stream, vars);
-            objResult.add(key, val)
+            objResult.add(key, val, optional)
+        };
+        if (stream.peek() != "}") {
+            field();
             while (stream.peek() == ",") {
                 stream.expect(",");
-                let key = parseTypeString_Infix(stream, vars);
-                stream.expect(":");
-                let val = parseTypeString_Infix(stream, vars);
-                objResult.add(key, val)
+                field();
             }
         }
         stream.expect("}")
@@ -1319,7 +1464,7 @@ let parseTypeString_Atom = (stream, vars) => {
         }
         return key;
     }
-    let match = stream.substring().match(/^([a-zA-Z0-9\-_]+)($|[|&\s,\:\[\]\{\}\*\(\)=])/);
+    let match = stream.substring().match(/^([a-zA-Z0-9\-_]+)($|[|&\s,\:\[\]\{\}\*\(\)=?])/);
     if (!match)
         throw new Error(`Error when parsing type: Unknown type at ${stream.substring()}`);
     stream.consume(match[1].length);
@@ -1387,6 +1532,7 @@ typing.parseType = (schema, ...typeHoles) => {
                 typeSym: typeSyms.object,
                 objKey: keyType,
                 objValue: valueType,
+                objProps: [],
                 objParent: parent
             };
         case typeSyms.union:
@@ -1443,8 +1589,18 @@ typing.parseTypeAST = (q) => {
             let builder = objBuilder();
             for (let i = 0; i < q.xxparam.length; i += 2) {
                 let k = q.xxparam[i];
+                // 'a?: type' is an optional field: the parser reads 'a?' as
+                // the ident "a?", and '"a"?' as a '?' node
+                let optional = false;
+                if (k.xxkey == "ident" && k.xxop.endsWith("?")) {
+                    k = {...k, xxop: k.xxop.slice(0, -1)};
+                    optional = true;
+                } else if (k.xxkey == "?") {
+                    k = k.xxparam[0];
+                    optional = true;
+                }
                 let key = k.xxkey == "ident" && !k.xxop.startsWith("*") ? k.xxop : typing.parseTypeAST(k);
-                builder.add(key, typing.parseTypeAST(q.xxparam[i+1]));
+                builder.add(key, typing.parseTypeAST(q.xxparam[i+1]), optional);
             }
             return builder.build();
         }
@@ -1570,7 +1726,14 @@ let convertAST = (schema, q, dontConvertVar = false) => {
         q.arg = q.arg.map($convertAST);
         return q;
     } else if (q.key == "pure") {
-        
+        // A constant is folded to the literal it denotes, so that it is
+        // converted to its type in context once, not computed in its parts'.
+        let c = constNumber(q);
+        if (c) {
+            let {arg, ...rest} = q;
+            return {...rest, key: "const", op: c.n};
+        }
+
         if (q.op == "apply" || q.op == "flatten" || q.op == "join" || q.op == "vars") {
             q.arg = q.arg.map($convertAST);
             return q;
@@ -1615,8 +1778,8 @@ let convertAST = (schema, q, dontConvertVar = false) => {
             } else if (q.op == "equal" || q.op == "notEqual" || q.op === "lessThan" || q.op === "lessThanOrEqual" ||
                 q.op === "greaterThan" || q.op === "greaterThanOrEqual") {
                 let [s1, s2] = [q.arg[0].schema.type, q.arg[1].schema.type];
-                let argSchema1 = unwrapType(literalInContext(q.arg[0], s1, s2));
-                let argSchema2 = unwrapType(literalInContext(q.arg[1], s2, s1));
+                let argSchema1 = unwrapType(literalInContext(q.arg[0], s1, q.arg[1], s2));
+                let argSchema2 = unwrapType(literalInContext(q.arg[1], s2, q.arg[0], s1));
                 // TODO: i64 | u64 union figure out type at runtime?????
                 if (isSubtype(types.u64, argSchema1) || isSubtype(types.i64, argSchema1) || isSubtype(types.u64, argSchema2) || isSubtype(types.i64, argSchema2)) {
                     let resType = generalizeNumber(createUnion(argSchema1, argSchema2));

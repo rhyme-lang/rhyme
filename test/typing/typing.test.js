@@ -126,6 +126,23 @@ test("no-intersect-basic-keys", () => {
     expect(typing.typeDoesntIntersect(k3, k4)).toBe(true);
 })
 
+test("no-intersect-dynkey-supertype", () => {
+    // a dynamic key is disjoint from whatever its supertype is disjoint from
+    let ab = typing.createKey(typing.createUnion("A", "B"));
+    expect(typing.typeDoesntIntersect(ab, "total")).toBe(true);
+    expect(typing.typeDoesntIntersect("total", ab)).toBe(true);
+    expect(typing.typeDoesntIntersect(ab, "A")).toBe(false);
+    expect(typing.typeDoesntIntersect(ab, typing.createKey(typing.createUnion("C", "D")))).toBe(true);
+    expect(typing.typeDoesntIntersect(ab, typing.createKey(typing.createUnion("B", "C")))).toBe(false);
+    // keys of the same supertype may coincide
+    expect(typing.typeDoesntIntersect(typing.createKey(types.string), typing.createKey(types.string))).toBe(false);
+    expect(typing.typeDoesntIntersect(typing.createKey(types.string), "total")).toBe(false);
+    // so a fixed field next to grouped keys is looked up on its own
+    let obj = typing.objBuilder().add("total", types.u32).add(ab, types.f64).build();
+    expect(typing.performObjectGet({type: obj, props: []}, {type: "total", props: []}))
+        .toEqual({type: types.u32, props: []});
+})
+
 
 test("no-intersect-any-never", () => {
     expect(typing.typeDoesntIntersect(types.any, types.never)).toBe(true);
@@ -302,4 +319,124 @@ test("get-intersect-object", () => {
     let all = compile(rh`v.*i`, { schema: tagged }).explain.resultType.type
     expect(typing.isSubtype(all.objValue, typing.createUnion(types.f32, types.string))).toBe(true)
     expect(compile(rh`v.name`, { schema: tagged }).explain.resultType.type).toBe(types.string)
+})
+
+test("get-union-key", () => {
+    let get = (obj, key) => typing.performObjectGet({type: obj, props: []}, {type: key, props: []})
+    let ab = typing.createUnion("a", "b")
+    // a union key is missing only if one of its members may be
+    let both = typing.createSimpleObject({a: types.u8, b: types.u16})
+    expect(get(both, ab)).toEqual({type: types.u16, props: []})
+    expect(get(typing.createSimpleObject({a: types.u8}), ab).props).toContain(props.nothing)
+    expect(typing.isSubtype(both, typing.objBuilder().add(ab, types.u16).build())).toBe(true)
+    // a dynamic key is surely present if all of its supertype's values are
+    let key = typing.createKey(typing.createUnion("A", "B"))
+    expect(get(typing.createSimpleObject({A: types.u8, B: types.u8}), key)).toEqual({type: types.u8, props: []})
+    expect(get(typing.createSimpleObject({A: types.u8}), key).props).toContain(props.nothing)
+    expect(get(typing.objBuilder().add(typing.createKey(types.u32), types.u8).build(), typing.createKey(types.u32)).props)
+        .toContain(props.nothing)
+    // iterating over a record's fields: each is present
+    let schema = typing.parseType`{data: {a: u8, b: string}}`
+    expect(compile(rh`{*K: data.*K}`, { schema }).explain.resultType.props).toEqual([])
+})
+
+test("branch-taken", () => {
+    let schema = typing.parseType`{data: {*u32: {x: u8, y: i8, s: string}}}`
+    let typeOf = (q) => compile(rh([q]), { schema }).explain.resultType
+    let maybe = "(data.*A.x > 1 & data.*A.x)"
+    // a left side that is never missing, or always is, is the only one taken
+    expect(typeOf(`first(data.*A.x || "none")`).type).toBe(types.u8)
+    expect(typeOf(`sum(data.*A.nope || data.*A.y)`).type).toBe(types.i8)
+    expect(typeOf(`{*A: ${maybe} || data.*A.y}`).type.objValue).toBe(types.i16)
+    expect(typing.isOptionalField(typeOf(`{*A: ${maybe} || (data.*A.y > 0 & data.*A.y)}`).type)).toBe(true)
+    // likewise for a condition
+    expect(typeOf(`{*A: ifElse (data.*A.x) (data.*A.x) "none"}`).type.objValue).toBe(types.u8)
+    expect(typeOf(`{*A: ifElse (data.*A.nope) (data.*A.x) "none"}`).type.objValue).toBe("none")
+    expect(typeOf(`{*A: ifElse (data.*A.x > 1) (data.*A.x) 1000}`).type.objValue).toBe(types.i32)
+})
+
+test("length-isUndef-nothing", () => {
+    let schema = typing.parseType`{data: {*u32: {x: u8, s: string, m: u8 | string}}}`
+    let field = (q) => compile(rh([`{*A: ${q}}`]), { schema }).explain.resultType
+    let optional = (q) => typing.isOptionalField(field(q).type)
+    // a string or object always has a length; anything else has none
+    expect(optional("length(data.*A.s)")).toBe(false)
+    expect(optional("length(data.*A.x)")).toBe(true)
+    expect(optional("length(data.*A.m)")).toBe(true)
+    // isUndef is true exactly when its argument is missing
+    expect(field("isUndef(data.*A.nope)").type.objValue).toBe(types.boolean)
+    expect(optional("isUndef(data.*A.nope)")).toBe(false)
+    expect(field("isUndef(data.*A.x)").type.objValue).toBe(types.never)
+    expect(field("isUndef(data.*A.x > 1 & data.*A.x)").type.objValue).toBe(types.boolean)
+})
+
+test("optional-field", () => {
+    let P = typing.parseType
+    let get = (obj, key) => typing.performObjectGet({type: obj, props: []}, {type: key, props: []})
+    let opt = P`{a?: u8, b: string}`
+    // looking up an optional field may find nothing
+    expect(get(opt, "a")).toEqual({type: types.u8, props: [props.nothing]})
+    expect(get(opt, "b")).toEqual({type: types.string, props: []})
+    // an absent optional field leaves the one it shadows
+    let shadow = typing.objBuilder().add("a", types.u8).add("a", types.string, true).build()
+    expect(typing.typeEquals(get(shadow, "a").type, typing.createUnion(types.u8, types.string))).toBe(true)
+    expect(get(shadow, "a").props).toEqual([])
+    // a field that may be absent only fits an optional one
+    expect(typing.isSubtype(P`{a: u8, b: string}`, opt)).toBe(true)
+    expect(typing.isSubtype(P`{b: string}`, opt)).toBe(true)
+    expect(typing.isSubtype(opt, P`{a: u8, b: string}`)).toBe(false)
+    expect(typing.isSubtype(P`{}`, P`{a?: u8}`)).toBe(true)
+    expect(typing.isSubtype(P`{}`, P`{a: u8}`)).toBe(false)
+    expect(typing.sameType(P`{a?: u8}`, P`{a: u8}`)).toBe(false)
+    // and merging two objects keeps it
+    let merged = typing.createIntersection(P`{a?: u8}`, P`{b: string}`)
+    expect(get(merged, "a").props).toEqual([props.nothing])
+})
+
+test("optional-field-producers", () => {
+    let schema = typing.parseType`{data: {*u32: {x: u8, s: string, k: string}}}`
+    let maybe = "data.*A.x > 100 & data.*A.x"
+    let fieldOf = (type, key) => {
+        for (let obj = type; obj.objParent != null; obj = obj.objParent)
+            if (obj.objKey === key) return obj
+    }
+    // a record field whose value may be missing is optional; the record is
+    // always there -- for both encodings of a record
+    for (let mkTuple of [false, true]) {
+        let res = compile(rh([`{*A: {a: ${maybe}, b: data.*A.s}}`]), {schema, mkTuple}).explain.resultType
+        expect(res.props).toEqual([])
+        expect(typing.isOptionalField(res.type)).toBe(false)
+        expect(typing.isOptionalField(fieldOf(res.type.objValue, "a"))).toBe(true)
+        expect(typing.isOptionalField(fieldOf(res.type.objValue, "b"))).toBe(false)
+    }
+    // an inner group is there even if empty; only its fields are optional
+    let nested = compile(rh([`{data.*A.s: {data.*A.k: ${maybe}}}`]), {schema}).explain.resultType
+    expect(nested.props).toEqual([])
+    expect(typing.isOptionalField(nested.type)).toBe(false)
+    expect(typing.isOptionalField(nested.type.objValue)).toBe(true)
+    // but a level of a multi-variable key only exists once it holds a value
+    let deep = compile(rh`data.*A.*B > 100 & data.*A.*B`,
+        {schema: typing.parseType`{data: {*u32: {*string: u8}}}`}).explain.resultType
+    expect(deep.props).toEqual([])
+    expect(typing.isOptionalField(deep.type)).toBe(true)
+    expect(typing.isOptionalField(deep.type.objValue)).toBe(true)
+})
+
+test("get-union-non-object", () => {
+    let P = typing.parseType
+    let typeOf = (q, schema) => compile(rh([q]), { schema }).explain.resultType
+    // a number or boolean has no fields: in a union with an object, a lookup
+    // on it finds nothing, as at runtime
+    expect(typeOf("data.a", P`{data: {a: u8} | u8}`)).toEqual({type: types.u8, props: [props.nothing]})
+    expect(typeOf("data.a", P`{data: u8 | boolean | {a: string}}`)).toEqual({type: types.string, props: [props.nothing]})
+    // and it has no keys for a variable to range over
+    let f = compile(rh`sum(data.*A)`, { schema: P`{data: {*u32: u8} | u8}` })
+    expect(f.explain.resultType).toEqual({type: types.u8, props: []})
+    expect(f({data: [1, 2]})).toBe(3)
+    expect(f({data: 5})).toBe(0)
+    // there must be an object to look up in
+    expect(() => typeOf("data.a", P`{data: u8}`)).toThrow(/non-object/)
+    expect(() => typeOf("data.a", P`{data: u8 | boolean}`)).toThrow(/non-object/)
+    // a string is indexed by character in the js backend, so not 'nothing'
+    expect(() => typeOf("data.a", P`{data: {a: u8} | string}`)).toThrow(/non-object/)
 })

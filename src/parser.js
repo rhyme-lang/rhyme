@@ -122,6 +122,11 @@ exports.parserImpl = (strings, holes) => {
         while (isopchar()) pos++
         peek = input.substring(start,pos)
       }
+    } else if (input[pos] == "?") {
+      // always a token on its own: it is only a postfix ('data.*A?'), and
+      // may be followed by an operator, as in an optional field '{a?: u8}'
+      pos++
+      peek = "?"
     } else if (isopchar()) {
       while (isopchar()) pos++
       peek = input.substring(start,pos)

@@ -126,7 +126,7 @@ let prettyType = (schema) => {
         if (schema.objKey === null)
             return "{}";
         else
-            return `${prettyType(schema.objParent)}{${prettyType(schema.objKey)}: ${prettyType(schema.objValue)}}`;
+            return `${prettyType(schema.objParent)}{${prettyType(schema.objKey)}${(schema.objProps ?? []).includes(props.nothing) ? "?" : ""}: ${prettyType(schema.objValue)}}`;
     }
     if (typeof schema === "object")
         return "~UNK:" + JSON.stringify(schema) + "~";

@@ -21,6 +21,13 @@ test("object", () => {
         typing.createSimpleObject({ A: types.string, B: types.i32 }));
 });
 
+test("optional-field", () => {
+    // 'key?: type' is a field that may be absent
+    let t = parse("@{a?: u8, \"b\"?: string, c: i32}").rhyme_ast.xxop;
+    expect(prettyType(t)).toBe('{}{"a"?: u8}{"b"?: string}{"c": i32}');
+    expect(prettyType(typing.parseType`{a?: u8, c: i32}`)).toBe('{}{"a"?: u8}{"c": i32}');
+});
+
 test("field-names-are-not-types", () => {
     // 'date' is also a type name, but in key position it is a field name
     expectSameType(parse("@{date: string}").rhyme_ast.xxop,

@@ -87,18 +87,28 @@ test("join-number", () => {
 
     let schema = typing.parseType`{data: {*u32: {x: u32, y: i8, z: u8}}}`
     let typeOf = (q) => compile(rh([q]), {schema}).explain.resultType.type
-    // a literal takes the type of the operand it is combined with, if it fits
+    // a literal takes the type of the operand it is combined with
     expect(typeOf("sum(data.*A.z + 1)")).toBe(types.u8)
     expect(typeOf("sum(data.*A.x + 10)")).toBe(types.u32)
-    expect(typeOf("sum(data.*A.z + 300)")).toBe(types.i32) // does not fit u8
+    // a literal that cannot be a value of that type is an error
+    expect(() => typeOf("sum(data.*A.z + 300)")).toThrow(/does not fit u8/)
+    expect(() => typeOf("data.*A.z == 300")).toThrow(/does not fit u8/)
+    // a fractional literal next to an integer keeps f64
+    expect(typeOf("sum(data.*A.x * 0.5)")).toBe(types.f64)
     expect(typeOf("sum(data.*A.x + 1.5)")).toBe(types.f64)
     expect(typeOf("sum(data.*A.y || 0)")).toBe(types.i8)
     // fit is by value range, also for signed types and floats
     expect(typeOf("sum(data.*A.y + 127)")).toBe(types.i8)
-    expect(typeOf("sum(data.*A.y + 128)")).toBe(types.i32)
+    expect(() => typeOf("sum(data.*A.y + 128)")).toThrow(/does not fit i8/)
     expect(typeOf("sum(data.*A.x + data.*A.y)")).toBe(types.i64)
     // branches join too, rather than leaving a union for the backend
-    expect(typeOf("sum(data.*A.y || data.*A.z)")).toBe(types.i16)
+    expect(typeOf("sum((data.*A.y > 0 & data.*A.y) || data.*A.z)")).toBe(types.i16)
+    // a left side that is never missing is the only one taken
+    expect(typeOf("sum(data.*A.y || data.*A.z)")).toBe(types.i8)
+    // a literal in a branch is not computed with the other side: if it does
+    // not fit, the branches join
+    expect(typeOf("sum((data.*A.z > 0 & data.*A.z) || 1000)")).toBe(types.i32)
+    expect(typeOf("sum((data.*A.z > 0 & data.*A.z) || 7)")).toBe(types.u8)
     // a literal reaching a reducer does not wrap in a narrow type
     let data = Array.from({length: 300}, () => ({x: 1, y: 1, z: 1}))
     expect(compile(rh`sum(data.*A.z && 1)`, {schema, typeConversions: true})({data})).toBe(300)
@@ -114,4 +124,29 @@ test("overflow-declared-type", () => {
     }
     expect(run("sum(data.*A.x)")).toEqual([types.u8, 44])
     expect(run("{*A: data.*A.y - data.*A.z}")[1]).toEqual({0: 0xffffffff, 1: 1})
+})
+
+test("constant-expression", () => {
+    // arithmetic on constants is a constant, exact, as in Go: it takes its
+    // type from where it is used, however it is grouped
+    let schema = typing.parseType`{data: {*u32: {x: u8, y: i8, f: f32}}}`
+    let typeOf = (q) => compile(rh([q]), {schema}).explain.resultType.type
+    expect(typeOf("sum(1 + 2 + data.*A.x)")).toBe(types.u8)
+    expect(typeOf("sum(data.*A.x + 1 + 2)")).toBe(types.u8)
+    expect(typeOf("sum(data.*A.x + (10 - 4))")).toBe(types.u8)
+    expect(typeOf("sum(7 // 2 + data.*A.x)")).toBe(types.u8)
+    // so it must fit as a whole, and 0 - 1 is a negative constant
+    expect(() => typeOf("sum(data.*A.x + (200 + 100))")).toThrow(/300 does not fit u8/)
+    expect(() => typeOf("data.*A.x > 0 - 1")).toThrow(/-1 does not fit u8/)
+    expect(typeOf("sum(data.*A.y > 0 - 1 & 1)")).toBe(types.i32)
+    // '/' is float division, so its constants are floats, even if whole
+    expect(typeOf("sum(data.*A.x * (4 / 2))")).toBe(types.f64)
+    expect(typeOf("sum(data.*A.f * (1 / 4))")).toBe(types.f32)
+    // on its own, a constant is typed by its value, like a literal
+    expect(typeOf("2147483647 + 1")).toBe(types.i64)
+    expect(typeOf("1 / 2")).toBe(types.f64)
+    // and converted once, as the value it denotes
+    let data = [{x: 250, y: 1, f: 1}]
+    expect(compile(rh`sum(data.*A.x + (10 - 4))`, {schema, typeConversions: true})({data})).toBe(0)
+    expect(compile(rh`2147483647 + 1`, {schema, typeConversions: true})({data})).toBe(2147483648)
 })

@@ -32,6 +32,13 @@ let regionSchema = {
     })
 };
 
+// The field of an object type with this (literal) key.
+let fieldOf = (type, key) => {
+    for (let obj = type; obj.objParent != null; obj = obj.objParent)
+        if (obj.objKey === key)
+            return obj;
+}
+
 // Typing check helper function.
 // Take in human-writeable schema and check its similarity to type.
 let expectTypeSimilarity = (type, schema) => {
@@ -212,11 +219,11 @@ test("joinSimpleTest1", () => {
     }
     let func = compileCrossCheck(query, { schema: {data: countrySchema, other: regionSchema} })
     let type = func.explain2.resultType.type;
-    // 'region' is absent for any country with no matching row in 'other'.
-    // Object types carry no per-field optionality, so that absence is recorded
-    // as a 'nothing' prop on the enclosing object (see performObjectGet).
-    // No errors propagated.
-    expect(func.explain2.resultType.props).toStrictEqual([props.nothing]);
+    // 'region' is absent for any country with no matching row in 'other':
+    // an optional field. The object itself is always there. No errors
+    // propagated.
+    expect(func.explain2.resultType.props).toStrictEqual([]);
+    expect(typing.isOptionalField(fieldOf(type.objValue, "region"))).toBe(true);
     expectTypeSimilarity(type, {
         "*": {
             country: types.string,
@@ -237,9 +244,10 @@ test("joinSimpleTest1B", () => { // use explicit 'single' aggregation
     }
     let func = compileCrossCheck(query, { schema: {data: countrySchema, other: regionSchema} })
     let type = func.explain2.resultType.type;
-    // Same as joinSimpleTest1: 'region' may be absent, surfacing as 'nothing'
-    // on the enclosing object. No errors propagated.
-    expect(func.explain2.resultType.props).toStrictEqual([props.nothing]);
+    // Same as joinSimpleTest1: 'region' may be absent, an optional field.
+    // No errors propagated.
+    expect(func.explain2.resultType.props).toStrictEqual([]);
+    expect(typing.isOptionalField(fieldOf(type.objValue, "region"))).toBe(true);
     expectTypeSimilarity(type, {
         "*": {
             country: types.string,
