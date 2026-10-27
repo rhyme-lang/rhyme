@@ -150,53 +150,14 @@ let avoidEvaluation = (q) => {
         };
     }
     if(!q.schema.props.includes(props.nothing)) {
+        // Optimizations run after generators are extracted, so none need to
+        // be kept here: a value that is always present can become a constant.
         return {
             ...q,
             key: "const",
             op: 1,
             arg: []
         };
-        // Since optimizations happen after generators are extracted, they don't need to be maintained, with the below code.
-
-        // Evaluation is unnecessary, but generators must still be maintained when optimization is done early
-        // As such, avoid evaluation of everything, except for generator expressions.
-        /*
-        if(q.key === "get" && (q.arg[1].key === "var" || q.arg[1].key === "vars") && q.mode !== "maybe") {
-            return q;
-        } else {
-            let newArgs = q.arg.map((arg) => avoidEvaluation(arg));
-            let necessaryArgs = newArgs.filter((arg) => arg.key !== "const");
-            if(necessaryArgs.length == 0)
-                return {
-                    ...q,
-                    key: "const",
-                    op: 1,
-                    arg: []
-                };
-            if(q.key == "stateful") {
-                return {
-                    ...q,
-                    key: "stateful",
-                    op: "count",
-                    arg: necessaryArgs
-                };
-            }
-            if(q.key == "update") {
-                return q;
-            }
-            if(necessaryArgs.length == 1)
-                return necessaryArgs[0];
-            let prevVal = necessaryArgs[0];
-            for(let i = 1; i < necessaryArgs.length; i++) {
-                prevVal = {
-                    ...q,
-                    key: "pure",
-                    op: "orElse",
-                    arg: [prevVal, necessaryArgs[i]]
-                };
-            }
-            return prevVal;
-        }*/
     }
     if(q.key == "pure") {
         if(q.op == "and" || q.op == "andAlso") {
