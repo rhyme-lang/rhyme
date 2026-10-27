@@ -87,10 +87,15 @@ test("join-number", () => {
 
     let schema = typing.parseType`{data: {*u32: {x: u32, y: i8, z: u8}}}`
     let typeOf = (q) => compile(rh([q]), {schema}).explain.resultType.type
-    // a literal is an i32 operand like any other
-    expect(typeOf("sum(data.*A.z + 1)")).toBe(types.i32)
-    expect(typeOf("sum(data.*A.x + 10)")).toBe(types.i64)
+    // a literal takes the type of the operand it is combined with, if it fits
+    expect(typeOf("sum(data.*A.z + 1)")).toBe(types.u8)
+    expect(typeOf("sum(data.*A.x + 10)")).toBe(types.u32)
+    expect(typeOf("sum(data.*A.z + 300)")).toBe(types.i32) // does not fit u8
     expect(typeOf("sum(data.*A.x + 1.5)")).toBe(types.f64)
+    expect(typeOf("sum(data.*A.y || 0)")).toBe(types.i8)
+    // fit is by value range, also for signed types and floats
+    expect(typeOf("sum(data.*A.y + 127)")).toBe(types.i8)
+    expect(typeOf("sum(data.*A.y + 128)")).toBe(types.i32)
     expect(typeOf("sum(data.*A.x + data.*A.y)")).toBe(types.i64)
     // branches join too, rather than leaving a union for the backend
     expect(typeOf("sum(data.*A.y || data.*A.z)")).toBe(types.i16)

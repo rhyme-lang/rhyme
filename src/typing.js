@@ -490,7 +490,7 @@ typing.isSubtype = typeConforms; // Alias
 // number of that type, as the key would print (no "01", "1.0" or "+1").
 let isNumberKey = (s, numType) => {
     let n = Number(s);
-    return s !== "" && String(n) === s && isSubtype(smallestTypeOf(n), generalizeNumber(numType));
+    return s !== "" && String(n) === s && fitsNumber(n, generalizeNumber(numType));
 }
 
 let typeDoesntIntersect = (t1, t2) => {
@@ -651,9 +651,9 @@ let joinNumber = (t1, t2) => {
 }
 typing.joinNumber = joinNumber;
 
-// Type of a number literal, as in C: an integer is i32, or i64 if it does not
-// fit; anything else is f64. Combined with a typed operand it joins as any
-// other value does, so x_u8 + 1 is i32 and x_u32 + 1 is i64.
+// Type of a number literal on its own, as in C: an integer is i32, or i64 if
+// it does not fit; anything else is f64. Next to a typed operand it takes that
+// operand's type instead (see literalInContext).
 let literalType = (n) => {
     if (!Number.isInteger(n))
         return types.f64;
@@ -662,24 +662,6 @@ let literalType = (n) => {
     return types.f64;
 }
 typing.literalType = literalType;
-
-// The smallest number type holding the number n (for key range checks).
-let smallestTypeOf = (n) => {
-    if (!Number.isInteger(n))
-        return types.f64;
-    if (n >= 0) {
-        if (n <= 0xff) return types.u8;
-        if (n <= 0xffff) return types.u16;
-        if (n <= 0xffffffff) return types.u32;
-        if (n < 2 ** 64) return types.u64;
-        return types.f64;
-    }
-    if (n >= -(2 ** 7)) return types.i8;
-    if (n >= -(2 ** 15)) return types.i16;
-    if (n >= -(2 ** 31)) return types.i32;
-    if (n >= -(2 ** 63)) return types.i64;
-    return types.f64;
-}
 
 // The single primitive number type a value of this type is computed in.
 // Unions and intersections collapse to their joinNumber, since no backend
@@ -716,6 +698,36 @@ let joinBranches = (t1, t2) => {
     if (!isUnknown(t1) && !isUnknown(t2) && isNumber(t1) && isNumber(t2))
         return generalizeNumber(createUnion(t1, t2));
     return createUnion(t1, t2);
+}
+
+// The values of each integer type, as [min, max].
+const INTEGER_RANGES = {
+    u8: [0, 2 ** 8 - 1], u16: [0, 2 ** 16 - 1], u32: [0, 2 ** 32 - 1], u64: [0, 2 ** 64 - 1],
+    i8: [-(2 ** 7), 2 ** 7 - 1], i16: [-(2 ** 15), 2 ** 15 - 1],
+    i32: [-(2 ** 31), 2 ** 31 - 1], i64: [-(2 ** 63), 2 ** 63 - 1],
+};
+
+// Whether the number n is exactly a value of the primitive number type t.
+let fitsNumber = (n, t) => {
+    if (t === types.f64)
+        return true;
+    if (t === types.f32)
+        return Math.fround(n) === n;
+    let range = INTEGER_RANGES[t.typeSym];
+    return range !== undefined && Number.isInteger(n) && range[0] <= n && n <= range[1];
+}
+
+// The type of operand q (typed t) next to another operand typed other: a
+// number literal whose value fits takes the other's type, so x_u32 + 1 is u32
+// and x_f32 + 0.5 is f32, as in Rust or Swift. Otherwise (it does not fit,
+// both are literals, or other is unknown or missing) it keeps its own.
+let literalInContext = (q, t, other) => {
+    if (q.key != "const" || typeof q.op != "number")
+        return t;
+    if (isUnknown(other) || isNever(other) || !isNumber(other))
+        return t;
+    let target = generalizeNumber(other);
+    return fitsNumber(q.op, target) ? target : t;
 }
 
 
@@ -888,7 +900,8 @@ let _validateIRQuery = (schema, varMap, q) => {
                 }
                 // Computed in the operands' joined type, and wraps around
                 // on overflow there (u8 + u8 is u8).
-                let resType = generalizeNumber(createUnion(t1, t2));
+                let [c1, c2] = [literalInContext(q.arg[0], t1, t2), literalInContext(q.arg[1], t2, t1)];
+                let resType = generalizeNumber(createUnion(c1, c2));
                 return {
                     type: resType,
                     props: union(p1,p2)
@@ -914,7 +927,7 @@ let _validateIRQuery = (schema, varMap, q) => {
                     qProps.push(props.nothing)
                 if(p1.includes(props.error) || p2.includes(props.error))
                     qProps.push(props.error)
-                return {type: joinBranches(t1, t2), props: qProps};
+                return {type: joinBranches(literalInContext(q.arg[0], t1, t2), literalInContext(q.arg[1], t2, t1)), props: qProps};
             }
             throw new Error("Pure operation not implemented: " + q.op);
         } else if (q.op == "combine") {
@@ -936,7 +949,8 @@ let _validateIRQuery = (schema, varMap, q) => {
             let {type: t3, props: p3} = argTups[2];
             // the condition only selects a branch, but its errors still surface
             let p1 = intersect(argTups[0].props, errorSet);
-            return {type: joinBranches(t2, t3), props: union(p1, union(p2, p3))};
+            let [c2, c3] = [literalInContext(q.arg[1], t2, t3), literalInContext(q.arg[2], t3, t2)];
+            return {type: joinBranches(c2, c3), props: union(p1, union(p2, p3))};
         } else if (q.op == "sort") {
             // rt.pure.sort: the values of an array or object, as an array
             let {type: t1, props: p1} = argTups[0];
@@ -1600,8 +1614,9 @@ let convertAST = (schema, q, dontConvertVar = false) => {
                 return q;
             } else if (q.op == "equal" || q.op == "notEqual" || q.op === "lessThan" || q.op === "lessThanOrEqual" ||
                 q.op === "greaterThan" || q.op === "greaterThanOrEqual") {
-                let argSchema1 = unwrapType(q.arg[0].schema.type);
-                let argSchema2 = unwrapType(q.arg[1].schema.type);
+                let [s1, s2] = [q.arg[0].schema.type, q.arg[1].schema.type];
+                let argSchema1 = unwrapType(literalInContext(q.arg[0], s1, s2));
+                let argSchema2 = unwrapType(literalInContext(q.arg[1], s2, s1));
                 // TODO: i64 | u64 union figure out type at runtime?????
                 if (isSubtype(types.u64, argSchema1) || isSubtype(types.i64, argSchema1) || isSubtype(types.u64, argSchema2) || isSubtype(types.i64, argSchema2)) {
                     let resType = generalizeNumber(createUnion(argSchema1, argSchema2));

@@ -280,6 +280,8 @@ test("get-number-key", () => {
     // only the canonical spelling of a number in range is a number key
     let key = typing.createKey(types.u32)
     expect(typing.typeDoesntIntersect("0", key)).toBe(false)
+    expect(typing.typeDoesntIntersect("5", typing.createKey(types.i8))).toBe(false)
+    expect(typing.typeDoesntIntersect("200", typing.createKey(types.i8))).toBe(true)
     for (let s of ["01", "-1", "1.5", "4294967296", "x"])
         expect(typing.typeDoesntIntersect(s, key)).toBe(true)
 })
