@@ -83,7 +83,7 @@ let expectTypeSimilarity = (type, schema) => {
 test("intLitTest", () => {
     let func = compileCrossCheck(api.plus(1, 63), { schema: types.never });
     expect(func.explain2.resultType).toStrictEqual({
-        type: types.i16,
+        type: types.i32, // both literals: defaults to i32
         props: []
     });
 })

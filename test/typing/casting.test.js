@@ -61,3 +61,52 @@ test("overflow-basic", () => {
     expect(res.i32Overflow).toBe(-0x80000000)
     expect(res.i64Overflow).toBe(BigInt(-1) * BigInt("0x8000000000000000"))
 })
+
+test("literal-basic", () => {
+    // as in C: an integer literal is i32 (i64 if it does not fit), else f64
+    let typeOf = (q) => compile(rh([q]), {schema: types.unknown}).explain.resultType.type
+    expect(typeOf("0")).toBe(types.i32)
+    expect(typeOf("255")).toBe(types.i32)
+    expect(typeOf("3000000000")).toBe(types.i64)
+    expect(typeOf("2.5")).toBe(types.f64)
+    expect(typeOf("100000000000000000000")).toBe(types.f64)
+    expect(typeOf("200 + 100")).toBe(types.i32)
+    expect(typeOf("0 - 1")).toBe(types.i32)
+    expect(typeOf("1.5 + 1")).toBe(types.f64)
+    expect(compile(rh`200 + 100`, {schema: types.unknown, typeConversions: true})()).toBe(300)
+})
+
+test("join-number", () => {
+    expect(typing.joinNumber(types.u32, types.i16)).toBe(types.i64)
+    expect(typing.joinNumber(types.u8, types.i8)).toBe(types.i16)
+    expect(typing.joinNumber(types.u16, types.i8)).toBe(types.i32)
+    expect(typing.joinNumber(types.i32, types.f32)).toBe(types.f64)
+    expect(typing.joinNumber(types.u64, types.i8)).toBe(types.f64)
+    // two minimal common supertypes, one integer, one float: integer wins
+    expect(typing.joinNumber(types.i32, types.u32)).toBe(types.i64)
+
+    let schema = typing.parseType`{data: {*u32: {x: u32, y: i8, z: u8}}}`
+    let typeOf = (q) => compile(rh([q]), {schema}).explain.resultType.type
+    // a literal is an i32 operand like any other
+    expect(typeOf("sum(data.*A.z + 1)")).toBe(types.i32)
+    expect(typeOf("sum(data.*A.x + 10)")).toBe(types.i64)
+    expect(typeOf("sum(data.*A.x + 1.5)")).toBe(types.f64)
+    expect(typeOf("sum(data.*A.x + data.*A.y)")).toBe(types.i64)
+    // branches join too, rather than leaving a union for the backend
+    expect(typeOf("sum(data.*A.y || data.*A.z)")).toBe(types.i16)
+    // a literal reaching a reducer does not wrap in a narrow type
+    let data = Array.from({length: 300}, () => ({x: 1, y: 1, z: 1}))
+    expect(compile(rh`sum(data.*A.z && 1)`, {schema, typeConversions: true})({data})).toBe(300)
+})
+
+test("overflow-declared-type", () => {
+    // arithmetic and sums on declared types wrap around in them
+    let schema = typing.parseType`{data: {*u32: {x: u8, y: u32, z: u32}}}`
+    let data = [{x: 200, y: 3, z: 4}, {x: 100, y: 5, z: 4}]
+    let run = (q) => {
+        let f = compile(rh([q]), {schema, typeConversions: true})
+        return [f.explain.resultType.type, f({data})]
+    }
+    expect(run("sum(data.*A.x)")).toEqual([types.u8, 44])
+    expect(run("{*A: data.*A.y - data.*A.z}")[1]).toEqual({0: 0xffffffff, 1: 1})
+})

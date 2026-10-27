@@ -1,4 +1,8 @@
-const { typing, types } = require("../../src/typing");
+const { typing, types, props } = require("../../src/typing");
+const { rh } = require("../../src/parser");
+const { api } = require("../../src/rhyme");
+const { compile } = require("../../src/simple-eval");
+const { compileCrossCheck } = require("../utils");
 
 /*
 Test internal typing functions
@@ -123,4 +127,177 @@ test("no-intersect-basic-keys", () => {
 })
 
 
+test("no-intersect-any-never", () => {
+    expect(typing.typeDoesntIntersect(types.any, types.never)).toBe(true);
+})
 
+test("same-type-union", () => {
+    let u1 = typing.createUnion(types.u32, types.string);
+    let u2 = typing.createUnion(types.string, types.u32);
+    expect(typing.sameType(u1, u2)).toBe(true);
+})
+
+test("kind-string-tagged", () => {
+    let t = typing.createTaggedType("t", {}, typing.createUnion(types.string, "a"));
+    expect(typing.isString(t)).toBe(true);
+})
+
+test("intersect-tagged-object", () => {
+    // fields of a tagged object must not be dropped
+    let tagged = typing.createTaggedType("dense", {dim: 1}, typing.createSimpleObject({a: types.u32}));
+    let plain = typing.createSimpleObject({b: types.string});
+    let res = typing.createIntersection(tagged, plain);
+    expect(typing.isSubtype(res, plain)).toBe(true);
+    expect(typing.isSubtype(res, tagged)).toBe(true);
+})
+
+test("kind-basic", () => {
+    // never is a subtype of every type, so every kind predicate holds for it
+    for (let p of ["isInteger", "isNumber", "isString", "isBoolean", "isObject", "isKey"])
+        expect(typing[p](types.never)).toBe(true);
+    // tags and dynamic keys are looked through, unions need every member
+    let tagged = typing.createTaggedType("t", {}, typing.createUnion(types.string, "a"));
+    expect(typing.isString(tagged)).toBe(true);
+    expect(typing.isInteger(typing.createKey(types.u32))).toBe(true);
+    expect(typing.isNumber(typing.createUnion(types.u32, types.f32))).toBe(true);
+    expect(typing.isNumber(typing.createUnion(types.u32, types.string))).toBe(false);
+    expect(typing.isNumber(types.date)).toBe(false);
+    expect(typing.isKey(types.date)).toBe(true);
+})
+
+test("subtype-unknown", () => {
+    // unknown is accepted by consistency (typing.accepts), not subtyping
+    let obj = typing.createSimpleObject({a: types.u32});
+    expect(typing.isSubtype(obj, types.unknown)).toBe(false);
+    expect(typing.isSubtype(types.unknown, typing.objBuilder().build())).toBe(false);
+    expect(typing.isSubtype(types.u32, types.unknown)).toBe(false);
+    expect(typing.accepts(types.unknown, types.string)).toBe(true);
+    // ...and like every kind predicate, isObject does not hold for it
+    expect(typing.isObject(types.unknown)).toBe(false);
+})
+
+test("subtype-dynkey-union", () => {
+    // a dynamic key conforms when its supertype does, also against a union
+    let u = typing.createUnion(types.u64, types.i8);
+    expect(typing.isNumber(typing.createKey(u))).toBe(true);
+    expect(typing.isKey(typing.createKey(typing.createUnion(types.string, types.u32)))).toBe(true);
+    let key = typing.createKey(types.u32);
+    expect(typing.isSubtype(key, typing.createUnion(key, types.string))).toBe(true);
+})
+
+test("intersect-object-keys", () => {
+    let inter = typing.createIntersection(
+        typing.createSimpleObject({a: types.u32, b: types.u8}), typing.createSimpleObject({a: types.string}));
+    expect(typing.isSubtype(typing.getObjectKeys(inter), typing.createUnion("a", "b"))).toBe(true);
+    // objects share no values with numbers
+    expect(typing.createIntersection(types.u32, typing.createSimpleObject({a: types.u8}))).toBe(types.never);
+    // unknown narrowed by a type is that type
+    let key = typing.createKey(types.u32);
+    expect(typing.createIntersection(key, types.unknown)).toBe(key);
+    expect(typing.createIntersection(types.unknown, types.unknown)).toBe(types.unknown);
+})
+
+test("stateful-maybe-nothing", () => {
+    let schema = typing.parseType`{data: {*u32: {x: u32}}, one: {x: u32}}`
+    let propsOf = (q) => compileCrossCheck(rh([q]), { schema }).explain2.resultType.props
+    for (let q of ["sum?(data.*A.x)", "max?(data.*A.x)", "first(data.*A.x)", "last(data.*A.x)", "single(data.*A.x)"])
+        expect(propsOf(q)).toContain(props.nothing)
+    // init values are present...
+    for (let q of ["sum(data.*A.x)", "count(data.*A.x)", "max(data.*A.x)"])
+        expect(propsOf(q)).not.toContain(props.nothing)
+    // ...and a reducer binding no variable runs exactly once
+    expect(propsOf("first(one.x)")).not.toContain(props.nothing)
+})
+
+test("mktuple-number-key", () => {
+    // a record field is named by its key's value, also for a number key
+    let schema = typing.parseType`{data: {x: u32}}`
+    let func = compileCrossCheck(rh`{0: data.x}`, { schema, mkTuple: true })
+    let type = func.explain2.resultType.type
+    expect(type.objKey).toBe("0")
+    expect(type.objValue).toBe(types.u32)
+})
+
+test("never-operand", () => {
+    // a missing field is accepted wherever any value is, and the result is
+    // missing too -- not only by arithmetic
+    let schema = typing.parseType`{data: {*u32: {x: u32}}}`
+    let data = [{x: 1}]
+    for (let q of [api.concat(rh`data.*A.y`, rh`"!"`), api.like(rh`data.*A.y`, rh`"a%"`), rh`data.*A.y.z`]) {
+        let func = compile(q, { schema })
+        expect(func({data})).toEqual({})
+    }
+    expect(compile(api.all(rh`data.*A.y`), { schema }).explain.resultType.props).toContain(props.nothing)
+    // a reducer over only missing values is its init value, with a real type
+    let func = compile(rh`sum(data.*A.y)`, { schema, typeConversions: true })
+    expect(func({data})).toBe(0)
+    expect(func.explain.resultType.type).toBe(types.i32)
+})
+
+test("sort-array", () => {
+    // rt.pure.sort: the values of an array or object, as an array
+    let schema = typing.parseType`{data: {*u32: {k: string, x: u32}}}`
+    let func = compile(api.sort(rh`{data.*A.k: sum(data.*A.x)}`), { schema })
+    expect(func({data: [{k: "b", x: 2}, {k: "a", x: 1}]})).toEqual([2, 1])
+    let type = func.explain.resultType.type
+    expect(typing.isInteger(type.objKey)).toBe(true)
+    expect(type.objValue).toBe(types.u32)
+})
+
+test("generator-maybe-keys", () => {
+    // *A ranges over the keys of data or other, so data.*A? may be missing,
+    // and the optimizer must not assume it is present
+    let schema = typing.parseType`{data: {*u32: u32}, other: {*u32: u32}}`
+    let input = {data: [1, 2], other: [10, 20, 30]}
+    for (let enableOptimizations of [false, true]) {
+        let func = compile(rh`{*A: (data.*A? || 0) + (other.*A? || 0)}`, { schema, enableOptimizations })
+        expect(func(input)).toEqual({0: 11, 1: 22, 2: 30})
+        expect(func.explain.ir.filters[0].schema.props).toContain(props.nothing)
+    }
+    // a strict generator still restricts the domain
+    let func = compile(rh`{*A: data.*A + (other.*A? || 0)}`, { schema })
+    expect(func.explain.ir.filters[0].schema.props).not.toContain(props.nothing)
+})
+
+test("update-multi-key", () => {
+    // the top-level group over several free variables nests well-formed objects
+    let schema = typing.parseType`{data: {*u32: {y: u32}}}`
+    let func = compile(rh`data.*A.y + data.*B.y`, { schema, singleResult: false })
+    let inner = func.explain.resultType.type.objValue
+    expect(inner.objParent).toEqual(typing.objBuilder().build())
+    expect(inner.objValue).toBe(types.u32)
+})
+
+test("get-number-key", () => {
+    // obj[0] and obj["0"] are the same lookup
+    let schema = typing.parseType`{data: {0: u32}, arr: {*u32: string}}`
+    let typeOf = (q) => compile(rh([q]), { schema }).explain.resultType
+    expect(typeOf("data.0")).toEqual({type: types.u32, props: []})
+    // an array index may be out of range
+    let t = typeOf("arr.0")
+    expect(t.type).toBe(types.string)
+    expect(t.props).toContain(props.nothing)
+    // only the canonical spelling of a number in range is a number key
+    let key = typing.createKey(types.u32)
+    expect(typing.typeDoesntIntersect("0", key)).toBe(false)
+    for (let s of ["01", "-1", "1.5", "4294967296", "x"])
+        expect(typing.typeDoesntIntersect(s, key)).toBe(true)
+})
+
+test("get-intersect-object", () => {
+    // a value of both objects has the fields of either
+    let inter = typing.createIntersection(
+        typing.createSimpleObject({a: types.u32, b: types.u8}), typing.createSimpleObject({a: types.u16, c: types.string}))
+    let schema = typing.createSimpleObject({d: inter})
+    let typeOf = (q) => compile(rh([q]), { schema }).explain.resultType
+    expect(typeOf("d.a")).toEqual({type: types.u16, props: []}) // in both: of both types
+    expect(typeOf("d.b")).toEqual({type: types.u8, props: []})
+    expect(typeOf("d.c")).toEqual({type: types.string, props: []})
+    expect(typeOf("d.z").props).toContain(props.nothing)
+    // a key that may name fields of either side is of either type
+    let vec = typing.createVec("dense", types.u32, 1, types.f32)
+    let tagged = typing.createSimpleObject({v: typing.createIntersection(vec, typing.createSimpleObject({name: types.string}))})
+    let all = compile(rh`v.*i`, { schema: tagged }).explain.resultType.type
+    expect(typing.isSubtype(all.objValue, typing.createUnion(types.f32, types.string))).toBe(true)
+    expect(compile(rh`v.name`, { schema: tagged }).explain.resultType.type).toBe(types.string)
+})
