@@ -1079,8 +1079,11 @@ let emitPure = (buf, q) => {
     // binary op
     let [e1, e2] = q.arg.map(e => emitPath(buf, e))
     let op = utils.binaryOperators[q.op]
-    if (e1.tag == TAG.JSON) e1 = json.convertJSONTo(e1, e1.schema)
-    if (e2.tag == TAG.JSON) e2 = json.convertJSONTo(e2, e1.schema)
+    // each operand converts to its own type; an unknown one borrows the other's
+    let target1 = typing.isUnknown(e1.schema) ? e2.schema : e1.schema
+    let target2 = typing.isUnknown(e2.schema) ? e1.schema : e2.schema
+    if (e1.tag == TAG.JSON) e1 = json.convertJSONTo(e1, target1)
+    if (e2.tag == TAG.JSON) e2 = json.convertJSONTo(e2, target2)
     if (q.op == "equal" || q.op == "notEqual" || q.op == "lessThan" || q.op == "greaterThan" || q.op == "lessThanOrEqual" || q.op == "greaterThanOrEqual") {
       if (typing.isString(e1.schema) && typing.isString(e2.schema)) {
         let { str: str1, len: len1 } = e1.val
