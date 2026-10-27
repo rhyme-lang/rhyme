@@ -1022,7 +1022,8 @@ let quoteTypeCPP = ty => {
       return ctypeMap[ty.typeSym]
       // throw new Error("Unknown CPP type of: " + prettyType(ty));
     }
-    if (typing.isObject(ty))
+    // an object, or a value of unknown type, is a json value
+    if (typing.isUnknown(ty) || typing.isObject(ty))
         return "rh";
     throw new Error("Unknown type: " + JSON.stringify(ty));
 }
@@ -1047,7 +1048,7 @@ let quoteFileReadCPP = ty => {
     }
     throw new Error("Unknown tag: " + ty.tag);
   } else {
-    if (typing.isObject(ty)) {
+    if (typing.isUnknown(ty) || typing.isObject(ty)) {
         return "read_json";
     } else {
         throw new Error("Unknown how to read: " + prettyType(ty));
@@ -1129,7 +1130,7 @@ let emitCodeCPP = (q, order) => {
             return `for (const auto& [${sym}, ${sym}_val] : ${source}) {`
         }
     }
-    if (typing.isObject(ty)) {
+    if (typing.isUnknown(ty) || typing.isObject(ty)) {
         return `for (const auto& [${sym}, ${sym}_val] : ${source}.items()) {`
     }
     throw new Error("Unknown loop type: " + prettyType(ty));
@@ -1190,7 +1191,7 @@ let emitCodeCPP = (q, order) => {
   }
 
   let getScopedName = (ty, gen) => {
-    if (typing.isSparse(ty) || (typing.isObject(ty) && !typing.isDense(ty))) {
+    if (typing.isSparse(ty) || ((typing.isUnknown(ty) || typing.isObject(ty)) && !typing.isDense(ty))) {
         return gen+"_val"
     }
   }

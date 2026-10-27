@@ -11,7 +11,8 @@ const { quoteVar } = utils
 // It will otherwise try to convert to the expected type
 // Returns the original value if no schema is provided
 let convertJSONTo = (json, schema) => {
-  if (typing.isObject(schema)) {
+  // an object, or a value of unknown type, stays a yyjson value
+  if (typing.isUnknown(schema) || typing.isObject(schema)) {
     return json
   } else if (typing.isString(schema)) {
     let str = c.call("yyjson_get_str", json.val)
