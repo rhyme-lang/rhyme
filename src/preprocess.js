@@ -70,6 +70,9 @@ let preproc = q => {
     if (q.xxop == "inp") return { key: "input" }
     console.error("unexpected raw input: ", q)
   } if (q.xxkey == "const") {
+    // false is nothing: a condition is true or missing (rt.pure.equal, ...)
+    if (q.xxop === false)
+      return { key: "const", op: undefined }
     return { key: "const", op: q.xxop }
   } else if (q.xxkey.startsWith && q.xxkey.startsWith("load")) {
     // Only process the first argument which is the filename

@@ -440,3 +440,39 @@ test("get-union-non-object", () => {
     // a string is indexed by character in the js backend, so not 'nothing'
     expect(() => typeOf("data.a", P`{data: {a: u8} | string}`)).toThrow(/non-object/)
 })
+
+test("all-any-nothing", () => {
+    let schema = typing.parseType`{data: {*u32: {b: boolean, x: u8}}, one: {b: boolean}}`
+    let propsOf = (q) => compile(rh([q]), { schema }).explain.resultType.props
+    // 'all' starts out true: missing exactly when some value is
+    expect(propsOf("all(data.*A.b)")).toEqual([])
+    expect(propsOf("all(data.*A.x > 3)")).toContain(props.nothing)
+    expect(propsOf("all?(data.*A.b)")).toContain(props.nothing) // starts out missing
+    // 'any' keeps the first value present, as 'first' does
+    expect(propsOf("any(data.*A.b)")).toContain(props.nothing)
+    expect(propsOf("any(one.b)")).toEqual([])
+    let f = compile(rh`all(data.*A.b)`, { schema })
+    expect(f({data: []})).toBe(true)
+})
+
+test("and-never-left", () => {
+    let schema = typing.parseType`{one: {y: u8}}`
+    let typeOf = (q) => compile(rh([q]), { schema }).explain.resultType
+    // the right side if the left one is there: never, if it never is
+    for (let q of ["one.nope & one.y", "one.nope && one.y", "false & one.y"])
+        expect(typeOf(q)).toEqual({type: types.never, props: [props.nothing]})
+    expect(typeOf("(one.y > 3) & one.y")).toEqual({type: types.u8, props: [props.nothing]})
+    expect(typeOf("one.y & one.y")).toEqual({type: types.u8, props: []})
+    // so it drops out of a branch
+    expect(typeOf("(false & one.y) || 7").type).toBe(types.i32)
+})
+
+test("never-is-nothing", () => {
+    // a value of type never cannot exist, so it is always missing
+    let schema = typing.parseType`{data: {*string: u8}, other: [u8], rec: {a: never}}`
+    let typeOf = (q) => compile(rh([q]), { schema }).explain.resultType
+    expect(typeOf("rec.a")).toEqual({type: types.never, props: [props.nothing]})
+    expect(typeOf("rec.a & 1")).toEqual({type: types.never, props: [props.nothing]})
+    // a variable whose generators share no keys ranges over none
+    expect(typing.isOptionalField(typeOf("{*A: data.*A + other.*A}").type)).toBe(true)
+})

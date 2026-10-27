@@ -844,11 +844,16 @@ let freshSym = (pref) => pref + (symIndex++)
 
 // Types each node once and records the result on it: after deduplicate the IR
 // is a DAG, so a shared node is reached along several paths.
+//
+// A value of type never cannot exist, so it is always missing: a never type
+// always comes with 'nothing'.
 let validateIRQuery = (schema, varMap, q) => {
     if (q.schema)
         return q.schema
 
     let res = _validateIRQuery(schema, varMap, q)
+    if (isNever(res.type) && !res.props.includes(props.nothing))
+        res = {type: res.type, props: union(res.props, nothingSet)}
     q.schema = res
     return res
 }
@@ -1030,11 +1035,13 @@ let _validateIRQuery = (schema, varMap, q) => {
                 literalInContext(q.arg[0], t1, q.arg[1], t2)
                 literalInContext(q.arg[1], t2, q.arg[0], t1)
                 return {type: types.boolean, props: union(p1,union(p2, nothingSet))}
-            } else if (q.op == "and") {
+            } else if (q.op == "and" || q.op == "andAlso") {
                 // TODO: validate types for and
-                return {type: t2, props: union(p1, p2)}
-            } else if (q.op == "andAlso") {
-                // TODO: validate types for and
+                // The right side, if the left one is there: so always
+                // missing if the left one always is (both are evaluated, so
+                // the errors of either surface).
+                if (isNever(t1))
+                    return {type: types.never, props: union(nothingSet, intersect(union(p1, p2), errorSet))}
                 return {type: t2, props: union(p1, p2)}
             } else if (q.op == "orElse") {
                 // TODO: validate types for orElse
@@ -1177,8 +1184,8 @@ let _validateIRQuery = (schema, varMap, q) => {
         }
         throw new Error("Pure operation not implemented: " + q.op)
     } else if (q.key === "hint") {
-
-        return {type: types.never, props: []}
+        // a no-op for the value: codegen emits {}
+        return intoTup(objBuilder().build())
 
     } else if (q.key === "mkset") {
         let argTup = validateIRQuery(schema, varMap, q.arg[0])
@@ -1249,8 +1256,16 @@ let _validateIRQuery = (schema, varMap, q) => {
         } else if (q.op === "all" || q.op === "any") {
             if (!accepts(argType, types.boolean))
                 throw new Error(`Unable to use "${q.op}" operator on non-boolean type. Got: ${prettyType(argType)}`)
-            // As long as the argument is valid, it doesn't matter what type it is.
-            return {type: types.boolean, props: union(resProps, nothingSet)}
+            // 'any' keeps the first value present, as 'first' does. 'all'
+            // starts out true, so over no values it is there, but turns
+            // missing for good at the first missing value: it is missing
+            // exactly when some value is -- and always in 'maybe' mode,
+            // where it starts out missing.
+            if (q.op === "any")
+                return {type: types.boolean, props: resProps}
+            if (q.mode === "maybe")
+                return {type: types.boolean, props: union(argTup.props, nothingSet)}
+            return {type: types.boolean, props: argTup.props}
         } else if (q.op === "single" || q.op === "first" || q.op === "last") {
             return {type: argType, props: resProps}
         } else if (q.op === "array") {
