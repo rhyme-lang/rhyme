@@ -377,3 +377,6 @@ let emitLoops = (q, order) => {
 
 exports.emitLoops = emitLoops
 
+// opt-loopgen reuses the projection nest for the statements that need one
+exports.emitFilters1 = emitFilters1
+

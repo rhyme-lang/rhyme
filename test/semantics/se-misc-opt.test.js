@@ -1,5 +1,6 @@
 const { api, rh } = require('../../src/rhyme')
 const { compile } = require('../../src/simple-eval')
+const { compileC2OptCrossCheck } = require('../utils')
 
 
 let data = {
@@ -24,7 +25,7 @@ test("dceUnusedAgg", () => {
   // - eliminate 'count': result unused, can't be 'undefined'
   // - preserve filter 'other.*D'
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
 
   // console.log(func.explain.ir.deps)
   // console.log(func.explain.pseudo)
@@ -46,7 +47,7 @@ test("dceUnusedAgg2", () => {
   //    - can change to 'any' -- don't care about numeric result
   // - preserve filter 'other.*D'
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
 
   // console.log(func.explain.ir.deps)
   // console.log(func.explain.pseudo)
@@ -70,7 +71,7 @@ test("constFoldKey", () => {
   // - replace K -> "key"
   // - eliminate 'count' (dce)
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
 
   // console.log(func.explain.ir.deps)
   // console.log(func.explain.pseudo)
@@ -89,7 +90,7 @@ test("fuseLoopVars", () => {
   // - fuse *A, *B: they traverse the same prefix,
   //   and do not have any cross-dependencies
 
-  let func = compile(query)
+  let func = compileC2OptCrossCheck(query)
 
   // console.log(func.explain.ir.deps)
   // console.log(func.explain.pseudo)
