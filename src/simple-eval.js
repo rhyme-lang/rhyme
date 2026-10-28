@@ -7,6 +7,7 @@ const { preproc } = require('./preprocess')
 const { runtime } = require('./simple-runtime')
 const { pretty, setEmitPseudoState, emitPseudo } = require('./prettyprint')
 const cgen = require('./cgen/codegen')
+const { emitCodeLowLevelC, buildBinary } = require('./c-codegen')
 const { typing, types, typeSyms } = require('./typing')
 const { optimizer } = require('./optimizer')
 
@@ -71,6 +72,10 @@ let reset = (userSettings) => {
   settings = { ...defaultSettings, ...userSettings }
 
   checkBackend(settings.backend)
+
+  // c-new generates C from loopgen's output, so it cannot run without it
+  if (settings.backend == "c-new" && !settings.loopGen)
+    throw new Error("backend 'c-new' requires loopGen")
 
   // The original C backend (cgen.generateC, shared by "c" and "cuda") has no
   // rt_pure_mkTuple and builds record literals from the pure node directly, so
@@ -1062,8 +1067,12 @@ let compile = (q,userSettings={}) => {
 
     let loops = settings.optLoopgen ? scheduleC2(q) : emitLoops(q,order)
 
-    code = emitCodeLowLevel(loops)
-    code = fixIndent(code)
+    if (settings.backend == "c-new") {
+      code = emitCodeLowLevelC(loops)
+    } else {
+      code = emitCodeLowLevel(loops)
+      code = fixIndent(code)
+    }
 
     // if (code0 != code) {
     //   console.log(code0)
@@ -1079,6 +1088,16 @@ let compile = (q,userSettings={}) => {
 
   // ---- link / eval ----
 
+  let explain = {
+    src,
+    resultType: q.schema,
+    ir: {filters, assignments, vars, order},
+    pseudo, code
+  }
+
+  if (settings.backend == "c-new")
+    return buildBinary(code, settings, explain)
+
   let rt = runtime // make available in scope for generated code
   let func = eval(code)
 
@@ -1087,12 +1106,7 @@ let compile = (q,userSettings={}) => {
     return res;
   }
 
-  wrap.explain = {
-    src,
-    resultType: q.schema,
-    ir: {filters, assignments, vars, order},
-    pseudo, code
-  }
+  wrap.explain = explain
   return wrap
 }
 
