@@ -138,7 +138,7 @@ let createIntersection = (t1, t2) => {
         return t1
     if (isSubtype(t2, t1))
         return t2
-    if (typeDoesntIntersect(t1, t2)) {
+    if (typeDisjoint(t1, t2)) {
         // console.warn(`Intersection of non-intersecting types results in Never: ${prettyType(t1)} and ${prettyType(t2)}`);
         return types.never
     }
@@ -159,7 +159,7 @@ let createIntersection = (t1, t2) => {
     // (a tagged object, unknown) stays an intersection, rather than having
     // its fields silently dropped.
     if (t1.typeSym == typeSyms.object && t2.typeSym == typeSyms.object &&
-        typeDoesntIntersect(getObjectKeys(t1), getObjectKeys(t2))) {
+        typeDisjoint(getObjectKeys(t1), getObjectKeys(t2))) {
         let newObj = objBuilder()
         for (let obj = t1; obj.objParent != null; obj = obj.objParent) {
             newObj.add(obj.objKey, obj.objValue, isOptionalField(obj))
@@ -327,7 +327,7 @@ let lookupKey = (objectTup, keyTup) => {
             }
             let {type: t3, props: p3} = lookupKey(intoTup(parent), keyTup)
             resProps = union(resProps, p3)
-            if (typeDoesntIntersect(keyType, keyTup.type)) {
+            if (typeDisjoint(keyType, keyTup.type)) {
                 return {
                     type: t3,
                     props: resProps
@@ -409,7 +409,7 @@ Object.keys(NUMBER_SUPERTYPES).forEach(closeUpperBounds)
 
 let isNumberSym = (sym) => NUMBER_SUPERTYPES[sym] !== undefined
 
-let typeConforms_NonUnion = (type, expectedType) => {
+let isSubtype_NonUnion = (type, expectedType) => {
     if (sameType(type, expectedType))
         return true
     // Never is a subtype of all types.
@@ -434,7 +434,7 @@ let typeConforms_NonUnion = (type, expectedType) => {
     }
     if (type.typeSym === typeSyms.dynkey) {
         // If supertype of dynkey is subtype of s2, then dynkey is subtype of s2.
-        if (typeConforms(type.keySupertype, expectedType))
+        if (isSubtype(type.keySupertype, expectedType))
             return true
     }
     if (type.typeSym === typeSyms.function) {
@@ -446,11 +446,11 @@ let typeConforms_NonUnion = (type, expectedType) => {
         // So given the two, T_1 -> S_2 <: S_1 -> T_2
         if (type.funcParams.length !== expectedType.funcParams.length)
             return false
-        let resConforms = typeConforms(type.funcResult, expectedType.funcResult)
+        let resConforms = isSubtype(type.funcResult, expectedType.funcResult)
         if (!resConforms)
             return false
         let argsConform = type.funcParams.reduce(((acc, _, i) => acc &&
-            typeConforms(expectedType.funcParams[i], type.funcParams[i])),
+            isSubtype(expectedType.funcParams[i], type.funcParams[i])),
             true
         )
         if (!argsConform)
@@ -472,7 +472,7 @@ let typeConforms_NonUnion = (type, expectedType) => {
             let {type: lookupType, props: lookupProps} = performObjectGet(tup, intoTup(key))
             let expectedRes = nestedObj.objValue
             for (let keyval of keyvals) {
-                if (typeDoesntIntersect(key, keyval[0]))
+                if (typeDisjoint(key, keyval[0]))
                     continue
                 expectedRes = createUnion(expectedRes, keyval[1])
             }
@@ -491,47 +491,35 @@ let typeConforms_NonUnion = (type, expectedType) => {
     return false
 }
 
-// typeConforms is same as isSubtype.
-let typeConforms = (type, expectedType) => {
+let isSubtype = (type, expectedType) => {
     if (sameType(type, expectedType))
         return true
     if (type.typeSym === typeSyms.tagged_type || expectedType.typeSym === typeSyms.tagged_type)
-        return typeConforms(removeTag(type), removeTag(expectedType))
-    switch (type.typeSym) {
-        case typeSyms.union: {
-            let res1 = typeConforms(type.unionSet[0], expectedType)
-            let res2 = typeConforms(type.unionSet[1], expectedType)
-            return res1 && res2
-        }
-        case typeSyms.intersect: {
-            let res1 = typeConforms(type.intersectSet[0], expectedType)
-            let res2 = typeConforms(type.intersectSet[1], expectedType)
-            return res1 || res2
-        }
-        default:
-            // A dynamic key conforms when its supertype does -- checked before a
-            // union on the right is split, which the supertype may need whole.
-            if (type.typeSym === typeSyms.dynkey && typeConforms(type.keySupertype, expectedType))
-                return true
-            switch (expectedType.typeSym) {
-                case typeSyms.union: {
-                    let res1 = typeConforms(type, expectedType.unionSet[0])
-                    let res2 = typeConforms(type, expectedType.unionSet[1])
-                    return res1 || res2
-                }
-                case typeSyms.intersect: {
-                    let res1 = typeConforms(type, expectedType.intersectSet[0])
-                    let res2 = typeConforms(type, expectedType.intersectSet[1])
-                    return res1 && res2
-                }
-                default:
-                    return typeConforms_NonUnion(type, expectedType)
-            }
-    }
+        return isSubtype(removeTag(type), removeTag(expectedType))
+    // First the splits that lose nothing: A | B <: C iff A <: C and B <: C,
+    // and A <: B & C iff A <: B and A <: C.
+    if (type.typeSym === typeSyms.union)
+        return isSubtype(type.unionSet[0], expectedType) &&
+            isSubtype(type.unionSet[1], expectedType)
+    if (expectedType.typeSym === typeSyms.intersect)
+        return isSubtype(type, expectedType.intersectSet[0]) &&
+            isSubtype(type, expectedType.intersectSet[1])
+    // The rest only suffice, so each is tried: a split may need the side it
+    // splits whole (A & B <: A & (B | C) needs A & B whole on the left).
+    // A dynamic key conforms when its supertype does -- checked before a
+    // union on the right is split, which the supertype may need whole.
+    if (type.typeSym === typeSyms.dynkey && isSubtype(type.keySupertype, expectedType))
+        return true
+    if (type.typeSym === typeSyms.intersect &&
+        (isSubtype(type.intersectSet[0], expectedType) ||
+            isSubtype(type.intersectSet[1], expectedType)))
+        return true
+    if (expectedType.typeSym === typeSyms.union)
+        return isSubtype(type, expectedType.unionSet[0]) ||
+            isSubtype(type, expectedType.unionSet[1])
+    return isSubtype_NonUnion(type, expectedType)
 }
-let isSubtype = typeConforms
-typing.typeConforms = typeConforms
-typing.isSubtype = typeConforms // Alias
+typing.isSubtype = isSubtype
 
 // Whether the property name s is a key of the number key type: it spells a
 // number of that type, as the key would print (no "01", "1.0" or "+1").
@@ -540,7 +528,7 @@ let isNumberKey = (s, numType) => {
     return s !== "" && String(n) === s && fitsNumber(n, generalizeNumber(numType))
 }
 
-let typeDoesntIntersect = (t1, t2) => {
+let typeDisjoint = (t1, t2) => {
     switch (t1.typeSym) {
         case typeSyms.never:
             return true
@@ -549,8 +537,8 @@ let typeDoesntIntersect = (t1, t2) => {
                 return true
             return false
         case typeSyms.union: {
-            let res1 = typeDoesntIntersect(t1.unionSet[0], t2)
-            let res2 = typeDoesntIntersect(t1.unionSet[1], t2)
+            let res1 = typeDisjoint(t1.unionSet[0], t2)
+            let res2 = typeDisjoint(t1.unionSet[1], t2)
             return res1 && res2
         }
         default:
@@ -562,8 +550,8 @@ let typeDoesntIntersect = (t1, t2) => {
         case typeSyms.any:
             return false
         case typeSyms.union: {
-            let res1 = typeDoesntIntersect(t2.unionSet[0], t1)
-            let res2 = typeDoesntIntersect(t2.unionSet[1], t1)
+            let res1 = typeDisjoint(t2.unionSet[0], t1)
+            let res2 = typeDisjoint(t2.unionSet[1], t1)
             return res1 && res2
         }
         default:
@@ -575,9 +563,15 @@ let typeDoesntIntersect = (t1, t2) => {
     // A dynamic key is some subset of its supertype's values, so it is
     // disjoint from whatever its supertype is disjoint from.
     if (t1.typeSym == typeSyms.dynkey)
-        return typeDoesntIntersect(t1.keySupertype, t2)
+        return typeDisjoint(t1.keySupertype, t2)
     if (t2.typeSym == typeSyms.dynkey)
-        return typeDoesntIntersect(t1, t2.keySupertype)
+        return typeDisjoint(t1, t2.keySupertype)
+    // An intersection is within each of its members, so it is disjoint from
+    // whatever one of them is disjoint from -- and may overlap anything else.
+    if (t1.typeSym == typeSyms.intersect)
+        return typeDisjoint(t1.intersectSet[0], t2) || typeDisjoint(t1.intersectSet[1], t2)
+    if (t2.typeSym == typeSyms.intersect)
+        return typeDisjoint(t1, t2.intersectSet[0]) || typeDisjoint(t1, t2.intersectSet[1])
     // A property name spelling a number ('0') is also a key of a number key
     // type that holds it, e.g. an array index.
     if (typeof t1 === "string" && isNumber(t2))
@@ -605,12 +599,13 @@ let typeDoesntIntersect = (t1, t2) => {
     if (strT1 != "" && strT2 != "")
         if (strT1 != strT2)
             return true
-    if (isString(t1) && isString(t2))
+    // two different string literals (neither is a subtype of the other)
+    if (typeof t1 === "string" && typeof t2 === "string")
         return true
     // TODO Other checks?
     return false
 }
-typing.typeDoesntIntersect = typeDoesntIntersect
+typing.typeDisjoint = typeDisjoint
 
 // What an op expects of an operand, as types to be a subtype of. The kind
 // predicates below are just subtype checks against these, so unions,
@@ -1241,7 +1236,7 @@ let _validateIRQuery = (schema, varMap, q) => {
             // Accumulates in the argument's own type, wrapping around on
             // overflow (a sum over u8 is u8), as the C backend does. Over only
             // missing values it is just its init value, typed like a literal.
-            return {type: isNever(argType) ? types.i32 : generalizeNumber(argType), props: resProps}
+            return {type: isNever(argType) ? types.f64 : generalizeNumber(argType), props: resProps}
         } else if (q.op === "min" || q.op === "max") {
             if (!accepts(argType, numberType))
                 throw new Error(`Unable to ${q.op} non-number values currently. Got: ${prettyType(argType)}`)

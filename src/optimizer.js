@@ -43,7 +43,7 @@ let getConstantObjectExp = (q) => {
         let newObj = {};
         if(keyExp.schema) { // If typing is enabled, check for intersections.
             for(let key of Object.keys(prevObj)) {
-                if(typing.typeDoesntIntersect(key.schema.type, keyExp.schema.type)) {
+                if(typing.typeDisjoint(key.schema.type, keyExp.schema.type)) {
                     newObj[key] = prevObj[key];
                 }
             }

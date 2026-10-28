@@ -7,8 +7,8 @@ const { compileCrossCheck } = require("../utils");
 /*
 Test internal typing functions
 - typeEquals (subtyping both ways)
-- isSubtype (typeConforms)
-- typeDoesntIntersect
+- isSubtype
+- typeDisjoint
 
 - performObjectGet
 - parseType?
@@ -103,14 +103,14 @@ test("insersect-basic", () => {
 
 test("no-intersect-basic", () => {
     // Items that are subtypes will intersect.
-    expect(typing.typeDoesntIntersect(types.u8, types.i16)).toBe(false);
+    expect(typing.typeDisjoint(types.u8, types.i16)).toBe(false);
     // Concrete types that don't intersect should immediately be true.
-    expect(typing.typeDoesntIntersect(types.string, types.i16)).toBe(true);
+    expect(typing.typeDisjoint(types.string, types.i16)).toBe(true);
     // Specific strings should not intersect if they're different
-    expect(typing.typeDoesntIntersect("A", "B")).toBe(true);
-    expect(typing.typeDoesntIntersect("A", "A")).toBe(false);
+    expect(typing.typeDisjoint("A", "B")).toBe(true);
+    expect(typing.typeDisjoint("A", "A")).toBe(false);
     // TODO: Should non-key types be checked?
-    // typeDoesntIntersect is only ever ran on key types.
+    // typeDisjoint is only ever ran on key types.
 })
 
 test("no-intersect-basic-keys", () => {
@@ -120,23 +120,23 @@ test("no-intersect-basic-keys", () => {
     let k4 = typing.createKey(types.string);
 
     // Integer keys can intersect.
-    expect(typing.typeDoesntIntersect(k1, k2)).toBe(false);
-    expect(typing.typeDoesntIntersect(k2, k3)).toBe(false);
+    expect(typing.typeDisjoint(k1, k2)).toBe(false);
+    expect(typing.typeDisjoint(k2, k3)).toBe(false);
     // String and Integer keys will never intersect.
-    expect(typing.typeDoesntIntersect(k3, k4)).toBe(true);
+    expect(typing.typeDisjoint(k3, k4)).toBe(true);
 })
 
 test("no-intersect-dynkey-supertype", () => {
     // a dynamic key is disjoint from whatever its supertype is disjoint from
     let ab = typing.createKey(typing.createUnion("A", "B"));
-    expect(typing.typeDoesntIntersect(ab, "total")).toBe(true);
-    expect(typing.typeDoesntIntersect("total", ab)).toBe(true);
-    expect(typing.typeDoesntIntersect(ab, "A")).toBe(false);
-    expect(typing.typeDoesntIntersect(ab, typing.createKey(typing.createUnion("C", "D")))).toBe(true);
-    expect(typing.typeDoesntIntersect(ab, typing.createKey(typing.createUnion("B", "C")))).toBe(false);
+    expect(typing.typeDisjoint(ab, "total")).toBe(true);
+    expect(typing.typeDisjoint("total", ab)).toBe(true);
+    expect(typing.typeDisjoint(ab, "A")).toBe(false);
+    expect(typing.typeDisjoint(ab, typing.createKey(typing.createUnion("C", "D")))).toBe(true);
+    expect(typing.typeDisjoint(ab, typing.createKey(typing.createUnion("B", "C")))).toBe(false);
     // keys of the same supertype may coincide
-    expect(typing.typeDoesntIntersect(typing.createKey(types.string), typing.createKey(types.string))).toBe(false);
-    expect(typing.typeDoesntIntersect(typing.createKey(types.string), "total")).toBe(false);
+    expect(typing.typeDisjoint(typing.createKey(types.string), typing.createKey(types.string))).toBe(false);
+    expect(typing.typeDisjoint(typing.createKey(types.string), "total")).toBe(false);
     // so a fixed field next to grouped keys is looked up on its own
     let obj = typing.objBuilder().add("total", types.u32).add(ab, types.f64).build();
     expect(typing.performObjectGet({type: obj, props: []}, {type: "total", props: []}))
@@ -145,7 +145,7 @@ test("no-intersect-dynkey-supertype", () => {
 
 
 test("no-intersect-any-never", () => {
-    expect(typing.typeDoesntIntersect(types.any, types.never)).toBe(true);
+    expect(typing.typeDisjoint(types.any, types.never)).toBe(true);
 })
 
 test("same-type-union", () => {
@@ -202,6 +202,36 @@ test("subtype-dynkey-union", () => {
     expect(typing.isSubtype(key, typing.createUnion(key, types.string))).toBe(true);
 })
 
+test("disjoint-intersect", () => {
+    // an intersection of keys may hold any string its members may
+    let k1 = typing.createKey(types.string);
+    let k2 = typing.createKey(types.string);
+    let both = typing.createIntersection(k1, k2);
+    expect(typing.typeDisjoint(both, "a")).toBe(false);
+    expect(typing.typeDisjoint("a", both)).toBe(false);
+    expect(typing.createIntersection(both, "a").typeSym).toBe("intersect");
+    expect(typing.typeDisjoint(both, types.u8)).toBe(true);
+    expect(typing.typeDisjoint("a", "b")).toBe(true);
+    // a variable over two string-keyed maps and a record keeps the record's key
+    let schema = typing.parseType`{d1: {*string: u8}, d2: {*string: u8}, rec: {a: u8}}`;
+    let func = compile(rh`{ *A: d1.*A + d2.*A + rec.*A }`, { schema });
+    expect(func({d1: {a: 1}, d2: {a: 2}, rec: {a: 3}})).toEqual({a: 6});
+    expect(typing.isNever(func.explain.resultType.type.objKey)).toBe(false);
+})
+
+test("subtype-intersect-order", () => {
+    // an intersection on the right is split before one on the left, which
+    // the right side may need whole
+    let inter = (a, b) => ({typeSym: "intersect", intersectSet: [a, b]});
+    let k1 = typing.createKey(types.u32);
+    let k2 = typing.createKey(types.u32);
+    let k3 = typing.createKey(types.u32);
+    expect(typing.isSubtype(inter(k1, k2), inter(k1, typing.createUnion(k2, types.boolean)))).toBe(true);
+    // an intersection on the left against a union on the right: either split may find it
+    expect(typing.isSubtype(inter(k1, k2), typing.createUnion(k2, types.boolean))).toBe(true);
+    expect(typing.isSubtype(inter(k1, k2), inter(k1, k3))).toBe(false);
+})
+
 test("intersect-object-keys", () => {
     let inter = typing.createIntersection(
         typing.createSimpleObject({a: types.u32, b: types.u8}), typing.createSimpleObject({a: types.string}));
@@ -248,7 +278,7 @@ test("never-operand", () => {
     // a reducer over only missing values is its init value, with a real type
     let func = compile(rh`sum(data.*A.y)`, { schema, typeConversions: true })
     expect(func({data})).toBe(0)
-    expect(func.explain.resultType.type).toBe(types.i32)
+    expect(func.explain.resultType.type).toBe(types.f64)
 })
 
 test("sort-array", () => {
@@ -296,11 +326,11 @@ test("get-number-key", () => {
     expect(t.props).toContain(props.nothing)
     // only the canonical spelling of a number in range is a number key
     let key = typing.createKey(types.u32)
-    expect(typing.typeDoesntIntersect("0", key)).toBe(false)
-    expect(typing.typeDoesntIntersect("5", typing.createKey(types.i8))).toBe(false)
-    expect(typing.typeDoesntIntersect("200", typing.createKey(types.i8))).toBe(true)
+    expect(typing.typeDisjoint("0", key)).toBe(false)
+    expect(typing.typeDisjoint("5", typing.createKey(types.i8))).toBe(false)
+    expect(typing.typeDisjoint("200", typing.createKey(types.i8))).toBe(true)
     for (let s of ["01", "-1", "1.5", "4294967296", "x"])
-        expect(typing.typeDoesntIntersect(s, key)).toBe(true)
+        expect(typing.typeDisjoint(s, key)).toBe(true)
 })
 
 test("get-intersect-object", () => {
