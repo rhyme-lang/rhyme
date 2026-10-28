@@ -246,7 +246,7 @@ test("intersect-object-keys", () => {
 
 test("stateful-maybe-nothing", () => {
     let schema = typing.parseType`{data: {*u32: {x: u32}}, one: {x: u32}}`
-    let propsOf = (q) => compileCrossCheck(rh([q]), { schema }).explain2.resultType.props
+    let propsOf = (q) => compile(rh([q]), { schema }).explain.resultType.props
     for (let q of ["sum?(data.*A.x)", "max?(data.*A.x)", "first(data.*A.x)", "last(data.*A.x)", "single(data.*A.x)"])
         expect(propsOf(q)).toContain(props.nothing)
     // init values are present...
