@@ -1,6 +1,6 @@
 const { api, rh } = require('../../src/rhyme')
 const { compile } = require('../../src/simple-eval')
-const { compileC2OptCrossCheck } = require('../utils')
+const { compileC2CrossCheck } = require('../utils')
 
 
 
@@ -11,7 +11,7 @@ test("testCycles0", () => {
   let other = { U: { A: 100 }, V: { A:200 } }
   let query = rh`sum(data.*A) + sum(other.*B.*A)`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data, other})
 
   // console.log(func.explain.code)
@@ -33,7 +33,7 @@ test("testCycles1", () => {
   let other = { 10: { A: 100, B:200 }, 20: { A:300 } }
   let query = rh`*B & sum(data.*A) + sum(other.*B.*A)`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data, other})
 
   // console.log(func.explain.pseudo)
@@ -57,7 +57,7 @@ test("testCycles1b", () => {
   let other = { 10: { A: 100, B:200 }, 20: { A:300 } }
   let query = rh`*A & sum(data.*A) + sum(other.*B.*A)`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data, other})
 
   // console.log(func.explain.pseudo)
@@ -79,7 +79,7 @@ test("testCyclesGroup1", () => {
   let third = { 10: 10, 20: 20 }
   let query = rh`*B & sum(other.*B.*A) & (group sum(data.*A) sum(third.*B))`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data, other, third})
 
   // console.log(func.explain.pseudo)
@@ -106,7 +106,7 @@ test("testCycles2-0", () => {
   let query = rh`${q1}.*`
   // let query = q1
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data, other})
 
   // console.log(func.explain.code)
@@ -123,7 +123,7 @@ test("testCycles2-1", () => {
   let q1 = { "data.*A.key" : rh`data.*A.val` }
   let query = rh`*A & ${q1}.*`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data, other})
 
   // console.log(func.explain.ir.deps)
@@ -142,7 +142,7 @@ test("testCycles2-2", () => {
   let q1 = { "data.*A.key" : rh`data.*A.val` }
   let query = rh`sum *A & ${q1}.*`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data, other})
 
   // console.log(func.explain.ir.deps)
@@ -162,7 +162,7 @@ test("testCycles2-3", () => {
   let q1 = { "data.*A.key" : rh`data.*A.val` }
   let query = rh`*A & (group *K & ${q1}.*K)`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data, other})
 
   // console.log(func.explain.ir.deps)
@@ -182,7 +182,7 @@ test("testCycles3-0", () => {
   let q1 = { "data.*A.key" : rh`sum data.*A.val` }
   let query = rh`(other.*B) + (${q1}.*B)`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
 
   let res = func({data, other})
   // console.log(res)
@@ -203,7 +203,7 @@ test("testCycles3-1", () => {
   // Here the groupby does not eliminate *A, so 
   // other.* produces multiple values
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
 
   // console.log(func.explain.pseudo)
   // console.log(func.explain.code)
@@ -228,7 +228,7 @@ test("testCycles3-2", () => {
 
   // Also exercises "pre-gen" logic for *A, when iterating over *B
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
 
   // console.log(func.explain.pseudo)
   // console.log(func.explain.code)
@@ -269,7 +269,7 @@ test("testXRec1", () => {
   let other = { A: 0 }
   let query = rh`sum(data.*A.val) + sum(other.(data.*A.key))`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data, other})
 
   // console.log(func.explain.code)

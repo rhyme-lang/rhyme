@@ -1,6 +1,6 @@
 const { api, rh } = require('../../src/rhyme')
 const { compile } = require('../../src/simple-eval')
-const { compileC2OptCrossCheck } = require('../utils')
+const { compileC2CrossCheck } = require('../utils')
 
 
 // some sample data for testing
@@ -33,7 +33,7 @@ test("group_encoded1", () => {
   // let query = {"data.*.key": rh`sum(data.*.value)`}
   let query = rh`*K & sum(mkset(data.*.key).*K & data.*.value)`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data})
 
   // console.log(func.explain.pseudo)
@@ -48,7 +48,7 @@ test("group_encoded1b", () => {
   // let query = {"data.*.key": rh`sum(data.*.value)`}
   let query = rh`mkset(data.*.key).* & sum(mkset(data.*.key).* & data.*.value)`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data})
 
   // console.log(func.explain.pseudo)
@@ -66,7 +66,7 @@ test("group_encoded2", () => {
 
   // interestingly, we can use the same * as only the first sum is filtered by K
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data})
 
   // console.log(func.explain.pseudo)
@@ -98,7 +98,7 @@ test("aggregateAsKey_encoded1", () => {
   // this one is not correct:
   // rh`mkset(data.*.A).*K1 & mkset(sum(data.*.B)).*K2 & true`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res1 = func({data})
 
   let e1 = {
@@ -123,7 +123,7 @@ test("aggregateAsKey_encoded2", () => {
     rh`*K1 & *K2 & mkset(sum(data.*.B)).*K1 & (mkset(data.*.A).*K2 & true)`
   //}}
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res2 = func({data})
 
   let e2_alt_string = {
@@ -149,7 +149,7 @@ test("aggregateAsKey_encoded2b", () => {
 
   // alternative
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res2 = func({data})
 
   let e2_alt_string = { // not sure?
@@ -178,7 +178,7 @@ test("generatorAsFilter_encoded1", () => {
 
   // filtering *K1: drop B entry
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data})
 
   let expected = { "A": 40 }
@@ -200,7 +200,7 @@ test("generatorAsFilter_encoded1b", () => {
 
   // filtering base set of *K1: drop B entry
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data})
 
   let expected = { "A": 40 }
@@ -223,7 +223,7 @@ test("generatorAsFilter_encoded2", () => {
 
   // filtering data.*.key: with B = 0 entry
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data})
 
   let expected = { "A": 40, "B": 0 }
@@ -242,7 +242,7 @@ test("eta3_encoded", () => { // BUG -- eta in key of group expr
     let data0 = "data"
     let data1 = {"*E": "data.*E"} // need proper grouping here!
     let q0 = rh`*K & sum(mkset(${data1}.*A.product).*K & ${data1}.*A.quantity)`
-    let func = compileC2OptCrossCheck(q0)
+    let func = compileC2CrossCheck(q0)
     let res = func({ data })
 
     // console.log(func.explain.pseudo0)
@@ -263,7 +263,7 @@ test("eta3_encoded", () => { // BUG -- eta in key of group expr
 test("testGroup0-a0", () => {
   let query = {"data.*.key": rh`array(data.*.value)`}
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data})
 
   expect(res).toEqual(
@@ -274,7 +274,7 @@ test("testGroup0-a0", () => {
 test("testGroup0-a1", () => {
   let query = rh`group *K (mkset(data.*.key).*K & array(mkset(data.*.key).*K & data.*.value))`
   
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data})
 
   expect(res).toEqual(
@@ -285,7 +285,7 @@ test("testGroup0-a1", () => {
 test("testGroup0-a2", () => {
   let query = rh`group *K (*K & array(mkset(data.*.key).*K & data.*.value))`
   
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data})
 
   expect(res).toEqual(
@@ -296,7 +296,7 @@ test("testGroup0-a2", () => {
 test("testGroup0-a3", () => {
   let query = rh`group *K (mkset(data.*.key).*K & array(*K & data.*.value))`
   
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data})
 
   // NOTE: this worked in an intermediate model of primitive-eval,
@@ -316,7 +316,7 @@ test("testGroup0-a4", () => {
   
   // Difference to prev: drop *K from inner `array(...)`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data})
 
   // NOTE: this worked in an intermediate model of primitive-eval,
@@ -343,7 +343,7 @@ test("testGroup0-a5", () => {
   // because correlation is determined by dims* and dims(mkset ..) = Ø,
   // so the dependency *KEYVAR -> D wouldn't register for mkset.
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data})
 
   expect(res).toEqual(
@@ -367,7 +367,7 @@ test("testGroup0-a6", () => {
   // of the selection prefix for *KEYVAR -- free isn't
   // available yet.
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data})
 
   expect(res).toEqual(
@@ -386,7 +386,7 @@ test("testGroup0-a7", () => {
   //   (count *D & (mkset data.*D.key).*KEYVAR)
   //
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data})
 
   expect(res).toEqual(
@@ -405,7 +405,7 @@ test("testGroup0-a8", () => {
   //
   // (XX same as a5)
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data})
 
   expect(res).toEqual(

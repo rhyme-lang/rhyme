@@ -1,6 +1,6 @@
 const { api, rh } = require('../../src/rhyme')
 const { compile } = require('../../src/simple-eval')
-const { compileC2OptCrossCheck } = require('../utils')
+const { compileC2CrossCheck } = require('../utils')
 
 
 // group values into a specific datastructure, rather than
@@ -15,7 +15,7 @@ test("array0", () => {
   let udf = { array: x => [] }
   let query = rh`update (udf.array 0) *D (data.*D + 10)` // 0 b/c parser requires an arg, can't do ()
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data, udf})
 
   let expected = [11,12,13,14,15]
@@ -31,7 +31,7 @@ test("array1_largeInitialSize", () => {
   let udf = { array: x => new Array(x) }
   let query = rh`update (udf.array 7) *D (data.*D + 10)`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data, udf})
 
   // non-strict equality
@@ -74,7 +74,7 @@ test("array2_filterGaps", () => {
   let udf = { array: x => new Array(x) }
   let query = rh`update (udf.array 5) *D (filter.(data.*D) & data.*D + 10)`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data, filter, udf})
 
   expect(res).toEqual([
@@ -99,7 +99,7 @@ test("typedArray0_noGapsJustZeroes", () => {
   let udf = { array: x => new Float32Array(x) }
   let query = rh`update (udf.array 10) *D (filter.(data.*D) & data.*D + 10)`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data, filter, udf})
 
   expect(res).toEqual(new Float32Array([
@@ -249,7 +249,7 @@ test("tensorView1_toArrays", () => {
 
   let query = rh`array (*i & (array data.*i.*j))`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
 
   // console.log(func.explain.code)
 
@@ -273,7 +273,7 @@ test("tensorView2_toArraysTranspose", () => {
 
   let query = rh`array (*j & (array data.*i.*j))`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
 
   // console.log(func.explain.code)
 
@@ -302,7 +302,7 @@ test("tensorView3_id", () => {
 
   let query = rh`update_inplace .out *WILDCARD 10+data.*i.*j`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data, out})
 
   expect(toMatrix1(res)).toEqual([
@@ -320,7 +320,7 @@ test("tensorView3_transpose", () => {
   // let query = rh`update_inplace .out *j (update_inplace out.*j *i 10+data.*i.*j)`
   let query = rh`update_inplace .out (vars *j *i) 10+data.*i.*j`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data, out})
 
   expect(toMatrix1(res)).toEqual([
@@ -460,7 +460,7 @@ test("redBlackTree1", () => {
 
   let query = rh`update (udf.redBlackTree 0) data.* (count data.*)`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data, udf})
 
   expect([...res]).toEqual([
@@ -665,7 +665,7 @@ test("csr2_sparseMatrixVectorProduct", () => {
 
   let query = rh`update (udf.array 5) *i sum(csr.*i.*j * vec.*j)`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({csr, vec, udf})
 
   expect(res).toEqual([

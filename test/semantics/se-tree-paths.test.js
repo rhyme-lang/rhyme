@@ -1,6 +1,6 @@
 const { api, rh } = require('../../src/rhyme')
 const { compile } = require('../../src/simple-eval')
-const { compileC2OptCrossCheck } = require('../utils')
+const { compileC2CrossCheck } = require('../utils')
 
 
 let data = {
@@ -55,7 +55,7 @@ further.
 test("testPath0", () => {
   let query = rh`array (data.**A & **A)` // collect all paths
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data})
 
   expect(res).toEqual([
@@ -70,7 +70,7 @@ test("testPath1", () => {
   // filter and collect paths (equijoin)
   let query = rh`array (data.**A & other.**A & **A)`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data,other})
 
   expect(res).toEqual([
@@ -85,7 +85,7 @@ test("testPath2", () => {
   // look for specific keys deep in the tree
   let query = rh`array data.**A.B`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data,other})
 
   expect(res).toEqual([8,18,28])
@@ -97,7 +97,7 @@ test("testPath2", () => {
 test("testPathGroup1", () => {
   let query = rh`data.**A.B`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data,other})
 
   // XXX: implicit grouping is problematic if parts of
@@ -115,7 +115,7 @@ test("testPathGroup2", () => {
   // look for specific keys deep in the tree
   let query = { "join **A": rh`data.**A.B` }
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data,other})
 
   // Explicit grouping is ok if we convert the key to a string
@@ -227,7 +227,7 @@ test("testPathGroup4-2", () => {
   // FIXME: the following is not parsed correctly:
   // let query = { "**A": rh` (data.**A.A + data.**A.B) | update data.**A "C"` }
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data,other})
 
   // console.log(func.explain.pseudo)
@@ -254,7 +254,7 @@ test("testPathGroup4-3-pre", () => {
   // simple case: want to leave non-object intact!
   let query = { "*A": rh`update data.*A "newfield" 1` }
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data,other})
 
   // console.log(func.explain.pseudo)
@@ -283,7 +283,7 @@ test("testPathGroup4-3", () => {
   // FIXME: the following is not parsed correctly:
   // let query = { "**A": rh` (data.**A.A + data.**A.B) | update data.**A "C"` }
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data,other})
 
   // console.log(func.explain.pseudo)
@@ -317,7 +317,7 @@ test("testPathGroup4-4", () => {
 
   let query = { "**A": rh`update data.**A "sum" (sum data.**A.*B)` }
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({data})
 
   // console.log(func.explain.pseudo)
@@ -378,7 +378,7 @@ test("testArith0", () => {
 
   let query = rh`udf.plus A.**I B.**I`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({A,B,udf})
 
   expect(res).toEqual(15)
@@ -390,7 +390,7 @@ test("testArith1", () => {
 
   let query = rh`udf.plus A.**I B.**I`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({A,B,udf})
 
   expect(res).toEqual({ // [11, 22, 33]
@@ -404,7 +404,7 @@ test("testArith2", () => {
 
   let query = rh`udf.plus A.**I B.**I`
 
-  let func = compileC2OptCrossCheck(query)
+  let func = compileC2CrossCheck(query)
   let res = func({A,B,udf})
 
   expect(res).toEqual({
