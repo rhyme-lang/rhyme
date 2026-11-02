@@ -185,8 +185,8 @@ rt.pure.orElse = (x1,x2) => {
 }
 
 rt.pure.singleton = (x1) => { // 'mkset'
-  if (x1 === undefined) return {}
-  return {[x1]:true}
+  if (x1 === undefined) return undefined
+  return {[x1]:x1}
 }
 
 rt.pure.ifElse = (c,tB,eB) => {
@@ -293,8 +293,8 @@ rt.pure.convert_f64 = (x) => x === undefined ? undefined : Number(x);
 rt.pure.convert_string = (x) => x === undefined ? undefined : String(x);
 
 rt.singleton = (x1) => { // 'mkset'
-  if (x1 === undefined) return {}
-  return {[x1]:true}
+  if (x1 === undefined) return undefined
+  return {[x1]:x1}
 }
 
 // Constant-key record construction: the optimized encoding of an 'update'
@@ -422,7 +422,7 @@ rt.stateful.mkset_init = () => ({})
 
 rt.stateful.mkset = x => s => {
   if (x === undefined) return s
-  s[x] = true
+  s[x] = x
   return s
 }
 
