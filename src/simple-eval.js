@@ -161,8 +161,11 @@ let extract0 = q => {
     if (q.key == "get?")
       return { ...q, key: "get", mode: "maybe", arg: [e1,e2]}
     return { ...q, arg: [e1,e2]}
-  } else if (q.key == "group") {
-    let arg = [{key:"const",op:{}}]
+  } else if (q.key == "group" || q.key == "group?") {
+    // Maybe mode here is handled differently
+    // Update does not have a "maybe" mode
+    // "not initialized if nothing builds it" is currently achieved by initializing to undefined
+    let arg = q.key == "group" ? [{key:"const",op:{}}] : [{key:"const",op:undefined}]
     if (q.arg.length == 1) arg.push({key:"placeholder",op:"*",arg:[]})
     arg.push(...q.arg)
     return extract0({...q, key:"update", arg})
