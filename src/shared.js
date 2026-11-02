@@ -19,7 +19,7 @@ ops.special.update_inplace = true
 ops.special.merge = ops.special.keyval = true
 ops.special.flatten = true
 
-// ops.special["get?"] = true
+ops.special["get?"] = true
 ops.special["group?"] = true
 
 
@@ -27,7 +27,7 @@ ops.special["group?"] = true
 // pure operations
 
 ops.pure.input = true
-ops.pure.get = true
+// ops.pure.get = true
 ops.pure.apply = true
 ops.pure.pipe = true
 ops.pure.plus = true
@@ -74,7 +74,7 @@ ops.stateful.min = true
 ops.stateful.array = true
 ops.stateful.object = true
 ops.stateful.mkset = true
-ops.stateful.group = true
+// ops.stateful.group = true // handled as ops.special.group
 ops.stateful.first = true
 ops.stateful.last = true
 ops.stateful.single = true
@@ -89,7 +89,7 @@ ops.stateful["min?"] = true
 ops.stateful["array?"] = true
 ops.stateful["object?"] = true
 ops.stateful["mkset?"] = true
-ops.stateful["group?"] = true
+// ops.stateful["group?"] = true // handled as ops.special["group?"]
 ops.stateful["first?"] = true
 ops.stateful["last?"] = true
 ops.stateful["single?"] = true

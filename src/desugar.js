@@ -40,9 +40,14 @@ exports.desugar = (p) => {
       return transPath(p, args)
     } else if (Object.hasOwn(ops.stateful, p)) {
       return transStateful(p, args) // unpack!
-    } else if (p == "group" && args.length < 2) {
-      // partial application -- this will later turn into a keyval object
-      return { xxkey: "group", xxparam: args }
+    } else if (Object.hasOwn(ops.pure, p)) {
+      return { xxkey: p, xxparam: args }
+    } else if (Object.hasOwn(ops.special, p)) {
+      return { xxkey: p, xxparam: args }
+    // this branch is unreachable
+    // } else if (p == "group" && args.length < 2) {
+    //   // partial application -- this will later turn into a keyval object
+    //   return { xxkey: "group", xxparam: args }
     } else {
       return { xxkey: "apply", xxparam: [{ xxkey: "ident", xxop: p }, ...args] }
     }
