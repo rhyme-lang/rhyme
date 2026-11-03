@@ -1,6 +1,6 @@
 const { api, rh } = require('../../src/rhyme')
 const { compile } = require('../../src/simple-eval')
-const { compileCrossCheck } = require('../utils')
+const { compileCrossCheck, compileC2CrossCheck } = require('../utils')
 
 test("siblingFields", () => {
     let data = [{ key: "A", value: 10 }, { key: "B", value: 20}, { key: "C", value: 30 }]
@@ -284,7 +284,7 @@ test("aggregateAsKey_encoded", () => {
 
 */
 
-    let f1 = compileCrossCheck(q1)
+    let f1 = compileC2CrossCheck(q1)
 
     let res1_new = f1.c2({data})
 
