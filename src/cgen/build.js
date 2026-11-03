@@ -67,8 +67,13 @@ let prepareRuntime = async (settings = {}) => {
 // -I<runtime>. Flags are arrays, one argv entry per element, so a path with
 // spaces stays intact.
 let compile = async ({ cFile, out, compiler, optFlags, cFlags, includePaths,
-                       needsYYJSON, needsCublas, verbose }) => {
+  needsYYJSON, needsCublas, verbose }) => {
+  let log = (s) => { if (verbose) console.error(s) }
+
   const paths = require('./paths')
+
+  log("C file written to " + cFile)
+  log("Compiling executable to " + out)
 
   let flags = [`-I${paths.runtimeDir}`, ...optFlags]
   for (let dir of includePaths || []) flags.push(`-I${dir}`)
@@ -76,7 +81,9 @@ let compile = async ({ cFile, out, compiler, optFlags, cFlags, includePaths,
   if (needsYYJSON) {
     flags.push(`-I${paths.yyjsonDir}`)
     try {
-      flags.push(await yyjsonObject(compiler, optFlags))
+      let yyjson = await yyjsonObject(compiler, optFlags)
+      log("Using yyjson built at " + yyjson)
+      flags.push(yyjson)
     } catch (e) {
       // no usable cache -- compile yyjson from source alongside the query
       flags.push(paths.yyjsonSrc)
@@ -88,7 +95,7 @@ let compile = async ({ cFile, out, compiler, optFlags, cFlags, includePaths,
   flags.push(...(cFlags || []))
 
   let args = [cFile, "-o", out, ...flags]
-  if (verbose) console.log("Executing: " + [compiler, ...args].join(" "))
+  log("Executing: " + [compiler, ...args].join(" "))
   let t0 = performance.now()
   await run(compiler, args)
   return performance.now() - t0
