@@ -1094,7 +1094,7 @@ let compile = (q,userSettings={}) => {
     let loops = settings.optLoopgen ? scheduleC2(q) : emitLoops(q,order)
 
     if (settings.backend == "c-new") {
-      code = emitCodeLowLevelC(loops)
+      code = emitCodeLowLevelC(loops, backendIR)
     } else {
       code = emitCodeLowLevel(loops)
       code = fixIndent(code)

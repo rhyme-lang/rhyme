@@ -1,6 +1,8 @@
 const { typing } = require('../typing')
 const { prettyType } = require('../prettyprint')
 const { symbol } = require("./symbol")
+// generic C syntax builders, shared with the c-new backend
+const { c } = require("../cnew/utils")
 
 let cTypes = {
   // any:  "rh",
@@ -60,111 +62,6 @@ let binaryOperators = {
   andAlso: "&&",
   orElse: "||"
 }
-
-let c = {}
-
-// Expressions
-c.cast = (type, expr) => `(${type})${expr}`
-
-c.inc = (expr) => expr + "++"
-
-c.binary = (lhs, rhs, op) => `(${lhs} ${op} ${rhs})`
-c.ternary = (cond, tVal, fVal) => `(${cond} ? ${tVal} : ${fVal})`
-
-c.assign = (lhs, rhs) => `(${lhs} = ${rhs})`
-
-c.add = (lhs, rhs) => c.binary(lhs, rhs, "+")
-c.sub = (lhs, rhs) => c.binary(lhs, rhs, "-")
-
-c.mul = (lhs, rhs) => c.binary(lhs, rhs, "*")
-c.div = (lhs, rhs) => c.binary(lhs, rhs, "/")
-
-c.not = (expr) => "!" + expr
-c.and = (lhs, rhs) => c.binary(lhs, rhs, "&&")
-c.or = (lhs, rhs) => c.binary(lhs, rhs, "||")
-c.eq = (lhs, rhs) => c.binary(lhs, rhs, "==")
-c.ne = (lhs, rhs) => c.binary(lhs, rhs, "!=")
-
-c.lt = (lhs, rhs) => c.binary(lhs, rhs, "<")
-c.gt = (lhs, rhs) => c.binary(lhs, rhs, ">")
-
-c.le = (lhs, rhs) => c.binary(lhs, rhs, "<=")
-c.ge = (lhs, rhs) => c.binary(lhs, rhs, ">=")
-
-c.call = (f, ...args) => `${f}(${args.join(", ")})`
-
-c.malloc = (type, n) => c.call("malloc", `sizeof(${type}) * ${n}`)
-c.calloc = (type, n) => c.call("calloc", n, `sizeof(${type})`)
-c.open = (file) => c.call("open", file, 0)
-c.close = (fd) => c.call("close", fd)
-
-c.mmap = (fd, size) => c.call("mmap", 0, size, "PROT_READ", "MAP_FILE | MAP_SHARED", fd, 0)
-
-// Statements
-c.comment = (buf) => (s) => buf.push("// " + s)
-c.stmt = (buf) => (expr) => buf.push(expr + ";")
-
-c.declareVar = (buf) => (type, name, init, constant = false) => buf.push((constant ? "const " : "") + type + " " + name + (init ? ` = ${init};` : ";"))
-c.declareArr = (buf) => (type, name, len, init, constant = false) => buf.push((constant ? "const " : "") + `${type} ${name}[${len}]` + (init ? ` = ${init};` : ";"))
-c.declarePtr = (buf) => (type, name, init, constant = false) => buf.push((constant ? "const " : "") + `${type} *${name}` + (init ? ` = ${init};` : ";"))
-c.declarePtrPtr = (buf) => (type, name, init, constant = false) => buf.push((constant ? "const " : "") + `${type} **${name}` + (init ? ` = ${init};` : ";"))
-
-c.declareSize = (buf) => (name, init) => c.declareVar(buf)("size_t", name, init)
-c.declareInt = (buf) => (name, init) => c.declareVar(buf)("int", name, init)
-c.declareLong = (buf) => (name, init) => c.declareVar(buf)("long", name, init)
-c.declareULong = (buf) => (name, init) => c.declareVar(buf)("unsigned long", name, init)
-c.declareCharArr = (buf) => (name, len, init) => c.declareArr(buf)("char", name, len, init)
-c.declareIntPtr = (buf) => (name, init) => c.declarePtr(buf)("int", name, init)
-c.declareCharPtr = (buf) => (name, init) => c.declarePtr(buf)("char", name, init)
-c.declareConstCharPtr = (buf) => (name, init) => c.declarePtr(buf)("char", name, init, true)
-c.declareCharPtrPtr = (buf) => (name, init) => c.declarePtrPtr(buf)("char", name, init, true)
-
-c.declareStruct = (buf) => (struct) => {
-  let { name, fields } = struct
-  buf.push(`struct ${name} {`)
-  for (let i in fields) {
-    let { type, name } = fields[i]
-    if (type.indexOf("*") >= 0)
-      buf.push(`${type}${name};`)
-    else
-      c.declareVar(buf)(type, name)
-  }
-  buf.push(`};`)
-}
-
-c.struct = (name) => ({
-  name, fields: [],
-  addField: function (type, name) {
-    this.fields.push({ type, name })
-  }
-})
-
-c.printf = (buf) => (fmt, ...args) => buf.push(c.call("printf", "\"" + fmt + "\"", ...args) + ";")
-c.printErr = (buf) => (fmt, ...args) => buf.push(c.call("fprintf", "stderr", "\"" + fmt + "\"", ...args) + ";")
-
-c.if = (buf) => (cond, tBranch, fBranch) => {
-  buf.push(`if (${cond}) {`)
-  tBranch(buf)
-  if (fBranch) {
-    buf.push("} else {")
-    fBranch(buf)
-  }
-  buf.push("}")
-}
-
-c.while = (buf) => (cond, body) => {
-  buf.push(`while (${cond}) {`)
-  body(buf)
-  buf.push("}")
-}
-
-c.while1 = (buf) => (cond, body) => {
-  buf.push(`while (${cond}) ${body};`)
-}
-
-c.continue = (buf) => () => buf.push("continue;")
-c.break = (buf) => () => buf.push("break;")
-c.return = (buf) => (expr) => buf.push(`return ${expr};`)
 
 let convertToCType = (type) => {
   if (type.typeSym === "dynkey")
