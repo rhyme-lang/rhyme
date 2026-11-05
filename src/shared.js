@@ -1,7 +1,26 @@
 
 // 
 // ---------- available operations ---------- 
-// 
+//
+
+// What does it mean when an op is defined here:
+//
+// Operations allowed to be used as built-in ops
+// in the surface language. (sum, sum?, plus, etc.)
+// and they will appear in the ast as "xxkey" after desugar
+//
+// In the simple-eval IR, ops.pure and the non-maybe ops.stateful
+// becomes values for the "op" field in "pure" and stateful nodes,
+// respectively.
+//
+// Maybe mode is encoded by the "maybe" property.
+// To be more precise, surface maybe ops still exists in simple-eval IR until
+// after extract0 which runs immediately after preprocess.
+//
+// The non-maybe ops in ops.special will appear mostly as its own "key"
+// with certain exceptions
+// e.g. merge and keyval do not appear in the IR, preprocess handles them
+// in the "object" branch
 
 let ops = exports.ops = {}
 
@@ -11,13 +30,14 @@ ops.stateful = {}
 
 
 // special operations
+// they become keys in the simple-eval IR
 
 ops.special.get = true
 ops.special.group = true
 ops.special.update = true
 ops.special.update_inplace = true
 ops.special.merge = ops.special.keyval = true
-ops.special.flatten = true
+// ops.special.flatten = true // moved to pure, according to preproc
 
 ops.special["get?"] = true
 ops.special["group?"] = true
@@ -26,7 +46,7 @@ ops.special["group?"] = true
 
 // pure operations
 
-ops.pure.input = true
+// ops.pure.input = true
 // ops.pure.get = true
 ops.pure.apply = true
 ops.pure.pipe = true
@@ -63,6 +83,7 @@ ops.pure.substr = true
 ops.pure.isUndef = true
 
 ops.pure.dot = true
+ops.pure.flatten = true
 
 // stateful operations
 

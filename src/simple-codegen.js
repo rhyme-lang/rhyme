@@ -45,7 +45,7 @@ exports.setCodegenState = st => {
 //
 
 let statefulInitRequired = q =>
-  q.key == "stateful" && q.mode != "maybe" && (q.op+"_init") in runtime.stateful
+  (q.key == "stateful" || q.key == "prefix") && q.mode != "maybe" && (q.op+"_init") in runtime.stateful
 
 let initRequired = q => statefulInitRequired(q) || q.key == "update"
 
@@ -199,7 +199,9 @@ let codegen = (q, scope) => {
 
 
 let emitStmInit = (q, scope) => {
-  if (q.key == "stateful") {
+  if (q.key == "prefix") {
+    return "rt.stateful.prefix_init"
+  } else if (q.key == "stateful") {
     return "rt.stateful."+q.op+"_init"
   } else if (q.key == "update") {
     let e0 = codegen(q.arg[0], scope)
