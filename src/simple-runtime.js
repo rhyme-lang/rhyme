@@ -521,14 +521,18 @@ rt.init = (root,...path) => (init) => {
 
 // iteration utils: possible future hook for extension
 
-rt.entries = (root) => {
+rt.entries = function* (root) {
   // possible extension point for user-defined
   // data structures:
   // 
   // if (root.rhyme_iterator)
   //   return root.rhyme_iterator()
 
-  return Object.entries(root ?? {})
+  for (let key in root) {
+    if (root[key] === undefined) continue
+    yield [key, root[key]]
+  }
+  // return Object.entries(root ?? {})
 }
 
 rt.has = (root, key) => {
