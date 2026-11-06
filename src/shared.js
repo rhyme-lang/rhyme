@@ -5,9 +5,11 @@
 
 // What does it mean when an op is defined here:
 //
-// Operations allowed to be used as built-in ops
+// They are operations allowed to be used as built-in ops
 // in the surface language. (sum, sum?, plus, etc.)
-// and they will appear in the ast as "xxkey" after desugar
+// and they will appear in the ast as "xxkey" after desugar.
+// Each op will also have it's metaprogramming api created in rhyme.js
+// e.g. api.sum, api["sum?"]
 //
 // In the simple-eval IR, ops.pure and the non-maybe ops.stateful
 // becomes values for the "op" field in "pure" and stateful nodes,
@@ -17,9 +19,9 @@
 // To be more precise, surface maybe ops still exists in simple-eval IR until
 // after extract0 which runs immediately after preprocess.
 //
-// The non-maybe ops in ops.special will appear mostly as its own "key"
-// with certain exceptions
-// e.g. merge and keyval do not appear in the IR, preprocess handles them
+// The non-maybe ops in ops.special will appear as its own "key"
+// with certain exceptions:
+// merge and keyval do not appear in the IR, preprocess handles them
 // in the "object" branch
 
 let ops = exports.ops = {}
