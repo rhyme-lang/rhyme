@@ -9,6 +9,7 @@ const { pretty, setEmitPseudoState, emitPseudo } = require('./prettyprint')
 const cgen = require('./cgen/codegen')
 const { typing, types, typeSyms } = require('./typing')
 const { optimizer } = require('./optimizer')
+const { inferDefaults } = require('./defaults')
 
 const { unique, union, intersect, diff, subset, same } = sets
 
@@ -26,6 +27,9 @@ let defaultSettings = {
   mkTuple: false,
 
   // analysis and extraction -- simple-eval.js
+  //
+  // experimental: give every sum and group a default for an empty loop
+  inferDefaults: false,
   altInfer: false,
   antiSubstGroupKey: false,
   singleResult: true, // TODO: elim flag? 14 tests failing when false globally
@@ -870,6 +874,16 @@ let compile = (q,userSettings={}) => {
 
   // 2. Extract
   q = extract0(q) // basic massaging
+
+  if (settings.inferDefaults) {
+    // translate to core loops with explicit defaults; this needs the
+    // binders of each loop, so infer them first. inferDims and inferBound
+    // annotate q in place; the pass builds a new, unannotated tree, and
+    // both are inferred again on it below.
+    let q0 = inferDims(q)
+    let out0 = settings.singleResult ? q0.mind : q0.dims
+    q = inferDefaults(inferBound(out0)(q0), out0)
+  }
 
   if (settings.antiSubstGroupKey && !settings.newCodegen) {
     // anti-substitution: find occurrences of group key
