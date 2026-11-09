@@ -277,6 +277,15 @@ rt.pure.isUndef = (x1) => {
   return x1 === undefined ? true : undefined
 }
 
+// type tests: the argument itself if it is an object
+rt.pure.asObj = (x1) => {
+  return typeof x1 === "object" && x1 !== null ? x1 : undefined
+}
+
+rt.pure.asNum = (x1) => {
+  return typeof x1 === "number" || typeof x1 === "bigint" ? x1 : undefined
+}
+
 rt.pure.convert_u8 = (x) => x === undefined ? undefined : (Number(x) & 0xff);
 rt.pure.convert_u16 = (x) => x === undefined ? undefined : (Number(x) & 0xffff);
 rt.pure.convert_u32 = (x) => x === undefined ? undefined : (Number(x) >>> 0); // >>> is the unsigned 32-bit wrap; & would be signed

@@ -1147,6 +1147,20 @@ let _validateIRQuery = (schema, varMap, q) => {
             if (!p1.includes(props.nothing))
                 return {type: types.never, props: union(errors, nothingSet)}
             return {type: types.boolean, props: union(errors, nothingSet)}
+        } else if (q.op == "asObj" || q.op == "asNum") {
+            // the argument if it has the tested type, otherwise missing
+            let {type: t1, props: p1} = argTups[0]
+            let test = q.op == "asObj" ? isObject : isNumber
+            if (isNever(t1))
+                return {type: t1, props: p1}
+            if (!isUnknown(t1) && test(t1))
+                return {type: t1, props: p1}
+            let other = q.op == "asObj"
+                ? (t => isNumber(t) || isString(t) || isBoolean(t))
+                : (t => isObject(t) || isString(t) || isBoolean(t))
+            if (!isUnknown(t1) && other(t1))
+                return {type: types.never, props: union(intersect(p1, errorSet), nothingSet)}
+            return {type: t1, props: union(p1, nothingSet)}
         } else if (q.op == "length") {
             // u32 like array keys; u64 would force BigInt in the js backend.
             // rt.pure.length is missing for anything but a string or object.
@@ -1827,7 +1841,7 @@ let convertAST = (schema, q, dontConvertVar = false) => {
         } else if (q.op === "substr") {
             q.arg = q.arg.map($convertAST)
             return q
-        } else if (q.op === "isUndef") {
+        } else if (q.op === "isUndef" || q.op === "asObj" || q.op === "asNum") {
             q.arg = q.arg.map($convertAST)
             return q
         } else if (q.op === "like") {

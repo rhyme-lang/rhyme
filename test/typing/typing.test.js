@@ -400,6 +400,22 @@ test("length-isUndef-nothing", () => {
     expect(field("isUndef(data.*A.x > 1 & data.*A.x)").type.objValue).toBe(types.boolean)
 })
 
+test("asObj-asNum", () => {
+    let schema = typing.parseType`{data: {*u32: {x: u8, s: string, o: {y: u8}, m: u8 | string}}}`
+    let field = (q) => compile(rh([`{*A: ${q}}`]), { schema }).explain.resultType
+    let optional = (q) => typing.isOptionalField(field(q).type)
+    // the argument itself, when it has the tested type
+    expect(field("asNum(data.*A.x)").type.objValue).toBe(types.u8)
+    expect(optional("asNum(data.*A.x)")).toBe(false)
+    expect(optional("asObj(data.*A.o)")).toBe(false)
+    // never there, when it cannot have the tested type
+    expect(field("asNum(data.*A.s)").type.objValue).toBe(types.never)
+    expect(field("asNum(data.*A.o)").type.objValue).toBe(types.never)
+    expect(field("asObj(data.*A.x)").type.objValue).toBe(types.never)
+    // maybe there, when it may or may not
+    expect(optional("asNum(data.*A.m)")).toBe(true)
+})
+
 test("optional-field", () => {
     let P = typing.parseType
     let get = (obj, key) => typing.performObjectGet({type: obj, props: []}, {type: key, props: []})

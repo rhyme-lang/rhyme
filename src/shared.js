@@ -83,6 +83,8 @@ ops.pure.sort = true
 ops.pure.like = true
 ops.pure.substr = true
 ops.pure.isUndef = true
+ops.pure.asObj = true
+ops.pure.asNum = true
 
 ops.pure.dot = true
 ops.pure.flatten = true
