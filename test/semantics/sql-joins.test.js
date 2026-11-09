@@ -318,3 +318,44 @@ test("leftJoinIncorrect", () => {
 
   expect(res).toEqual(innerJoinExpected)
 })
+
+// A maybe generator (data.*B.m.*A?) of a variable that also has a strict one
+// does not produce its values, so it must not make *A depend on *B: sum(other.*A)
+// would otherwise iterate over *B too, and see nothing when data is empty.
+test("leftJoinNoDependency", () => {
+  let query = rh`{ t: sum(other.*A), w: array(data.*B.m.*A?) }`
+  let func = compileC2CrossCheck(query)
+  let other = { a: 1, b: 2 }
+
+  expect(func({ other, data: {} })).toEqual({ t: 3, w: [] })
+  expect(func({ other, data: { x: { m: { a: 10 } }, y: { m: {} } } })).toEqual({ t: 3, w: [10] })
+  expect(func.explain2.ir.vars["*A"].vars).toEqual([])
+  console.log(func.explain2.code)
+})
+
+// The maybe generator still reads a temp (the group), which the assignment
+// using it must wait for -- through its own tmps, not *A's dependencies.
+test("leftJoinOnTemp", () => {
+  let query = rh`{ t: sum(other.*A), w: array({ data.*B.k: data.*B.v }.x.*A?) }`
+  let input = { other: { a: 1, b: 2 }, data: { r1: { k: "x", v: { a: 10 } } } }
+  let expected = { t: 3, w: [10] }
+
+  expect(compileC2CrossCheck(query)(input)).toEqual(expected)
+  expect(compile(query, { extractAssignmentsLate: true })(input)).toEqual(expected)
+})
+
+// sum(x.*A) binds only *A, but *A's generator y.*B.*A depends on *B, whose
+// generator reads the group temp: the sum must be scheduled after the group,
+// through the transitive var dependencies (not just its own fre/bnd vars).
+// The explicit single binds *X inside the group (a bare data.*X.v would leak *X
+// into the group's dims and make *B depend on it), so *B depends on nothing.
+test("transitiveTempDependency", () => {
+  let query = rh`{ w: array(y.*B.*A + { data.*X.k: single data.*X.v }.*B), s: sum(x.*A) }`
+  let input = { x: { a: 1, b: 2 }, y: { p: { a: 10 }, q: { b: 20 } }, data: { r: { k: "p", v: 100 } } }
+  let expected = { w: [110], s: 1 }
+
+  console.log(compileC2CrossCheck(query).explain2.code)
+
+  expect(compileC2CrossCheck(query)(input)).toEqual(expected)
+  expect(compile(query, { extractAssignmentsLate: true })(input)).toEqual(expected)
+})

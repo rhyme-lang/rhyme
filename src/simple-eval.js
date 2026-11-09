@@ -87,6 +87,7 @@ let reset = (userSettings) => {
   hints = []
   filters = []
   assignments = []
+  hasStrict = {}
 }
 
 
@@ -281,6 +282,22 @@ let extract0b = (q, out) => {
 
 let varsChanged = false
 
+// variables with a strict generator (data.*A): a maybe generator (data.*A?)
+// of such a variable does not produce its values, so it adds no dependencies
+let strictVars = q => {
+  let res = {}
+  let go = q => {
+    q.arg?.forEach(go)
+    if (q.key == "get" && q.arg[1].key == "var" && q.mode != "maybe")
+      res[q.arg[1].op] = true
+  }
+  go(q)
+  return res
+}
+let hasStrict
+
+let isMaybeFilter = q => q.mode == "maybe" && hasStrict[q.arg[1].op]
+
 let extract1 = q => {
   if (q.arg) q.arg.map(extract1)
   if (q.key == "var") {
@@ -289,7 +306,7 @@ let extract1 = q => {
     vars[q.op].vars1 ??= []
   } else if (q.key == "get") {
     let [e1,e2] = q.arg
-    if (e2.key == "var") {
+    if (e2.key == "var" && !isMaybeFilter(q)) {
       if (!subset(e1.fre ?? e1.dims, vars[e2.op].vars)) {
         varsChanged = true
         vars[e2.op].vars = union(vars[e2.op].vars, e1.fre ?? e1.dims)
@@ -739,14 +756,14 @@ let computeOrder = q => {
   if (assignments.length == 0) return [] // do nothing of disabled
 
   let deps = {
-    var2var: {},
+    // var2var: {},
     var2tmp: {},
     tmp2var: {},
     tmp2tmp: {}
   }
 
   for (let v in vars) {
-    deps.var2var[v] = {}
+    // deps.var2var[v] = {}
     deps.var2tmp[v] = {}
   }
 
@@ -754,15 +771,16 @@ let computeOrder = q => {
     deps.tmp2var[i] = {}
     deps.tmp2tmp[i] = {}
     let q = assignments[i]
-    for (let v of union(q.fre,q.bnd)) deps.tmp2var[i][v] = true
+    for (let v of trans(union(q.fre,q.bnd))) deps.tmp2var[i][v] = true
     for (let j of q.tmps) deps.tmp2tmp[i][j] = true
   }
 
   for (let i in filters) {
     let f = filters[i]
+    if (isMaybeFilter(f)) continue
     let v = f.arg[1].op // var name
     f = f.arg[0] // skip dep on var itself
-    for (let w of f.fre) deps.var2var[v][w] = true
+    // for (let w of f.fre) deps.var2var[v][w] = true
     for (let j of f.tmps) deps.var2tmp[v][j] = true
   }
 
@@ -876,6 +894,8 @@ let compile = (q,userSettings={}) => {
   // 6. Calculate transitive var->var dependencies
 
   // 7. Infer free variables of term
+
+  hasStrict = strictVars(q)
 
   varsChanged = false
   extract1(q)
