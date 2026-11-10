@@ -307,10 +307,13 @@ let extract1 = q => {
   } else if (q.key == "get") {
     let [e1,e2] = q.arg
     if (e2.key == "var" && !isMaybeFilter(q)) {
-      if (!subset(e1.fre ?? e1.dims, vars[e2.op].vars)) {
+      // matching the "get" special case in inferDims
+      // we always want the prefix to aggregate
+      // use mind instead of dims for e1
+      if (!subset(e1.fre ?? e1.mind, vars[e2.op].vars)) {
         varsChanged = true
-        vars[e2.op].vars = union(vars[e2.op].vars, e1.fre ?? e1.dims)
-        vars[e2.op].vars1 = union(vars[e2.op].vars1, e1.fre ?? e1.dims)
+        vars[e2.op].vars = union(vars[e2.op].vars, e1.fre ?? e1.mind)
+        vars[e2.op].vars1 = union(vars[e2.op].vars1, e1.fre ?? e1.mind)
       }
     }
   }
