@@ -330,7 +330,6 @@ test("leftJoinNoDependency", () => {
   expect(func({ other, data: {} })).toEqual({ t: 3, w: [] })
   expect(func({ other, data: { x: { m: { a: 10 } }, y: { m: {} } } })).toEqual({ t: 3, w: [10] })
   expect(func.explain2.ir.vars["*A"].vars).toEqual([])
-  console.log(func.explain2.code)
 })
 
 // The maybe generator still reads a temp (the group), which the assignment
@@ -353,8 +352,6 @@ test("transitiveTempDependency", () => {
   let query = rh`{ w: array(y.*B.*A + { data.*X.k: single data.*X.v }.*B), s: sum(x.*A) }`
   let input = { x: { a: 1, b: 2 }, y: { p: { a: 10 }, q: { b: 20 } }, data: { r: { k: "p", v: 100 } } }
   let expected = { w: [110], s: 1 }
-
-  console.log(compileC2CrossCheck(query).explain2.code)
 
   expect(compileC2CrossCheck(query)(input)).toEqual(expected)
   expect(compile(query, { extractAssignmentsLate: true })(input)).toEqual(expected)

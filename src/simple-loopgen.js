@@ -86,7 +86,7 @@ let emitFilters1 = (scope, free, bnd, ext, careAboutOrderingAndMultiplicity) => 
 
   let idx = getFilterIndex()
   let disjunct = []
-  for (let v of iter) {
+  for (let v of full) {
     // does the variable have only 'maybe' generators?
     if (idx[v] && idx[v].every(i => filters[i].mode == "maybe")) {
       disjunct.push(...idx[v])

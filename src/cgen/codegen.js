@@ -894,7 +894,7 @@ let emitGet = (buf, q) => {
 
   // Then it has to be an object
   if (v1.tag != TAG.OBJECT) {
-    console.log(v1)
+    // console.log(v1)
     throw new Error("Cannot perform get on non-object values")
   }
 

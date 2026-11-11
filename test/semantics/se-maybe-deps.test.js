@@ -1,4 +1,5 @@
 const { api, rh } = require('../../src/rhyme')
+const { compileC2CrossCheck } = require('../utils')
 
 // A maybe lookup b.*j.*i? of a variable *i that also has a strict
 // generator (a.*i) is a filter: it does not produce the keys of *i, so it
@@ -51,3 +52,13 @@ test("maybe-generator-outer-join", () => {
   let f = api.compile(rh`{ *i: (a.*i? + b.*i?) || a.*i? || b.*i? }`)
   expect(f({ a: { 0: 1, 1: 2, 3: 4 }, b: { 1: 10, 2: 20, 3: 30 } })).toEqual({ 0: 1, 1: 12, 2: 20, 3: 34 })
 })
+
+// only maybe lookups on *i, and *i is projected out (in ext, not iter): the
+// outer join is still a disjunct, or the loop over *j can't be emitted
+test("maybe-generator-projected", () => {
+  let f = compileC2CrossCheck(rh`{ *j: sum data.*i?.*j }`)
+  expect(f({ data: { 0: [1], 1: [2] } })).toEqual({ 0: 3 })
+  expect(f({ data: { 0: [1], 1: [undefined, 2] } })).toEqual({ 0: 1, 1: 2 })
+  expect(f({ data: {} })).toEqual({})
+})
+
