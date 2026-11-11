@@ -153,7 +153,7 @@ let codegen = (q, scope) => {
     let q1 = assignments[q.op]
     let xs = [String(q.op),...q1.fre]
     return quoteIndexVarsXS("tmp", xs)
-  } else if (q.key == "projRef") {
+  } else if (q.key == "domref") {
     // the projected domain of an outer join variable (simple-loopgen
     // emitDomains), indexed by its dependencies; drop constant-folded
     // vars as initTemp does
@@ -386,7 +386,7 @@ let emitDomains = (scope, trueFree, maybeVars, idx) => (buf, codegen) => {
       })
     }
 
-    let g1 = { key: "projRef", op: id, arg: deps.map(x => ({ key: "var", op: x, arg: [] })),
+    let g1 = { key: "domref", op: id, arg: deps.map(x => ({ key: "var", op: x, arg: [] })),
                fre: deps, filters: [] }
     domains.push({ id: "dom"+id, v1: v, g1 })
   }
@@ -523,7 +523,12 @@ let emitFilters2 = (scope, trueFree, iter, enabled = [], domains = []) => (buf, 
       buf.push("let gen"+i+" = "+codegen(f,scopef))
       closing = "})\n"+closing
     } else { // ok, just emit current
-      if (!seen[v1]) {
+      if (!seen[v1] && g1.key == "domref") { // a domain holds keys only
+        buf.push("for (let "+quoteVar(v1)+" in "+codegen(g1,scopeg1)+") {")
+        closing = "}\n"+closing
+        seen[v1] = true
+        varsInScope.push(v1)
+      } else if (!seen[v1]) {
         buf.push("for (let ["+quoteVar(v1)+", gen"+i+"] of rt.entries("+codegen(g1,scopeg1)+")) {")
       //   buf.push("for (let "+quoteVar(v1)+" in "+codegen(g1,scopeg1)+") {")
       //   buf.push("let gen"+i+" = "+codegen(f,scopef))
@@ -532,7 +537,8 @@ let emitFilters2 = (scope, trueFree, iter, enabled = [], domains = []) => (buf, 
         varsInScope.push(v1)
       } else {
         buf.push("if ("+codegen(g1,scopeg1)+"?.["+quoteVar(v1)+"] !== undefined) { // "+show(i))
-        buf.push("let gen"+i+" = "+codegen(g1,scopeg1)+"?.["+quoteVar(v1)+"]")
+        if (g1.key != "domref")
+          buf.push("let gen"+i+" = "+codegen(g1,scopeg1)+"?.["+quoteVar(v1)+"]")
         closing = "}\n"+closing
       }
     }
@@ -694,6 +700,11 @@ let emitStmListLowLevel = (q, scope) => {
           //
           if (settings.constantFold && resolveConstForVar(v1)) { // constant propagated directly
             emitStmListLowLevel(stm.body, scope1)
+          } else if (g1.key == "domref") { // a domain holds keys only
+            buf.push("for (let "+quoteVar(v1)+" in "+codegen(g1,scopeg1)+") {")
+            scope1.vars.push(v1)
+            emitStmListLowLevel(stm.body, scope1)
+            buf.push("}")
           } else if (g1.key == "mkset") {
             buf.push("if ("+codegen(g1.arg[0],scopeg1)+" !== undefined) {")
             buf.push("let "+quoteVar(v1)+" = "+codegen(g1.arg[0],scopeg1))
@@ -729,6 +740,10 @@ let emitStmListLowLevel = (q, scope) => {
       } else {
           if (settings.constantFold && resolveConstForVar(v1)) { // constant propagated directly
             emitStmListLowLevel(stm.body, scope)
+          } else if (g1.key == "domref") {
+            buf.push("if ("+codegen(g1,scopeg1)+"?.["+quoteVar(v1)+"] === undefined) continue")
+            scope1.vars.push(v1)
+            emitStmListLowLevel(stm.body, scope1)
           } else {
             buf.push("let gen"+i+" = "+codegen(g1,scopeg1)+"?.["+quoteVar(v1)+"]; " +
                      "if (gen"+i+" === undefined) continue")

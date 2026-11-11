@@ -213,7 +213,7 @@ let emitDomains = (scope, trueFree, maybeVars, idx) => {
       })
     }
 
-    let g1 = { key: "projRef", op: id, arg: deps.map(x => ({ key: "var", op: x, arg: [] })),
+    let g1 = { key: "domref", op: id, arg: deps.map(x => ({ key: "var", op: x, arg: [] })),
                fre: deps, filters: [] }
     domains.push({ id: "dom"+id, v1: v, g1 })
   }
