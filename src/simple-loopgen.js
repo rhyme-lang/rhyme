@@ -1,6 +1,8 @@
 const { api } = require('./rhyme')
 const { sets } = require('./shared')
 const { pretty, initRequired } = require('./simple-codegen')
+
+let isDeepVarStr = s => s.startsWith("**")
 const { typing, types, typeSyms } = require('./typing')
 
 const { unique, union, intersect, diff, subset, same } = sets
@@ -27,9 +29,13 @@ exports.setLoopgenState = st => {
   hints = st.hints
   filters = st.filters
   assignments = st.assignments
+  projCount = 0
 }
 
 // let trans = ps => unique([...ps,...ps.flatMap(x => vars[x].vars)])
+
+// projections (PROJECT, DOMAIN) get distinct names: proj<n>
+let projCount = 0
 
 let getFilterIndex = () => {
   let res = {}
@@ -79,46 +85,45 @@ let emitFilters1 = (scope, free, bnd, ext, careAboutOrderingAndMultiplicity) => 
   //    do we need to compute topological order?
 
 
-  // For full outer joins, we compute the iteration domain
-  // as a big disjuction, with one loop for each 'data.*A?'
-  // generator. This is not the most efficient way, but
-  // it works.
+  // Full outer joins: a variable whose generators are all 'maybe'
+  // (data.*A?) has no strict generator, so emitFilters2 would skip all of
+  // them. The variable ranges over the union of its maybe generators,
+  // which is built first, as a projection keyed by the variable's
+  // dependencies (emitDomains); the variable is then looped over that
+  // projection. Every such variable gets its generator in the same loop
+  // nest, so a loop may contain any number of them.
+  // TODO: a variable with a single maybe generator could loop over it
+  // directly, without the projection.
 
   let idx = getFilterIndex()
-  let disjunct = []
-  for (let v of full) {
-    // does the variable have only 'maybe' generators?
-    if (idx[v] && idx[v].every(i => filters[i].mode == "maybe")) {
-      disjunct.push(...idx[v])
-    }
-  }
+  let maybeVars = [] // variables with only maybe generators
+  for (let v of full)
+    if (idx[v] && idx[v].every(i => filters[i].mode == "maybe"))
+      maybeVars.push(v)
+
+  let trueFree = intersect(free, scope.vars)
+  let domains = emitDomains(scope, trueFree, maybeVars, idx)
 
   // NOTE: by passing `full` to emitFilter2 without diff, we will re-run
   // the full set of filters for each sym that's already in scope.
   // This is necessary!
   // TODO: keep track of which filters were run in scope, not just vars
 
-  if ((ext.length == 0 || !careAboutOrderingAndMultiplicity) && disjunct.length == 0) { // XXX should not disregard order?
-    emitFilters2(scope, intersect(free, scope.vars), full, -1)(body)
+  if (ext.length == 0 || !careAboutOrderingAndMultiplicity) { // XXX should not disregard order?
+    emitFilters2(scope, trueFree, full, [], domains)(body)
   } else {
 
-    let id = buf.length // TODO: CSE wrt iter
+    let id = projCount++ // TODO: CSE wrt iter
 
     buf.push("// PROJECT "+full+" -> "+iter)
-    
+
     // emit: let $projName = {}
     buf.push({key: "declareTemp", arg: [id, iter]})
 
-    // emit one loop per outer join disjuct -- if none, emit at least one loop
-    if (disjunct.length == 0) 
-      disjunct = [-1]
-
-    for (let u of disjunct) {
-      emitFilters2(scope, intersect(free, scope.vars), full, u)((scope1) => {
-        // emit: $projName[...iter] = true}
-        scope1.buf.push({key: "initTemp", arg: [id, iter]})
-      })
-    }
+    emitFilters2(scope, trueFree, full, [], domains)((scope1) => {
+      // emit: $projName[...iter] = true}
+      scope1.buf.push({key: "initTemp", arg: [id, iter]})
+    })
 
     buf.push("// TRAVERSE "+iter)
 
@@ -174,7 +179,51 @@ let emitFilters1 = (scope, free, bnd, ext, careAboutOrderingAndMultiplicity) => 
 }
 
 
-let emitFilters2 = (scope, trueFree, iter, disjunctToDrop) => body => {
+// The domain of each variable in 'maybeVars' (see emitFilters1): the union of
+// its maybe generators, built as a projection
+//
+//   proj[...deps][v] = true    for each generator of v
+//
+// keyed by the variables v depends on, so that a domain that varies with
+// an enclosing variable is kept apart per value of it. Returns one
+// pseudo-generator per variable, which reads v from its projection.
+let emitDomains = (scope, trueFree, maybeVars, idx) => {
+  let domains = []
+  let rest = [...maybeVars]
+  while (rest.length) {
+    // build the domains a variable depends on first
+    let v = rest.find(v => !rest.some(w => w != v && vars[v].vars.includes(w)))
+    if (v === undefined) {
+      console.error("cyclic outer join domains: "+rest)
+      break
+    }
+    rest = rest.filter(w => w != v)
+    if (isDeepVarStr(v))
+      console.error("outer join not supported for deep var "+v)
+
+    let deps = vars[v].vars.filter(x => x != v) // transitively closed
+    let key = [...deps, v]
+    let id = projCount++
+
+    scope.buf.push("// DOMAIN "+v+" = "+idx[v].map(i => pretty(filters[i])).join(" | "))
+    scope.buf.push({key: "declareTemp", arg: [id, key]})
+    for (let i of idx[v]) {
+      emitFilters2(scope, trueFree, key, [i], domains)((scope1) => {
+        scope1.buf.push({key: "initTemp", arg: [id, key]})
+      })
+    }
+
+    let g1 = { key: "projRef", op: id, arg: deps.map(x => ({ key: "var", op: x, arg: [] })),
+               fre: deps, filters: [] }
+    domains.push({ id: "dom"+id, v1: v, g1 })
+  }
+  return domains
+}
+
+
+// enabled: the maybe filters to treat as generators (all others are skipped)
+// domains: pseudo-generators reading a variable from its projected domain
+let emitFilters2 = (scope, trueFree, iter, enabled = [], domains = []) => body => {
 
   let buf = scope.buf
 
@@ -190,19 +239,29 @@ let emitFilters2 = (scope, trueFree, iter, disjunctToDrop) => body => {
   // record current scope
   for (let v of trueFree) seen[v] = true
 
+  // generator i: a filter index, or the id of a domain
+  let domainById = {}
+  for (let d of domains) domainById[d.id] = d
+  let gen = i => typeof i == "number"
+    ? { v1: filters[i].arg[1].op, g1: filters[i].arg[0] }
+    : domainById[i]
+  let show = i => typeof i == "number" ? pretty(filters[i]) : "domain of "+domainById[i].v1
+
   // only consider filters contributing to iteration vars
   let pending = []
   for (let i in filters) {
     let f = filters[i]
     let v1 = f.arg[1].op
-    let g1 = f.arg[0]
 
-    if (f.mode == "maybe" && Number(i) != disjunctToDrop)
+    if (f.mode == "maybe" && !enabled.includes(Number(i)))
       continue // disregard outer join! data.*A? --> unless requested!
 
     if (vars[v1]) // not interested in this? skip
       pending.push(Number(i))
   }
+  for (let d of domains)
+    if (vars[d.v1])
+      pending.push(d.id)
 
   let filtersInScope = [...scope.filters]
   let varsInScope = [...scope.vars]
@@ -216,9 +275,7 @@ let emitFilters2 = (scope, trueFree, iter, disjunctToDrop) => body => {
     let p = pending
     pending = []
     for (let i of p) {
-      let f = filters[i]
-      let v1 = f.arg[1].op
-      let g1 = f.arg[0]
+      let { g1 } = gen(i)
 
       let avail = g1.fre.every(x => seen[x])
 
@@ -241,14 +298,12 @@ let emitFilters2 = (scope, trueFree, iter, disjunctToDrop) => body => {
   while (next()) {
     // sort available by estimated selectivity
     // crude proxy: number of free vars
-    let selEst = i => filters[i].arg[0].fre.length
+    let selEst = i => gen(i).g1.fre.length
     available.sort((a,b) => selEst(b) - selEst(a))
 
     let i = available.shift()
 
-    let f = filters[i]
-    let v1 = f.arg[1].op
-    let g1 = f.arg[0]
+    let { v1, g1 } = gen(i)
 
     let scopeg1 = {...scope}
     let scopef = {...scope}
@@ -301,10 +356,10 @@ let emitFilters2 = (scope, trueFree, iter, disjunctToDrop) => body => {
 
   // check that all filters were emitted
   if (pending.length > 0) {
-    let problem = pending.map(i => pretty(filters[i])).join(", ")
+    let problem = pending.map(show).join(", ")
     console.warn("unsolved filter ordering problem: couldn't emit "+problem)
     for (let i of pending) {
-      buf.push("// ERROR: unsolved filter ordering problem: "+i+" := "+pretty(filters[i]))
+      buf.push("// ERROR: unsolved filter ordering problem: "+i+" := "+show(i))
     }
   }
 
