@@ -120,8 +120,8 @@ let preproc = q => {
         arg: p.map(x => preproc({ xxkey: "array", xxparam: [x]})) }
   } else if (q.xxkey == "hole") {
     return preproc(resolveHole(q.xxop))
-  } else if (q.xxkey == "object") {
-    let res = { key: "const", op: {} }
+  } else if (q.xxkey == "object" || q.xxkey == "object?") {
+    let res = q.xxkey == "object" ? { key: "const", op: {} } : { key: "const", op: undefined }
     let constKeys = true
     let arg = []
     for (let i = 0; i < q.xxparam.length; i += 2) {

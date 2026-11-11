@@ -37,6 +37,8 @@ function ast_postop(op, a) {
     return { ...a, xxop: a.xxop + "?" }
   } else if (op == "?" && a.xxkey == "get") {
     return { ...a, xxkey: "get?" }
+  } else if (op == "?" && a.xxkey == "object") {
+    return { ...a, xxkey: "object?" }
   }
   return { xxkey: op, xxparam: [a] }
 }
