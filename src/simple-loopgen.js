@@ -187,7 +187,7 @@ let outerJoinSources = full => {
   let sources = {}
   for (let v of full) {
     if (!idx[v] || !idx[v].every(i => filters[i].mode == "maybe")) continue
-    let srcs = idx[v].filter(i => !filters[i].arg[0].fre.includes(v))
+    let srcs = idx[v]
     if (srcs.length == 0)
       console.error("no generator for outer join variable "+v)
     else if (srcs.length == 1)
