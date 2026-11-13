@@ -1,8 +1,6 @@
 const { api } = require('./rhyme')
 const { sets } = require('./shared')
 const { pretty, initRequired } = require('./simple-codegen')
-
-let isDeepVarStr = s => s.startsWith("**")
 const { typing, types, typeSyms } = require('./typing')
 
 const { unique, union, intersect, diff, subset, same } = sets
@@ -87,22 +85,17 @@ let emitFilters1 = (scope, free, bnd, ext, careAboutOrderingAndMultiplicity) => 
 
   // Full outer joins: a variable whose generators are all 'maybe'
   // (data.*A?) has no strict generator, so emitFilters2 would skip all of
-  // them. The variable ranges over the union of its maybe generators,
-  // which is built first, as a projection keyed by the variable's
+  // them. The variable ranges over the union of its maybe generators. With
+  // a single one, that is just the generator, turned on. With several, the
+  // union is built first, as a projection keyed by the variable's
   // dependencies (emitDomains); the variable is then looped over that
   // projection. Every such variable gets its generator in the same loop
   // nest, so a loop may contain any number of them.
-  // TODO: a variable with a single maybe generator could loop over it
-  // directly, without the projection.
 
-  let idx = getFilterIndex()
-  let maybeVars = [] // variables with only maybe generators
-  for (let v of full)
-    if (idx[v] && idx[v].every(i => filters[i].mode == "maybe"))
-      maybeVars.push(v)
+  let { enabled, sources } = outerJoinSources(full)
 
   let trueFree = intersect(free, scope.vars)
-  let domains = emitDomains(scope, trueFree, maybeVars, idx)
+  let domains = emitDomains(scope, trueFree, sources, enabled)
 
   // NOTE: by passing `full` to emitFilter2 without diff, we will re-run
   // the full set of filters for each sym that's already in scope.
@@ -110,7 +103,7 @@ let emitFilters1 = (scope, free, bnd, ext, careAboutOrderingAndMultiplicity) => 
   // TODO: keep track of which filters were run in scope, not just vars
 
   if (ext.length == 0 || !careAboutOrderingAndMultiplicity) { // XXX should not disregard order?
-    emitFilters2(scope, trueFree, full, [], domains)(body)
+    emitFilters2(scope, trueFree, full, enabled, domains)(body)
   } else {
 
     let id = projCount++ // TODO: CSE wrt iter
@@ -120,7 +113,7 @@ let emitFilters1 = (scope, free, bnd, ext, careAboutOrderingAndMultiplicity) => 
     // emit: let $projName = {}
     buf.push({key: "declareTemp", arg: [id, iter]})
 
-    emitFilters2(scope, trueFree, full, [], domains)((scope1) => {
+    emitFilters2(scope, trueFree, full, enabled, domains)((scope1) => {
       // emit: $projName[...iter] = true}
       scope1.buf.push({key: "initTemp", arg: [id, iter]})
     })
@@ -179,17 +172,45 @@ let emitFilters1 = (scope, free, bnd, ext, careAboutOrderingAndMultiplicity) => 
 }
 
 
-// The domain of each variable in 'maybeVars' (see emitFilters1): the union of
-// its maybe generators, built as a projection
+// The maybe generators that produce the variables in 'full' with only maybe
+// generators (see emitFilters1). A generator that needs its own variable
+// (data.*A?.*A?) can only check a value of it, never produce one, so it is
+// not a source. Returns:
 //
-//   proj[...deps][v] = true    for each generator of v
+//  - enabled: the sole source of a variable, to loop over directly -- it
+//    yields each key once, so it needs no projection
+//  - sources: the sources of each variable with several, which ranges
+//    over their union (emitDomains)
+let outerJoinSources = full => {
+  let idx = getFilterIndex()
+  let enabled = []
+  let sources = {}
+  for (let v of full) {
+    if (!idx[v] || !idx[v].every(i => filters[i].mode == "maybe")) continue
+    let srcs = idx[v].filter(i => !filters[i].arg[0].fre.includes(v))
+    if (srcs.length == 0)
+      console.error("no generator for outer join variable "+v)
+    else if (srcs.length == 1)
+      enabled.push(srcs[0])
+    else
+      sources[v] = srcs
+  }
+  return { enabled, sources }
+}
+
+// The domain of each variable in 'sources' (see outerJoinSources): the
+// union of its sources, built as a projection
+//
+//   proj[...deps][v] = true    for each source of v
 //
 // keyed by the variables v depends on, so that a domain that varies with
 // an enclosing variable is kept apart per value of it. Returns one
 // pseudo-generator per variable, which reads v from its projection.
-let emitDomains = (scope, trueFree, maybeVars, idx) => {
+// 'enabled' are the sole sources of other outer join variables, which the
+// build loops may iterate over.
+let emitDomains = (scope, trueFree, sources, enabled) => {
   let domains = []
-  let rest = [...maybeVars]
+  let rest = Object.keys(sources)
   while (rest.length) {
     // build the domains a variable depends on first
     let v = rest.find(v => !rest.some(w => w != v && vars[v].vars.includes(w)))
@@ -198,17 +219,15 @@ let emitDomains = (scope, trueFree, maybeVars, idx) => {
       break
     }
     rest = rest.filter(w => w != v)
-    if (isDeepVarStr(v))
-      console.error("outer join not supported for deep var "+v)
 
     let deps = vars[v].vars.filter(x => x != v) // transitively closed
     let key = [...deps, v]
     let id = projCount++
 
-    scope.buf.push("// DOMAIN "+v+" = "+idx[v].map(i => pretty(filters[i])).join(" | "))
+    scope.buf.push("// DOMAIN "+v+" = "+sources[v].map(i => pretty(filters[i])).join(" | "))
     scope.buf.push({key: "declareTemp", arg: [id, key]})
-    for (let i of idx[v]) {
-      emitFilters2(scope, trueFree, key, [i], domains)((scope1) => {
+    for (let i of sources[v]) {
+      emitFilters2(scope, trueFree, key, [i, ...enabled], domains)((scope1) => {
         scope1.buf.push({key: "initTemp", arg: [id, key]})
       })
     }
@@ -345,7 +364,10 @@ let emitFilters2 = (scope, trueFree, iter, enabled = [], domains = []) => body =
     //
 
     let buf1 = []
-    buf.push({ key: (seen[v1] ? "if" : "for"), body: buf1, arg: [v1,i, g1]})
+    if (g1.key == "domref" && !seen[v1]) // a domain holds keys only: a temp loop
+      buf.push({ key: "forTemp", body: buf1, arg: [v1, g1] })
+    else
+      buf.push({ key: (seen[v1] ? "if" : "for"), body: buf1, arg: [v1,i, g1]})
     buf = buf1
     if (!seen[v1]) {
       seen[v1] = true
