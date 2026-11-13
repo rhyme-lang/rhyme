@@ -32,6 +32,7 @@ exports.setCodegenState = st => {
   hints = st.hints
   filters = st.filters
   assignments = st.assignments
+  domainCount = 0
 }
 
 // let trans = ps => unique([...ps,...ps.flatMap(x => vars[x].vars)])
@@ -152,6 +153,14 @@ let codegen = (q, scope) => {
     let q1 = assignments[q.op]
     let xs = [String(q.op),...q1.fre]
     return quoteIndexVarsXS("tmp", xs)
+  } else if (q.key == "domref") {
+    // the projected domain of an outer join variable (simple-loopgen
+    // emitDomains), indexed by its dependencies; drop constant-folded
+    // vars as initTemp does
+    let xs = q.arg.map(x => x.op)
+    if (settings.constantFold)
+      xs = xs.filter(x => !resolveConstForVar(x))
+    return quoteIndexVarsXS("proj"+q.op, xs)
   } else if (q.key == "genref") {
     let q1 = filters[q.op]
     if (!scope.filters.includes(q.op)) {
@@ -279,27 +288,22 @@ let emitFilters1 = (scope, free, bnd, ext, careAboutOrderingAndMultiplicity) => 
   //    do we need to compute topological order?
 
 
-  // For full outer joins, we compute the iteration domain
-  // as a big disjuction, with one loop for each 'data.*A?'
-  // generator. This is not the most efficient way, but
-  // it works.
+  // Full outer joins: see emitFilters1 in simple-loopgen.js. A variable
+  // with only maybe generators loops over its sole one directly, or over
+  // the projected union of several (emitDomains).
 
-  let idx = getFilterIndex()
-  let disjunct = []
-  for (let v of full) {
-    // does the variable have only 'maybe' generators?
-    if (idx[v] && idx[v].every(i => filters[i].mode == "maybe")) {
-      disjunct.push(...idx[v])
-    }
-  }
+  let { enabled, sources } = outerJoinSources(full)
+
+  let trueFree = intersect(free, scope.vars)
+  let domains = emitDomains(scope, trueFree, sources, enabled)(buf, codegen)
 
   // NOTE: by passing `full` to emitFilters2 without diff, we will re-run
   // the full set of filters for each sym that's already in scope.
   // This is necessary!
   // TODO: keep track of which filters were run in scope, not just vars (?)
 
-  if ((ext.length == 0 || !careAboutOrderingAndMultiplicity) && disjunct.length == 0) { // XXX should not disregard order?
-    emitFilters2(scope, intersect(free, scope.vars), full, -1)(buf, codegen)(body)
+  if (ext.length == 0 || !careAboutOrderingAndMultiplicity) { // XXX should not disregard order?
+    emitFilters2(scope, trueFree, full, enabled, domains)(buf, codegen)(body)
   } else {
 
     let closing = ""//"}"
@@ -310,17 +314,11 @@ let emitFilters1 = (scope, free, bnd, ext, careAboutOrderingAndMultiplicity) => 
     buf.push("// PROJECT "+full+" -> "+iter)
     buf.push("let "+projName+" = {}")
 
-    // emit one loop per outer join disjuct -- if none, emit at least one loop
-    if (disjunct.length == 0) 
-      disjunct = [-1]
-
-    for (let u of disjunct) {
-      emitFilters2(scope, intersect(free, scope.vars), full, u)(buf, codegen)(() => {
-        let xs = [...iter.map(quoteVar)]
-        let ys = xs.map(x => ","+x).join("")
-        buf.push("  rt.initTemp("+projName+ys+")(() => true)")
-      })
-    }
+    emitFilters2(scope, trueFree, full, enabled, domains)(buf, codegen)(() => {
+      let xs = [...iter.map(quoteVar)]
+      let ys = xs.map(x => ","+x).join("")
+      buf.push("  rt.initTemp("+projName+ys+")(() => true)")
+    })
 
     buf.push("// TRAVERSE "+iter)
 
@@ -354,7 +352,62 @@ let emitFilters1 = (scope, free, bnd, ext, careAboutOrderingAndMultiplicity) => 
 }
 
 
-let emitFilters2 = (scope, trueFree, iter, disjunctToDrop) => (buf, codegen) => body => {
+// outer join sources: see outerJoinSources in simple-loopgen.js
+let outerJoinSources = full => {
+  let idx = getFilterIndex()
+  let enabled = []
+  let sources = {}
+  for (let v of full) {
+    if (!idx[v] || !idx[v].every(i => filters[i].mode == "maybe")) continue
+    let srcs = idx[v].filter(i => !filters[i].arg[0].fre.includes(v))
+    if (srcs.length == 0)
+      console.error("no generator for outer join variable "+v)
+    else if (srcs.length == 1)
+      enabled.push(srcs[0])
+    else
+      sources[v] = srcs
+  }
+  return { enabled, sources }
+}
+
+// projected outer join domains: see emitDomains in simple-loopgen.js
+let domainCount = 0
+
+let emitDomains = (scope, trueFree, sources, enabled) => (buf, codegen) => {
+  let domains = []
+  let rest = Object.keys(sources)
+  while (rest.length) {
+    let v = rest.find(v => !rest.some(w => w != v && vars[v].vars.includes(w)))
+    if (v === undefined) {
+      console.error("cyclic outer join domains: "+rest)
+      break
+    }
+    rest = rest.filter(w => w != v)
+
+    let deps = vars[v].vars.filter(x => x != v) // transitively closed
+    let key = [...deps, v]
+    let id = "d"+(domainCount++)
+    let xs = settings.constantFold ? key.filter(x => !resolveConstForVar(x)) : key
+    let ys = xs.map(x => ","+quoteVar(x)).join("")
+
+    buf.push("// DOMAIN "+v+" = "+sources[v].map(i => pretty(filters[i])).join(" | "))
+    buf.push("let proj"+id+" = {}")
+    for (let i of sources[v]) {
+      emitFilters2(scope, trueFree, key, [i, ...enabled], domains)(buf, codegen)(() => {
+        buf.push("  rt.initTemp(proj"+id+ys+")(() => true)")
+      })
+    }
+
+    let g1 = { key: "domref", op: id, arg: deps.map(x => ({ key: "var", op: x, arg: [] })),
+               fre: deps, filters: [] }
+    domains.push({ id: "dom"+id, v1: v, g1 })
+  }
+  return domains
+}
+
+// enabled: the maybe filters to treat as generators (all others are skipped)
+// domains: pseudo-generators reading a variable from its projected domain
+let emitFilters2 = (scope, trueFree, iter, enabled = [], domains = []) => (buf, codegen) => body => {
 
   // let watermark = buf.length
   // let buf0 = buf
@@ -372,19 +425,29 @@ let emitFilters2 = (scope, trueFree, iter, disjunctToDrop) => (buf, codegen) => 
   // record current scope
   for (let v of trueFree) seen[v] = true
 
+  // generator i: a filter index, or the id of a domain
+  let domainById = {}
+  for (let d of domains) domainById[d.id] = d
+  let gen = i => typeof i == "number"
+    ? { v1: filters[i].arg[1].op, g1: filters[i].arg[0] }
+    : domainById[i]
+  let show = i => typeof i == "number" ? pretty(filters[i]) : "domain of "+domainById[i].v1
+
   // only consider filters contributing to iteration vars
   let pending = []
   for (let i in filters) {
     let f = filters[i]
     let v1 = f.arg[1].op
-    let g1 = f.arg[0]
 
-    if (f.mode == "maybe" && Number(i) != disjunctToDrop)
-      continue // disregard outer join! data.*A?
+    if (f.mode == "maybe" && !enabled.includes(Number(i)))
+      continue // disregard outer join! data.*A? --> unless requested!
 
     if (vars[v1]) // not interested in this? skip
       pending.push(Number(i))
   }
+  for (let d of domains)
+    if (vars[d.v1])
+      pending.push(d.id)
 
   let filtersInScope = [...scope.filters]
   let varsInScope = [...scope.vars]
@@ -398,9 +461,7 @@ let emitFilters2 = (scope, trueFree, iter, disjunctToDrop) => (buf, codegen) => 
     let p = pending
     pending = []
     for (let i of p) {
-      let f = filters[i]
-      let v1 = f.arg[1].op
-      let g1 = f.arg[0]
+      let { g1 } = gen(i)
 
       let avail = g1.fre.every(x => seen[x])
 
@@ -425,14 +486,13 @@ let emitFilters2 = (scope, trueFree, iter, disjunctToDrop) => (buf, codegen) => 
   while (next()) {
     // sort available by estimated selectivity
     // crude proxy: number of free vars
-    let selEst = i => filters[i].arg[0].fre.length
+    let selEst = i => gen(i).g1.fre.length
     available.sort((a,b) => selEst(b) - selEst(a))
 
     let i = available.shift()
 
-    let f = filters[i]
-    let v1 = f.arg[1].op
-    let g1 = f.arg[0]
+    let f = filters[i] // undefined for a domain
+    let { v1, g1 } = gen(i)
 
     let scopeg1 = {...scope}
     let scopef = {...scope}
@@ -464,7 +524,7 @@ let emitFilters2 = (scope, trueFree, iter, disjunctToDrop) => (buf, codegen) => 
       console.error("extra dependency: "+extra)
     }
 
-    if (isDeepVarStr(v1)) { // ok, just emit current
+    if (isDeepVarStr(v1) && f) { // ok, just emit current
       if (!seen[v1]) {
         buf.push("rt.deepForIn("+codegen(g1,scopeg1)+", "+quoteVar(v1)+" => {")
         seen[v1] = true
@@ -474,6 +534,24 @@ let emitFilters2 = (scope, trueFree, iter, disjunctToDrop) => (buf, codegen) => 
       }
       buf.push("let gen"+i+" = "+codegen(f,scopef))
       closing = "})\n"+closing
+    } else if (g1.key == "domref") { // a domain holds keys only, no gen value
+      // a deep var's paths are stored encoded (rt.initTemp), as in TRAVERSE
+      let x = quoteVar(v1)
+      if (!seen[v1] && isDeepVarStr(v1)) {
+        buf.push("rt.deepForInTemp("+codegen(g1,scopeg1)+", ("+x+"_key, "+x+") => {")
+        closing = "})\n"+closing
+      } else if (!seen[v1]) {
+        buf.push("for (let "+x+" in "+codegen(g1,scopeg1)+") {")
+        closing = "}\n"+closing
+      } else {
+        let k = isDeepVarStr(v1) ? "rt.encodeTemp("+x+")" : x
+        buf.push("if ("+codegen(g1,scopeg1)+"?.["+k+"] !== undefined) { // "+show(i))
+        closing = "}\n"+closing
+      }
+      if (!seen[v1]) {
+        seen[v1] = true
+        varsInScope.push(v1)
+      }
     } else { // ok, just emit current
       if (!seen[v1]) {
         buf.push("for (let ["+quoteVar(v1)+", gen"+i+"] of rt.entries("+codegen(g1,scopeg1)+")) {")
@@ -483,7 +561,7 @@ let emitFilters2 = (scope, trueFree, iter, disjunctToDrop) => (buf, codegen) => 
         seen[v1] = true
         varsInScope.push(v1)
       } else {
-        buf.push("if ("+codegen(g1,scopeg1)+"?.["+quoteVar(v1)+"] !== undefined) { // "+pretty(f))
+        buf.push("if ("+codegen(g1,scopeg1)+"?.["+quoteVar(v1)+"] !== undefined) { // "+show(i))
         buf.push("let gen"+i+" = "+codegen(g1,scopeg1)+"?.["+quoteVar(v1)+"]")
         closing = "}\n"+closing
       }
@@ -494,10 +572,10 @@ let emitFilters2 = (scope, trueFree, iter, disjunctToDrop) => (buf, codegen) => 
 
   // check that all filters were emitted
   if (pending.length > 0) {
-    let problem = pending.map(i => pretty(filters[i])).join(", ")
+    let problem = pending.map(show).join(", ")
     console.warn("unsolved filter ordering problem: couldn't emit "+problem)
     for (let i of pending) {
-      buf.push("// ERROR: unsolved filter ordering problem: "+i+" := "+pretty(filters[i]))
+      buf.push("// ERROR: unsolved filter ordering problem: "+i+" := "+show(i))
     }
   }
 
@@ -671,7 +749,14 @@ let emitStmListLowLevel = (q, scope) => {
 
       // XXX TODO: genX variables not picked up
 
-      if (isDeepVarStr(v1)) {
+      if (g1.key == "domref" && isDeepVarStr(v1)) {
+          // in the domain? paths are stored encoded (rt.initTemp); a block,
+          // not 'continue', since a deep loop body is a callback
+          buf.push("if ("+codegen(g1,scopeg1)+"?.[rt.encodeTemp("+quoteVar(v1)+")] !== undefined) {")
+          scope1.vars.push(v1)
+          emitStmListLowLevel(stm.body, scope1)
+          buf.push("}")
+      } else if (isDeepVarStr(v1)) {
           buf.push("rt.deepIfIn("+codegen(g1,scopeg1)+", "+quoteVar(v1)+", () => {")
           buf.push("let gen"+i+" = "+codegen(f,scopef))
           scope1.vars.push(v1)
@@ -681,6 +766,10 @@ let emitStmListLowLevel = (q, scope) => {
       } else {
           if (settings.constantFold && resolveConstForVar(v1)) { // constant propagated directly
             emitStmListLowLevel(stm.body, scope)
+          } else if (g1.key == "domref") {
+            buf.push("if ("+codegen(g1,scopeg1)+"?.["+quoteVar(v1)+"] === undefined) continue")
+            scope1.vars.push(v1)
+            emitStmListLowLevel(stm.body, scope1)
           } else {
             buf.push("let gen"+i+" = "+codegen(g1,scopeg1)+"?.["+quoteVar(v1)+"]; " +
                      "if (gen"+i+" === undefined) continue")

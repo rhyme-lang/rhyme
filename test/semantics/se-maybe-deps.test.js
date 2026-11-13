@@ -62,3 +62,39 @@ test("maybe-generator-projected", () => {
   expect(f({ data: {} })).toEqual({})
 })
 
+
+// several variables with only maybe lookups in one loop: each one needs its
+// generator in the same loop nest (a loop per maybe filter left the others
+// without one)
+test("testFullOuterJoinTwoVars", () => {
+  let f = compileC2CrossCheck(rh`sum data.*i1?.*j + data.*i2?.*j`)
+  // (i1,i2) ranges over {0,1}^2, j = 0: (1+1) + (1+2) + (2+1) + (2+2)
+  expect(f({ data: { 0: [1], 1: [2] } })).toEqual(12)
+  let g = compileC2CrossCheck(rh`sum(data.*A? + other.*B?)`)
+  expect(g({ data: { a: 1 }, other: { b: 2 } })).toEqual(3)
+})
+
+// a variable with several maybe lookups ranges over the union of their keys
+test("testFullOuterJoinUnion", () => {
+  let f = compileC2CrossCheck(rh`{ data.*A?.k : 1, other.*A?.k : 2 }`)
+  expect(f({ data: { a: { k: "x" } }, other: { b: { k: "y" } } })).toEqual({ x: 1, y: 2 })
+  let g = compileC2CrossCheck(rh`{ *A: data.*A? + other.*A? }`)
+  expect(g({ data: { a: 1, b: 2 }, other: { a: 10, c: 30 } })).toEqual({ a: 11 })
+})
+
+// the union domain of *B depends on *A: it is taken per value of *A
+test("testFullOuterJoinUnionDependent", () => {
+  let f = compileC2CrossCheck(rh`{ *A: sum(data.*A.*B? + other.*A.*B?) }`)
+  let data = { a: { x: 1 }, b: { y: 2 } }
+  let other = { a: { z: 10 }, b: { y: 20 } }
+  expect(f({ data, other })).toEqual({ a: 0, b: 22 })
+})
+
+// deep vars: a single maybe generator is looped over directly, several
+// over the union of their paths
+test("testFullOuterJoinDeep", () => {
+  let f = compileC2CrossCheck(rh`sum(data.**A?)`)
+  expect(f({ data: { a: 1, b: { c: 2 } } })).toEqual(3)
+  let g = compileC2CrossCheck(rh`sum(data.**A? + other.**A?)`)
+  expect(g({ data: { a: 1, b: { c: 2 } }, other: { a: 10, b: { c: 20 } } })).toEqual(33)
+})
