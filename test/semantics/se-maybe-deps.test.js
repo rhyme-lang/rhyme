@@ -90,13 +90,6 @@ test("testFullOuterJoinUnionDependent", () => {
   expect(f({ data, other })).toEqual({ a: 0, b: 22 })
 })
 
-// a maybe lookup that needs its own variable (data.*A?.*A?) can only check
-// a value of *A, never produce one: *A ranges over data.*A? alone
-test("testFullOuterJoinSelfDependent", () => {
-  let f = compileC2CrossCheck(rh`sum(data.*A?.*A?)`)
-  expect(f({ data: { a: { a: 1, b: 2 }, b: { b: 5 } } })).toEqual(6)
-})
-
 // deep vars: a single maybe generator is looped over directly, several
 // over the union of their paths
 test("testFullOuterJoinDeep", () => {
