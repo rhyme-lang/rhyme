@@ -1,10 +1,12 @@
 // Rhyme C value runtime.
 //
-// Mirrors src/simple-runtime.js: the JS backend is the reference semantics, so
-// every operation here is written to produce what its rt.pure.* / rt.stateful.*
-// counterpart produces. Where the two could differ -- numeric coercion, number
-// formatting, null -- this file follows JavaScript, because the test corpus
-// compares output against the JS backend.
+// The JS backend (src/simple-runtime.js) is the reference semantics: what a
+// query computes here must match what it computes there. The API need not
+// mirror rt.* function by function -- an rt helper may become a C-natural
+// primitive plus emitted code, e.g. rt.stateful.update is a store through
+// rh_slot. Where results could differ -- numeric coercion, number formatting,
+// null -- this file follows JavaScript, because the test corpus compares
+// output against the JS backend.
 //
 // Deliberate divergences from JS:
 // - array indices are integer keys (0, 1, ...), not the strings "0", "1", ...
@@ -14,6 +16,8 @@
 //   "undefined")
 // - the sum reducer adds numerically; JS concatenates a numeric string onto
 //   the running sum
+// - writing below a borrowed input object writes into a copy of it; JS
+//   mutates the input in place
 //
 // Values are a tagged union. Data read from an input document is BORROWED from
 // the mmap'd yyjson document (tag RH_JSON), so loading stays zero-copy;
@@ -1137,7 +1141,8 @@ static inline bool rh_iter_next(rh_iter *it, rh_val *key, rh_val *val) {
 // the destination slot, or NULL when the walk bails.
 //
 // Like JS's `obj[ix] ??= {}`, a level holding null is replaced by a fresh
-// object. rt.init's `obj[ix] ??= init()` on the final slot is the caller's:
+// object. A level holding a borrowed JSON object is replaced by a copy of it,
+// where JS would write into the input object itself. rt.init's `obj[ix] ??= init()` on the final slot is the caller's:
 // `if (rh_is_nullish(*p)) *p = init;`.
 
 static inline rh_val *rh_slot(rh_val *root, const rh_val *keys, int n) {
@@ -1145,8 +1150,10 @@ static inline rh_val *rh_slot(rh_val *root, const rh_val *keys, int n) {
   for (int i = 0; i < n; i++) {
     if (rh_is_undef(keys[i])) return NULL;
     if (cur->tag != RH_MAP) {
-      if (!rh_is_nullish(*cur)) return NULL; // not an object: cannot descend
-      *cur = rh_mapv(rh_map_new());
+      if (rh_is_nullish(*cur)) *cur = rh_mapv(rh_map_new());
+      // a borrowed input object is read-only: write into a copy of it
+      else if (cur->tag == RH_JSON && yyjson_is_obj(cur->u.json)) *cur = rh_map_copy(*cur);
+      else return NULL; // not an object: cannot descend
     }
     rh_entry *e = rh_map_slot(cur->u.map, rh_to_key(keys[i]), NULL);
     cur = &e->val;
@@ -1265,6 +1272,19 @@ static inline yyjson_doc *rh_load_json(const char *path) {
     exit(1);
   }
   return doc;
+}
+
+// The query's runtime input (JS's `inp`): JSON text in argv[1]. No argument
+// is undefined, as inp is when the query is called without one.
+static inline rh_val rh_read_input(int argc, char **argv) {
+  if (argc < 2) return rh_undef;
+  yyjson_read_err err;
+  yyjson_doc *doc = yyjson_read_opts(argv[1], strlen(argv[1]), 0, NULL, &err);
+  if (!doc) {
+    fprintf(stderr, "rhyme: cannot parse input: %s\n", err.msg);
+    exit(1);
+  }
+  return rh_jsonv(yyjson_doc_get_root(doc));
 }
 
 #endif // RHYME_RT_H

@@ -44,10 +44,13 @@ let settings
 let filters
 let assignments
 
+let usesInput // set by emitInput: main() then parses inp from argv[1]
+
 let setState = ir => {
   settings = ir.settings
   filters = ir.filters
   assignments = ir.assignments
+  usesInput = false
 }
 
 // Unimplemented constructs fail at compile time with the offending term,
@@ -60,37 +63,29 @@ let todo = (what, q) => {
 let isDeepVarStr = s => s.startsWith("**")
 
 
-// ----- program context -----
+// ----- C names -----
 //
-// One per compiled query, shared by every scope.
+// Loop bindings keep the names they have in the source, so the C reads like
+// the query: the var's own name (cVar: K1, D0, *A -> xA), gen<i> for filter i,
+// tmp<i> for tmp i. Loopgen routinely emits sibling loops over the same var
+// (the init nest and the update nest of a tmp both iterate D0), so each loop
+// is wrapped in a block of its own (see emitFor) and the names can repeat.
+// None of them can shadow a binding still in use: a var and a filter are bound
+// at most once along a nest.
 //
-//   fresh      counter for generated local names (iterators, slot pointers)
-//   declared   every C name declared so far in main()
-//
-// Loops emit no block of their own: everything is declared straight into the
-// enclosing C scope. Loopgen routinely emits sibling loops over the same
-// variable (the init nest and the update nest of a tmp both iterate D0), so a
-// name is reused only if nothing has declared it yet -- otherwise the binding
-// gets a suffix (D0, D0_1, ...). Names are never reused across scopes, which
-// is more conservative than C requires but needs no scope tracking.
+// Temporary locals -- iterators, slot pointers, values -- have no source name
+// and get a counter instead (it0, p1, v2, ...), unique across main(). No cVar
+// starts with it, p or v (user vars become x..., loopgen's are K<n> / D<n>).
 
-let newCtx = () => ({ fresh: 0, declared: new Set() })
+let newCtx = () => ({ fresh: 0 })
 
-// A C name based on `base` that nothing has declared yet, and reserve it.
-let declName = (ctx, base) => {
-  let name = base
-  for (let n = 1; ctx.declared.has(name); n++) name = base + "_" + n
-  ctx.declared.add(name)
-  return name
-}
-
-let fresh = (ctx, prefix) => declName(ctx, prefix + (ctx.fresh++))
+let fresh = (ctx, prefix) => prefix + (ctx.fresh++)
 
 // A scope mirrors emitStmListLowLevel's, with the C side of each binding:
 //   buf    the line buffer being written
 //   vars   Rhyme var -> the value it is bound to (cnew/value.js)
 //   gens   filter index -> the value of gen<i>, for filters in scope
-//   ctx    the program context above
+//   ctx    the per-program counter for fresh names
 let childScope = scope => ({ ...scope, vars: { ...scope.vars }, gens: { ...scope.gens } })
 
 
@@ -199,6 +194,12 @@ let emitLoadInput = (q, scope) => {
   return value.boxed(c.call("rh_jsonv", c.call("yyjson_doc_get_root", doc)))
 }
 
+// input: the query's argument, parsed once from argv[1] at the top of main()
+let emitInput = (q, scope) => {
+  usesInput = true
+  return value.boxed("inp")
+}
+
 let emitExpr = (q, scope) => {
   let x = emitExpr1(q, scope)
   return { ...x, schema: x.schema ?? q.schema }
@@ -216,7 +217,7 @@ let emitExpr1 = (q, scope) => {
     case "mkset": return emitMkset(q, scope)
     case "loadInput": return emitLoadInput(q, scope)
     // the js backend's `inp`: the binary takes no input yet
-    case "input": return todo("runtime input (inp)", q)
+    case "input": return emitInput(q, scope)
     case "hint": return todo("hint", q)
     case "mkTuple": return todo("mkTuple", q) // off by default for c-new
     case "stateful": case "prefix": case "update":
@@ -273,22 +274,25 @@ let emitInitValue = (q, scope) => {
     checkStateful(q)
     return value.boxed(c.call(`rh_stateful_${q.op}_init`))
   }
-  if (q.key == "update") return todo("update init", q)
+  if (q.key == "update") {
+    // the copy matters: the same e0 seeds this slot for every value of the
+    // keys outside its own path, and they must not share one map
+    let e0 = emitBoxed(q.arg[0], scope).expr
+    return value.boxed(q.mode == "inplace" || isFresh(q.arg[0]) ? e0 : c.call("rh_map_copy", e0))
+  }
   throw new Error("c-new: unexpected init " + pretty(q))
 }
 
 // The new value of a tmp slot given its current value `cur`, C text of an
 // rh_val lvalue (emitStmUpdate):
 //   stateful   rh_stateful_<op>(cur, e1)
-//   update     rh_stateful_update(cur, keys, n, e2)   -- NEW in rhyme_rt.h:
-//              rt.stateful.update with an array key, i.e. rt.deepUpdate
 //   prefix     not supported yet
+// update is not a fold over the slot but a store below it; see emitUpdateStm.
 let emitUpdateValue = (q, cur, scope) => {
   if (q.key == "stateful") {
     checkStateful(q)
     return value.boxed(c.call(`rh_stateful_${q.op}`, cur, emitBoxed(q.arg[0], scope).expr))
   }
-  if (q.key == "update") return todo("update", q)
   if (q.key == "prefix") return todo("prefix", q)
   throw new Error("c-new: unexpected update " + pretty(q))
 }
@@ -297,15 +301,17 @@ let emitUpdateValue = (q, cur, scope) => {
 // ----- statements -----
 //
 // Each takes the statement and the scope, and pushes C lines to scope.buf.
-// Bindings are declared in the enclosing C scope under names from declName,
-// and recorded in the body's scope (vars, gens) for the expressions below.
+// Loop bindings are declared in a block around the loop (see C names above),
+// and recorded in the body's scope (vars, gens) for the expressions
+// below.
 
 // for v <- g (filter i):
 //   constant-folded var  -> just the body
-//   g = mkset(e)         -> rh_val v = e; if (!rh_is_undef(v)) { body }
+//   g = mkset(e)         -> { rh_val v = e; if (!rh_is_undef(v)) { body } }
 //                           (gen<i> is v itself: mkset(e)[e] is e)
-//   otherwise            -> rh_iter it = rh_iter_begin(g); rh_val v; rh_val gen<i>;
-//                           while (rh_iter_next(&it, &v, &gen<i>)) { body }
+//   otherwise            -> { rh_iter it<n> = rh_iter_begin(g); rh_val v; rh_val gen<i>;
+//                             while (rh_iter_next(&it<n>, &v, &gen<i>)) { body } }
+// The block scopes the loop's bindings to the loop.
 let emitFor = (stm, scope) => {
   let [v1, i, g1] = stm.arg
   let buf = scope.buf
@@ -320,31 +326,35 @@ let emitFor = (stm, scope) => {
 
   // the generator is evaluated in the outer scope, before v is bound
   let src = emitBoxed(g1.key == "mkset" ? g1.arg[0] : g1, childScope(scope)).expr
-  let v = declName(scope.ctx, cVar(v1))
+  let v = cVar(v1)
   body.vars[v1] = value.boxed(v)
 
   if (g1.key == "mkset") {
     body.gens[i] = body.vars[v1]
-    c.declareVar(buf)("rh_val", v, src)
-    c.if(buf)(presentOf(body.vars[v1]), buf => {
-      emitStmList(stm.body, body)
+    c.block(buf)(buf => {
+      c.declareVar(buf)("rh_val", v, src)
+      c.if(buf)(presentOf(body.vars[v1]), buf => {
+        emitStmList(stm.body, body)
+      })
     })
   } else {
     let it = fresh(scope.ctx, "it")
-    let gen = declName(scope.ctx, genSym(i))
+    let gen = genSym(i)
     body.gens[i] = value.boxed(gen)
-    c.declareVar(buf)("rh_iter", it, c.call("rh_iter_begin", src))
-    c.declareVar(buf)("rh_val", v)
-    c.declareVar(buf)("rh_val", gen)
-    c.while(buf)(c.call("rh_iter_next", c.addr(it), c.addr(v), c.addr(gen)), buf => {
-      emitStmList(stm.body, body)
+    c.block(buf)(buf => {
+      c.declareVar(buf)("rh_iter", it, c.call("rh_iter_begin", src))
+      c.declareVar(buf)("rh_val", v)
+      c.declareVar(buf)("rh_val", gen)
+      c.while(buf)(c.call("rh_iter_next", c.addr(it), c.addr(v), c.addr(gen)), buf => {
+        emitStmList(stm.body, body)
+      })
     })
   }
 }
 
 // if v in g (filter i), v already bound:
 //   constant-folded var  -> just the body
-//   otherwise            -> rh_val gen<i> = rh_get(g, v); if (!rh_is_undef(gen<i>)) { body }
+//   otherwise            -> { rh_val gen<i> = rh_get(g, v); if (!rh_is_undef(gen<i>)) { body } }
 // The JS emitter writes `if (gen === undefined) continue`; nothing follows an
 // `if` in its statement list, so wrapping the body is equivalent.
 let emitIf = (stm, scope) => {
@@ -360,55 +370,79 @@ let emitIf = (stm, scope) => {
 
   let src = emitBoxed(g1, childScope(scope)).expr
   let key = asBoxed(emitVarName(v1, scope)).expr
-  let gen = declName(scope.ctx, genSym(i))
+  let gen = genSym(i)
 
   let body = childScope(scope)
   body.gens[i] = value.boxed(gen)
 
-  c.declareVar(buf)("rh_val", gen, c.call("rh_get", src, key))
-  c.if(buf)(presentOf(body.gens[i]), buf => {
-    emitStmList(stm.body, body)
+  c.block(buf)(buf => {
+    c.declareVar(buf)("rh_val", gen, c.call("rh_get", src, key))
+    c.if(buf)(presentOf(body.gens[i]), buf => {
+      emitStmList(stm.body, body)
+    })
   })
 }
 
-// the slot tmp<i>[fre...], NULL if the walk bails (an undefined key)
-let emitSlot = (stm, scope) => {
+// the slot tmp<i>[fre..., extra...], NULL if the walk bails (an undefined key
+// or a non-object on the way).
+//
+// Only the update store can see NULL. Init and fold paths are the tmp's own
+// fre: every key is a bound var, never undefined, and every level above the
+// slot is a map rh_slot itself created -- so they use the pointer unchecked,
+// as rt.init / rt.update do.
+let emitSlot = (stm, scope, extra = []) => {
   let [lhs, q] = stm.arg
-  let keys = q.fre.map(v => asBoxed(emitVarName(v, scope)).expr)
+  let keys = [...q.fre, ...extra].map(v => asBoxed(emitVarName(v, scope)).expr)
   return c.call("rh_slot", c.addr(tmpSym(lhs.op)), cKeys(keys))
 }
 
 // tmp<i>[fre...] ??= init  (rt.init):
-//   { rh_val *p = rh_slot(&tmp<i>, keys, n); if (p && rh_is_nullish(*p)) *p = <init>; }
+//   rh_val *p<n> = rh_slot(&tmp<i>, keys, n); if (rh_is_nullish(*p<n>)) *p<n> = <init>;
 // init is evaluated only when the slot is empty, as JS's ??= does.
 let emitInitStm = (stm, scope) => {
   let [lhs, q] = stm.arg
   let buf = scope.buf
+  c.comment(buf)(`init ${pretty(lhs)} = ${pretty(q)}`)
   if (q.fre.length == 0) {
     c.stmt(buf)(c.assign(tmpSym(lhs.op), asBoxed(emitInitValue(q, scope)).expr))
   } else {
-    let slot = fresh(scope.ctx, "x")
+    let slot = fresh(scope.ctx, "p")
     c.declarePtr(buf)("rh_val", slot, emitSlot(stm, scope))
-    c.if(buf)(c.and(slot, c.call("rh_is_undef", c.deref(slot))), buf => {
+    c.if(buf)(c.call("rh_is_nullish", c.deref(slot)), buf => {
       c.stmt(buf)(c.assign(c.deref(slot), asBoxed(emitInitValue(q, scope)).expr))
     })
   }
 }
 
 // tmp<i>[fre...] = fold(tmp<i>[fre...])  (rt.update):
-//   { rh_val *p = rh_slot(&tmp<i>, keys, n); if (p) *p = <update(*p)>; }
+//   rh_val *p<n> = rh_slot(&tmp<i>, keys, n); *p<n> = <update(*p<n>)>;
+//
+// update (rt.stateful.update([K...], e2), i.e. rt.deepUpdate) is a store at
+// tmp<i>[fre..., K...] instead, one rh_slot walk over the combined path --
+// rh_slot vivifies each level, as deepUpdate does:
+//   rh_val v<n> = e2; if (!rh_is_undef(v<n>)) { rh_val *p<m> = rh_slot(...); if (p<m>) *p<m> = v<n>; }
+// e2 comes first: an undefined value writes nothing, not even the levels.
 let emitUpdateStm = (stm, scope) => {
   let [lhs, q] = stm.arg
   let buf = scope.buf
-  if (q.fre.length == 0) {
+  c.comment(buf)(`update ${pretty(lhs)} = ${pretty(q)}`)
+  if (q.key == "update") {
+    let v = fresh(scope.ctx, "v")
+    c.declareVar(buf)("rh_val", v, emitBoxed(q.arg[2], scope).expr)
+    c.if(buf)(c.not(c.call("rh_is_undef", v)), buf => {
+      let slot = fresh(scope.ctx, "p")
+      c.declarePtr(buf)("rh_val", slot, emitSlot(stm, scope, q.arg[1].vars))
+      c.if(buf)(slot, buf => {
+        c.stmt(buf)(c.assign(c.deref(slot), v))
+      })
+    })
+  } else if (q.fre.length == 0) {
     let tmp = tmpSym(lhs.op)
     c.stmt(buf)(c.assign(tmp, asBoxed(emitUpdateValue(q, tmp, scope)).expr))
   } else {
-    let slot = fresh(scope.ctx, "x")
+    let slot = fresh(scope.ctx, "p")
     c.declarePtr(buf)("rh_val", slot, emitSlot(stm, scope))
-    c.if(buf)(slot, buf => {
-      c.stmt(buf)(c.assign(c.deref(slot), asBoxed(emitUpdateValue(q, c.deref(slot), scope)).expr))
-    })
+    c.stmt(buf)(c.assign(c.deref(slot), asBoxed(emitUpdateValue(q, c.deref(slot), scope)).expr))
   }
 }
 
@@ -462,20 +496,19 @@ let emitStmList = (stms, scope) => {
 let emitCodeLowLevelC = (loops, ir) => {
   setState(ir)
 
-  let ctx = newCtx()
-  assignments.forEach((_, i) => ctx.declared.add(tmpSym(i)))
   let body = []
-  let scope = { buf: body, vars: {}, gens: {}, ctx }
+  let scope = { buf: body, vars: {}, gens: {}, ctx: newCtx() }
   emitStmList(loops, scope)
 
   // one boxed slot per assignment; rh_slot vivifies maps below it
   let tmps = []
+  if (usesInput) c.declareVar(tmps)("rh_val", "inp", c.call("rh_read_input", "argc", "argv"))
   assignments.forEach((_, i) => c.declareVar(tmps)("rh_val", tmpSym(i), "rh_undef"))
 
   let buf = []
   buf.push(`#include "rhyme_rt.h"`)
   buf.push(``)
-  buf.push(`int main(void) {`)
+  buf.push(usesInput ? `int main(int argc, char **argv) {` : `int main(void) {`)
   buf.push(...indent([...tmps, ...body]))
   buf.push(`}`)
   return buf.join("\n") + "\n"
@@ -495,10 +528,13 @@ let buildBinary = (code, settings = {}, explain = {}) => {
   let cFile = path.join(outDir, outFile + ".c")
   let out = path.join(outDir, outFile)
 
-  async function func() {
+  // The input goes to the binary as JSON text in argv[1] (none: no argument,
+  // which it reads as undefined). Resolves to the raw stdout. An argument is
+  // size-limited (128 KB on Linux), so this is for small inputs.
+  async function func(input) {
     // path.resolve so that an absolute outDir works: a bare relative name
     // would be looked up on PATH rather than in outDir
-    return build.run(path.resolve(out), [])
+    return build.run(path.resolve(out), input === undefined ? [] : [JSON.stringify(input)])
   }
 
   func.explain = { ...explain, code }
