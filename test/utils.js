@@ -7,6 +7,8 @@
 //   c1_opt  the IR-based optimized codegen (new-codegen.js)
 //   c2      simple-eval, the canonical pipeline behind api.compile
 //   c2_opt  simple-eval with optLoopgen: true (opt-loopgen instead of emitLoops)
+//   c2_c    simple-eval with backend: "c-new", with and without optLoopgen
+//           (compileC2CrossCheckC only; async)
 //
 // new-codegen.js is only exercised through c1_opt; the C2 crosschecks use
 // opt-loopgen rather than simple-eval's newCodegen setting.
@@ -128,5 +130,42 @@ exports.compileC2CrossCheck = (query, opts = {}) => {
   wrapper.c2_opt = c2_opt
   wrapper.explain2 = c2.explain
   wrapper.explain2_opt = c2_opt.explain
+  return wrapper
+}
+
+// c2 against the c-new backend, under both emitLoops and opt-loopgen; returns
+// c2's result. Async: the C pipelines compile and run a binary, so callers
+// await the wrapper.
+
+let parseCOutput = out => {
+  out = out.trim()
+  return out == "undefined" ? undefined : JSON.parse(out)
+}
+
+exports.compileC2CrossCheckC = (query, opts = {}) => {
+  query = ast.unwrap(query)
+  let c2 = simpleEval.compile(query, opts)
+  let c2_c = simpleEval.compile(query, { ...opts, backend: "c-new", outDir: "out" })
+  let c2_c_opt = simpleEval.compile(query, { ...opts, backend: "c-new", optLoopgen: true, outDir: "out" })
+  // a failed compile is reported when the wrapper awaits it, not as an
+  // unhandled rejection in between
+  c2_c.catch(() => {})
+  c2_c_opt.catch(() => {})
+  let wrapper = async (x) => {
+    let res2 = c2(x)
+    let [c, c_opt] = await Promise.all([c2_c, c2_c_opt])
+    api.logDebugOutput({
+      c2: c2.explain.code,
+      c2_c: c.explain.code,
+      c2_c_opt: c_opt.explain.code,
+    })
+    expect(parseCOutput(await c(x))).toEqual(res2)
+    expect(parseCOutput(await c_opt(x))).toEqual(res2)
+    return res2
+  }
+  wrapper.c2 = c2
+  wrapper.c2_c = c2_c
+  wrapper.c2_c_opt = c2_c_opt
+  wrapper.explain2 = c2.explain
   return wrapper
 }
