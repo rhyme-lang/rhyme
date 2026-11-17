@@ -163,6 +163,7 @@ let pureOps = {
   lessThan: 2, lessThanOrEqual: 2, greaterThan: 2, greaterThanOrEqual: 2,
   and: 2, andAlso: 2, orElse: 2, ifElse: 3,
   join: 1, flatten: -1,
+  singleton: 1, asObj: 1, asNum: 1,
   convert_u8: 1, convert_u16: 1, convert_u32: 1, convert_u64: 1,
   convert_i8: 1, convert_i16: 1, convert_i32: 1, convert_i64: 1,
   convert_f32: 1, convert_f64: 1, convert_string: 1,
@@ -184,6 +185,12 @@ let emitPure = (q, scope) => {
 }
 
 let emitMkset = (q, scope) => value.boxed(c.call("rh_singleton", emitBoxed(q.arg[0], scope).expr))
+
+// mkTuple (settings.mkTuple): rh_mktuple(n, k1, v1, k2, v2, ...)
+let emitMkTuple = (q, scope) => {
+  let es = q.arg.map(x => emitBoxed(x, scope).expr)
+  return value.boxed(c.call("rh_mktuple", es.length, ...es))
+}
 
 // loadInput: only json with a constant filename, read at every reference
 let emitLoadInput = (q, scope) => {
@@ -219,7 +226,7 @@ let emitExpr1 = (q, scope) => {
     // the js backend's `inp`: the binary takes no input yet
     case "input": return emitInput(q, scope)
     case "hint": return todo("hint", q)
-    case "mkTuple": return todo("mkTuple", q) // off by default for c-new
+    case "mkTuple": return emitMkTuple(q, scope)
     case "stateful": case "prefix": case "update":
       throw new Error("c-new: unexpected nested assignment " + pretty(q))
     default:
@@ -251,6 +258,7 @@ let resolveConstForVar = s => {
 let statefulOps = {
   sum: true, product: true, count: true, min: true, max: true,
   first: true, last: true, single: true, any: true, all: true, array: true,
+  mkset: true,
 }
 
 let statefulInitRequired = q =>
