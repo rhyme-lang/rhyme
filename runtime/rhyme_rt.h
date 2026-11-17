@@ -571,6 +571,16 @@ static inline rh_val rh_pure_ifElse(rh_val c, rh_val t, rh_val e) {
   return !rh_is_undef(c) ? t : e;
 }
 
+// type tests: the argument itself if it has the type, otherwise undefined.
+// asObj is typeof "object" minus null, so arrays pass too.
+static inline rh_val rh_pure_asObj(rh_val x) {
+  return rh_is_obj(x) || rh_is_arr(x) ? x : rh_undef;
+}
+static inline rh_val rh_pure_asNum(rh_val x) {
+  rh_val u = rh_unwrap(x);
+  return u.tag == RH_I64 || u.tag == RH_F64 ? x : rh_undef;
+}
+
 // ----- conversions -----
 
 // JS ToUint32: truncate, then wrap modulo 2^32; NaN and infinity are 0. The
@@ -969,10 +979,38 @@ static inline rh_val rh_map_copy(rh_val v) {
   return v;
 }
 
-// rt.pure.singleton / mkset: a one-entry object keyed by the value
+// rt.singleton / rt.pure.singleton (mkset): {[x]: x}, a one-entry object
+// mapping the value to itself; undefined for undefined
 static inline rh_val rh_singleton(rh_val x) {
+  if (rh_is_undef(x)) return rh_undef;
   rh_map *m = rh_map_new();
-  if (!rh_is_undef(x)) rh_map_set(m, rh_to_key(x), rh_bool(true));
+  rh_map_set(m, rh_to_key(x), x);
+  return rh_mapv(m);
+}
+static inline rh_val rh_pure_singleton(rh_val x) { return rh_singleton(x); }
+
+// rt.stateful.mkset: add x to the set, as s[x] = x; skips undefined
+static inline rh_val rh_stateful_mkset_init(void) { return rh_mapv(rh_map_new()); }
+static inline rh_val rh_stateful_mkset(rh_val s, rh_val x) {
+  if (rh_is_undef(x)) return s;
+  if (s.tag != RH_MAP) s = rh_stateful_mkset_init();
+  rh_map_set(s.u.map, rh_to_key(x), x);
+  return s;
+}
+
+// rt.mkTuple: a record from n arguments, alternating key and value. A field
+// whose value is undefined is omitted; with none left it is the empty object,
+// not undefined.
+static inline rh_val rh_mktuple(int n, ...) {
+  rh_map *m = rh_map_new();
+  va_list ap;
+  va_start(ap, n);
+  for (int i = 0; i + 1 < n; i += 2) {
+    rh_val k = va_arg(ap, rh_val);
+    rh_val v = va_arg(ap, rh_val);
+    if (!rh_is_undef(v)) rh_map_set(m, rh_to_key(k), v);
+  }
+  va_end(ap);
   return rh_mapv(m);
 }
 
