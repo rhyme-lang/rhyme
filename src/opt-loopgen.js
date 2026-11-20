@@ -106,7 +106,7 @@ let buildStatements = (gens) => {
         fre: q.fre, bnd: [], ext: q.extInit,
         loops: q.fre,
         tmps: q.key == "update" ? q.arg[0].tmps : [],
-        project: q.fre.some(v => allMaybe(gens, v)),
+        project: union(q.fre, q.extInit).some(v => allMaybe(gens, v)),
       })
 
     let loops = union(q.fre, q.bnd)
@@ -117,7 +117,7 @@ let buildStatements = (gens) => {
       tmps: q.tmps,
       project: q.ext.length > 0 &&
         !(settings.elimProjections && idempotentWrite(q)) ||
-        loops.some(v => allMaybe(gens, v)),
+        union(loops, q.ext).some(v => allMaybe(gens, v)), // incl. existentials: a fused loop would intersect them
     })
   }
   return stmts
