@@ -137,6 +137,16 @@ let emitVarName = (s, scope) => {
 
 let emitVar = (q, scope) => emitVarName(q.op, scope)
 
+// domref: an outer join var's domain proj<id> (see emitDeclareTemp), indexed
+// by the vars it depends on; constant-folded vars are dropped, as initTemp
+// drops them
+let emitDomref = (q, scope) => {
+  let e = projSym(q.op)
+  for (let v of projIter(q.arg.map(x => x.op), "domain"))
+    e = c.call("rh_get", e, asBoxed(emitVarName(v, scope)).expr)
+  return value.boxed(e)
+}
+
 // ref: tmp<i> indexed by the assignment's free vars, as rh_get chains:
 //   tmp1[K1]  ->  rh_get(tmp1, K1)
 let emitRef = (q, scope) => {
@@ -219,6 +229,7 @@ let emitExpr1 = (q, scope) => {
     case "const": return emitConst(q, scope)
     case "var": return emitVar(q, scope)
     case "ref": return emitRef(q, scope)
+    case "domref": return emitDomref(q, scope)
     case "get": return emitGet(q, scope)
     case "pure": return emitPure(q, scope)
     case "mkset": return emitMkset(q, scope)
@@ -454,15 +465,87 @@ let emitUpdateStm = (stm, scope) => {
   }
 }
 
-// projections (emitFilters1's PROJECT / TRAVERSE):
-//   declareTemp    rh_val proj<id> = rh_undef;   (rh_slot vivifies the map)
-//   initTemp       { rh_val *p = rh_slot(&proj<id>, keys, n); if (p && rh_is_nullish(*p)) *p = rh_bool(true); }
+// projections: a set of key paths, proj<id>[x1][x2]... = true. simple-loopgen
+// builds one in two places:
+//
+//   PROJECT / TRAVERSE (emitFilters1): the distinct bindings of iter, then a
+//   loop over them (forTempMult)
+//   DOMAIN (emitDomains, outer joins): the domain of a maybe-only var, read
+//   back through domref generators (forTemp, or an if over a domref)
+//
+//   declareTemp    rh_val proj<id> = {};
+//   initTemp       rh_val *p<n> = rh_slot(&proj<id>, keys, n);
+//                  if (p<n> && rh_is_nullish(*p<n>)) *p<n> = true;
 //   forTempMult    one nested rh_iter loop per var, over proj<id>, then
-//                  rh_get(proj<id>, x1), ... -- keys come back as strings, as
-//                  JS for-in's do. Constant-folded vars are skipped.
-let emitDeclareTemp = (stm, scope) => todo("declareTemp")
-let emitInitTemp = (stm, scope) => todo("initTemp")
-let emitForTempMult = (stm, scope) => todo("forTempMult")
+//                  rh_get(proj<id>, x1), ...
+//
+// Map keys are strings, so the vars come back as strings, as JS for-in's do.
+// Constant-folded vars are dropped from the path, as the JS emitter does.
+// Deep vars are stored encoded in JS (rt.encodeTemp); not supported yet.
+
+let projIter = (iter, what) => {
+  for (let x of iter) if (isDeepVarStr(x)) todo(what + " over deep var " + x)
+  return iter.filter(x => !foldedConst(x))
+}
+
+let emitDeclareTemp = (stm, scope) => {
+  let [id] = stm.arg
+  c.declareVar(scope.buf)("rh_val", projSym(id), c.call("rh_mapv", c.call("rh_map_new")))
+}
+
+let emitInitTemp = (stm, scope) => {
+  let [id, iter] = stm.arg
+  let buf = scope.buf
+  let keys = projIter(iter, "projection").map(v => asBoxed(emitVarName(v, scope)).expr)
+  let slot = fresh(scope.ctx, "p")
+  c.declarePtr(buf)("rh_val", slot, c.call("rh_slot", c.addr(projSym(id)), cKeys(keys)))
+  c.if(buf)(c.and(slot, c.call("rh_is_nullish", c.deref(slot))), buf => {
+    c.stmt(buf)(c.assign(c.deref(slot), c.call("rh_bool", true)))
+  })
+}
+
+// a loop over the keys of src, binding v1 in body; the value goes to a
+// scratch local nothing reads
+let emitKeyLoop = (buf, v1, src, body, inner) => {
+  let it = fresh(body.ctx, "it")
+  let val = fresh(body.ctx, "v")
+  let v = cVar(v1)
+  body.vars[v1] = value.boxed(v)
+  c.block(buf)(buf => {
+    c.declareVar(buf)("rh_iter", it, c.call("rh_iter_begin", src))
+    c.declareVar(buf)("rh_val", v)
+    c.declareVar(buf)("rh_val", val)
+    c.while(buf)(c.call("rh_iter_next", c.addr(it), c.addr(v), c.addr(val)), inner)
+  })
+}
+
+let emitForTempMult = (stm, scope) => {
+  let [id, iter] = stm.arg
+  let body = childScope(scope)
+  let loop = (buf, xs, src) => {
+    if (xs.length == 0) {
+      emitStmList(stm.body, { ...body, buf })
+      return
+    }
+    let [x, ...rest] = xs
+    emitKeyLoop(buf, x, src, body, buf =>
+      loop(buf, rest, c.call("rh_get", src, cVar(x))))
+  }
+  loop(scope.buf, projIter(iter, "traversal"), projSym(id))
+}
+
+// for v in domref: the keys of the domain (a domain holds no gen value)
+let emitForTemp = (stm, scope) => {
+  let [v1, g1] = stm.arg
+  if (isDeepVarStr(v1)) todo("forTemp over deep var " + v1)
+  if (foldedConst(v1)) {
+    emitStmList(stm.body, scope)
+    return
+  }
+  let src = emitBoxed(g1, childScope(scope)).expr
+  let body = childScope(scope)
+  emitKeyLoop(scope.buf, v1, src, body, buf => emitStmList(stm.body, { ...body, buf }))
+}
 
 // return q: print the result as JSON and exit
 let emitReturn = (stm, scope) => {
@@ -487,9 +570,10 @@ let emitStmList = (stms, scope) => {
       case "declareTemp": emitDeclareTemp(stm, scope); break
       case "initTemp": emitInitTemp(stm, scope); break
       case "forTempMult": emitForTempMult(stm, scope); break
+      case "forTemp": emitForTemp(stm, scope); break
       case "return": emitReturn(stm, scope); break
       // emitted by neither loopgen today; listed so they fail loudly
-      case "let": case "forTemp": case "raw":
+      case "let": case "raw":
       default:
         throw new Error("c-new: unknown statement " + stm.key)
     }
