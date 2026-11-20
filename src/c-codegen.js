@@ -12,7 +12,7 @@
 //
 // Stage 1 (this file, now): fully boxed and deliberately rough. Every Rhyme
 // value is an rh_val, every operation a call into rhyme_rt.h. No type-directed
-// specialization, no CSE -- an input is re-read at each reference.
+// specialization, no CSE (input files are the exception: each is parsed once).
 //
 // C text helpers (symbols, literals, key arrays, indentation) are in
 // cnew/utils.js, value representations in cnew/value.js.
@@ -29,7 +29,7 @@
 //   tmp_i[fre...]       rh_val tmp<i> = rh_undef, a slot path walked with rh_slot
 //   loop over g         rh_iter, rh_iter_next binding the key var and gen<i>
 //   filter on bound v   rh_val gen<i> = rh_get(g, v); if (!rh_is_undef(gen<i>))
-//   loadJSON "f"        rh_jsonv(yyjson_doc_get_root(rh_load_json("f"))), inline
+//   loadJSON "f"        rh_val in<k>, loaded once at the top of main()
 
 const build = require("./cgen/build")
 const { runtime } = require("./simple-runtime")
@@ -45,12 +45,14 @@ let filters
 let assignments
 
 let usesInput // set by emitInput: main() then parses inp from argv[1]
+let inputFiles // loadJSON path -> its local in main(), loaded once at the top
 
 let setState = ir => {
   settings = ir.settings
   filters = ir.filters
   assignments = ir.assignments
   usesInput = false
+  inputFiles = new Map()
 }
 
 // Unimplemented constructs fail at compile time with the offending term,
@@ -202,13 +204,19 @@ let emitMkTuple = (q, scope) => {
   return value.boxed(c.call("rh_mktuple", es.length, ...es))
 }
 
-// loadInput: only json with a constant filename, read at every reference
+// loadJSON "f": each distinct path is parsed once, into a local declared at
+// the top of main() (emitCodeLowLevelC), and every reference reads that local
+// -- as rt.loadJSON caches per path. Only constant paths, so the set of files
+// is known statically; a dynamic path would need a runtime cache instead.
+//
+// Unlike JS, which loads on first evaluation, every file is loaded up front:
+// a missing file fails the query even if the load would never be reached.
 let emitLoadInput = (q, scope) => {
   if (q.op != "json") todo("loadInput " + q.op, q)
   let [e1] = q.arg
   if (e1.key != "const" || typeof e1.op != "string") todo("non-constant filename", q)
-  let doc = c.call("rh_load_json", cStr(e1.op).lit)
-  return value.boxed(c.call("rh_jsonv", c.call("yyjson_doc_get_root", doc)))
+  if (!inputFiles.has(e1.op)) inputFiles.set(e1.op, "in" + inputFiles.size)
+  return value.boxed(inputFiles.get(e1.op))
 }
 
 // input: the query's argument, parsed once from argv[1] at the top of main()
@@ -234,7 +242,7 @@ let emitExpr1 = (q, scope) => {
     case "pure": return emitPure(q, scope)
     case "mkset": return emitMkset(q, scope)
     case "loadInput": return emitLoadInput(q, scope)
-    // the js backend's `inp`: the binary takes no input yet
+    // the js backend's `inp`: parsed from argv[1]
     case "input": return emitInput(q, scope)
     case "hint": return todo("hint", q)
     case "mkTuple": return emitMkTuple(q, scope)
@@ -595,6 +603,10 @@ let emitCodeLowLevelC = (loops, ir) => {
   // one boxed slot per assignment; rh_slot vivifies maps below it
   let tmps = []
   if (usesInput) c.declareVar(tmps)("rh_val", "inp", c.call("rh_read_input", "argc", "argv"))
+  for (let [file, sym] of inputFiles) {
+    let doc = c.call("rh_load_json", cStr(file).lit)
+    c.declareVar(tmps)("rh_val", sym, c.call("rh_jsonv", c.call("yyjson_doc_get_root", doc)))
+  }
   assignments.forEach((_, i) => c.declareVar(tmps)("rh_val", tmpSym(i), "rh_undef"))
 
   let buf = []
