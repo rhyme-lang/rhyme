@@ -159,13 +159,29 @@ let emitRef = (q, scope) => {
 }
 
 // get: if the get is a filter (q.filter) whose gen<i> is in scope, it is
-// gen<i>; otherwise rh_get(e1, e2).
+// gen<i>; otherwise rh_get(e1, e2). This is soft mode (extractFiltersHard
+// off), where extract3 leaves the get in place and tags it.
 let emitGet = (q, scope) => {
   if (settings.extractFilters && "filter" in q && q.filter in scope.gens)
     return scope.gens[q.filter]
   let [e1, e2] = q.arg
   if (e2.key == "var" && isDeepVarStr(e2.op)) todo("deep get", q)
   return value.boxed(c.call("rh_get", emitBoxed(e1, scope).expr, emitBoxed(e2, scope).expr))
+}
+
+// genref: hard mode (extractFiltersHard), where extract3 replaces a filter's
+// get by a reference to filters[i]. gen<i> when filter i is in scope;
+// otherwise -- after a projection, whose traversal binds the vars but not the
+// gens -- the filter's own expression, evaluated again.
+//
+// The JS emitter declares the missing gen lazily (`let gen<i> = ...`) and
+// reuses it. Here that is not safe: the declaration would land in whatever C
+// block is open at that point (an init's `if (nullish) { ... }`, say), and a
+// later statement reusing the name would be outside it. Re-evaluating costs
+// what soft mode already pays for such a get.
+let emitGenref = (q, scope) => {
+  if (q.op in scope.gens) return scope.gens[q.op]
+  return emitExpr(filters[q.op], scope)
 }
 
 // pure ops with an rh_pure_<op> in rhyme_rt.h, and their arity (-1: variadic)
@@ -237,6 +253,7 @@ let emitExpr1 = (q, scope) => {
     case "const": return emitConst(q, scope)
     case "var": return emitVar(q, scope)
     case "ref": return emitRef(q, scope)
+    case "genref": return emitGenref(q, scope)
     case "domref": return emitDomref(q, scope)
     case "get": return emitGet(q, scope)
     case "pure": return emitPure(q, scope)
@@ -244,7 +261,8 @@ let emitExpr1 = (q, scope) => {
     case "loadInput": return emitLoadInput(q, scope)
     // the js backend's `inp`: parsed from argv[1]
     case "input": return emitInput(q, scope)
-    case "hint": return todo("hint", q)
+    // a hint only informs the analysis; as a value it is {}, as in JS
+    case "hint": return value.boxed(cConst({}))
     case "mkTuple": return emitMkTuple(q, scope)
     case "stateful": case "prefix": case "update":
       throw new Error("c-new: unexpected nested assignment " + pretty(q))
@@ -622,12 +640,17 @@ let emitCodeLowLevelC = (loops, ir) => {
 // the binary and returns its stdout. `explain` is the caller's explain record
 // (the same one the js backend attaches); the C file and binary paths are
 // added to it.
+let buildCount = 0
+
 let buildBinary = (code, settings = {}, explain = {}) => {
   const fs = require('fs').promises
   const path = require('path')
   const paths = require('./cgen/paths')
 
-  let outFile = settings.outFile || "tmp"
+  // The default name is unique per build: builds into one directory may run
+  // concurrently (a test compiling under both loopgens, parallel jest workers
+  // sharing out/), and the binary is run later, when its function is called.
+  let outFile = settings.outFile || `tmp_${process.pid}_${buildCount++}`
   let outDir = settings.outDir || paths.defaultOutDir()
   let cFile = path.join(outDir, outFile + ".c")
   let out = path.join(outDir, outFile)

@@ -76,6 +76,10 @@ let reset = (userSettings) => {
   // c-new generates C from loopgen's output, so it cannot run without it
   if (settings.backend == "c-new" && !settings.loopGen)
     throw new Error("backend 'c-new' requires loopGen")
+  // newCodegen returns a JS function before the backend is consulted, so
+  // c-new would silently run JS
+  if (settings.backend == "c-new" && settings.newCodegen)
+    throw new Error("backend 'c-new' does not support newCodegen")
 
   // The original C backend (cgen.generateC, shared by "c" and "cuda") has no
   // rt_pure_mkTuple and builds record literals from the pure node directly, so
@@ -849,7 +853,8 @@ let compile = (q,userSettings={}) => {
 
   reset(userSettings)
 
-  if (settings.newCodegen || settings.backend != "js") {
+  // c-new handles genrefs, as the js backend does; the other backends do not
+  if (settings.newCodegen || (settings.backend != "js" && settings.backend != "c-new")) {
     settings.extractAssignments = true
     settings.extractFiltersHard = false
   }
