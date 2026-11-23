@@ -383,6 +383,8 @@ let extract3 = (q, seen = new WeakMap()) => {
       // the expression or a reference, depending on scope.
       // In hard mode we return a ref expression instead.
       if (settings.extractFiltersHard)
+        q.filter = ix // in place: nested uses of q inside other filters see it
+      if (settings.extractFiltersHard)
         res = { ...q, key: "genref", op: ix, arg: [], filters: [ix] }
       else
         res = { ...q1, filter: ix } // XXX: filters excludes ix (was [...deps, ix], then overwritten)
