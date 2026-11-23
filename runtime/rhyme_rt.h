@@ -10,7 +10,8 @@
 //
 // Deliberate divergences from JS:
 // - array indices are integer keys (0, 1, ...), not the strings "0", "1", ...
-//   that for-in and Object.entries produce
+//   that for-in and Object.entries produce -- for arrays, and for the
+//   index-like names of objects (see map keys)
 // - objects keep plain insertion order; JS moves integer-like keys first
 // - a path slot whose key is undefined is not created (JS writes the key
 //   "undefined")
@@ -361,8 +362,6 @@ static inline rh_str rh_to_string(rh_val v) {
   }
 }
 
-// The string JS would use for an object key -- the same as String(x)
-static inline rh_str rh_to_key(rh_val v) { return rh_to_string(v); }
 
 // ----- numeric coercion: JavaScript's Number(x) -----
 
@@ -738,6 +737,103 @@ static inline rh_val rh_stateful_all(rh_val s, rh_val x) {
   return s;
 }
 
+// ----- map keys -----
+//
+// A key is the property name JS would use, String(x), with one change of
+// representation: an array index -- "0" .. "4294967294", spelled canonically
+// -- is stored as the integer itself, and only other names as strings. In JS
+// 1 and "1" name the same property, so the conversion happens on the way in
+// (rh_to_key) and equal names always have the same form: an index is never
+// rendered, hashed as text or compared as text. V8 does the same with its
+// elements.
+//
+// A key is an rh_val in canonical form: RH_I64 for an index, RH_STR for any
+// other name. Iteration hands it back as is -- an index as an integer, the
+// divergence arrays already had; printing renders it as the quoted name.
+//
+// Nothing in the type stops a non-canonical value (a borrowed JSON string,
+// 1.0, the string "1") from reaching a map, so the map API canonicalizes every
+// key it is given; only the _k variants, for keys taken from another map,
+// skip that.
+
+// A string spelling an array index canonically: digits only, no leading zero
+// ("3", not "03", "3.0" or "+3"), below 2^32 - 1.
+static inline bool rh_str_index_of(rh_str s, uint32_t *out) {
+  // most names fail on the first byte; keep that the only test they pay for
+  if (s.len == 0 || (unsigned char)(s.ptr[0] - '0') > 9) return false;
+  if (s.len > 10 || (s.len > 1 && s.ptr[0] == '0')) return false;
+  uint64_t d = 0;
+  for (uint32_t i = 0; i < s.len; i++) {
+    if (s.ptr[i] < '0' || s.ptr[i] > '9') return false;
+    d = d * 10 + (uint64_t)(s.ptr[i] - '0');
+  }
+  if (d >= 4294967295ULL) return false;
+  *out = (uint32_t)d;
+  return true;
+}
+
+// An array index the way JS recognizes one: a non-negative integer (-0
+// included), or a string spelling one canonically. Anything else names a
+// property no array has.
+static inline bool rh_index(rh_val key, uint32_t *out) {
+  key = rh_unwrap(key);
+  if (key.tag == RH_I64) {
+    if (key.u.i64 < 0 || key.u.i64 >= 4294967295LL) return false;
+    *out = (uint32_t)key.u.i64;
+    return true;
+  }
+  if (key.tag == RH_F64) {
+    double d = key.u.f64;
+    if (!(d >= 0 && d < 4294967295.0 && d == trunc(d))) return false;
+    *out = (uint32_t)d;
+    return true;
+  }
+  if (key.tag == RH_STR) return rh_str_index_of(rh_val_str(key), out);
+  return false;
+}
+
+// The key x names, as obj[x] reads it
+static inline rh_val rh_to_key(rh_val v) {
+  v = rh_unwrap(v);
+  uint32_t i;
+  switch (v.tag) {
+    case RH_STR:
+      return rh_str_index_of(rh_val_str(v), &i) ? rh_i64(i) : v;
+    case RH_I64: case RH_F64:
+      if (rh_index(v, &i)) return rh_i64(i);
+      break;
+    default: break;
+  }
+  // String(x) of anything else; it can still spell an index, e.g. [1] is "1"
+  rh_str s = rh_to_string(v);
+  return rh_str_index_of(s, &i) ? rh_i64(i) : rh_strv(s.ptr, s.len);
+}
+
+// on canonical keys
+static inline bool rh_key_eq(rh_val a, rh_val b) {
+  if (a.tag != b.tag) return false;
+  if (a.tag == RH_I64) return a.u.i64 == b.u.i64;
+  return a.len == b.len && memcmp(a.u.str, b.u.str, a.len) == 0;
+}
+
+static inline unsigned long rh_key_hash(rh_val k) {
+  if (k.tag == RH_STR) return rh_hash_str(k.u.str, k.len);
+  // murmur3's finalizer: indices are often dense, and the table masks off the
+  // low bits
+  uint64_t x = (uint64_t)k.u.i64;
+  x ^= x >> 33; x *= 0xff51afd7ed558ccdULL;
+  x ^= x >> 33; x *= 0xc4ceb9fe1a85ec53ULL;
+  x ^= x >> 33;
+  return (unsigned long)x;
+}
+
+// A canonical key's name as text, for a lookup in a borrowed JSON object. An
+// index is rendered into buf, which must outlive the use of the result.
+static inline rh_str rh_key_name(rh_val k, char buf[16]) {
+  if (k.tag == RH_STR) return rh_val_str(k);
+  return rh_str_lit(buf, (uint32_t)snprintf(buf, 16, "%u", (uint32_t)k.u.i64));
+}
+
 // ----- maps -----
 //
 // Insertion-ordered, because JSON.stringify of a JS object follows insertion
@@ -745,7 +841,7 @@ static inline rh_val rh_stateful_all(rh_val s, rh_val x) {
 // order. rh_map_print reproduces both rules.
 
 typedef struct {
-  rh_str key;
+  rh_val key; // canonical (see map keys)
   rh_val val;
   unsigned long hash;
 } rh_entry;
@@ -785,13 +881,14 @@ static inline void rh_map_reindex(rh_map *m, uint32_t cap) {
   }
 }
 
-// Returns the entry slot, creating it if absent. *created reports which.
-static inline rh_entry *rh_map_slot(rh_map *m, rh_str key, bool *created) {
-  unsigned long h = rh_hash_str(key.ptr, key.len);
+// Returns the entry slot for a canonical key, creating it if absent. *created
+// reports which.
+static inline rh_entry *rh_map_slot_k(rh_map *m, rh_val key, bool *created) {
+  unsigned long h = rh_key_hash(key);
   uint32_t p = (uint32_t)(h & (m->index_cap - 1));
   while (m->index[p] != -1) {
     rh_entry *e = &m->entries[m->index[p]];
-    if (e->hash == h && rh_str_eq(e->key, key)) {
+    if (e->hash == h && rh_key_eq(e->key, key)) {
       if (created) *created = false;
       return e;
     }
@@ -804,10 +901,10 @@ static inline rh_entry *rh_map_slot(rh_map *m, rh_str key, bool *created) {
     memcpy(m->entries, old, sizeof(rh_entry) * m->count);
   }
   rh_entry *e = &m->entries[m->count];
-  // Borrowed, not copied. Every rh_str in this runtime points at storage that
-  // outlives the map -- the input document, a string literal, or the arena --
-  // and rh_to_key builds rendered numbers in the arena. A caller that builds an rh_str over a local buffer
-  // and inserts it must copy first.
+  // A string key is borrowed, not copied. Every rh_str in this runtime points
+  // at storage that outlives the map -- the input document, a string literal,
+  // or the arena, where rh_to_string renders numbers. A caller that builds an
+  // rh_str over a local buffer and inserts it must copy first.
   e->key = key;
   e->val = rh_undef;
   e->hash = h;
@@ -818,20 +915,27 @@ static inline rh_entry *rh_map_slot(rh_map *m, rh_str key, bool *created) {
   return e;
 }
 
-static inline rh_val rh_map_get(rh_map *m, rh_str key) {
-  unsigned long h = rh_hash_str(key.ptr, key.len);
+static inline rh_val rh_map_get_k(rh_map *m, rh_val key) {
+  unsigned long h = rh_key_hash(key);
   uint32_t p = (uint32_t)(h & (m->index_cap - 1));
   while (m->index[p] != -1) {
     rh_entry *e = &m->entries[m->index[p]];
-    if (e->hash == h && rh_str_eq(e->key, key)) return e->val;
+    if (e->hash == h && rh_key_eq(e->key, key)) return e->val;
     p = (p + 1) & (m->index_cap - 1);
   }
   return rh_undef;
 }
 
-static inline void rh_map_set(rh_map *m, rh_str key, rh_val v) {
-  rh_map_slot(m, key, NULL)->val = v;
+static inline void rh_map_set_k(rh_map *m, rh_val key, rh_val v) {
+  rh_map_slot_k(m, key, NULL)->val = v;
 }
+
+// the same, for any value as the key
+static inline rh_entry *rh_map_slot(rh_map *m, rh_val key, bool *created) {
+  return rh_map_slot_k(m, rh_to_key(key), created);
+}
+static inline rh_val rh_map_get(rh_map *m, rh_val key) { return rh_map_get_k(m, rh_to_key(key)); }
+static inline void rh_map_set(rh_map *m, rh_val key, rh_val v) { rh_map_set_k(m, rh_to_key(key), v); }
 
 // ----- arrays -----
 //
@@ -948,7 +1052,7 @@ static inline rh_val rh_map_copy(rh_val v) {
     rh_map *src = v.u.map;
     rh_map *m = rh_map_new();
     for (uint32_t i = 0; i < src->count; i++)
-      rh_map_set(m, src->entries[i].key, src->entries[i].val);
+      rh_map_set_k(m, src->entries[i].key, src->entries[i].val);
     return rh_mapv(m);
   }
   if (v.tag == RH_JSON && yyjson_is_obj(v.u.json)) {
@@ -957,14 +1061,14 @@ static inline rh_val rh_map_copy(rh_val v) {
     yyjson_obj_iter_init(v.u.json, &it);
     yyjson_val *k;
     while ((k = yyjson_obj_iter_next(&it)))
-      rh_map_set(m, rh_str_lit(yyjson_get_str(k), (uint32_t)yyjson_get_len(k)),
+      rh_map_set(m, rh_strv(yyjson_get_str(k), (uint32_t)yyjson_get_len(k)),
                  rh_jsonv(yyjson_obj_iter_get_val(k)));
     return rh_mapv(m);
   }
   if (v.tag == RH_ARR) {
     rh_map *m = rh_map_new();
     for (uint32_t i = 0; i < v.u.arr->count; i++)
-      rh_map_set(m, rh_to_key(rh_i64(i)), v.u.arr->items[i]);
+      rh_map_set_k(m, rh_i64(i), v.u.arr->items[i]);
     return rh_mapv(m);
   }
   if (v.tag == RH_JSON && yyjson_is_arr(v.u.json)) {
@@ -972,7 +1076,7 @@ static inline rh_val rh_map_copy(rh_val v) {
     size_t idx, max;
     yyjson_val *it;
     yyjson_arr_foreach(v.u.json, idx, max, it)
-      rh_map_set(m, rh_to_key(rh_i64((int64_t)idx)), rh_jsonv(it));
+      rh_map_set_k(m, rh_i64((int64_t)idx), rh_jsonv(it));
     return rh_mapv(m);
   }
   if (!rh_is_undef(v) && rh_unwrap(v).tag == RH_NULL) return rh_mapv(rh_map_new());
@@ -984,7 +1088,7 @@ static inline rh_val rh_map_copy(rh_val v) {
 static inline rh_val rh_singleton(rh_val x) {
   if (rh_is_undef(x)) return rh_undef;
   rh_map *m = rh_map_new();
-  rh_map_set(m, rh_to_key(x), x);
+  rh_map_set(m, x, x);
   return rh_mapv(m);
 }
 static inline rh_val rh_pure_singleton(rh_val x) { return rh_singleton(x); }
@@ -994,7 +1098,7 @@ static inline rh_val rh_stateful_mkset_init(void) { return rh_mapv(rh_map_new())
 static inline rh_val rh_stateful_mkset(rh_val s, rh_val x) {
   if (rh_is_undef(x)) return s;
   if (s.tag != RH_MAP) s = rh_stateful_mkset_init();
-  rh_map_set(s.u.map, rh_to_key(x), x);
+  rh_map_set(s.u.map, x, x);
   return s;
 }
 
@@ -1008,42 +1112,13 @@ static inline rh_val rh_mktuple(int n, ...) {
   for (int i = 0; i + 1 < n; i += 2) {
     rh_val k = va_arg(ap, rh_val);
     rh_val v = va_arg(ap, rh_val);
-    if (!rh_is_undef(v)) rh_map_set(m, rh_to_key(k), v);
+    if (!rh_is_undef(v)) rh_map_set(m, k, v);
   }
   va_end(ap);
   return rh_mapv(m);
 }
 
 // ----- generic get: obj[key] over maps, arrays, strings and borrowed JSON -----
-
-// An array index the way JS recognizes one: a non-negative integer, or a
-// string spelling one canonically ("3", not "03", "3.0" or "+3"). Anything
-// else names a property no array has.
-static inline bool rh_index(rh_val key, uint32_t *out) {
-  key = rh_unwrap(key);
-  double d;
-  if (key.tag == RH_I64) {
-    if (key.u.i64 < 0 || key.u.i64 >= 4294967295LL) return false;
-    *out = (uint32_t)key.u.i64;
-    return true;
-  }
-  if (key.tag == RH_F64) {
-    d = key.u.f64;
-  } else if (key.tag == RH_STR) {
-    rh_str s = rh_val_str(key);
-    if (s.len == 0 || s.len > 10 || (s.len > 1 && s.ptr[0] == '0')) return false;
-    d = 0;
-    for (uint32_t i = 0; i < s.len; i++) {
-      if (s.ptr[i] < '0' || s.ptr[i] > '9') return false;
-      d = d * 10 + (s.ptr[i] - '0');
-    }
-  } else {
-    return false;
-  }
-  if (!(d >= 0 && d < 4294967295.0 && d == trunc(d))) return false;
-  *out = (uint32_t)d;
-  return true;
-}
 
 // The character at UTF-16 index i, as JS's s[i] reads it. Divergence: an index
 // landing on half of a surrogate pair is undefined here, since a lone
@@ -1064,7 +1139,7 @@ static inline rh_val rh_str_index(rh_str s, uint32_t i) {
 static inline rh_val rh_get(rh_val obj, rh_val key) {
   if (rh_is_undef(obj) || rh_is_undef(key)) return rh_undef;
   uint32_t i;
-  if (obj.tag == RH_MAP) return rh_map_get(obj.u.map, rh_to_key(key));
+  if (obj.tag == RH_MAP) return rh_map_get(obj.u.map, key);
   if (obj.tag == RH_ARR) {
     if (!rh_index(key, &i) || i >= obj.u.arr->count) return rh_undef;
     return obj.u.arr->items[i];
@@ -1072,7 +1147,10 @@ static inline rh_val rh_get(rh_val obj, rh_val key) {
   if (obj.tag == RH_JSON) {
     yyjson_val *j = obj.u.json;
     if (yyjson_is_obj(j)) {
-      rh_str k = rh_to_key(key);
+      // a string is already the name; anything else renders to one
+      rh_val u = rh_unwrap(key);
+      char buf[16];
+      rh_str k = u.tag == RH_STR ? rh_val_str(u) : rh_key_name(rh_to_key(u), buf);
       return rh_jsonv(yyjson_obj_getn(j, k.ptr, k.len));
     }
     if (yyjson_is_arr(j)) {
@@ -1092,8 +1170,9 @@ static inline rh_val rh_get(rh_val obj, rh_val key) {
 //
 // Mirrors JS `for (let k in obj)`: object keys in insertion order, array and
 // string indices in order. Indices are integer keys (rh_i64), a deliberate
-// divergence from for-in's strings; rh_to_key still renders them as "0",
-// "1", ... wherever they become object keys. Both array representations
+// divergence from for-in's strings -- array indices and the index-like names
+// of objects alike (see map keys); they print as "0", "1", ... wherever they
+// become object keys. Both array representations
 // iterate -- a borrowed JSON array and an rh_arr built by the `array`
 // stateful op.
 
@@ -1152,7 +1231,7 @@ static inline bool rh_iter_next(rh_iter *it, rh_val *key, rh_val *val) {
   if (it->obj.tag == RH_MAP) {
     // a slot holding undefined is still a key, as in JS
     rh_entry *e = &it->obj.u.map->entries[it->i];
-    *key = rh_strv(e->key.ptr, e->key.len);
+    *key = e->key;
     *val = e->val;
   } else if (it->obj.tag == RH_ARR) {
     *key = rh_i64(it->i);
@@ -1160,7 +1239,8 @@ static inline bool rh_iter_next(rh_iter *it, rh_val *key, rh_val *val) {
   } else if (yyjson_is_obj(it->obj.u.json)) {
     yyjson_val *k = yyjson_obj_iter_next(&it->jit.obj_it);
     if (!k) return false;
-    *key = rh_strv(yyjson_get_str(k), (uint32_t)yyjson_get_len(k));
+    // an index-like name is an integer, as it would be in a map
+    *key = rh_to_key(rh_strv(yyjson_get_str(k), (uint32_t)yyjson_get_len(k)));
     *val = rh_jsonv(yyjson_obj_iter_get_val(k));
   } else {
     yyjson_val *e = yyjson_arr_iter_next(&it->jit.arr_it);
@@ -1193,7 +1273,7 @@ static inline rh_val *rh_slot(rh_val *root, const rh_val *keys, int n) {
       else if (cur->tag == RH_JSON && yyjson_is_obj(cur->u.json)) *cur = rh_map_copy(*cur);
       else return NULL; // not an object: cannot descend
     }
-    rh_entry *e = rh_map_slot(cur->u.map, rh_to_key(keys[i]), NULL);
+    rh_entry *e = rh_map_slot(cur->u.map, keys[i], NULL);
     cur = &e->val;
   }
   return cur;
@@ -1232,7 +1312,8 @@ static inline void rh_print_map(rh_map *m) {
     if (rh_is_undef(e->val)) continue; // JSON.stringify drops undefined values
     if (!first) putchar(',');
     first = false;
-    rh_print_str(e->key);
+    if (e->key.tag == RH_STR) rh_print_str(rh_val_str(e->key));
+    else printf("\"%lld\"", (long long)e->key.u.i64);
     putchar(':');
     rh_print_val(e->val);
   }
