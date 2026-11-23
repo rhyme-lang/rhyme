@@ -9,6 +9,8 @@ const { pretty, setEmitPseudoState, emitPseudo } = require('./prettyprint')
 const cgen = require('./cgen/codegen')
 const { typing, types, typeSyms } = require('./typing')
 const { optimizer } = require('./optimizer')
+const jaxPushdown = require('./jax/pushdown')
+const jaxLower = require('./jax/lower')
 
 const { unique, union, intersect, diff, subset, same } = sets
 
@@ -47,6 +49,14 @@ let defaultSettings = {
   // js codegen -- simple-codegen.js, simple-loopgen.js, opt-loopgen.js
   loopGen: true,
   optLoopgen: false, // schedule with opt-loopgen instead of emitLoops
+
+  // acceleration -- src/jax/
+  //
+  // "jax": run the dense tensor-algebra assignments in JAX (a Python worker)
+  // instead of as JS loops; the rest of the query is generated as usual.
+  // Needs a schema with dense inputs. See src/jax/lower.js.
+  accel: false,
+  jaxPython: undefined, // python with jax; default $RHYME_JAX_PYTHON or python3
   elimProjections: true,
   constantFold: true
 
@@ -71,6 +81,13 @@ let reset = (userSettings) => {
   settings = { ...defaultSettings, ...userSettings }
 
   checkBackend(settings.backend)
+
+  if (settings.accel) {
+    if (settings.accel != "jax")
+      throw new Error("unknown accel '" + settings.accel + "', expected 'jax'")
+    if (settings.backend != "js" || settings.newCodegen || !settings.loopGen || settings.optLoopgen)
+      throw new Error("accel 'jax' needs the js backend with the default loop generator")
+  }
 
   // The original C backend (cgen.generateC, shared by "c" and "cuda") has no
   // rt_pure_mkTuple and builds record literals from the pure node directly, so
@@ -862,6 +879,9 @@ let compile = (q,userSettings={}) => {
 
   let src = q
 
+  if (settings.accel == "jax")
+    q = jaxPushdown.pushdown(q, settings.schema)
+
   if (settings.altInfer) { // alternative analysis implementation
     trace.log(q)
     let q0 = JSON.parse(JSON.stringify(q))
@@ -1084,11 +1104,26 @@ let compile = (q,userSettings={}) => {
   trace.log(pseudo)
   trace.log(code)
 
+  // set when settings.accel picks assignments to run in JAX; `accel` is
+  // referenced by the generated code
+  let accelPlan, accel
+
   if (settings.loopGen) {
 
     let code0 = code
 
-    let loops = settings.optLoopgen ? scheduleC2(q) : emitLoops(q,order)
+    if (settings.accel == "jax") {
+      accelPlan = jaxLower.plan({ filters, assignments }, q, order)
+      console.log(accelPlan)
+      if (accelPlan.members.size) {
+        let jaxBridge = require('./jax/bridge')
+        let args = Object.fromEntries(accelPlan.roots.map(r => [r, "in_" + String(r).replace(/\W/g, "_")]))
+        let stage = { ...accelPlan, args, python: jaxBridge.pythonFor(settings) }
+        accel = { run: (inp, tmp) => jaxBridge.run(stage, inp, tmp) }
+      }
+    }
+
+    let loops = settings.optLoopgen ? scheduleC2(q) : emitLoops(q,order,accelPlan)
 
     code = emitCodeLowLevel(loops)
     code = fixIndent(code)
@@ -1119,7 +1154,8 @@ let compile = (q,userSettings={}) => {
     src,
     resultType: q.schema,
     ir: {filters, assignments, vars, order},
-    pseudo, code
+    pseudo, code,
+    accel: accelPlan
   }
   return wrap
 }

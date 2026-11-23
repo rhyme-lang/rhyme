@@ -402,14 +402,25 @@ let emitFilters2 = (scope, trueFree, iter, enabled = [], domains = []) => body =
 }
 
 
-let emitLoops = (q, order) => {
+// accel (optional): a plan from src/jax/lower.js. Its members are computed
+// by one call before all loops -- they depend only on inputs and on each
+// other -- and get no loops of their own.
+let emitLoops = (q, order, accel) => {
   let buf = []
+
+  if (accel?.members.size) {
+    buf.push("// --- accelerated: tmp" + [...accel.members].join(", tmp") + " ---")
+    buf.push("accel.run(inp, tmp)")
+    buf.push("")
+  }
 
   if (settings.extractAssignments) {
     for (let is of order) {
       if (is.length > 1)
         console.error("cycle "+is)
       let [i] = is
+      if (accel?.members.has(Number(i)))
+        continue
       let q = assignments[i]
 
       buf.push("// --- tmp"+i+" ---")
