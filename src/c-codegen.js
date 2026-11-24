@@ -10,9 +10,10 @@
 // simple-codegen.js turns into JavaScript. This file is its C counterpart and
 // follows it statement by statement; the JS emitter is the reference.
 //
-// Stage 1 (this file, now): fully boxed and deliberately rough. Every Rhyme
-// value is an rh_val, every operation a call into rhyme_rt.h. No type-directed
-// specialization, no CSE (input files are the exception: each is parsed once).
+// Stage 1 (this file, now): fully boxed. Every Rhyme value is an rh_val, every
+// operation a call into rhyme_rt.h. No type-directed specialization yet.
+// Common subexpressions (gets, refs, pure ops) are computed once per block
+// (see "common subexpressions" below), and each input file is parsed once.
 //
 // C text helpers (symbols, literals, key arrays, indentation) are in
 // cnew/utils.js, value representations in cnew/value.js.
@@ -75,9 +76,10 @@ let isDeepVarStr = s => s.startsWith("**")
 // None of them can shadow a binding still in use: a var and a filter are bound
 // at most once along a nest.
 //
-// Temporary locals -- iterators, slot pointers, values -- have no source name
-// and get a counter instead (it0, p1, v2, ...), unique across main(). No cVar
-// starts with it, p or v (user vars become x..., loopgen's are K<n> / D<n>).
+// Temporary locals -- iterators, slot pointers, values, shared subexpressions
+// -- have no source name and get a counter instead (it0, p1, v2, e3, ...),
+// unique across main(). No cVar starts with it, p, v or e (user vars become
+// x..., loopgen's are K<n> / D<n>).
 
 let newCtx = () => ({ fresh: 0 })
 
@@ -87,8 +89,123 @@ let fresh = (ctx, prefix) => prefix + (ctx.fresh++)
 //   buf    the line buffer being written
 //   vars   Rhyme var -> the value it is bound to (cnew/value.js)
 //   gens   filter index -> the value of gen<i>, for filters in scope
+//   cse    the shared-subexpression table of the current C block (below)
 //   ctx    the per-program counter for fresh names
-let childScope = scope => ({ ...scope, vars: { ...scope.vars }, gens: { ...scope.gens } })
+// A child scope is a new C block: emitters open one for every { they emit
+// expressions into.
+let childScope = scope => ({
+  ...scope, vars: { ...scope.vars }, gens: { ...scope.gens }, cse: newLayer(scope.cse),
+})
+
+
+// ----- common subexpressions -----
+//
+// Local value numbering over the C blocks. The first time an expression is
+// emitted in a block it is declared as a local, rh_val e<n> = <text>;, at
+// that point, and later emissions of the same text in that block or any block
+// nested in it read e<n>. The key is the C text itself: arguments are already
+// replaced by their locals, so it is short, and it identifies equal
+// expressions whatever IR nodes they came from (a genref's fallback, a soft
+// get, a filter's generator).
+//
+// Nothing moves: a local is computed where the expression was computed
+// before, so conditional evaluation (init's ??=) is unchanged. A block's
+// entries die with it, as its C locals do.
+//
+// Every value carries deps, the C names its text reads. An entry is dropped
+// (kill) when one of them may have changed:
+//   tmp<i>     a write to tmp<i> (init, update) kills the reads through it;
+//   proj<id>   likewise for a projection (declareTemp, initTemp)
+//   HEAP       every read through any tmp or projection. Killed by a write
+//              that may mutate a map another tmp also reaches (killsOf):
+//              an object update whose base e0 is not fresh, and that is
+//              inplace (the slot is e0's map itself) or stores two or more
+//              levels below the slot (into a nested map the shallow copy
+//              shares with e0's source -- in JS too).
+//   a binding  a loop var or gen<i> declared again (shadowing), defensively
+// A loop kills, on entry, whatever its body's writes would: an entry made
+// before the loop would be stale from the second iteration on.
+//
+// Loopgen reads a tmp only after the nest that builds it, so in practice the
+// per-tmp kills find nothing to drop; they guard that invariant, which is not
+// checked anywhere, rather than enforce it.
+//
+// Not shared: values that may be a fresh container ({} and [] constants,
+// mkset, mkTuple, flatten, singleton) or computed from one: two uses must get
+// two containers, since either may be stored and then mutated. Bare names and
+// constants are not worth a local.
+//
+// settings.cse = false turns it off (for comparisons).
+
+const HEAP = "$heap"
+const NO_DEPS = new Set()
+
+let depsOf = x => x.deps ?? NO_DEPS
+let unionDeps = xs => {
+  let s = new Set()
+  for (let x of xs) for (let d of depsOf(x)) s.add(d)
+  return s
+}
+
+// a value read from a C name: a loop binding, gen<i>, tmp<i>, proj<id>
+let bound = (name, deps = []) => ({ ...value.boxed(name), deps: new Set([name, ...deps]) })
+
+let newLayer = parent => ({ entries: new Map(), parent })
+
+let lookup = (layer, text) => {
+  for (let l = layer; l; l = l.parent) if (l.entries.has(text)) return l.entries.get(text)
+}
+
+let kill = (scope, name) => {
+  for (let l = scope.cse; l; l = l.parent)
+    for (let [k, v] of l.entries) if (v.deps.has(name)) l.entries.delete(k)
+}
+
+let cseOn = () => settings.cse !== false
+
+// f(args...) as a value, shared through the block's table
+let shareCall = (scope, f, args) => {
+  let text = c.call(f, ...args.map(x => asBoxed(x).expr))
+  let deps = unionDeps(args)
+  if (args.some(x => x.fresh)) return { ...value.boxed(text), deps, fresh: true }
+  if (!cseOn()) return { ...value.boxed(text), deps }
+  let hit = lookup(scope.cse, text)
+  if (hit) return hit
+  let e = fresh(scope.ctx, "e")
+  c.declareVar(scope.buf)("rh_val", e, text)
+  let x = { ...value.boxed(e), deps }
+  scope.cse.entries.set(text, x)
+  return x
+}
+
+// record that gen = rh_get(src, key) in this block, so a get of the same
+// text reuses the gen (a raw get re-evaluating a filter, hard mode)
+// (with src's deps: over a tmp, a write to it must kill the entry)
+let rememberGet = (scope, src, key, gen) => {
+  if (!cseOn() || src.fresh) return
+  let text = c.call("rh_get", asBoxed(src).expr, asBoxed(key).expr)
+  scope.cse.entries.set(text, { ...gen, deps: unionDeps([gen, src, key]) })
+}
+
+// the deps a statement's writes invalidate, recursively through its body
+let killsOf = stm => {
+  if (typeof stm == "string") return []
+  switch (stm.key) {
+    case "declareTemp": case "initTemp": return [projSym(stm.arg[0])]
+    case "init": case "update": {
+      let [lhs, q] = stm.arg
+      // an object update that may mutate a map another tmp also reaches
+      let alias = q.key == "update" && !isFresh(q.arg[0]) &&
+        (q.mode == "inplace" || q.arg[1].vars.length > 1)
+      return [alias ? HEAP : tmpSym(lhs.op)]
+    }
+    default: return (stm.body ?? []).flatMap(killsOf)
+  }
+}
+
+// drop what the statements' writes invalidate: after a write statement, and
+// before a loop for its whole body
+let killWrites = (scope, stms) => { for (let d of stms.flatMap(killsOf)) kill(scope, d) }
 
 
 // ----- expressions -----
@@ -120,7 +237,8 @@ let cConst = k => {
   throw new Error("c-new: unsupported constant " + JSON.stringify(k))
 }
 
-let emitConst = (q, scope) => value.boxed(cConst(q.op))
+// {} and [] are fresh containers (see common subexpressions)
+let emitConst = (q, scope) => ({ ...value.boxed(cConst(q.op)), fresh: typeof q.op == "object" && q.op !== null })
 
 // The constant a var is folded to, or undefined. Same truthiness test as
 // quoteVar and emitStmListLowLevel, so a var is folded here exactly when the
@@ -143,19 +261,19 @@ let emitVar = (q, scope) => emitVarName(q.op, scope)
 // by the vars it depends on; constant-folded vars are dropped, as initTemp
 // drops them
 let emitDomref = (q, scope) => {
-  let e = projSym(q.op)
+  let e = bound(projSym(q.op), [HEAP])
   for (let v of projIter(q.arg.map(x => x.op), "domain"))
-    e = c.call("rh_get", e, asBoxed(emitVarName(v, scope)).expr)
-  return value.boxed(e)
+    e = shareCall(scope, "rh_get", [e, emitVarName(v, scope)])
+  return e
 }
 
 // ref: tmp<i> indexed by the assignment's free vars, as rh_get chains:
 //   tmp1[K1]  ->  rh_get(tmp1, K1)
 let emitRef = (q, scope) => {
-  let e = tmpSym(q.op)
+  let e = bound(tmpSym(q.op), [HEAP])
   for (let v of assignments[q.op].fre)
-    e = c.call("rh_get", e, asBoxed(emitVarName(v, scope)).expr)
-  return value.boxed(e)
+    e = shareCall(scope, "rh_get", [e, emitVarName(v, scope)])
+  return e
 }
 
 // get: if the get is a filter (q.filter) whose gen<i> is in scope, it is
@@ -166,7 +284,7 @@ let emitGet = (q, scope) => {
     return scope.gens[q.filter]
   let [e1, e2] = q.arg
   if (e2.key == "var" && isDeepVarStr(e2.op)) todo("deep get", q)
-  return value.boxed(c.call("rh_get", emitBoxed(e1, scope).expr, emitBoxed(e2, scope).expr))
+  return shareCall(scope, "rh_get", [emitExpr(e1, scope), emitExpr(e2, scope)])
 }
 
 // genref: hard mode (extractFiltersHard), where extract3 replaces a filter's
@@ -197,6 +315,9 @@ let pureOps = {
   convert_f32: 1, convert_f64: 1, convert_string: 1,
 }
 
+// pure ops whose result may be a fresh container: not shared
+let freshPureOps = { flatten: true, singleton: true }
+
 // pure: rh_pure_<op>(args...). flatten is variadic and takes its argument
 // count first. apply (udfs) is rejected: the callee is a JS closure.
 let emitPure = (q, scope) => {
@@ -204,20 +325,24 @@ let emitPure = (q, scope) => {
     throw new Error("c-new: user-defined functions are not supported -- " + pretty(q))
   let arity = pureOps[q.op]
   if (arity === undefined) todo("pure op " + q.op, q)
-  let es = q.arg.map(x => emitBoxed(x, scope).expr)
+  let xs = q.arg.map(x => emitExpr(x, scope))
   let f = "rh_pure_" + q.op
-  if (arity == -1) return value.boxed(c.call(f, es.length, ...es))
-  if (es.length != arity)
+  if (arity != -1 && xs.length != arity)
     throw new Error(`c-new: ${q.op} expects ${arity} arguments -- ` + pretty(q))
-  return value.boxed(c.call(f, ...es))
+  if (freshPureOps[q.op]) return freshCall(f, arity == -1 ? [xs.length] : [], xs)
+  return shareCall(scope, f, xs)
 }
 
-let emitMkset = (q, scope) => value.boxed(c.call("rh_singleton", emitBoxed(q.arg[0], scope).expr))
+// a call making a fresh container: never shared
+let freshCall = (f, pre, xs) =>
+  ({ ...value.boxed(c.call(f, ...pre, ...xs.map(x => asBoxed(x).expr))), deps: unionDeps(xs), fresh: true })
+
+let emitMkset = (q, scope) => freshCall("rh_singleton", [], [emitExpr(q.arg[0], scope)])
 
 // mkTuple (settings.mkTuple): rh_mktuple(n, k1, v1, k2, v2, ...)
 let emitMkTuple = (q, scope) => {
-  let es = q.arg.map(x => emitBoxed(x, scope).expr)
-  return value.boxed(c.call("rh_mktuple", es.length, ...es))
+  let xs = q.arg.map(x => emitExpr(x, scope))
+  return freshCall("rh_mktuple", [xs.length], xs)
 }
 
 // loadJSON "f": each distinct path is parsed once, into a local declared at
@@ -262,7 +387,7 @@ let emitExpr1 = (q, scope) => {
     // the js backend's `inp`: parsed from argv[1]
     case "input": return emitInput(q, scope)
     // a hint only informs the analysis; as a value it is {}, as in JS
-    case "hint": return value.boxed(cConst({}))
+    case "hint": return { ...value.boxed(cConst({})), fresh: true }
     case "mkTuple": return emitMkTuple(q, scope)
     case "stateful": case "prefix": case "update":
       throw new Error("c-new: unexpected nested assignment " + pretty(q))
@@ -360,22 +485,24 @@ let emitUpdateValue = (q, cur, scope) => {
 let emitFor = (stm, scope) => {
   let [v1, i, g1] = stm.arg
   let buf = scope.buf
-  let body = childScope(scope)
 
   if (isDeepVarStr(v1)) todo("for over deep var " + v1)
 
   if (foldedConst(v1)) {
-    emitStmList(stm.body, body)
+    emitStmList(stm.body, childScope(scope))
     return
   }
 
   // the generator is evaluated in the outer scope, before v is bound
-  let src = emitBoxed(g1.key == "mkset" ? g1.arg[0] : g1, childScope(scope)).expr
+  let srcV = emitExpr(g1.key == "mkset" ? g1.arg[0] : g1, scope)
+  let src = asBoxed(srcV).expr
   let v = cVar(v1)
-  body.vars[v1] = value.boxed(v)
+  let gen = genSym(i)
+  kill(scope, v); kill(scope, gen)
 
   if (g1.key == "mkset") {
-    body.gens[i] = body.vars[v1]
+    let body = childScope(scope)
+    body.vars[v1] = body.gens[i] = bound(v)
     c.block(buf)(buf => {
       c.declareVar(buf)("rh_val", v, src)
       c.if(buf)(presentOf(body.vars[v1]), buf => {
@@ -383,9 +510,12 @@ let emitFor = (stm, scope) => {
       })
     })
   } else {
+    killWrites(scope, stm.body)
+    let body = childScope(scope)
+    body.vars[v1] = bound(v)
+    body.gens[i] = bound(gen)
+    rememberGet(body, srcV, body.vars[v1], body.gens[i])
     let it = fresh(scope.ctx, "it")
-    let gen = genSym(i)
-    body.gens[i] = value.boxed(gen)
     c.block(buf)(buf => {
       c.declareVar(buf)("rh_iter", it, c.call("rh_iter_begin", src))
       c.declareVar(buf)("rh_val", v)
@@ -413,15 +543,23 @@ let emitIf = (stm, scope) => {
     return
   }
 
-  let src = emitBoxed(g1, childScope(scope)).expr
-  let key = asBoxed(emitVarName(v1, scope)).expr
+  let src = emitExpr(g1, scope)
+  let key = emitVarName(v1, scope)
   let gen = genSym(i)
+  kill(scope, gen)
 
+  // an rh_get already computed here serves as the gen; otherwise gen<i>
+  // is declared, and recorded for later gets of the same text
+  let text = c.call("rh_get", asBoxed(src).expr, asBoxed(key).expr)
+  let hit = cseOn() && !src.fresh && lookup(scope.cse, text)
   let body = childScope(scope)
-  body.gens[i] = value.boxed(gen)
+  body.gens[i] = hit || bound(gen, unionDeps([src, key]))
 
   c.block(buf)(buf => {
-    c.declareVar(buf)("rh_val", gen, c.call("rh_get", src, key))
+    if (!hit) {
+      c.declareVar(buf)("rh_val", gen, text)
+      rememberGet(body, src, key, body.gens[i])
+    }
     c.if(buf)(presentOf(body.gens[i]), buf => {
       emitStmList(stm.body, body)
     })
@@ -454,9 +592,10 @@ let emitInitStm = (stm, scope) => {
     let slot = fresh(scope.ctx, "p")
     c.declarePtr(buf)("rh_val", slot, emitSlot(stm, scope))
     c.if(buf)(c.call("rh_is_nullish", c.deref(slot)), buf => {
-      c.stmt(buf)(c.assign(c.deref(slot), asBoxed(emitInitValue(q, scope)).expr))
+      c.stmt(buf)(c.assign(c.deref(slot), asBoxed(emitInitValue(q, childScope(scope))).expr))
     })
   }
+  killWrites(scope, [stm])
 }
 
 // tmp<i>[fre...] = fold(tmp<i>[fre...])  (rt.update):
@@ -476,7 +615,7 @@ let emitUpdateStm = (stm, scope) => {
     c.declareVar(buf)("rh_val", v, emitBoxed(q.arg[2], scope).expr)
     c.if(buf)(c.not(c.call("rh_is_undef", v)), buf => {
       let slot = fresh(scope.ctx, "p")
-      c.declarePtr(buf)("rh_val", slot, emitSlot(stm, scope, q.arg[1].vars))
+      c.declarePtr(buf)("rh_val", slot, emitSlot(stm, childScope(scope), q.arg[1].vars))
       c.if(buf)(slot, buf => {
         c.stmt(buf)(c.assign(c.deref(slot), v))
       })
@@ -489,6 +628,7 @@ let emitUpdateStm = (stm, scope) => {
     c.declarePtr(buf)("rh_val", slot, emitSlot(stm, scope))
     c.stmt(buf)(c.assign(c.deref(slot), asBoxed(emitUpdateValue(q, c.deref(slot), scope)).expr))
   }
+  killWrites(scope, [stm])
 }
 
 // projections: a set of key paths, proj<id>[x1][x2]... = true. simple-loopgen
@@ -517,6 +657,7 @@ let projIter = (iter, what) => {
 let emitDeclareTemp = (stm, scope) => {
   let [id] = stm.arg
   c.declareVar(scope.buf)("rh_val", projSym(id), c.call("rh_mapv", c.call("rh_map_new")))
+  killWrites(scope, [stm])
 }
 
 let emitInitTemp = (stm, scope) => {
@@ -528,6 +669,7 @@ let emitInitTemp = (stm, scope) => {
   c.if(buf)(c.and(slot, c.call("rh_is_nullish", c.deref(slot))), buf => {
     c.stmt(buf)(c.assign(c.deref(slot), c.call("rh_bool", true)))
   })
+  killWrites(scope, [stm])
 }
 
 // a loop over the keys of src, binding v1 in body; the value goes to a
@@ -536,7 +678,8 @@ let emitKeyLoop = (buf, v1, src, body, inner) => {
   let it = fresh(body.ctx, "it")
   let val = fresh(body.ctx, "v")
   let v = cVar(v1)
-  body.vars[v1] = value.boxed(v)
+  kill(body, v)
+  body.vars[v1] = bound(v)
   c.block(buf)(buf => {
     c.declareVar(buf)("rh_iter", it, c.call("rh_iter_begin", src))
     c.declareVar(buf)("rh_val", v)
@@ -547,6 +690,7 @@ let emitKeyLoop = (buf, v1, src, body, inner) => {
 
 let emitForTempMult = (stm, scope) => {
   let [id, iter] = stm.arg
+  killWrites(scope, stm.body)
   let body = childScope(scope)
   let loop = (buf, xs, src) => {
     if (xs.length == 0) {
@@ -568,7 +712,8 @@ let emitForTemp = (stm, scope) => {
     emitStmList(stm.body, scope)
     return
   }
-  let src = emitBoxed(g1, childScope(scope)).expr
+  let src = emitBoxed(g1, scope).expr
+  killWrites(scope, stm.body)
   let body = childScope(scope)
   emitKeyLoop(scope.buf, v1, src, body, buf => emitStmList(stm.body, { ...body, buf }))
 }
@@ -615,7 +760,7 @@ let emitCodeLowLevelC = (loops, ir) => {
   setState(ir)
 
   let body = []
-  let scope = { buf: body, vars: {}, gens: {}, ctx: newCtx() }
+  let scope = { buf: body, vars: {}, gens: {}, cse: newLayer(null), ctx: newCtx() }
   emitStmList(loops, scope)
 
   // one boxed slot per assignment; rh_slot vivifies maps below it
